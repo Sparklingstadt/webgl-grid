@@ -54,6 +54,7 @@ uniform vec3 uTarget;
 uniform vec3 uBoxes[MAX_BOXES];
 uniform int uCount;
 uniform vec3 uColors[MAX_BOXES];
+uniform float uRots[MAX_BOXES];
 out vec4 outColor;
 
 // 線幅(ピクセル単位)を一定に保つアンチエイリアス付きグリッド
@@ -70,15 +71,24 @@ const vec3 BOX_MAX = vec3( 0.5, 1.0,  0.5);
 const vec3 LIGHT = normalize(vec3(0.6, 1.0, 0.35));
 
 // レイと箱の交差距離 (当たらなければ -1)。法線も返す
-float boxHit(vec3 ro, vec3 rd, vec3 o, out vec3 n) {
+// 縦軸 (y) まわりの回転
+vec3 rotY(vec3 v, float a) {
+  float c = cos(a), s = sin(a);
+  return vec3(v.x * c + v.z * s, v.y, -v.x * s + v.z * c);
+}
+
+// o は底面中心、r は縦軸まわりの回転角。レイを立方体のローカル座標に直して判定する
+float boxHit(vec3 ro, vec3 rd, vec3 o, float r, out vec3 n) {
+  ro = rotY(ro - o, -r);
+  rd = rotY(rd, -r);
   vec3 inv = 1.0 / rd;
-  vec3 t0 = (BOX_MIN + o - ro) * inv;
-  vec3 t1 = (BOX_MAX + o - ro) * inv;
+  vec3 t0 = (BOX_MIN - ro) * inv;
+  vec3 t1 = (BOX_MAX - ro) * inv;
   vec3 tmin = min(t0, t1), tmax = max(t0, t1);
   float tn = max(max(tmin.x, tmin.y), tmin.z);
   float tf = min(min(tmax.x, tmax.y), tmax.z);
   if (tn > tf || tf < 0.0) return -1.0;
-  n = -sign(rd) * step(tmin.yzx, tmin.xyz) * step(tmin.zxy, tmin.xyz);
+  n = rotY(-sign(rd) * step(tmin.yzx, tmin.xyz) * step(tmin.zxy, tmin.xyz), r);
   return tn;
 }
 
@@ -88,7 +98,7 @@ float sceneHit(vec3 ro, vec3 rd, out vec3 n, out int id) {
   for (int i = 0; i < MAX_BOXES; i++) {
     if (i >= uCount) break;
     vec3 ni;
-    float t = boxHit(ro, rd, uBoxes[i], ni);
+    float t = boxHit(ro, rd, uBoxes[i], uRots[i], ni);
     if (t > 0.0 && (best < 0.0 || t < best)) { best = t; n = ni; id = i; }
   }
   return best;
@@ -177,6 +187,7 @@ const uTarget = gl.getUniformLocation(prog, 'uTarget');
 const uBoxes = gl.getUniformLocation(prog, 'uBoxes');
 const uCount = gl.getUniformLocation(prog, 'uCount');
 const uColors = gl.getUniformLocation(prog, 'uColors');
+const uRots = gl.getUniformLocation(prog, 'uRots');
 
 // 立方体の色 (リニア値。シェーダーでガンマ補正される)
 const PALETTE = [
@@ -218,12 +229,26 @@ modeButtons.forEach(b => b.addEventListener('click', () => setMode(b.dataset.mod
 
 // 立方体の位置 (底面中心の xz)
 // y は積み重ねで決まる高さ、py は画面に表示している高さ (落下中は y より上)、vy は落下速度
-const makeBox = (x, z, c) => ({ x, y: 0, z, c, py: 0, vy: 0 });
+// r は縦軸まわりの回転角 (ラジアン)
+const makeBox = (x, z, c) => ({ x, y: 0, z, c, r: 0, py: 0, vy: 0 });
 const boxes = [makeBox(0, 0, 0)];
 
 // --- 積み重ね ---
 // 上から見て足場が重なっているか
-const overlaps = (a, b) => Math.abs(a.x - b.x) < 0.999 && Math.abs(a.z - b.z) < 0.999;
+// (回転した正方形どうしを分離軸判定で調べる)
+function overlaps(a, b) {
+  const h = 0.4995; // 辺がちょうど接しているだけなら重なりとしない
+  const axes = r => [[Math.cos(r), -Math.sin(r)], [Math.sin(r), Math.cos(r)]];
+  const aa = axes(a.r), ba = axes(b.r);
+  const d = [b.x - a.x, b.z - a.z];
+  const dot = (u, v) => u[0] * v[0] + u[1] * v[1];
+  for (const u of [...aa, ...ba]) {
+    const ra = h * (Math.abs(dot(u, aa[0])) + Math.abs(dot(u, aa[1])));
+    const rb = h * (Math.abs(dot(u, ba[0])) + Math.abs(dot(u, ba[1])));
+    if (Math.abs(dot(d, u)) >= ra + rb) return false;
+  }
+  return true;
+}
 // b の上に (直接または間接的に) 載っている立方体と b 自身
 function stackFrom(b) {
   const group = [b];
@@ -325,8 +350,15 @@ function screenRay(cx, cy) {
   return { ro, rd };
 }
 // レイと立方体の交差距離 (当たらなければ -1)
-function rayBox({ ro, rd }, box) {
-  const mn = [box.x - 0.5, box.py, box.z - 0.5], mx = [box.x + 0.5, box.py + 1, box.z + 0.5];
+const rotY = (v, a) => {
+  const c = Math.cos(a), s = Math.sin(a);
+  return [v[0] * c + v[2] * s, v[1], -v[0] * s + v[2] * c];
+};
+function rayBox(ray, box) {
+  // シェーダーと同じく、レイを立方体のローカル座標に直して判定する
+  const ro = rotY(sub(ray.ro, [box.x, box.py, box.z]), -box.r);
+  const rd = rotY(ray.rd, -box.r);
+  const mn = [-0.5, 0, -0.5], mx = [0.5, 1, 0.5];
   let tn = -Infinity, tf = Infinity;
   for (let i = 0; i < 3; i++) {
     const a = (mn[i] - ro[i]) / rd[i], b = (mx[i] - ro[i]) / rd[i];
@@ -361,10 +393,15 @@ canvas.addEventListener('pointerdown', e => {
     const { box, t } = picked;
     const hy = ray.ro[1] + ray.rd[1] * t;
     const hit = [ray.ro[0] + ray.rd[0] * t, ray.ro[2] + ray.rd[2] * t];
-    // 上に載っている立方体も一緒に運ぶ
-    const group = stackFrom(box).map(o => ({ o, dx: o.x - box.x, dy: o.y - box.y, dz: o.z - box.z }));
-    // 運んでいる間は持ち上げた高さを保ち、離したときに落とす
-    drag.box = { box, group, held: box.py, h: hy, ox: box.x - hit[0], oz: box.z - hit[1] };
+    // 上に載っている立方体も一緒に運ぶ (回すときも一緒に回す)
+    const group = stackFrom(box).map(o => ({ o, dx: o.x - box.x, dy: o.y - box.y, dz: o.z - box.z, r: o.r }));
+    if (e.shiftKey) {
+      // Shift+ドラッグ: 縦軸まわりに回す
+      drag.rot = { box, group };
+    } else {
+      // 運んでいる間は持ち上げた高さを保ち、離したときに落とす
+      drag.box = { box, group, held: box.py, h: hy, ox: box.x - hit[0], oz: box.z - hit[1] };
+    }
   }
   canvas.setPointerCapture(e.pointerId);
   canvas.classList.add('dragging');
@@ -372,6 +409,19 @@ canvas.addEventListener('pointerdown', e => {
 canvas.addEventListener('pointermove', e => {
   if (!drag) {
     canvas.classList.toggle('over-box', !!pickBox(screenRay(e.clientX, e.clientY)));
+    return;
+  }
+  if (drag.rot) {
+    // 右へドラッグすると手前の面が右へ動く向きに回す
+    const a = (e.clientX - drag.sx) * 0.01;
+    const { box, group } = drag.rot;
+    const c = Math.cos(a), sn = Math.sin(a);
+    for (const g of group) {
+      g.o.x = box.x + g.dx * c + g.dz * sn;
+      g.o.z = box.z - g.dx * sn + g.dz * c;
+      g.o.r = g.r + a;
+    }
+    requestDraw();
     return;
   }
   if (drag.box) {
@@ -442,7 +492,7 @@ canvas.addEventListener('dblclick', e => {
 const endDrag = e => {
   // 4px 以上動いたらドラッグ扱いにして、クリックで色を変えない
   wasDragged = !!drag && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 4;
-  if (drag && drag.box) { settle(); requestDraw(); }
+  if (drag && (drag.box || drag.rot)) { settle(); requestDraw(); }
   drag = null;
   canvas.classList.remove('dragging');
 };
@@ -467,6 +517,7 @@ function render() {
   if (boxes.length) {
     gl.uniform3fv(uBoxes, boxes.flatMap(b => [b.x, b.py, b.z]));
     gl.uniform3fv(uColors, boxes.flatMap(b => PALETTE[b.c]));
+    gl.uniform1fv(uRots, boxes.map(b => b.r));
   }
   gl.uniform1i(uCount, boxes.length);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
