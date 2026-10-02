@@ -24,6 +24,7 @@
   .modes button:hover { color: #dce3ee; }
   .modes button[aria-pressed="true"] { background: #3a4558; color: #fff; }
   .modes .sep { width: 1px; margin: 4px 3px; background: #2c3340; }
+  .modes button:disabled { opacity: 0.4; cursor: default; }
 </style>
 </head>
 <body>
@@ -32,6 +33,7 @@
   <button type="button" data-mode="orbit" aria-pressed="true">回転</button>
   <button type="button" data-mode="pan" aria-pressed="false">移動</button>
   <span class="sep"></span>
+  <button type="button" id="add">立方体を追加</button>
   <button type="button" id="reset">リセット</button>
 </div>
 <script>
@@ -48,7 +50,9 @@ precision highp float;
 uniform vec2 uRes;
 uniform vec3 uCam;
 uniform vec3 uTarget;
-uniform vec2 uBox;
+#define MAX_BOXES 32
+uniform vec2 uBoxes[MAX_BOXES];
+uniform int uCount;
 out vec4 outColor;
 
 // 線幅(ピクセル単位)を一定に保つアンチエイリアス付きグリッド
@@ -59,15 +63,15 @@ float grid(vec2 p, float lineWidth) {
   return 1.0 - clamp(line - lineWidth + 1.0, 0.0, 1.0);
 }
 
-// 立方体 (底面が地面に接する 1x1x1、uBox が底面中心の xz 座標)
+// 立方体 (底面が地面に接する 1x1x1、uBoxes[i] が底面中心の xz 座標)
 const vec3 BOX_MIN = vec3(-0.5, 0.0, -0.5);
 const vec3 BOX_MAX = vec3( 0.5, 1.0,  0.5);
 const vec3 LIGHT = normalize(vec3(0.6, 1.0, 0.35));
 
 // レイと箱の交差距離 (当たらなければ -1)。法線も返す
-float boxHit(vec3 ro, vec3 rd, out vec3 n) {
+float boxHit(vec3 ro, vec3 rd, vec2 c, out vec3 n) {
   vec3 inv = 1.0 / rd;
-  vec3 o = vec3(uBox.x, 0.0, uBox.y);
+  vec3 o = vec3(c.x, 0.0, c.y);
   vec3 t0 = (BOX_MIN + o - ro) * inv;
   vec3 t1 = (BOX_MAX + o - ro) * inv;
   vec3 tmin = min(t0, t1), tmax = max(t0, t1);
@@ -76,6 +80,18 @@ float boxHit(vec3 ro, vec3 rd, out vec3 n) {
   if (tn > tf || tf < 0.0) return -1.0;
   n = -sign(rd) * step(tmin.yzx, tmin.xyz) * step(tmin.zxy, tmin.xyz);
   return tn;
+}
+
+// すべての立方体のうち一番手前の交差 (当たらなければ -1)
+float sceneHit(vec3 ro, vec3 rd, out vec3 n) {
+  float best = -1.0;
+  for (int i = 0; i < MAX_BOXES; i++) {
+    if (i >= uCount) break;
+    vec3 ni;
+    float t = boxHit(ro, rd, uBoxes[i], ni);
+    if (t > 0.0 && (best < 0.0 || t < best)) { best = t; n = ni; }
+  }
+  return best;
 }
 
 void main() {
@@ -111,7 +127,7 @@ void main() {
 
     // 立方体の影
     vec3 sn;
-    if (boxHit(vec3(p.x, 0.001, p.y), LIGHT, sn) > 0.0) c *= 0.45;
+    if (sceneHit(vec3(p.x, 0.001, p.y), LIGHT, sn) > 0.0) c *= 0.45;
 
     // 遠くほど背景に溶かす
     float fade = exp(-t * 0.035);
@@ -120,9 +136,12 @@ void main() {
 
   // 立方体 (地面より手前にあれば上書き)
   vec3 n;
-  float tb = boxHit(ro, rd, n);
+  float tb = sceneHit(ro, rd, n);
   if (tb > 0.0) {
     float diff = max(dot(n, LIGHT), 0.0);
+    // ほかの立方体の影
+    vec3 sn;
+    if (diff > 0.0 && sceneHit(ro + rd * tb + n * 0.001, LIGHT, sn) > 0.0) diff = 0.0;
     vec3 base = vec3(0.85, 0.62, 0.32);
     col = base * (0.18 + 0.82 * diff);
   }
@@ -152,15 +171,18 @@ gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
 const uRes = gl.getUniformLocation(prog, 'uRes');
 const uCam = gl.getUniformLocation(prog, 'uCam');
 const uTarget = gl.getUniformLocation(prog, 'uTarget');
-const uBox = gl.getUniformLocation(prog, 'uBox');
+const uBoxes = gl.getUniformLocation(prog, 'uBoxes');
+const uCount = gl.getUniformLocation(prog, 'uCount');
+const MAX_BOXES = 32;
 
 // オービットカメラ (注視点を中心に回転 / 地面に沿って移動)
 const CAM_DEFAULT = { yaw: Math.PI / 4, pitch: 0.6, dist: 9.8, tx: 0, tz: 0 };
 const cam = { ...CAM_DEFAULT };
 document.getElementById('reset').addEventListener('click', () => {
   Object.assign(cam, CAM_DEFAULT);
-  box.x = 0;
-  box.z = 0;
+  boxes.length = 0;
+  boxes.push({ x: 0, z: 0 });
+  updateAddButton();
   requestDraw();
 });
 
@@ -174,7 +196,28 @@ function setMode(m) {
 modeButtons.forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
 
 // 立方体の位置 (底面中心の xz)
-const box = { x: 0, z: 0 };
+const boxes = [{ x: 0, z: 0 }];
+
+// 画面中央 (注視点) に近い、ほかの立方体と重ならないマス目に追加する
+const addButton = document.getElementById('add');
+function updateAddButton() { addButton.disabled = boxes.length >= MAX_BOXES; }
+addButton.addEventListener('click', () => {
+  if (boxes.length >= MAX_BOXES) return;
+  const cx = Math.round(cam.tx), cz = Math.round(cam.tz);
+  const free = (x, z) => boxes.every(b => Math.max(Math.abs(b.x - x), Math.abs(b.z - z)) >= 1.5);
+  for (let r = 0; r < 20; r++) {
+    for (let i = -r; i <= r; i++) {
+      for (const [x, z] of [[cx + i, cz - r], [cx + i, cz + r], [cx - r, cz + i], [cx + r, cz + i]]) {
+        if (free(x, z)) {
+          boxes.push({ x, z });
+          updateAddButton();
+          requestDraw();
+          return;
+        }
+      }
+    }
+  }
+});
 
 // --- シェーダーと同じカメラで、画面上の点からレイを作る ---
 const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -199,7 +242,7 @@ function screenRay(cx, cy) {
   return { ro, rd };
 }
 // レイと立方体の交差距離 (当たらなければ -1)
-function rayBox({ ro, rd }) {
+function rayBox({ ro, rd }, box) {
   const mn = [box.x - 0.5, 0, box.z - 0.5], mx = [box.x + 0.5, 1, box.z + 0.5];
   let tn = -Infinity, tf = Infinity;
   for (let i = 0; i < 3; i++) {
@@ -208,6 +251,15 @@ function rayBox({ ro, rd }) {
     tf = Math.min(tf, Math.max(a, b));
   }
   return tn <= tf && tn > 0 ? tn : -1;
+}
+// 一番手前で当たる立方体 { box, t } (なければ null)
+function pickBox(ray) {
+  let best = null;
+  for (const box of boxes) {
+    const t = rayBox(ray, box);
+    if (t > 0 && (!best || t < best.t)) best = { box, t };
+  }
+  return best;
 }
 // レイと水平面 y = h の交点 (xz)。面と平行なら null
 function rayPlane({ ro, rd }, h) {
@@ -221,25 +273,26 @@ canvas.addEventListener('pointerdown', e => {
   drag = { x: e.clientX, y: e.clientY };
   // 立方体を掴んだら、掴んだ点の高さの水平面に沿って動かす
   const ray = screenRay(e.clientX, e.clientY);
-  const t = rayBox(ray);
-  if (t > 0) {
+  const picked = pickBox(ray);
+  if (picked) {
+    const { box, t } = picked;
     const hy = ray.ro[1] + ray.rd[1] * t;
     const hit = [ray.ro[0] + ray.rd[0] * t, ray.ro[2] + ray.rd[2] * t];
-    drag.box = { h: hy, ox: box.x - hit[0], oz: box.z - hit[1] };
+    drag.box = { box, h: hy, ox: box.x - hit[0], oz: box.z - hit[1] };
   }
   canvas.setPointerCapture(e.pointerId);
   canvas.classList.add('dragging');
 });
 canvas.addEventListener('pointermove', e => {
   if (!drag) {
-    canvas.classList.toggle('over-box', rayBox(screenRay(e.clientX, e.clientY)) > 0);
+    canvas.classList.toggle('over-box', !!pickBox(screenRay(e.clientX, e.clientY)));
     return;
   }
   if (drag.box) {
     const hit = rayPlane(screenRay(e.clientX, e.clientY), drag.box.h);
     if (hit) {
-      box.x = hit[0] + drag.box.ox;
-      box.z = hit[1] + drag.box.oz;
+      drag.box.box.x = hit[0] + drag.box.ox;
+      drag.box.box.z = hit[1] + drag.box.oz;
       requestDraw();
     }
     return;
@@ -279,7 +332,8 @@ function requestDraw() {
 function render() {
   gl.uniform3f(uTarget, cam.tx, 0, cam.tz);
   gl.uniform3f(uCam, ...camPos());
-  gl.uniform2f(uBox, box.x, box.z);
+  gl.uniform2fv(uBoxes, boxes.flatMap(b => [b.x, b.z]));
+  gl.uniform1i(uCount, boxes.length);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
 
