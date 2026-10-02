@@ -313,6 +313,15 @@ canvas.addEventListener('pointermove', e => {
   drag = { x: e.clientX, y: e.clientY };
   requestDraw();
 });
+// ダブルクリックした立方体を削除
+canvas.addEventListener('dblclick', e => {
+  const picked = pickBox(screenRay(e.clientX, e.clientY));
+  if (!picked) return;
+  boxes.splice(boxes.indexOf(picked.box), 1);
+  canvas.classList.toggle('over-box', !!pickBox(screenRay(e.clientX, e.clientY)));
+  updateAddButton();
+  requestDraw();
+});
 const endDrag = () => { drag = null; canvas.classList.remove('dragging'); };
 canvas.addEventListener('pointerup', endDrag);
 canvas.addEventListener('pointercancel', endDrag);
@@ -332,7 +341,7 @@ function requestDraw() {
 function render() {
   gl.uniform3f(uTarget, cam.tx, 0, cam.tz);
   gl.uniform3f(uCam, ...camPos());
-  gl.uniform2fv(uBoxes, boxes.flatMap(b => [b.x, b.z]));
+  if (boxes.length) gl.uniform2fv(uBoxes, boxes.flatMap(b => [b.x, b.z]));
   gl.uniform1i(uCount, boxes.length);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
