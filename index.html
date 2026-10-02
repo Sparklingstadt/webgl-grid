@@ -202,7 +202,7 @@ const cam = { ...CAM_DEFAULT };
 document.getElementById('reset').addEventListener('click', () => {
   Object.assign(cam, CAM_DEFAULT);
   boxes.length = 0;
-  boxes.push({ x: 0, y: 0, z: 0, c: 0 });
+  boxes.push(makeBox(0, 0, 0));
   updateAddButton();
   requestDraw();
 });
@@ -217,7 +217,9 @@ function setMode(m) {
 modeButtons.forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
 
 // 立方体の位置 (底面中心の xz)
-const boxes = [{ x: 0, y: 0, z: 0, c: 0 }];
+// y は積み重ねで決まる高さ、py は画面に表示している高さ (落下中は y より上)、vy は落下速度
+const makeBox = (x, z, c) => ({ x, y: 0, z, c, py: 0, vy: 0 });
+const boxes = [makeBox(0, 0, 0)];
 
 // --- 積み重ね ---
 // 上から見て足場が重なっているか
@@ -240,6 +242,36 @@ function settle(exclude = []) {
     b.y = Math.max(0, ...placed.filter(o => overlaps(o, b)).map(o => o.y + 1));
     placed.push(b);
   }
+  startFall();
+}
+
+// 落下アニメーション: 表示上の高さ py を、重力で y まで落とす (着地で少し跳ねる)
+const GRAVITY = 40;
+let falling = false, lastTime = 0;
+function startFall() {
+  for (const b of boxes) if (b.py < b.y) { b.py = b.y; b.vy = 0; } // 上がるときは即座に
+  if (falling || !boxes.some(b => b.py > b.y || b.vy !== 0)) return;
+  falling = true;
+  lastTime = performance.now();
+  requestAnimationFrame(fallStep);
+}
+function fallStep(now) {
+  const dt = Math.min((now - lastTime) / 1000, 1 / 30);
+  lastTime = now;
+  let moving = false;
+  for (const b of boxes) {
+    if (b.py <= b.y && b.vy === 0) continue;
+    b.vy += GRAVITY * dt;
+    b.py -= b.vy * dt;
+    if (b.py <= b.y) {
+      b.py = b.y;
+      b.vy = b.vy > 3 ? -b.vy * 0.25 : 0; // 速ければ小さく跳ね返る
+    }
+    if (b.py > b.y || b.vy !== 0) moving = true;
+  }
+  render();
+  if (moving) requestAnimationFrame(fallStep);
+  else falling = false;
 }
 
 // 画面中央 (注視点) に近い、ほかの立方体と重ならないマス目に追加する
@@ -253,7 +285,7 @@ addButton.addEventListener('click', () => {
     for (let i = -r; i <= r; i++) {
       for (const [x, z] of [[cx + i, cz - r], [cx + i, cz + r], [cx - r, cz + i], [cx + r, cz + i]]) {
         if (free(x, z)) {
-          boxes.push({ x, y: 0, z, c: nextColor() });
+          boxes.push(makeBox(x, z, nextColor()));
           updateAddButton();
           requestDraw();
           return;
@@ -287,7 +319,7 @@ function screenRay(cx, cy) {
 }
 // レイと立方体の交差距離 (当たらなければ -1)
 function rayBox({ ro, rd }, box) {
-  const mn = [box.x - 0.5, box.y, box.z - 0.5], mx = [box.x + 0.5, box.y + 1, box.z + 0.5];
+  const mn = [box.x - 0.5, box.py, box.z - 0.5], mx = [box.x + 0.5, box.py + 1, box.z + 0.5];
   let tn = -Infinity, tf = Infinity;
   for (let i = 0; i < 3; i++) {
     const a = (mn[i] - ro[i]) / rd[i], b = (mx[i] - ro[i]) / rd[i];
@@ -324,7 +356,8 @@ canvas.addEventListener('pointerdown', e => {
     const hit = [ray.ro[0] + ray.rd[0] * t, ray.ro[2] + ray.rd[2] * t];
     // 上に載っている立方体も一緒に運ぶ
     const group = stackFrom(box).map(o => ({ o, dx: o.x - box.x, dy: o.y - box.y, dz: o.z - box.z }));
-    drag.box = { box, group, h: hy, ox: box.x - hit[0], oz: box.z - hit[1] };
+    // 運んでいる間は持ち上げた高さを保ち、離したときに落とす
+    drag.box = { box, group, held: box.py, h: hy, ox: box.x - hit[0], oz: box.z - hit[1] };
   }
   canvas.setPointerCapture(e.pointerId);
   canvas.classList.add('dragging');
@@ -345,9 +378,10 @@ canvas.addEventListener('pointermove', e => {
       // 運んでいない立方体を落とし、運んでいる山はその上に載せる
       settle(members);
       const others = boxes.filter(o => !members.includes(o));
-      const base = Math.max(0, ...group.map(g =>
+      const base = Math.max(drag.box.held, ...group.map(g =>
         Math.max(0, ...others.filter(o => overlaps(o, g.o)).map(o => o.y + 1)) - g.dy));
-      for (const g of group) g.o.y = base + g.dy;
+      drag.box.held = base;
+      for (const g of group) { g.o.y = g.o.py = base + g.dy; g.o.vy = 0; }
       requestDraw();
     }
     return;
@@ -420,7 +454,7 @@ function render() {
   gl.uniform3f(uTarget, cam.tx, 0, cam.tz);
   gl.uniform3f(uCam, ...camPos());
   if (boxes.length) {
-    gl.uniform3fv(uBoxes, boxes.flatMap(b => [b.x, b.y, b.z]));
+    gl.uniform3fv(uBoxes, boxes.flatMap(b => [b.x, b.py, b.z]));
     gl.uniform3fv(uColors, boxes.flatMap(b => PALETTE[b.c]));
   }
   gl.uniform1i(uCount, boxes.length);
