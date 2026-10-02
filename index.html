@@ -53,6 +53,7 @@ uniform vec3 uTarget;
 #define MAX_BOXES 32
 uniform vec2 uBoxes[MAX_BOXES];
 uniform int uCount;
+uniform vec3 uColors[MAX_BOXES];
 out vec4 outColor;
 
 // 線幅(ピクセル単位)を一定に保つアンチエイリアス付きグリッド
@@ -82,14 +83,14 @@ float boxHit(vec3 ro, vec3 rd, vec2 c, out vec3 n) {
   return tn;
 }
 
-// すべての立方体のうち一番手前の交差 (当たらなければ -1)
-float sceneHit(vec3 ro, vec3 rd, out vec3 n) {
+// すべての立方体のうち一番手前の交差 (当たらなければ -1)。法線と番号も返す
+float sceneHit(vec3 ro, vec3 rd, out vec3 n, out int id) {
   float best = -1.0;
   for (int i = 0; i < MAX_BOXES; i++) {
     if (i >= uCount) break;
     vec3 ni;
     float t = boxHit(ro, rd, uBoxes[i], ni);
-    if (t > 0.0 && (best < 0.0 || t < best)) { best = t; n = ni; }
+    if (t > 0.0 && (best < 0.0 || t < best)) { best = t; n = ni; id = i; }
   }
   return best;
 }
@@ -127,7 +128,8 @@ void main() {
 
     // 立方体の影
     vec3 sn;
-    if (sceneHit(vec3(p.x, 0.001, p.y), LIGHT, sn) > 0.0) c *= 0.45;
+    int sid;
+    if (sceneHit(vec3(p.x, 0.001, p.y), LIGHT, sn, sid) > 0.0) c *= 0.45;
 
     // 遠くほど背景に溶かす
     float fade = exp(-t * 0.035);
@@ -136,13 +138,15 @@ void main() {
 
   // 立方体 (地面より手前にあれば上書き)
   vec3 n;
-  float tb = sceneHit(ro, rd, n);
+  int id;
+  float tb = sceneHit(ro, rd, n, id);
   if (tb > 0.0) {
     float diff = max(dot(n, LIGHT), 0.0);
     // ほかの立方体の影
     vec3 sn;
-    if (diff > 0.0 && sceneHit(ro + rd * tb + n * 0.001, LIGHT, sn) > 0.0) diff = 0.0;
-    vec3 base = vec3(0.85, 0.62, 0.32);
+    int sid;
+    if (diff > 0.0 && sceneHit(ro + rd * tb + n * 0.001, LIGHT, sn, sid) > 0.0) diff = 0.0;
+    vec3 base = uColors[id];
     col = base * (0.18 + 0.82 * diff);
   }
 
@@ -173,6 +177,24 @@ const uCam = gl.getUniformLocation(prog, 'uCam');
 const uTarget = gl.getUniformLocation(prog, 'uTarget');
 const uBoxes = gl.getUniformLocation(prog, 'uBoxes');
 const uCount = gl.getUniformLocation(prog, 'uCount');
+const uColors = gl.getUniformLocation(prog, 'uColors');
+
+// 立方体の色 (リニア値。シェーダーでガンマ補正される)
+const PALETTE = [
+  [0.85, 0.62, 0.32], // 黄土
+  [0.85, 0.22, 0.18], // 赤
+  [0.12, 0.58, 0.52], // 青緑
+  [0.18, 0.32, 0.85], // 青
+  [0.55, 0.28, 0.80], // 紫
+  [0.35, 0.70, 0.22], // 緑
+  [0.90, 0.32, 0.55], // ピンク
+  [0.62, 0.66, 0.72], // 灰
+];
+// まだ使われていない色を優先し、全色使用中なら一番使われていない色を選ぶ
+function nextColor() {
+  const used = PALETTE.map((_, i) => boxes.filter(b => b.c === i).length);
+  return used.indexOf(Math.min(...used));
+}
 const MAX_BOXES = 32;
 
 // オービットカメラ (注視点を中心に回転 / 地面に沿って移動)
@@ -181,7 +203,7 @@ const cam = { ...CAM_DEFAULT };
 document.getElementById('reset').addEventListener('click', () => {
   Object.assign(cam, CAM_DEFAULT);
   boxes.length = 0;
-  boxes.push({ x: 0, z: 0 });
+  boxes.push({ x: 0, z: 0, c: 0 });
   updateAddButton();
   requestDraw();
 });
@@ -196,7 +218,7 @@ function setMode(m) {
 modeButtons.forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
 
 // 立方体の位置 (底面中心の xz)
-const boxes = [{ x: 0, z: 0 }];
+const boxes = [{ x: 0, z: 0, c: 0 }];
 
 // 画面中央 (注視点) に近い、ほかの立方体と重ならないマス目に追加する
 const addButton = document.getElementById('add');
@@ -209,7 +231,7 @@ addButton.addEventListener('click', () => {
     for (let i = -r; i <= r; i++) {
       for (const [x, z] of [[cx + i, cz - r], [cx + i, cz + r], [cx - r, cz + i], [cx + r, cz + i]]) {
         if (free(x, z)) {
-          boxes.push({ x, z });
+          boxes.push({ x, z, c: nextColor() });
           updateAddButton();
           requestDraw();
           return;
@@ -341,7 +363,10 @@ function requestDraw() {
 function render() {
   gl.uniform3f(uTarget, cam.tx, 0, cam.tz);
   gl.uniform3f(uCam, ...camPos());
-  if (boxes.length) gl.uniform2fv(uBoxes, boxes.flatMap(b => [b.x, b.z]));
+  if (boxes.length) {
+    gl.uniform2fv(uBoxes, boxes.flatMap(b => [b.x, b.z]));
+    gl.uniform3fv(uColors, boxes.flatMap(b => PALETTE[b.c]));
+  }
   gl.uniform1i(uCount, boxes.length);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
