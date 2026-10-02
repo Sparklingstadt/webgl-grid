@@ -384,8 +384,40 @@ function rayPlane({ ro, rd }, h) {
 }
 
 let drag = null;
+const pointers = new Map(); // 画面に触れている指 (マウス) の位置
+
+// b とその上に載っている立方体を、b を軸にまとめて回すための情報
+const rotationGroup = b =>
+  ({ box: b, group: stackFrom(b).map(o => ({ o, dx: o.x - b.x, dz: o.z - b.z, r: o.r })) });
+// 回し始めからの角度 a (ラジアン) だけ回す
+function rotateGroup({ box, group }, a) {
+  const c = Math.cos(a), sn = Math.sin(a);
+  for (const g of group) {
+    g.o.x = box.x + g.dx * c + g.dz * sn;
+    g.o.z = box.z - g.dx * sn + g.dz * c;
+    g.o.r = g.r + a;
+  }
+  requestDraw();
+}
+const pointerAngle = ([a, b]) => {
+  const p = pointers.get(a), q = pointers.get(b);
+  return Math.atan2(q.y - p.y, q.x - p.x);
+};
+
 canvas.addEventListener('pointerdown', e => {
-  drag = { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY };
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  try { canvas.setPointerCapture(e.pointerId); } catch {} // 捕捉できなくても操作は続ける
+  if (drag) {
+    // 立方体を押さえたままもう1本の指を置いたら、2本指をひねって回す (スマホ用)
+    const held = drag.box?.box ?? drag.rot?.box;
+    if (held && !drag.twist && pointers.size === 2) {
+      const ids = [drag.id, e.pointerId];
+      drag.twist = { ...rotationGroup(held), ids, last: pointerAngle(ids), total: 0 };
+      drag.box = drag.rot = null;
+    }
+    return;
+  }
+  drag = { id: e.pointerId, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY };
   // 立方体を掴んだら、掴んだ点の高さの水平面に沿って動かす
   const ray = screenRay(e.clientX, e.clientY);
   const picked = pickBox(ray);
@@ -393,35 +425,39 @@ canvas.addEventListener('pointerdown', e => {
     const { box, t } = picked;
     const hy = ray.ro[1] + ray.rd[1] * t;
     const hit = [ray.ro[0] + ray.rd[0] * t, ray.ro[2] + ray.rd[2] * t];
-    // 上に載っている立方体も一緒に運ぶ (回すときも一緒に回す)
-    const group = stackFrom(box).map(o => ({ o, dx: o.x - box.x, dy: o.y - box.y, dz: o.z - box.z, r: o.r }));
     if (e.shiftKey) {
       // Shift+ドラッグ: 縦軸まわりに回す
-      drag.rot = { box, group };
+      drag.rot = rotationGroup(box);
     } else {
-      // 運んでいる間は持ち上げた高さを保ち、離したときに落とす
+      // 上に載っている立方体も一緒に運ぶ。運んでいる間は持ち上げた高さを保ち、離したときに落とす
+      const group = stackFrom(box).map(o => ({ o, dx: o.x - box.x, dy: o.y - box.y, dz: o.z - box.z }));
       drag.box = { box, group, held: box.py, h: hy, ox: box.x - hit[0], oz: box.z - hit[1] };
     }
   }
-  canvas.setPointerCapture(e.pointerId);
   canvas.classList.add('dragging');
 });
 canvas.addEventListener('pointermove', e => {
+  if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (!drag) {
     canvas.classList.toggle('over-box', !!pickBox(screenRay(e.clientX, e.clientY)));
     return;
   }
+  if (drag.twist) {
+    // 画面上で指を時計回りにひねると、上から見て時計回りに回る
+    const t = drag.twist;
+    const ang = pointerAngle(t.ids);
+    let d = ang - t.last;
+    if (d > Math.PI) d -= 2 * Math.PI;
+    if (d < -Math.PI) d += 2 * Math.PI;
+    t.last = ang;
+    t.total += d;
+    rotateGroup(t, -t.total);
+    return;
+  }
+  if (e.pointerId !== drag.id) return; // 2本目の指の動きは、ひねり以外では使わない
   if (drag.rot) {
     // 右へドラッグすると手前の面が右へ動く向きに回す
-    const a = (e.clientX - drag.sx) * 0.01;
-    const { box, group } = drag.rot;
-    const c = Math.cos(a), sn = Math.sin(a);
-    for (const g of group) {
-      g.o.x = box.x + g.dx * c + g.dz * sn;
-      g.o.z = box.z - g.dx * sn + g.dz * c;
-      g.o.r = g.r + a;
-    }
-    requestDraw();
+    rotateGroup(drag.rot, (e.clientX - drag.sx) * 0.01);
     return;
   }
   if (drag.box) {
@@ -490,9 +526,18 @@ canvas.addEventListener('dblclick', e => {
   requestDraw();
 });
 const endDrag = e => {
-  // 4px 以上動いたらドラッグ扱いにして、クリックで色を変えない
-  wasDragged = !!drag && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 4;
-  if (drag && (drag.box || drag.rot)) { settle(); requestDraw(); }
+  pointers.delete(e.pointerId);
+  if (!drag) return;
+  if (drag.twist) {
+    // ひねっている指のどちらかを離したら終わり (残った指はそのまま離すまで何もしない)
+    if (!drag.twist.ids.includes(e.pointerId)) return;
+    wasDragged = true;
+  } else {
+    if (e.pointerId !== drag.id) return;
+    // 4px 以上動いたらドラッグ扱いにして、クリックで色を変えない
+    wasDragged = Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 4;
+  }
+  if (drag.box || drag.rot || drag.twist) { settle(); requestDraw(); }
   drag = null;
   canvas.classList.remove('dragging');
 };
