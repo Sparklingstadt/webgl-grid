@@ -159,6 +159,8 @@ const CAM_DEFAULT = { yaw: Math.PI / 4, pitch: 0.6, dist: 9.8, tx: 0, tz: 0 };
 const cam = { ...CAM_DEFAULT };
 document.getElementById('reset').addEventListener('click', () => {
   Object.assign(cam, CAM_DEFAULT);
+  box.x = 0;
+  box.z = 0;
   requestDraw();
 });
 
