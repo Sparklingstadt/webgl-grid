@@ -292,7 +292,7 @@ function rayPlane({ ro, rd }, h) {
 
 let drag = null;
 canvas.addEventListener('pointerdown', e => {
-  drag = { x: e.clientX, y: e.clientY };
+  drag = { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY };
   // 立方体を掴んだら、掴んだ点の高さの水平面に沿って動かす
   const ray = screenRay(e.clientX, e.clientY);
   const picked = pickBox(ray);
@@ -332,11 +332,27 @@ canvas.addEventListener('pointermove', e => {
     cam.tx += -rx * dx * k + fx * dy * k;
     cam.tz += -rz * dx * k + fz * dy * k;
   }
-  drag = { x: e.clientX, y: e.clientY };
+  drag.x = e.clientX;
+  drag.y = e.clientY;
   requestDraw();
+});
+// クリックした立方体の色を次の色に変える。
+// ダブルクリック (削除) と区別するため、少し待ってから変える
+let wasDragged = false;
+let colorTimer = 0;
+canvas.addEventListener('click', e => {
+  if (wasDragged || e.detail > 1) return;
+  const picked = pickBox(screenRay(e.clientX, e.clientY));
+  if (!picked) return;
+  clearTimeout(colorTimer);
+  colorTimer = setTimeout(() => {
+    picked.box.c = (picked.box.c + 1) % PALETTE.length;
+    requestDraw();
+  }, 250);
 });
 // ダブルクリックした立方体を削除
 canvas.addEventListener('dblclick', e => {
+  clearTimeout(colorTimer);
   const picked = pickBox(screenRay(e.clientX, e.clientY));
   if (!picked) return;
   boxes.splice(boxes.indexOf(picked.box), 1);
@@ -344,7 +360,12 @@ canvas.addEventListener('dblclick', e => {
   updateAddButton();
   requestDraw();
 });
-const endDrag = () => { drag = null; canvas.classList.remove('dragging'); };
+const endDrag = e => {
+  // 4px 以上動いたらドラッグ扱いにして、クリックで色を変えない
+  wasDragged = !!drag && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 4;
+  drag = null;
+  canvas.classList.remove('dragging');
+};
 canvas.addEventListener('pointerup', endDrag);
 canvas.addEventListener('pointercancel', endDrag);
 canvas.addEventListener('wheel', e => {
