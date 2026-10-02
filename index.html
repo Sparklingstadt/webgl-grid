@@ -245,29 +245,36 @@ function settle(exclude = []) {
   startFall();
 }
 
-// 落下アニメーション: 表示上の高さ py を、重力で y まで落とす (着地で少し跳ねる)
+// 落下アニメーション: 表示上の高さ py を、重力で y まで落とす (着地で少し跳ねる)。
+// 上がるときは y より少し高くまで跳び上がってから、同じ重力で着地する
 const GRAVITY = 40;
+const HOP = 0.25; // 跳び乗るときに y より上へ跳ぶ高さ
 let falling = false, lastTime = 0;
 function startFall() {
-  for (const b of boxes) if (b.py < b.y) { b.py = b.y; b.vy = 0; } // 上がるときは即座に
-  if (falling || !boxes.some(b => b.py > b.y || b.vy !== 0)) return;
+  for (const b of boxes) {
+    if (b.py >= b.y) continue;
+    const v0 = Math.sqrt(2 * GRAVITY * (b.y - b.py + HOP));
+    if (b.vy > -v0) b.vy = -v0; // vy は下向きが正
+  }
+  if (falling || !boxes.some(b => b.py !== b.y || b.vy !== 0)) return;
   falling = true;
-  lastTime = performance.now();
+  lastTime = 0;
   requestAnimationFrame(fallStep);
 }
 function fallStep(now) {
-  const dt = Math.min((now - lastTime) / 1000, 1 / 30);
+  // 最初のフレームは基準時刻だけ取る (rAF の時刻は performance.now() より前のことがある)
+  const dt = lastTime ? Math.min(Math.max(now - lastTime, 0) / 1000, 1 / 30) : 0;
   lastTime = now;
   let moving = false;
   for (const b of boxes) {
-    if (b.py <= b.y && b.vy === 0) continue;
+    if (b.py === b.y && b.vy === 0) continue;
     b.vy += GRAVITY * dt;
     b.py -= b.vy * dt;
-    if (b.py <= b.y) {
+    if (b.vy > 0 && b.py <= b.y) {
       b.py = b.y;
       b.vy = b.vy > 3 ? -b.vy * 0.25 : 0; // 速ければ小さく跳ね返る
     }
-    if (b.py > b.y || b.vy !== 0) moving = true;
+    if (b.py !== b.y || b.vy !== 0) moving = true;
   }
   render();
   if (moving) requestAnimationFrame(fallStep);
@@ -381,7 +388,11 @@ canvas.addEventListener('pointermove', e => {
       const base = Math.max(drag.box.held, ...group.map(g =>
         Math.max(0, ...others.filter(o => overlaps(o, g.o)).map(o => o.y + 1)) - g.dy));
       drag.box.held = base;
-      for (const g of group) { g.o.y = g.o.py = base + g.dy; g.o.vy = 0; }
+      for (const g of group) {
+        if (g.o.py > base + g.dy) { g.o.py = base + g.dy; g.o.vy = 0; } // 下がる分は手で持っているので即座に
+        g.o.y = base + g.dy;
+      }
+      startFall();
       requestDraw();
     }
     return;
