@@ -51,7 +51,7 @@ uniform vec2 uRes;
 uniform vec3 uCam;
 uniform vec3 uTarget;
 #define MAX_BOXES 32
-uniform vec2 uBoxes[MAX_BOXES];
+uniform vec3 uBoxes[MAX_BOXES];
 uniform int uCount;
 uniform vec3 uColors[MAX_BOXES];
 out vec4 outColor;
@@ -64,15 +64,14 @@ float grid(vec2 p, float lineWidth) {
   return 1.0 - clamp(line - lineWidth + 1.0, 0.0, 1.0);
 }
 
-// 立方体 (底面が地面に接する 1x1x1、uBoxes[i] が底面中心の xz 座標)
+// 立方体 (1x1x1、uBoxes[i] が底面中心の座標)
 const vec3 BOX_MIN = vec3(-0.5, 0.0, -0.5);
 const vec3 BOX_MAX = vec3( 0.5, 1.0,  0.5);
 const vec3 LIGHT = normalize(vec3(0.6, 1.0, 0.35));
 
 // レイと箱の交差距離 (当たらなければ -1)。法線も返す
-float boxHit(vec3 ro, vec3 rd, vec2 c, out vec3 n) {
+float boxHit(vec3 ro, vec3 rd, vec3 o, out vec3 n) {
   vec3 inv = 1.0 / rd;
-  vec3 o = vec3(c.x, 0.0, c.y);
   vec3 t0 = (BOX_MIN + o - ro) * inv;
   vec3 t1 = (BOX_MAX + o - ro) * inv;
   vec3 tmin = min(t0, t1), tmax = max(t0, t1);
@@ -203,7 +202,7 @@ const cam = { ...CAM_DEFAULT };
 document.getElementById('reset').addEventListener('click', () => {
   Object.assign(cam, CAM_DEFAULT);
   boxes.length = 0;
-  boxes.push({ x: 0, z: 0, c: 0 });
+  boxes.push({ x: 0, y: 0, z: 0, c: 0 });
   updateAddButton();
   requestDraw();
 });
@@ -218,7 +217,30 @@ function setMode(m) {
 modeButtons.forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
 
 // 立方体の位置 (底面中心の xz)
-const boxes = [{ x: 0, z: 0, c: 0 }];
+const boxes = [{ x: 0, y: 0, z: 0, c: 0 }];
+
+// --- 積み重ね ---
+// 上から見て足場が重なっているか
+const overlaps = (a, b) => Math.abs(a.x - b.x) < 0.999 && Math.abs(a.z - b.z) < 0.999;
+// b の上に (直接または間接的に) 載っている立方体と b 自身
+function stackFrom(b) {
+  const group = [b];
+  for (let i = 0; i < group.length; i++) {
+    const s = group[i];
+    for (const o of boxes) {
+      if (!group.includes(o) && overlaps(o, s) && Math.abs(o.y - (s.y + 1)) < 1e-3) group.push(o);
+    }
+  }
+  return group;
+}
+// 重力: 下にあるものから順に、足場の一番高い所まで落とす (exclude は動かさない)
+function settle(exclude = []) {
+  const placed = [];
+  for (const b of boxes.filter(b => !exclude.includes(b)).sort((a, b) => a.y - b.y)) {
+    b.y = Math.max(0, ...placed.filter(o => overlaps(o, b)).map(o => o.y + 1));
+    placed.push(b);
+  }
+}
 
 // 画面中央 (注視点) に近い、ほかの立方体と重ならないマス目に追加する
 const addButton = document.getElementById('add');
@@ -231,7 +253,7 @@ addButton.addEventListener('click', () => {
     for (let i = -r; i <= r; i++) {
       for (const [x, z] of [[cx + i, cz - r], [cx + i, cz + r], [cx - r, cz + i], [cx + r, cz + i]]) {
         if (free(x, z)) {
-          boxes.push({ x, z, c: nextColor() });
+          boxes.push({ x, y: 0, z, c: nextColor() });
           updateAddButton();
           requestDraw();
           return;
@@ -265,7 +287,7 @@ function screenRay(cx, cy) {
 }
 // レイと立方体の交差距離 (当たらなければ -1)
 function rayBox({ ro, rd }, box) {
-  const mn = [box.x - 0.5, 0, box.z - 0.5], mx = [box.x + 0.5, 1, box.z + 0.5];
+  const mn = [box.x - 0.5, box.y, box.z - 0.5], mx = [box.x + 0.5, box.y + 1, box.z + 0.5];
   let tn = -Infinity, tf = Infinity;
   for (let i = 0; i < 3; i++) {
     const a = (mn[i] - ro[i]) / rd[i], b = (mx[i] - ro[i]) / rd[i];
@@ -300,7 +322,9 @@ canvas.addEventListener('pointerdown', e => {
     const { box, t } = picked;
     const hy = ray.ro[1] + ray.rd[1] * t;
     const hit = [ray.ro[0] + ray.rd[0] * t, ray.ro[2] + ray.rd[2] * t];
-    drag.box = { box, h: hy, ox: box.x - hit[0], oz: box.z - hit[1] };
+    // 上に載っている立方体も一緒に運ぶ
+    const group = stackFrom(box).map(o => ({ o, dx: o.x - box.x, dy: o.y - box.y, dz: o.z - box.z }));
+    drag.box = { box, group, h: hy, ox: box.x - hit[0], oz: box.z - hit[1] };
   }
   canvas.setPointerCapture(e.pointerId);
   canvas.classList.add('dragging');
@@ -313,8 +337,17 @@ canvas.addEventListener('pointermove', e => {
   if (drag.box) {
     const hit = rayPlane(screenRay(e.clientX, e.clientY), drag.box.h);
     if (hit) {
-      drag.box.box.x = hit[0] + drag.box.ox;
-      drag.box.box.z = hit[1] + drag.box.oz;
+      const { box, group } = drag.box;
+      const members = group.map(g => g.o);
+      box.x = hit[0] + drag.box.ox;
+      box.z = hit[1] + drag.box.oz;
+      for (const g of group) { g.o.x = box.x + g.dx; g.o.z = box.z + g.dz; }
+      // 運んでいない立方体を落とし、運んでいる山はその上に載せる
+      settle(members);
+      const others = boxes.filter(o => !members.includes(o));
+      const base = Math.max(0, ...group.map(g =>
+        Math.max(0, ...others.filter(o => overlaps(o, g.o)).map(o => o.y + 1)) - g.dy));
+      for (const g of group) g.o.y = base + g.dy;
       requestDraw();
     }
     return;
@@ -356,6 +389,7 @@ canvas.addEventListener('dblclick', e => {
   const picked = pickBox(screenRay(e.clientX, e.clientY));
   if (!picked) return;
   boxes.splice(boxes.indexOf(picked.box), 1);
+  settle();
   canvas.classList.toggle('over-box', !!pickBox(screenRay(e.clientX, e.clientY)));
   updateAddButton();
   requestDraw();
@@ -363,6 +397,7 @@ canvas.addEventListener('dblclick', e => {
 const endDrag = e => {
   // 4px 以上動いたらドラッグ扱いにして、クリックで色を変えない
   wasDragged = !!drag && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 4;
+  if (drag && drag.box) { settle(); requestDraw(); }
   drag = null;
   canvas.classList.remove('dragging');
 };
@@ -385,7 +420,7 @@ function render() {
   gl.uniform3f(uTarget, cam.tx, 0, cam.tz);
   gl.uniform3f(uCam, ...camPos());
   if (boxes.length) {
-    gl.uniform2fv(uBoxes, boxes.flatMap(b => [b.x, b.z]));
+    gl.uniform3fv(uBoxes, boxes.flatMap(b => [b.x, b.y, b.z]));
     gl.uniform3fv(uColors, boxes.flatMap(b => PALETTE[b.c]));
   }
   gl.uniform1i(uCount, boxes.length);
