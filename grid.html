@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Grid Shader</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0b0d12; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; cursor: grab; touch-action: none; }
+  canvas.dragging { cursor: grabbing; }
+  canvas.pan { cursor: move; }
+  .modes {
+    position: fixed; right: 16px; bottom: 16px;
+    display: flex; gap: 2px; padding: 3px;
+    background: rgba(20, 24, 32, 0.85); border: 1px solid #2c3340; border-radius: 10px;
+    backdrop-filter: blur(6px); user-select: none;
+  }
+  .modes button {
+    font: 13px/1 system-ui, sans-serif; color: #9aa4b5;
+    background: transparent; border: 0; border-radius: 7px;
+    padding: 9px 14px; cursor: pointer;
+  }
+  .modes button:hover { color: #dce3ee; }
+  .modes button[aria-pressed="true"] { background: #3a4558; color: #fff; }
+  .modes .sep { width: 1px; margin: 4px 3px; background: #2c3340; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="modes" role="group" aria-label="操作モード">
+  <button type="button" data-mode="orbit" aria-pressed="true">回転</button>
+  <button type="button" data-mode="pan" aria-pressed="false">移動</button>
+  <span class="sep"></span>
+  <button type="button" id="reset">リセット</button>
+</div>
+<script>
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl2');
+if (!gl) document.body.textContent = 'WebGL2 に対応していません';
+
+const vs = `#version 300 es
+in vec2 pos;
+void main() { gl_Position = vec4(pos, 0.0, 1.0); }`;
+
+const fs = `#version 300 es
+precision highp float;
+uniform vec2 uRes;
+uniform vec3 uCam;
+uniform vec3 uTarget;
+out vec4 outColor;
+
+// 線幅(ピクセル単位)を一定に保つアンチエイリアス付きグリッド
+float grid(vec2 p, float lineWidth) {
+  vec2 d = fwidth(p);
+  vec2 g = abs(fract(p - 0.5) - 0.5) / d;
+  float line = min(g.x, g.y);
+  return 1.0 - clamp(line - lineWidth + 1.0, 0.0, 1.0);
+}
+
+// 原点に置いた立方体 (底面が地面に接する 1x1x1)
+const vec3 BOX_MIN = vec3(-0.5, 0.0, -0.5);
+const vec3 BOX_MAX = vec3( 0.5, 1.0,  0.5);
+const vec3 LIGHT = normalize(vec3(0.6, 1.0, 0.35));
+
+// レイと箱の交差距離 (当たらなければ -1)。法線も返す
+float boxHit(vec3 ro, vec3 rd, out vec3 n) {
+  vec3 inv = 1.0 / rd;
+  vec3 t0 = (BOX_MIN - ro) * inv;
+  vec3 t1 = (BOX_MAX - ro) * inv;
+  vec3 tmin = min(t0, t1), tmax = max(t0, t1);
+  float tn = max(max(tmin.x, tmin.y), tmin.z);
+  float tf = min(min(tmax.x, tmax.y), tmax.z);
+  if (tn > tf || tf < 0.0) return -1.0;
+  n = -sign(rd) * step(tmin.yzx, tmin.xyz) * step(tmin.zxy, tmin.xyz);
+  return tn;
+}
+
+void main() {
+  vec2 uv = (gl_FragCoord.xy - 0.5 * uRes) / uRes.y;
+
+  // 斜め上から見下ろすカメラ
+  vec3 ro = uCam;
+  vec3 target = uTarget;
+  vec3 fw = normalize(target - ro);
+  vec3 rt = normalize(cross(fw, vec3(0.0, 1.0, 0.0)));
+  vec3 up = cross(rt, fw);
+  vec3 rd = normalize(fw * 1.6 + uv.x * rt + uv.y * up);
+
+  vec3 bg = mix(vec3(0.04, 0.05, 0.07), vec3(0.10, 0.12, 0.17), uv.y + 0.5);
+  vec3 col = bg;
+
+  // 地面 y = 0 との交差
+  if (rd.y < 0.0) {
+    float t = -ro.y / rd.y;
+    vec2 p = (ro + rd * t).xz;
+
+    float minor = grid(p, 1.0);
+    float major = grid(p / 5.0, 1.5);
+
+    vec3 c = vec3(0.07, 0.08, 0.10);
+    c = mix(c, vec3(0.30, 0.34, 0.42), minor);
+    c = mix(c, vec3(0.55, 0.62, 0.75), major);
+
+    // 原点の軸 (X: 赤, Z: 青)
+    vec2 ad = abs(p) / fwidth(p);
+    c = mix(c, vec3(0.90, 0.30, 0.30), 1.0 - clamp(ad.y - 1.0, 0.0, 1.0));
+    c = mix(c, vec3(0.30, 0.50, 0.95), 1.0 - clamp(ad.x - 1.0, 0.0, 1.0));
+
+    // 立方体の影
+    vec3 sn;
+    if (boxHit(vec3(p.x, 0.001, p.y), LIGHT, sn) > 0.0) c *= 0.45;
+
+    // 遠くほど背景に溶かす
+    float fade = exp(-t * 0.035);
+    col = mix(bg, c, fade);
+  }
+
+  // 立方体 (地面より手前にあれば上書き)
+  vec3 n;
+  float tb = boxHit(ro, rd, n);
+  if (tb > 0.0) {
+    float diff = max(dot(n, LIGHT), 0.0);
+    vec3 base = vec3(0.85, 0.62, 0.32);
+    col = base * (0.18 + 0.82 * diff);
+  }
+
+  outColor = vec4(pow(col, vec3(1.0 / 2.2)), 1.0);
+}`;
+
+function compile(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw gl.getShaderInfoLog(s);
+  return s;
+}
+const prog = gl.createProgram();
+gl.attachShader(prog, compile(gl.VERTEX_SHADER, vs));
+gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, fs));
+gl.linkProgram(prog);
+gl.useProgram(prog);
+
+const buf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+const loc = gl.getAttribLocation(prog, 'pos');
+gl.enableVertexAttribArray(loc);
+gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+const uRes = gl.getUniformLocation(prog, 'uRes');
+const uCam = gl.getUniformLocation(prog, 'uCam');
+const uTarget = gl.getUniformLocation(prog, 'uTarget');
+
+// オービットカメラ (注視点を中心に回転 / 地面に沿って移動)
+const CAM_DEFAULT = { yaw: Math.PI / 4, pitch: 0.6, dist: 9.8, tx: 0, tz: 0 };
+const cam = { ...CAM_DEFAULT };
+document.getElementById('reset').addEventListener('click', () => {
+  Object.assign(cam, CAM_DEFAULT);
+  requestDraw();
+});
+
+let mode = 'orbit';
+const modeButtons = document.querySelectorAll('.modes button[data-mode]');
+function setMode(m) {
+  mode = m;
+  modeButtons.forEach(b => b.setAttribute('aria-pressed', b.dataset.mode === m));
+  canvas.classList.toggle('pan', m === 'pan');
+}
+modeButtons.forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
+
+let drag = null;
+canvas.addEventListener('pointerdown', e => {
+  drag = { x: e.clientX, y: e.clientY };
+  canvas.setPointerCapture(e.pointerId);
+  canvas.classList.add('dragging');
+});
+canvas.addEventListener('pointermove', e => {
+  if (!drag) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  if (mode === 'orbit') {
+    cam.yaw -= dx * 0.005;
+    cam.pitch += dy * 0.005;
+    cam.pitch = Math.min(Math.max(cam.pitch, 0.05), 1.5);
+  } else {
+    // 画面上の動きを地面上の前後左右に変換 (掴んだ地面が付いてくるように)
+    const k = cam.dist * 0.0015;
+    const fx = -Math.cos(cam.yaw), fz = -Math.sin(cam.yaw); // 地面上の前方向
+    const rx = -fz, rz = fx;                               // 地面上の右方向
+    cam.tx += -rx * dx * k + fx * dy * k;
+    cam.tz += -rz * dx * k + fz * dy * k;
+  }
+  drag = { x: e.clientX, y: e.clientY };
+  requestDraw();
+});
+const endDrag = () => { drag = null; canvas.classList.remove('dragging'); };
+canvas.addEventListener('pointerup', endDrag);
+canvas.addEventListener('pointercancel', endDrag);
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  cam.dist = Math.min(Math.max(cam.dist * Math.exp(e.deltaY * 0.001), 2), 60);
+  requestDraw();
+}, { passive: false });
+
+let pending = false;
+function requestDraw() {
+  if (pending) return;
+  pending = true;
+  requestAnimationFrame(() => { pending = false; render(); });
+}
+
+function render() {
+  const cp = Math.cos(cam.pitch);
+  gl.uniform3f(uTarget, cam.tx, 0, cam.tz);
+  gl.uniform3f(uCam,
+    cam.tx + cam.dist * cp * Math.cos(cam.yaw),
+    cam.dist * Math.sin(cam.pitch),
+    cam.tz + cam.dist * cp * Math.sin(cam.yaw));
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+
+function draw() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = Math.floor(innerWidth * dpr);
+  canvas.height = Math.floor(innerHeight * dpr);
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.uniform2f(uRes, canvas.width, canvas.height);
+  render();
+}
+addEventListener('resize', draw);
+draw();
+</script>
+</body>
+</html>
