@@ -56,7 +56,7 @@ test('ファイルからアドオンをインストールし、開き直して�
   // 開き直しても、インストールしたまま有効
   await page.reload();
   await page.waitForFunction(() => (window as Win).engine?.addons.isEnabled('hello'));
-  expect(await page.evaluate(() => (window as Win).engine.ext.commands.get('hello.greet').run(null, { name: 'ミク' }))).toBe('こんにちは、ミク');
+  expect(await page.evaluate(() => (window as Win).engine.addons.commands.get('hello.greet').run(null, { name: 'ミク' }))).toBe('こんにちは、ミク');
   await expect(page.getByRole('tab', { name: 'ハロー' })).toBeVisible();
 
   // 消す

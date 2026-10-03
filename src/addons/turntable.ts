@@ -1,4 +1,4 @@
-import type { AddonModule } from '../engine/extend/Addons';
+import type { AddonModule } from '../engine/addons/Addons';
 
 interface Settings { enabled: boolean; degPerSec: number }
 

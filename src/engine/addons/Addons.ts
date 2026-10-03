@@ -3,7 +3,7 @@ import { errorText } from '../../core/errors';
 import type { Engine } from '../Engine';
 import type { Obj } from '../types';
 import type { SelInfo } from '../UiChannel';
-import type { MenuId, PropDef } from './Registry';
+import { Registry, type CommandDef, type MenuDef, type MenuId, type ObjectDataDef, type PanelDef, type PropDef, type SceneDataDef } from './registry';
 
 // --- アドオン (Blender のアドオン): アプリに機能を足す JavaScript のモジュール ---
 // アドオンは、id・名前などと register(api) を持つオブジェクトを default で書き出す ES モジュール。
@@ -87,13 +87,18 @@ function check(m: unknown): AddonModule {
 }
 
 export class Addons {
+  // アドオン (と本体の機能) が登録したもの。元に戻す・プロジェクト・MCP・画面は、これを順に扱う
+  readonly objectData = new Registry<ObjectDataDef>();
+  readonly sceneData = new Registry<SceneDataDef>();
+  readonly commands = new Registry<CommandDef>();
+  readonly menus = new Registry<MenuDef>();
+  readonly panels = new Registry<PanelDef>();
   private entries = new Map<string, Entry>();
   private sceneValues = new Map<string, unknown>(); // アドオンの場面の値 (切っても覚えておく)
   private storage: AddonStorage = memoryAddonStorage();
 
   constructor(private engine: Engine) {
-    const { ext, ui } = engine;
-    for (const r of [ext.menus, ext.panels, ext.commands]) r.events.on('changed', () => ui.bump('extVersion'));
+    for (const r of [this.menus, this.panels, this.commands]) r.events.on('changed', () => engine.ui.bump('addonsVersion'));
   }
 
   // 組み込みのアドオンと、インストールしたアドオンを並べ、前に有効にしていたものを有効にする
@@ -197,33 +202,33 @@ export class Addons {
 
   // アドオン id の窓口 (足したものは disposers に入れておき、切ったときに外す)
   private api(id: string, disposers: (() => void)[]): AddonApi {
-    const e = this.engine, { ext, ui, viewport } = e;
+    const e = this.engine, { ui, viewport } = e;
     const track = (d: () => void) => { disposers.push(d); return d; };
     const full = (key: string) => `${id}.${key}`;
     let n = 0;
-    const refresh = () => ui.bump('extVersion');
+    const refresh = () => ui.bump('addonsVersion');
     const changed = () => { e.history.soon(); refresh(); viewport.requestDraw(); };
     return {
       id, engine: e, THREE,
       toast: (text, ms) => ui.toast(text, ms),
       requestDraw: () => viewport.requestDraw(),
       refresh,
-      addCommand: (name, def) => track(ext.commands.add({
+      addCommand: (name, def) => track(this.commands.add({
         key: full(name), source: id, description: def.description, params: def.params,
         run: (_e, p) => def.run((p ?? {}) as Record<string, unknown>),
       })),
-      addMenuItem: def => track(ext.menus.add({ ...def, key: full(`menu${++n}`), source: id })),
-      addPanel: def => track(ext.panels.add({ ...def, tab: def.tab ?? 'object', key: full(`panel${++n}`), source: id })),
+      addMenuItem: def => track(this.menus.add({ ...def, key: full(`menu${++n}`), source: id })),
+      addPanel: def => track(this.panels.add({ ...def, tab: def.tab ?? 'object', key: full(`panel${++n}`), source: id })),
       addObjectData: def => {
         type T = Parameters<NonNullable<typeof def.apply>>[1];
         const key = full(def.key);
         const put = (obj: Obj, v: T | null) => {
-          if (v === null || v === undefined) { if (obj.ext) delete obj.ext[key]; } else (obj.ext ??= {})[key] = v;
+          if (v === null || v === undefined) { if (obj.addonData) delete obj.addonData[key]; } else (obj.addonData ??= {})[key] = v;
           def.apply?.(obj, v ?? null);
         };
-        track(ext.traits.add({ key, label: def.label, get: o => (o.ext?.[key] as T | undefined) ?? null, set: put, normalize: def.normalize }));
+        track(this.objectData.add({ key, label: def.label, get: o => (o.addonData?.[key] as T | undefined) ?? null, set: put, normalize: def.normalize }));
         return {
-          get: obj => (obj.ext?.[key] as T | undefined) ?? null,
+          get: obj => (obj.addonData?.[key] as T | undefined) ?? null,
           set: (obj, v) => { put(obj, v); changed(); },
         };
       },
@@ -232,7 +237,7 @@ export class Addons {
         const key = full(def.key);
         const get = () => (this.sceneValues.has(key) ? this.sceneValues.get(key) as T : structuredClone(def.default));
         const put = (v: T) => { this.sceneValues.set(key, v); def.apply?.(v); refresh(); };
-        track(ext.parts.add({
+        track(this.sceneData.add({
           key, label: def.label, history: def.history ?? true, save: get,
           load: raw => put(raw === undefined ? structuredClone(def.default) : def.normalize ? def.normalize(raw) : raw as T),
           reset: () => put(structuredClone(def.default)),

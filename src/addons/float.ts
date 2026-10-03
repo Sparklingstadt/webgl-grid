@@ -1,4 +1,4 @@
-import type { AddonModule } from '../engine/extend/Addons';
+import type { AddonModule } from '../engine/addons/Addons';
 
 interface Bob { height: number; period: number }
 const DEFAULT: Bob = { height: 0.3, period: 2 };

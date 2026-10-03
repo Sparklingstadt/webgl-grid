@@ -38,7 +38,7 @@ export interface Obj {
   cloner?: ClonerSettings | null;     // クローナー (並べ方。なければ普通の物)
   deformers?: Deformer[] | null;      // デフォーマ (形を曲げる・ねじるなど)
   light?: LightSettings | null;       // ライト (ライトのオブジェクトだけ)
-  ext?: Record<string, unknown>;      // アドオンの、物ごとの設定 ("アドオンの id.名前" → 値)
+  addonData?: Record<string, unknown>; // アドオンの、物ごとの値 ("アドオンの id.名前" → 値)
   highlighted?: boolean;              // 掴んでいるので明るくしている
 }
 export type ModelObj = Obj & { model: Any };

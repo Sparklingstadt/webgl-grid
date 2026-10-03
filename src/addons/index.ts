@@ -1,4 +1,4 @@
-import type { AddonModule } from '../engine/extend/Addons';
+import type { AddonModule } from '../engine/addons/Addons';
 import float from './float';
 import scatter from './scatter';
 import turntable from './turntable';

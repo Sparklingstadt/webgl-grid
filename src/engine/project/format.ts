@@ -27,9 +27,9 @@ export interface SavedObject {
   s: number; x: number; y: number; z: number; r: number; c: number;
   slots: (string | null)[];
   activeSlot?: number;
-  // ほかに、物ごとの設定 (拡張の登録先の traits) を、その key で入れる: cloner (クローナー)・deformers (デフォーマ)・light (ライト)、
+  // ほかに、物ごとの値 (Addons.objectData) を、その key で入れる: cloner (クローナー)・deformers (デフォーマ)・light (ライト)、
   // アドオンのものは "アドオンの id.名前"
-  [trait: string]: unknown;
+  [data: string]: unknown;
   // MMD モデルだけ
   files?: string[];
   pose?: Pose;
@@ -60,9 +60,9 @@ export interface ProjectData {
   music: string | null;
   timeline: { start: number; end: number; frame: number };
   selected: number | null;
-  // ほかに、場面の設定 (拡張の登録先の parts) を、その key で入れる: output (出力)・scene (シーン)。古いプロジェクトにはない。
+  // ほかに、場面の値 (Addons.sceneData) を、その key で入れる: output (出力)・scene (シーン)。古いプロジェクトにはない。
   // アドオンのものは "アドオンの id.名前"
-  [part: string]: unknown;
+  [data: string]: unknown;
 }
 
 export const projectBaseName = (name: string) => name.replace(/\.wgpj?$/i, '');

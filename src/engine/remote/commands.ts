@@ -68,7 +68,7 @@ export function sceneState(e: Engine) {
       materials: o.slots.map(id => (id ? lib.materials.get(id)?.name ?? null : null)),
       cloner: o.cloner ?? null,
       deformers: o.deformers ?? [],
-      ...(o.ext && Object.keys(o.ext).length ? { addons: o.ext } : {}), // アドオンの、物ごとの値
+      ...(o.addonData && Object.keys(o.addonData).length ? { addons: o.addonData } : {}), // アドオンの、物ごとの値
     })),
     stage: e.stage.model?.name ?? null,
     music: e.music.file?.name ?? null,
@@ -78,7 +78,7 @@ export function sceneState(e: Engine) {
     output: e.output.settings,
     scene: e.environment.settings,
     // アドオンの場面の値 (名前は "アドオンの id.名前")
-    addons: Object.fromEntries(e.ext.parts.list().filter(p => p.key.includes('.')).map(p => [p.key, p.save()])),
+    addons: Object.fromEntries(e.addons.sceneData.list().filter(p => p.key.includes('.')).map(p => [p.key, p.save()])),
   };
 }
 
@@ -322,10 +322,10 @@ export const COMMANDS: Record<string, Command> = {
     return a;
   },
   // 有効なアドオンが足した命令 (名前は "アドオンの id.命令")
-  list_commands: e => e.ext.commands.list().filter(c => c.source).map(c => ({ name: c.key, addon: c.source, description: c.description ?? '', params: c.params ?? {} })),
+  list_commands: e => e.addons.commands.list().filter(c => c.source).map(c => ({ name: c.key, addon: c.source, description: c.description ?? '', params: c.params ?? {} })),
   run_command: (e, p) => {
     const name = String(p?.name ?? '');
-    if (!e.ext.commands.get(name)?.source) throw new Error(`アドオンの命令 ${name} はありません (list_commands で確かめてください。アドオンが切ってあれば set_addon で有効にします)`);
+    if (!e.addons.commands.get(name)?.source) throw new Error(`アドオンの命令 ${name} はありません (list_commands で確かめてください。アドオンが切ってあれば set_addon で有効にします)`);
     return runCommand(e, name, p?.params ?? {});
   },
 
@@ -351,9 +351,9 @@ export const COMMANDS: Record<string, Command> = {
 };
 
 // 1 つの命令を実行する (知らない名前はエラー)
-// (組み込みの命令と、アドオンが登録した命令。拡張の登録先から引く)
+// (本体の命令と、アドオンが登録した命令。Addons.commands から引く)
 export async function runCommand(e: Engine, method: string, params: unknown) {
-  const cmd = e.ext.commands.get(method);
+  const cmd = e.addons.commands.get(method);
   if (!cmd) throw new Error(`知らない命令です: ${method}`);
   return await cmd.run(e, params);
 }

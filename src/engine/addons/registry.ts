@@ -3,20 +3,21 @@ import type { Engine } from '../Engine';
 import type { SelInfo } from '../UiChannel';
 import type { Any, Obj } from '../types';
 
-// --- 拡張の登録先: 物の設定・場面の設定・外から使える操作 ---
-// 元に戻す (History)・プロジェクト (ProjectIO)・MCP (commands) は、ここに登録されたものを順に扱う。
-// 組み込みの機能 (クローナー・デフォーマ・ライト・シーン・出力) も、アドオンも、同じように登録する
+// --- アドオンが足せるものの形 (物ごとの値・場面の値・命令・メニュー・パネル) と、その一覧 ---
+// 元に戻す (History)・プロジェクト (ProjectIO)・MCP (commands)・画面は、Addons に登録されたものを順に扱う。
+// 本体の機能 (ライト・シーン・出力) も、アドオンと同じ形で登録する (builtins.ts)
 
-// 物ごとの設定 (クローナー・デフォーマ・ライトなど)。プロジェクトでは物のデータの key に、そのまま入れる
-export interface ObjectTrait<T = Any> {
+// 物ごとの値 (ライト・アドオンのものなど)。プロジェクトでは物のデータの key に、そのまま入れる
+export interface ObjectDataDef<T = Any> {
   key: string;
+  aliases?: string[];                   // 前の版のプロジェクトでの key (開くときに読む)
   label: string;                        // 元に戻すの名前 (「元に戻す: クローナー」)
   get(obj: Obj): T | null | undefined;
   set(obj: Obj, value: T | null): void; // 開いた・元に戻したときに当てる (null はなし)
   normalize?(raw: unknown): T | null;   // 保存されていた値を、使える値にそろえる
 }
-// 場面全体の設定 (シーン・出力など)。プロジェクトではデータの key に入れる
-export interface StatePart<T = Any> {
+// 場面の値 (シーン・出力など)。プロジェクトではデータの key に入れる
+export interface SceneDataDef<T = Any> {
   key: string;
   label: string;
   history?: boolean;          // 元に戻すの対象にする
@@ -30,7 +31,7 @@ export interface CommandDef {
   run(e: Engine, params: Any): unknown;
   description?: string;
   params?: Record<string, string>;
-  source?: string; // 登録したアドオンの id (組み込みはなし)
+  source?: string; // 登録したアドオンの id (本体のものはなし)
 }
 
 // メニューの項目 (メニューの最後に足す)
@@ -82,17 +83,9 @@ export class Registry<T extends { key: string }> {
   list() { return [...this.items.values()]; }
 }
 
-export class Extensions {
-  readonly traits = new Registry<ObjectTrait>();
-  readonly parts = new Registry<StatePart>();
-  readonly commands = new Registry<CommandDef>();
-  readonly menus = new Registry<MenuDef>();
-  readonly panels = new Registry<PanelDef>();
-}
-
 // 値が違うときだけ当てる (同じ値で作り直さない)
 export const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
-export function applyTrait(t: ObjectTrait, obj: Obj, raw: unknown) {
+export function applyObjectData(t: ObjectDataDef, obj: Obj, raw: unknown) {
   const v = raw === undefined || raw === null ? null : t.normalize ? t.normalize(raw) : structuredClone(raw);
   if (!same(t.get(obj), v)) t.set(obj, v);
 }

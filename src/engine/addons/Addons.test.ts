@@ -10,15 +10,15 @@ describe('アドオン', () => {
   it('組み込みのアドオンは最初は切ってあり、有効にするとメニュー・パネル・命令が足され、切ると外れる', async () => {
     const e = await start();
     expect(e.ui.state.addons.map(a => [a.id, a.enabled])).toEqual([['turntable', false], ['float', false], ['scatter', false]]);
-    const before = { menus: e.ext.menus.list().length, panels: e.ext.panels.list().length, commands: e.ext.commands.list().length, traits: e.ext.traits.list().length };
+    const before = { menus: e.addons.menus.list().length, panels: e.addons.panels.list().length, commands: e.addons.commands.list().length, objectData: e.addons.objectData.list().length };
     await e.addons.enable('float');
     expect(e.addons.isEnabled('float')).toBe(true);
-    expect(e.ext.menus.list().map(m => m.label)).toContain('ふわふわさせる / やめる');
-    expect(e.ext.panels.list().map(p => p.title)).toContain('ふわふわ');
-    expect(e.ext.commands.has('float.set')).toBe(true);
-    expect(e.ext.traits.has('float.bob')).toBe(true);
+    expect(e.addons.menus.list().map(m => m.label)).toContain('ふわふわさせる / やめる');
+    expect(e.addons.panels.list().map(p => p.title)).toContain('ふわふわ');
+    expect(e.addons.commands.has('float.set')).toBe(true);
+    expect(e.addons.objectData.has('float.bob')).toBe(true);
     e.addons.disable('float');
-    expect({ menus: e.ext.menus.list().length, panels: e.ext.panels.list().length, commands: e.ext.commands.list().length, traits: e.ext.traits.list().length }).toEqual(before);
+    expect({ menus: e.addons.menus.list().length, panels: e.addons.panels.list().length, commands: e.addons.commands.list().length, objectData: e.addons.objectData.list().length }).toEqual(before);
   });
 
   it('有効にしたアドオンを覚えておき、次に始めたときも有効にする', async () => {
@@ -37,20 +37,20 @@ describe('アドオン', () => {
     e.select(cube);
     await runCommand(e, 'run_command', { name: 'float.set', params: { height: 0.5 } });
     e.history.checkpoint();
-    expect(cube.ext?.['float.bob']).toEqual({ height: 0.5, period: 2 });
+    expect(cube.addonData?.['float.bob']).toEqual({ height: 0.5, period: 2 });
     expect(e.ui.state.history.labels.at(-1)).toBe('ふわふわ');
     await e.history.undo();
-    expect(cube.ext?.['float.bob']).toBeUndefined();
+    expect(cube.addonData?.['float.bob']).toBeUndefined();
     await e.history.redo();
-    expect(cube.ext?.['float.bob']).toEqual({ height: 0.5, period: 2 });
+    expect(cube.addonData?.['float.bob']).toEqual({ height: 0.5, period: 2 });
     // 保存して開き直す (アドオンが有効なら戻る、なければ「データがある」と分かる)
     const bytes = await e.project.save('reference');
     const f = await start();
     expect((await f.project.open(bytes)).missingAddons).toEqual(['float']);
-    expect(f.world.objects[0].ext).toBeUndefined();
+    expect(f.world.objects[0].addonData).toBeUndefined();
     await f.addons.enable('float');
     await f.project.open(bytes);
-    expect(f.world.objects[0].ext?.['float.bob']).toEqual({ height: 0.5, period: 2 });
+    expect(f.world.objects[0].addonData?.['float.bob']).toEqual({ height: 0.5, period: 2 });
   });
 
   it('場面の値は、プロジェクトに保存され、最初の状態に戻すと既定に戻る', async () => {
@@ -91,7 +91,7 @@ describe('アドオン', () => {
     await e.addons.enable('bad');
     expect(e.addons.isEnabled('bad')).toBe(false);
     expect(e.ui.state.addons.find(a => a.id === 'bad')?.error).toBe('わざと失敗');
-    expect(e.ext.menus.list().some(m => m.label === 'こわれた項目')).toBe(false);
+    expect(e.addons.menus.list().some(m => m.label === 'こわれた項目')).toBe(false);
     expect(() => e.addons.add({ ...bad, id: 'Bad Id' })).toThrow('id は');
   });
 });

@@ -5,7 +5,7 @@ import { FPS } from '../../core/constants';
 import { errorText } from '../../core/errors';
 import type { LightSettings } from '../../core/light';
 import type { Engine } from '../Engine';
-import { applyTrait } from '../extend/Registry';
+import { applyObjectData } from '../addons/registry';
 import { download } from '../io/download';
 import { isModel, kindOf, type Any, type ModelObj, type Obj } from '../types';
 import {
@@ -111,7 +111,7 @@ export class ProjectIO {
     const filesOf = (mesh: Any): string[] => [...(mesh.userData.usedFiles ?? [mesh.userData.sourceFile])].map(asset);
     const objects: SavedObject[] = e.world.objects.map(o => {
       const base: SavedObject = { kind: kindOf(o), s: o.s, x: o.x, y: o.y, z: o.z, r: o.r, c: o.c, slots: [...o.slots], activeSlot: o.activeSlot };
-      for (const t of e.ext.traits.list()) base[t.key] = t.get(o) ?? null; // 物ごとの設定 (クローナー・デフォーマ・ライト・アドオンのもの)
+      for (const d of e.addons.objectData.list()) base[d.key] = d.get(o) ?? null; // 物ごとの値 (ライト・アドオンのもの)
       if (!isModel(o)) return base;
       const inf: number[] | undefined = o.model.morphTargetInfluences;
       return {
@@ -153,7 +153,7 @@ export class ProjectIO {
       timeline: { start: e.clock.start, end: e.clock.end, frame: e.clock.frame },
       selected: cur ? e.world.objects.indexOf(cur) : null,
     };
-    for (const p of e.ext.parts.list()) data[p.key] = structuredClone(p.save()); // 場面の設定 (シーン・出力・アドオンのもの)
+    for (const d of e.addons.sceneData.list()) data[d.key] = structuredClone(d.save()); // 場面の値 (シーン・出力・アドオンのもの)
     data.assets = [...assets.values()];
     return { data, assets };
   }
@@ -235,7 +235,7 @@ export class ProjectIO {
       const obj = objs[i];
       if (!obj) return;
       so.slots.forEach((id, k) => e.world.setSlot(obj, k, id ? matId.get(id) ?? null : null));
-      for (const t of e.ext.traits.list()) applyTrait(t, obj, so[t.key]); // 物ごとの設定
+      for (const d of e.addons.objectData.list()) applyObjectData(d, obj, so[d.key]); // 物ごとの値
     });
     // 作り直すときに変換したマテリアル (もう使っていない) を片付けてから、保存した名前に戻す
     for (const id of [...lib.materials.keys()]) if (![...matId.values()].includes(id)) lib.remove(id);
@@ -275,7 +275,7 @@ export class ProjectIO {
     e.clock.setRange(data.timeline.start, data.timeline.end);
     e.clock.setPlaying(false);
     e.clock.seek(data.timeline.frame / FPS);
-    for (const p of e.ext.parts.list()) p.load(data[p.key] as never);
+    for (const d of e.addons.sceneData.list()) d.load(data[d.key] as never);
     e.history.reset(); // 開いた状態から、元に戻す履歴を始める
     e.select(data.selected !== null ? objs[data.selected] ?? null : null);
     e.world.settle();
@@ -283,8 +283,8 @@ export class ProjectIO {
     // 有効でないアドオンのデータ (名前が "アドオンの id.名前" で、登録されていないもの)
     const missing = new Set<string>();
     const look = (keys: string[], known: (k: string) => boolean) => { for (const k of keys) if (k.includes('.') && !known(k)) missing.add(k.split('.')[0]); };
-    look(Object.keys(data), k => e.ext.parts.has(k));
-    for (const so of data.objects) look(Object.keys(so), k => e.ext.traits.has(k));
+    look(Object.keys(data), k => e.addons.sceneData.has(k));
+    for (const so of data.objects) look(Object.keys(so), k => e.addons.objectData.has(k));
     return { missingAddons: [...missing] };
   }
 }

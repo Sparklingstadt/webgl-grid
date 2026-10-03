@@ -24,9 +24,8 @@ import { RenderOutput } from './output/RenderOutput';
 import { Autosave } from './project/Autosave';
 import { ProjectIO } from './project/ProjectIO';
 import { RemoteLink } from './remote/RemoteLink';
-import { Addons } from './extend/Addons';
-import { registerBuiltins } from './extend/builtins';
-import { Extensions } from './extend/Registry';
+import { Addons } from './addons/Addons';
+import { registerBuiltins } from './addons/builtins';
 import { Effects } from './render/Effects';
 import { Environment } from './render/Environment';
 import { SceneGraph } from './render/SceneGraph';
@@ -53,8 +52,10 @@ const isAudio = (f: File) => f.type.startsWith('audio/') || /\.(mp3|wav|ogg|oga|
 // 複数の部分にまたがる操作 (ファイルの読み込み・選んでいるモデルの編集など) は、ここに書く。
 // 1 つの部分で済む操作は、画面から直接その部分を呼んでよい (engine.clock.togglePlay() など)
 export class Engine {
-  readonly ext = new Extensions(); // 物の設定・場面の設定・外から使える操作の登録先 (組み込みもアドオンも)
   readonly ui = new UiChannel();
+  // アドオン: 一覧・有効にする・登録したもの (物ごとの値・場面の値・命令・メニュー・パネル。本体の機能も同じ形で登録する)。
+  // 始めるのは main.tsx の addons.start
+  readonly addons = new Addons(this);
   readonly graph = new SceneGraph();
   readonly viewport = new Viewport(this.graph);
   readonly library = new MaterialLibrary();
@@ -80,11 +81,10 @@ export class Engine {
   readonly effects = new Effects(this.viewport, this.ui, () => this.camera.focusPoint());
   readonly loader = new MmdLoader(this.ui, this.library, () => this.viewport.requestDraw());
   readonly vpd = new VpdIO(this.posing, this.viewport, this.ui);
-  readonly history = new History(this.world, this.library, this.physics, this.motion, this.posing, this.keyframes, this.clock, this.selection, this.viewport, this.ui, this.ext);
+  readonly history = new History(this.world, this.library, this.physics, this.motion, this.posing, this.keyframes, this.clock, this.selection, this.viewport, this.ui, this.addons);
   readonly project = new ProjectIO(this);
   readonly autosave = new Autosave(this.project, this.history, this.ui);
   readonly remote = new RemoteLink(this);
-  readonly addons = new Addons(this); // アドオン (始めるのは main.tsx の addons.start)
   input: InputController | null = null;
 
   constructor() {
@@ -332,7 +332,7 @@ export class Engine {
     this.stage.clear();
     this.world.addShape(0, 0, 0, 0);
     this.clock.reset();
-    for (const p of this.ext.parts.list()) p.reset?.();
+    for (const p of this.addons.sceneData.list()) p.reset?.();
     this.history.reset(); // 新しく始めるので、元に戻す履歴も消す
     this.viewport.requestDraw();
   }

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import type { PanelDef, PropDef } from '../../../engine/extend/Registry';
+import type { PanelDef, PropDef } from '../../../engine/addons/registry';
 import { useEngine, useUi } from '../../EngineContext';
 import { BSlider } from '../BSlider';
 import { BCheck } from '../controls/BCheck';
@@ -12,10 +12,10 @@ import { Panel } from '../sidebar/Panel';
 export function AddonPanels({ tab }: { tab: string }) {
   const engine = useEngine();
   const sel = useUi(s => s.sel);
-  useUi(s => s.extVersion);
+  useUi(s => s.addonsVersion);
   useUi(s => s.values);
   useUi(s => s.frame);
-  const panels = engine.ext.panels.list().filter(p => p.tab === tab && (p.poll?.(sel) ?? true));
+  const panels = engine.addons.panels.list().filter(p => p.tab === tab && (p.poll?.(sel) ?? true));
   return <>{panels.map(p => <AddonPanel key={p.key} panel={p} />)}</>;
 }
 

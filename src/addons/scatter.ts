@@ -1,5 +1,5 @@
 import { seededRandom } from '../core/random';
-import type { AddonModule } from '../engine/extend/Addons';
+import type { AddonModule } from '../engine/addons/Addons';
 import { isShape } from '../engine/types';
 
 // --- ランダムに散らす: 選んだ形を、まわりにランダムに置く (重なれば積む) ---

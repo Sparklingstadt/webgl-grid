@@ -15,9 +15,9 @@ const TABS: [SideTab, string][] = [['object', 'オブジェクト'], ['material'
 
 export function Sidebar({ tab, setTab, onLoadPose, onOpenShaderEditor }: { tab: SideTab; setTab: (t: SideTab) => void; onLoadPose: () => void; onOpenShaderEditor: () => void }) {
   const engine = useEngine();
-  useUi(s => s.extVersion);
+  useUi(s => s.addonsVersion);
   const builtin = new Set(TABS.map(([k]) => k));
-  const extra = [...new Set(engine.ext.panels.list().map(p => p.tab).filter(t => !builtin.has(t)))];
+  const extra = [...new Set(engine.addons.panels.list().map(p => p.tab).filter(t => !builtin.has(t)))];
   const tabs: [SideTab, string][] = [...TABS, ...extra.map(t => [t, t] as [SideTab, string])];
   // (アドオンを切ってタブがなくなったら、オブジェクトのタブに戻す)
   const shown = tabs.some(([k]) => k === tab) ? tab : 'object';
