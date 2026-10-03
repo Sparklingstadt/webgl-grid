@@ -1,7 +1,8 @@
 import {
-  channelKeys, createAnimation, deleteKeys, evaluate, insertKeys, insertPropKeys, isEmpty, keyFrames, moveKeys, PROPS, type Channel, type Curve,
+  channelKeys, createAnimation, deleteKeys, evaluate, insertKeys, insertPropKeys, isEmpty, keyFrames, moveKeys, PROPS, type BoneKey, type Channel, type Curve, type MorphKey,
 } from '../../core/animation';
 import { FPS } from '../../core/constants';
+import type { BoneValue } from '../../core/types';
 import { t } from '../../core/i18n';
 import type { Posing } from '../mmd/Posing';
 import type { Viewport } from '../render/Viewport';
@@ -104,6 +105,16 @@ export class Keyframes {
     if (!k) return;
     k.curve = [...curve] as Curve;
     this.applyAll(t, true);
+    this.changed();
+  }
+
+  // キーの値を変える (グラフエディターで点を上下に動かす)。ボーンは comp (rx・px など) の値
+  setKeyValue(obj: Obj, channel: Channel, frame: number, comp: keyof BoneValue | null, v: number, time: number) {
+    const k = obj.anim && channelKeys(obj.anim, channel)?.get(frame);
+    if (!k || !Number.isFinite(v)) return;
+    if (channel.kind === 'bone') { if (comp) (k as BoneKey).v = { ...(k as BoneKey).v, [comp]: v }; }
+    else (k as MorphKey).v = v;
+    this.applyAll(time, true);
     this.changed();
   }
 

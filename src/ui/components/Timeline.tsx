@@ -7,9 +7,12 @@ import { NumField } from './NumField';
 // Blender のタイムライン: 上の目盛りで再生位置 (青い再生ヘッド) を動かし、下にキーフレームの ◆ を並べる。
 // ◆ はクリックで選び (Shift で追加)、左右にドラッグでずらす。ホイールで拡大縮小、Shift+ホイールで左右に動かす。
 // 「チャンネル」を押すと、選んでいる物の行の下にチャンネル (ボーン・表情、形・ライトは位置・回転・大きさ) ごとの行を出す (左端の名前の上でホイールすると上下に動く)
+// ドープシート (dopesheet) では、選んでいる物だけでなく、キーかモーションのある物すべての行を並べる。
+// ほかの物の ◆ を押すと、その物を選んでからキーを選ぶ (アクティブな物の行は少し明るい)
 const RULER = 24, ROW_Y = RULER + 6, ROW_H = 22, KEY_R = 6, LABEL_W = 140;
 
-export function Timeline({ open, typeSelect }: { open: boolean; typeSelect: React.ReactNode }) {
+export function Timeline({ open, typeSelect, mode = 'timeline' }: { open: boolean; typeSelect: React.ReactNode; mode?: 'timeline' | 'dopesheet' }) {
+  const all = mode === 'dopesheet';
   const engine = useEngine();
   const { clock } = engine;
   const frame = useUi(s => s.frame);
@@ -71,10 +74,10 @@ export function Timeline({ open, typeSelect }: { open: boolean; typeSelect: Reac
       ctx.fillText(String(f), px, RULER / 2);
     }
     // 行: 選んでいる物 (キーフレームとモーション)・チャンネルとカメラ (はみ出す分は上下に動かして見る)
-    const all = engine.timelineRows();
+    const list = engine.timelineRows(all);
     const fit = Math.max(Math.floor((H - ROW_Y) / ROW_H), 1);
-    scrollRows.current = Math.min(Math.max(scrollRows.current, 0), Math.max(all.length - fit, 0));
-    const rows = all.slice(scrollRows.current);
+    scrollRows.current = Math.min(Math.max(scrollRows.current, 0), Math.max(list.length - fit, 0));
+    const rows = list.slice(scrollRows.current);
     const selKeys = engine.keyframes.selected;
     const kd = keyDrag.current;
     const diamond = (cx: number, cy: number, r: number) => {
@@ -89,6 +92,7 @@ export function Timeline({ open, typeSelect }: { open: boolean; typeSelect: Reac
       const y = ROW_Y + i * ROW_H, cy = y + ROW_H / 2;
       ctx.fillStyle = row.channel ? 'rgba(0, 0, 0, 0.12)' : i % 2 ? 'rgba(255, 255, 255, 0.025)' : 'rgba(255, 255, 255, 0.045)';
       ctx.fillRect(0, y, W, ROW_H);
+      if (all && row.active && !row.channel) { ctx.fillStyle = 'rgba(71, 114, 179, 0.18)'; ctx.fillRect(0, y, W, ROW_H); }
       // モーション (VMD) のキーフレームは小さな灰色の ◆ (編集はできない)
       if (row.motion) {
         ctx.fillStyle = '#8a8a8a';
@@ -102,7 +106,7 @@ export function Timeline({ open, typeSelect }: { open: boolean; typeSelect: Reac
         }
       }
       for (const f of row.keys) {
-        const sel = selKeys.has(f);
+        const sel = row.active !== false && selKeys.has(f); // (キーの選択は、アクティブな物の)
         const px = x(f + (sel && kd ? kd.delta : 0));
         if (px < -KEY_R || px > W + KEY_R) continue;
         diamond(px, cy, row.channel ? KEY_R - 1.5 : KEY_R);
@@ -117,16 +121,16 @@ export function Timeline({ open, typeSelect }: { open: boolean; typeSelect: Reac
       ctx.fillText(row.label, row.channel ? 18 : 6, cy);
       ctx.textAlign = 'center';
     });
-    if (all.length > fit) {
+    if (list.length > fit) {
       // 上下に動かせることを、右端の細いつまみで見せる
-      const trackH = H - ROW_Y, h = Math.max(trackH * fit / all.length, 12);
+      const trackH = H - ROW_Y, h = Math.max(trackH * fit / list.length, 12);
       ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
-      ctx.fillRect(W - 4, ROW_Y + (trackH - h) * scrollRows.current / (all.length - fit), 3, h);
+      ctx.fillRect(W - 4, ROW_Y + (trackH - h) * scrollRows.current / (list.length - fit), 3, h);
     }
     if (!rows.length) {
       ctx.fillStyle = 'rgba(230, 230, 230, 0.4)';
       ctx.textAlign = 'left';
-      ctx.fillText(t('MMD モデルを選ぶと、キーフレームとモーションがここに並びます'), 8, ROW_Y + ROW_H / 2);
+      ctx.fillText(all ? t('キーかモーションのある物が、ここに並びます (物を選んで I でキーを打つ)') : t('物を選ぶと、キーフレームとモーションがここに並びます'), 8, ROW_Y + ROW_H / 2);
     }
     // 再生ヘッド: 青い縦線と、目盛りの上の番号札
     const px = Math.round(x(frame));
@@ -139,7 +143,7 @@ export function Timeline({ open, typeSelect }: { open: boolean; typeSelect: Reac
     ctx.fillStyle = '#fff';
     ctx.textAlign = 'center';
     ctx.fillText(label, px, RULER / 2);
-  }, [engine]);
+  }, [engine, all]);
 
   // 開始・終了が変わったら合わせ直す (自分で拡大・移動していなければ)
   useEffect(() => { if (!view.current.user) fit(); draw(); }, [start, end, fit, draw]);
@@ -186,9 +190,15 @@ export function Timeline({ open, typeSelect }: { open: boolean; typeSelect: Reac
     canvasRef.current!.setPointerCapture(e.pointerId);
     // ◆ を押したら選んでドラッグ。それ以外は再生位置を動かす
     if (y > ROW_Y) {
-      const rows = engine.timelineRows();
+      const rows = engine.timelineRows(all);
       const i = Math.floor((y - ROW_Y) / ROW_H) + scrollRows.current;
       const row = rows[i];
+      // (ドープシート: ほかの物の行を押したら、その物を選ぶ)
+      if (row?.objId !== undefined && !row.active) {
+        engine.selectById(row.objId);
+        engine.selectKeys([], false);
+        row.active = true;
+      }
       if (row?.editable) {
         const ppf = W / (view.current.f1 - view.current.f0);
         let hit: number | null = null, best = KEY_R + 2;

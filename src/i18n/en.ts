@@ -948,5 +948,15 @@ const dict: Dictionary = {
   "キーフレームを打つ物をクリックして選んでください。": "Click an object to select it before inserting a keyframe.",
   "選んだ物のいまの値 (モデルはポーズと表情、形・ライトは位置・回転・大きさ) を、このフレームのキーフレームにする (I)": "Insert a keyframe at this frame from the selection's current values (pose and expressions for models; location, rotation, scale for shapes and lights) (I)",
   "チャンネル (ボーン・表情・位置・回転・大きさ) ごとのキーの行を出す": "Show a key row per channel (bones, expressions, location, rotation, scale)",
+  "{name} のチャンネル": "Channels of {name}",
+  "キーかモーションのある物が、ここに並びます (物を選んで I でキーを打つ)": "Objects with keys or motions appear here (select an object and press I to insert a key)",
+  "キーのある物を選ぶと、チャンネルの値がここに曲線で並びます": "Select an object with keys to see its channel values as curves here",
+  "グラフエディター (キーの点を上下にドラッグで値を変える)": "Graph Editor (drag key points up/down to change values)",
+  "グラフエディター": "Graph Editor",
+  "ドープシート": "Dope Sheet",
+  "曲線": "Curves",
+  "物を選ぶと、キーフレームとモーションがここに並びます": "Select an object to see its keyframes and motion here",
+  "曲線ごとに -1〜1 にそろえて描く": "Draw each curve scaled to -1..1",
+  "正規化": "Normalize",
 };
 export default dict;

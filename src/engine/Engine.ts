@@ -46,7 +46,7 @@ import { Selection } from './world/Selection';
 import { World } from './world/World';
 
 // タイムラインに並べる行: 選んでいる物 (モデルならキーフレームとモーション)・そのチャンネル (広げたとき) と、カメラモーション
-export interface TlRow { label: string; keys: number[]; motion: Int32Array | null; editable: boolean; channel?: Channel }
+export interface TlRow { label: string; keys: number[]; motion: Int32Array | null; editable: boolean; channel?: Channel; objId?: number; active?: boolean }
 
 const MAX_NAME = 64;
 // ビューポート (rendering: レンダリング) に写すか
@@ -617,40 +617,34 @@ export class Engine {
   setKeyCurve(channel: Channel, curve: Curve) { if (this.keyed) this.keyframes.setCurve(this.keyed, channel, this.clock.frame, curve, this.clock.t); }
   deleteSelectedKeys() { return this.keyed ? this.keyframes.deleteSelected(this.keyed, this.clock.t) : false; }
   moveSelectedKeys(delta: number) { if (this.keyed) this.keyframes.moveSelected(this.keyed, delta, this.clock.t); }
+  setKeyValue(channel: Channel, frame: number, comp: keyof BoneValue | null, v: number) { if (this.keyed) this.keyframes.setKeyValue(this.keyed, channel, frame, comp, v, this.clock.t); }
   selectKeys(frames: number[], add: boolean) { this.keyframes.select(frames, add); }
 
   // --- タイムライン ---
-  timelineRows(): TlRow[] {
+  // all: キーかモーションのある物すべて (ドープシート)。そうでなければ、アクティブな物だけ (タイムライン)
+  timelineRows(all = false): TlRow[] {
     const rows: TlRow[] = [];
-    const obj = this.selection.current;
-    if (this.model) {
-      const m = this.model, anim = m.anim;
-      rows.push({ label: nameOf(m), keys: keyFrames(anim), motion: m.motion?.frames ?? null, editable: true });
-      if (anim && this.keyframes.expanded) {
-        const sorted = (ch: Channel) => [...channelKeys(anim, ch)!.keys()].sort((a, b) => a - b);
-        const morphName = new Map(this.posing.morphs(m).map(x => [x.index, x.name]));
-        for (const b of [...anim.bones.keys()].sort((a, b) => a - b)) {
-          const ch: Channel = { kind: 'bone', index: b };
-          rows.push({ label: m.model.skeleton.bones[b]?.name ?? t('ボーン {n}', { n: b }), keys: sorted(ch), motion: null, editable: true, channel: ch });
-        }
-        for (const i of [...anim.morphs.keys()].sort((a, b) => a - b)) {
-          const ch: Channel = { kind: 'morph', index: i };
-          rows.push({ label: t('表情: {name}', { name: morphName.get(i) ?? i }), keys: sorted(ch), motion: null, editable: true, channel: ch });
-        }
-      }
-    } else if (obj) {
-      // 形・ライト: 位置・回転・大きさのキー
-      const anim = obj.anim;
-      rows.push({ label: nameOf(obj), keys: keyFrames(anim), motion: null, editable: true });
-      if (anim && this.keyframes.expanded) {
-        for (const p of [...anim.props.keys()].sort((a, b) => a - b)) {
-          const ch: Channel = { kind: 'prop', index: p };
-          rows.push({ label: t(PROPS[p]?.name ?? String(p)), keys: [...channelKeys(anim, ch)!.keys()].sort((a, b) => a - b), motion: null, editable: true, channel: ch });
-        }
-      }
-    }
+    const cur = this.selection.current;
+    const list = all ? this.world.objects.filter(o => !isEmpty(o.anim) || o.motion) : cur ? [cur] : [];
+    for (const o of list) rows.push(...this.rowsOf(o, o === cur));
     const cam = this.motion.camera;
     if (cam) rows.push({ label: t('カメラ'), keys: [], motion: cam.motion.frames, editable: false });
+    return rows;
+  }
+  // 物の行 (キーフレームとモーション) と、広げているときはチャンネルの行
+  private rowsOf(obj: Obj, active: boolean): TlRow[] {
+    const anim = obj.anim, rows: TlRow[] = [];
+    const sorted = (ch: Channel) => [...channelKeys(anim!, ch)!.keys()].sort((a, b) => a - b);
+    const row = (label: string, ch?: Channel): TlRow => ({ label, keys: ch ? sorted(ch) : keyFrames(anim), motion: null, editable: true, channel: ch, objId: obj.id, active });
+    rows.push({ ...row(nameOf(obj)), motion: isModel(obj) ? obj.motion?.frames ?? null : null });
+    if (!anim || !this.keyframes.expanded) return rows;
+    if (isModel(obj)) {
+      const morphName = new Map(this.posing.morphs(obj).map(x => [x.index, x.name]));
+      for (const b of [...anim.bones.keys()].sort((a, b) => a - b)) rows.push(row(obj.model.skeleton.bones[b]?.name ?? t('ボーン {n}', { n: b }), { kind: 'bone', index: b }));
+      for (const i of [...anim.morphs.keys()].sort((a, b) => a - b)) rows.push(row(t('表情: {name}', { name: morphName.get(i) ?? i }), { kind: 'morph', index: i }));
+    }
+    // 形・ライト (と、モデルの物の値): 位置・回転・大きさ
+    for (const p of [...anim.props.keys()].sort((a, b) => a - b)) rows.push(row(t(PROPS[p]?.name ?? String(p)), { kind: 'prop', index: p }));
     return rows;
   }
   // 前後のキーフレーム (選んでいるモデルのキーフレームと、モーションのキーフレーム) へ

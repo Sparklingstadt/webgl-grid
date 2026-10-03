@@ -43,7 +43,7 @@ export default function App() {
   // シェーダーエディターにしたときは、ノードが見える高さまで広げる (Blender の「シェーディング」のように)
   const showEditor = useCallback((e: BottomEditor) => {
     setBottom(e);
-    if (e === 'shader') { setTlOpen(true); setBottomH(h => Math.max(h, Math.round(innerHeight * 0.45))); }
+    if (e === 'shader' || e === 'graph') { setTlOpen(true); setBottomH(h => Math.max(h, Math.round(innerHeight * (e === 'shader' ? 0.45 : 0.35)))); }
   }, []);
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [managerOpen, setManagerOpen] = useState(false);
@@ -93,7 +93,7 @@ export default function App() {
   const goWorkspace = (w: Workspace) => {
     setWorkspace(w);
     if (w === 'shading') { showEditor('shader'); setSideTab('material'); return; }
-    setBottom('timeline');
+    setBottom(w === 'animation' ? 'dopesheet' : 'timeline'); // (アニメーションは Blender と同じくドープシート)
     setTlOpen(true);
     setBottomH(w === 'animation' ? Math.round(innerHeight * 0.4) : isNarrow() ? 168 : 150);
     if (w === 'animation' && engine.selection.model) setSideTab('bone');
