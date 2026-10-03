@@ -12,6 +12,9 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
+  // CI はソフトウェア描画で遅く (シェーダーの組み立てに時間がかかる)、待つ時間を長くする
+  expect: { timeout: process.env.CI ? 20_000 : 5_000 },
+  timeout: process.env.CI ? 90_000 : 30_000,
   reporter: process.env.CI ? 'github' : 'list',
   use: {
     baseURL: `http://localhost:${PORT}/`,
