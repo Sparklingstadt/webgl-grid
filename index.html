@@ -94,6 +94,8 @@
     background: #2a3140; border: 1px solid #3a4558; border-radius: 7px;
   }
   .bone-note { padding: 6px 12px 0; color: #9aa4b5; font-size: 12px; }
+  .pose-file { display: flex; gap: 4px; padding: 6px 8px 0; }
+  .pose-file button { flex: 1; background: #2a3140; }
   .morphs-tabs button:disabled { opacity: 0.35; cursor: default; }
   .morphs-list { overflow-y: auto; padding: 6px 12px 10px; display: grid; grid-template-columns: minmax(0, 1fr) 120px; gap: 4px 10px; align-items: center; }
   .morphs-list label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -122,7 +124,7 @@
   <button type="button" id="music" aria-label="曲とモーションを一時停止" hidden>⏸</button>
 </div>
 <input type="file" id="pmx-input" multiple hidden
-       accept=".pmx,.vmd,.png,.jpg,.jpeg,.bmp,.tga,.gif,.spa,.sph,image/*,.mp3,.wav,.ogg,.oga,.m4a,.aac,.flac,.opus,audio/*">
+       accept=".pmx,.vmd,.vpd,.png,.jpg,.jpeg,.bmp,.tga,.gif,.spa,.sph,image/*,.mp3,.wav,.ogg,.oga,.m4a,.aac,.flac,.opus,audio/*">
 <div class="morphs" id="morph-panel" role="dialog" aria-labelledby="morph-title" hidden>
   <div class="morphs-head">
     <span id="morph-title">モデル</span>
@@ -143,6 +145,11 @@
     <div class="morphs-list" id="morph-list" role="tabpanel"></div>
   </div>
   <div id="bone-ui" hidden>
+    <div class="pose-file">
+      <button type="button" id="pose-save">ポーズを保存 (.vpd)</button>
+      <button type="button" id="pose-load">ポーズを読み込む</button>
+    </div>
+    <input type="file" id="pose-input" accept=".vpd" hidden>
     <select id="bone-select" aria-label="動かすボーン"></select>
     <div class="bone-note" id="bone-note"></div>
     <div class="morphs-list" id="bone-list"></div>
@@ -868,6 +875,7 @@ const isAudio = f => f.type.startsWith('audio/') || /\.(mp3|wav|ogg|oga|m4a|aac|
 async function loadFiles(files) {
   // .vmd は何個でも一緒に選べる (ダンス用とカメラ用など)。曲は 1 つ
   const vmds = files.filter(f => /\.vmd$/i.test(f.name));
+  const vpd = files.find(f => /\.vpd$/i.test(f.name));
   const song = files.find(isAudio);
   let targets;
   if (files.some(f => /\.pmx$/i.test(f.name))) {
@@ -875,12 +883,14 @@ async function loadFiles(files) {
     if (!obj) return;
     // ステージを読んだときは、モーションは置いてある人物全員に付ける
     targets = obj === STAGE ? boxes.filter(b => b.s === 3) : [obj];
-  } else if (vmds.length || song) {
+  } else if (vmds.length || song || vpd) {
     targets = boxes.filter(b => b.s === 3);
   } else {
-    toast('.pmx・.vmd・曲のどれも選ばれていません。モデルの .pmx とテクスチャ画像、モーションの .vmd、曲のファイルを選んでください。');
+    toast('.pmx・.vmd・.vpd・曲のどれも選ばれていません。モデルの .pmx とテクスチャ画像、モーションの .vmd、ポーズの .vpd、曲のファイルを選んでください。');
     return;
   }
+  // ポーズ (.vpd) は、モデルのパネルを開いているならそのモデルに、そうでなければ対象のモデル全員に当てる
+  if (vpd) await loadPose(vpd, morphObj && !files.some(f => /\.pmx$/i.test(f.name)) ? [morphObj] : targets);
   const motionOk = vmds.length ? await playMotions(vmds, targets) : true;
   // モーションの読み込みに失敗したときは、そのお知らせを曲のお知らせで消さない
   if (song) startMusic(song, motionOk);
@@ -1292,6 +1302,112 @@ function showBone(index) {
     boneList.append(label, range);
   }
 }
+// --- ポーズの保存・読み込み (.vpd) ---
+// MMD のポーズファイル。文字コードは Shift-JIS、座標は左手系 (three.js とは z の向きが逆)。
+// 保存するのは、手で動かしたボーンと、いまの表情
+document.getElementById('pose-save').addEventListener('click', () => { if (morphObj) savePose(morphObj); });
+const poseInput = document.getElementById('pose-input');
+document.getElementById('pose-load').addEventListener('click', () => poseInput.click());
+poseInput.addEventListener('change', () => {
+  const f = poseInput.files[0];
+  poseInput.value = '';
+  if (f && morphObj) loadPose(f, [morphObj]);
+});
+const _vpdQ = new THREE.Quaternion();
+const num = v => (Math.abs(v) < 5e-7 ? 0 : v).toFixed(6);
+function savePose(obj) {
+  const mesh = obj.model, bones = mesh.skeleton.bones;
+  const lines = ['Vocaloid Pose Data file', '', `${mesh.name || 'model'}.osm;\t\t// 親ファイル名`];
+  const entries = [...(obj.pose ?? [])];
+  lines.push(`${entries.length};\t\t\t\t// 総ポーズボーン数`, '');
+  entries.forEach(([i, v], n) => {
+    // 最初の姿勢からの回転・移動を、左手系に直して書く (z の向き、回転の x・y を反転)
+    const q = _vpdQ.setFromEuler(_poseEuler.set(v.rx * DEG, v.ry * DEG, v.rz * DEG, 'YXZ'));
+    lines.push(`Bone${n}{${bones[i].name}`,
+      `  ${num(v.px)},${num(v.py)},${num(-v.pz)};\t\t\t\t// trans x,y,z`,
+      `  ${num(-q.x)},${num(-q.y)},${num(q.z)},${num(q.w)};\t\t// Quaternion x,y,z,w`, '}', '');
+  });
+  const dict = mesh.morphTargetDictionary ?? {}, inf = mesh.morphTargetInfluences ?? [];
+  Object.entries(dict).filter(([, i]) => inf[i] > 0).forEach(([name, i], n) => {
+    lines.push(`Morph${n}{${name}`, `  ${num(inf[i])};\t\t\t\t// weight`, '}', '');
+  });
+  const blob = new Blob([encodeShiftJis(lines.join('\r\n'))], { type: 'application/octet-stream' });
+  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `${mesh.name || 'pose'}.vpd` });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  toast(`ポーズを ${a.download} として保存しました (ボーン ${entries.length} 本、表情 ${Object.values(dict).filter(i => inf[i] > 0).length} 個)`);
+}
+async function loadPose(file, objs) {
+  if (!objs.length) { toast('先に .pmx のモデルを読み込んでください。'); return; }
+  const buf = await file.arrayBuffer();
+  // MMD のファイルは Shift-JIS。UTF-8 として正しく読めるならそちらで読む
+  let text;
+  try { text = new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch { text = new TextDecoder('shift_jis').decode(buf); }
+  if (!/^Vocaloid Pose Data file/.test(text.trimStart())) { toast(`${file.name} は MMD のポーズファイル (.vpd) ではないようです`, 8000); return; }
+  const n = '([-+0-9.eE]+)';
+  const boneRe = new RegExp(`Bone\\d+\\{([^\\r\\n]*)\\s+${n},${n},${n};[^\\n]*\\n\\s*${n},${n},${n},${n};`, 'g');
+  const morphRe = new RegExp(`Morph\\d+\\{([^\\r\\n]*)\\s+${n};`, 'g');
+  const poseBones = [...text.matchAll(boneRe)].map(m => ({
+    name: m[1].trim(),
+    // 左手系から右手系へ (z の向き、回転の x・y を反転)
+    p: [+m[2], +m[3], -m[4]], q: new THREE.Quaternion(-m[5], -m[6], +m[7], +m[8]).normalize(),
+  }));
+  const poseMorphs = [...text.matchAll(morphRe)].map(m => ({ name: m[1].trim(), w: +m[2] }));
+  let found = 0;
+  for (const obj of objs) {
+    const mesh = obj.model, bones = mesh.skeleton.bones;
+    obj.pose = new Map();
+    for (const pb of poseBones) {
+      const i = bones.findIndex(b => b.name === pb.name);
+      if (i < 0) continue;
+      found++;
+      // スライダーと同じ形 (最初の姿勢からのオイラー角と位置のずれ) にして覚える
+      const e = _poseEuler.setFromQuaternion(pb.q, 'YXZ');
+      obj.pose.set(i, { rx: e.x / DEG, ry: e.y / DEG, rz: e.z / DEG, px: pb.p[0], py: pb.p[1], pz: pb.p[2] });
+    }
+    const dict = mesh.morphTargetDictionary ?? {};
+    if (mesh.morphTargetInfluences) {
+      mesh.morphTargetInfluences.fill(0);
+      for (const pm of poseMorphs) if (dict[pm.name] !== undefined) { mesh.morphTargetInfluences[dict[pm.name]] = pm.w; found++; }
+    }
+    await solvePose(obj);
+  }
+  if (morphObj && objs.includes(morphObj)) {
+    if (panelMode === 'bone') showBone(morphObj.boneSel); else showMorphTab(morphTab);
+  }
+  startTicking();
+  requestDraw();
+  toast(found
+    ? `${file.name} のポーズを当てました (ボーン ${poseBones.length} 本・表情 ${poseMorphs.length} 個のうち、合ったもの ${found} 個)`
+    : `${file.name} には、このモデルのボーンや表情に合うものがありませんでした`, 6000);
+}
+// Shift-JIS に書き出す (ブラウザには書き出す機能がないので、読む機能を逆に使った対応表を初回に作る)
+let sjisTable = null;
+function encodeShiftJis(str) {
+  if (!sjisTable) {
+    sjisTable = new Map();
+    const dec = new TextDecoder('shift_jis');
+    for (let b = 0xa1; b <= 0xdf; b++) sjisTable.set(dec.decode(new Uint8Array([b])), [b]); // 半角カナ
+    for (let hi = 0x81; hi <= 0xfc; hi++) {
+      if (hi > 0x9f && hi < 0xe0) continue;
+      for (let lo = 0x40; lo <= 0xfc; lo++) {
+        if (lo === 0x7f) continue;
+        const ch = dec.decode(new Uint8Array([hi, lo]));
+        if (ch.length === 1 && ch !== '\ufffd' && !sjisTable.has(ch)) sjisTable.set(ch, [hi, lo]);
+      }
+    }
+  }
+  const out = [];
+  for (const ch of str) {
+    const c = ch.codePointAt(0);
+    if (c < 0x80) out.push(c);
+    else out.push(...(sjisTable.get(ch) ?? [0x3f])); // 表せない文字は ?
+  }
+  return new Uint8Array(out);
+}
+
 // 手で動かした値をボーンに当てる (モーションの姿勢を上書きする)
 const _poseEuler = new THREE.Euler(), _poseQ = new THREE.Quaternion();
 const DEG = Math.PI / 180;
@@ -1747,7 +1863,7 @@ resize();
 // 動作確認用: ?debug を付けて開いたときだけ、中の状態をコンソールから触れるようにする
 if (new URLSearchParams(location.search).has('debug')) {
   Object.assign(window, { THREE, renderer, scene, camera, boxes, cam, makeBox, settle, pickBox, screenRay, rayPlane,
-    loadPmx, loadFiles, getAnimHelper: () => animHelper, getCamMotion: () => camMotion, getStage: () => stageModel, getFx: () => fx, getMorphObj: () => morphObj, applyPose, fxState, fxLevel, getMusic: () => music, camera, getDrag: () => drag, paletteEl, swatches, pointers, physicsList, outline });
+    loadPmx, loadFiles, getAnimHelper: () => animHelper, getCamMotion: () => camMotion, getStage: () => stageModel, getFx: () => fx, getMorphObj: () => morphObj, applyPose, encodeShiftJis, loadPose, fxState, fxLevel, getMusic: () => music, camera, getDrag: () => drag, paletteEl, swatches, pointers, physicsList, outline });
 }
 </script>
 </body>
