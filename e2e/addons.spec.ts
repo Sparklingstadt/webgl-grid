@@ -2,14 +2,23 @@ import { readFile } from 'node:fs/promises';
 import { expect, test } from './fixtures/test';
 import { open, type Win } from './helpers';
 
-// アドオン: 編集 > プリファレンス で有効にすると、メニューとサイドバーのパネルが足され、
+// アドオン: 編集 > アドオンマネージャー で有効にすると、メニューとサイドバーのパネルが足され、
 // ファイルからインストールしたアドオンは、ページを開き直しても残る
 test('組み込みのアドオンを有効にして使い、切ると消える', async ({ page }) => {
   const errors = await open(page);
   await page.getByRole('button', { name: '編集' }).click();
-  await page.getByRole('menuitem', { name: 'プリファレンス… (アドオン)' }).click();
-  const prefs = page.getByRole('dialog', { name: 'プリファレンス' });
+  await page.getByRole('menuitem', { name: 'アドオンマネージャー…' }).click();
+  const prefs = page.getByRole('dialog', { name: 'アドオンマネージャー' });
+  // Cinema 4D は最初から有効。探す・絞り込む
+  await expect(prefs.getByRole('checkbox', { name: 'Cinema 4D を有効にする' })).toBeChecked();
+  await prefs.getByRole('searchbox', { name: 'アドオンを探す' }).fill('揺ら');
+  await expect(prefs.getByRole('checkbox')).toHaveCount(1);
   await prefs.getByRole('checkbox', { name: 'ふわふわ を有効にする' }).click();
+  // 足しているもの
+  await prefs.getByRole('button', { name: 'ふわふわ の詳しいこと' }).click();
+  await expect(prefs.getByRole('list', { name: 'ふわふわ が足しているもの' })).toContainText('メニュー: オブジェクト > ふわふわさせる / やめる');
+  await expect(prefs.getByRole('list', { name: 'ふわふわ が足しているもの' })).toContainText('物ごとの値: ふわふわ');
+  await prefs.getByRole('searchbox', { name: 'アドオンを探す' }).fill('');
   await expect(prefs.getByRole('checkbox', { name: 'ふわふわ を有効にする' })).toBeChecked();
   await page.keyboard.press('Escape');
   await expect(prefs).toBeHidden();
@@ -26,9 +35,8 @@ test('組み込みのアドオンを有効にして使い、切ると消える',
   await page.keyboard.press('Control+z');
   await expect(page.getByRole('checkbox', { name: 'ふわふわさせる' })).not.toBeChecked();
 
-  // 切ると、メニューとパネルが消える
-  await page.getByRole('button', { name: '編集' }).click();
-  await page.getByRole('menuitem', { name: 'プリファレンス… (アドオン)' }).click();
+  // 切ると、メニューとパネルが消える (Ctrl+, でも開ける)
+  await page.keyboard.press('Control+,');
   await prefs.getByRole('checkbox', { name: 'ふわふわ を有効にする' }).click();
   await prefs.getByRole('button', { name: '閉じる (Esc)' }).click();
   await expect(page.getByRole('checkbox', { name: 'ふわふわさせる' })).toHaveCount(0);
@@ -38,8 +46,8 @@ test('組み込みのアドオンを有効にして使い、切ると消える',
 test('ファイルからアドオンをインストールし、開き直しても使え、消せる', async ({ page }) => {
   const errors = await open(page);
   await page.getByRole('button', { name: '編集' }).click();
-  await page.getByRole('menuitem', { name: 'プリファレンス… (アドオン)' }).click();
-  const prefs = page.getByRole('dialog', { name: 'プリファレンス' });
+  await page.getByRole('menuitem', { name: 'アドオンマネージャー…' }).click();
+  const prefs = page.getByRole('dialog', { name: 'アドオンマネージャー' });
   await prefs.getByLabel('アドオンのファイル').setInputFiles({ name: 'hello.js', mimeType: 'text/javascript', buffer: await readFile('examples/addons/hello.js') });
   await expect(prefs.getByRole('checkbox', { name: 'ハロー を有効にする' })).toBeChecked();
   await page.keyboard.press('Escape');
@@ -60,9 +68,13 @@ test('ファイルからアドオンをインストールし、開き直して�
   await expect(page.getByRole('tab', { name: 'ハロー' })).toBeVisible();
 
   // 消す
-  await page.getByRole('button', { name: '編集' }).click();
-  await page.getByRole('menuitem', { name: 'プリファレンス… (アドオン)' }).click();
-  await prefs.getByRole('listitem').filter({ hasText: 'ハロー' }).getByRole('button', { name: '消す' }).click();
+  await page.keyboard.press('Control+,');
+  await prefs.getByRole('combobox', { name: '表示するアドオン' }).click();
+  await page.getByRole('option', { name: 'インストールしたもの' }).click();
+  await expect(prefs.getByRole('checkbox')).toHaveCount(1);
+  await prefs.getByRole('button', { name: 'ハロー の詳しいこと' }).click();
+  await expect(prefs.getByRole('list', { name: 'ハロー が足しているもの' })).toContainText('MCP の命令: hello.greet');
+  await prefs.getByRole('button', { name: '消す' }).click();
   await expect(prefs.getByRole('checkbox', { name: 'ハロー を有効にする' })).toHaveCount(0);
   await expect(page.getByRole('tab', { name: 'ハロー' })).toHaveCount(0);
   expect(errors).toEqual([]);

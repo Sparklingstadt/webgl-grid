@@ -343,11 +343,19 @@ details.sub > summary { cursor: pointer; color: var(--dim); font-size: 11px; pad
 .effectors > .row .bbtn { flex: 1 1 auto; }
 .deformer-add { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
 .deformer-add .bbtn { flex: 1 1 auto; }
-/* プリファレンス > アドオン */
-.addon-prefs { width: min(560px, 100%); }
-.addon-list { list-style: none; margin: 0; padding: 0; overflow: auto; display: flex; flex-direction: column; gap: 6px; }
-.addon-list li { background: var(--panel); border-radius: 4px; padding: 6px 8px; display: flex; flex-direction: column; gap: 3px; align-items: flex-start; }
-.addon-head { display: flex; align-items: center; gap: 8px; width: 100%; }
-.addon-head .note { margin-left: auto; }
+/* アドオンマネージャー */
+.addon-manager { width: min(640px, 100%); height: min(560px, 100%); }
+.addon-manager.dropping { outline: 2px dashed var(--accent); outline-offset: -4px; }
+.addon-body { display: flex; flex-direction: column; gap: 8px; min-height: 0; flex: 1; }
+.addon-filter { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 4px; }
+.addon-list { list-style: none; margin: 0; padding: 0; overflow: auto; display: flex; flex-direction: column; gap: 4px; flex: 1; min-height: 0; }
+.addon-list > li { background: var(--panel); border-radius: 4px; padding: 4px 8px; display: flex; flex-direction: column; gap: 3px; border-left: 3px solid transparent; }
+.addon-list > li.on { border-left-color: var(--accent); }
+.addon-head { display: flex; align-items: center; gap: 4px; width: 100%; min-width: 0; }
+.addon-head .note { margin-left: auto; white-space: nowrap; }
+.addon-expand { padding: 2px 6px; }
+.addon-detail { display: flex; flex-direction: column; gap: 4px; padding: 2px 0 4px 26px; }
+.addon-parts { margin: 0; padding-left: 16px; color: var(--dim); }
 .addon-error { color: #e88; }
+@media (max-width: 760px) { .addon-filter { grid-template-columns: 1fr 1fr; } .addon-filter input { grid-column: 1 / -1; } }
 .addon-draw { min-width: 0; }

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { errorText } from '../../core/errors';
 import type { Engine } from '../Engine';
+import { download } from '../io/download';
 import type { Obj } from '../types';
 import type { SelInfo } from '../UiChannel';
 import { Registry, type CommandDef, type MenuDef, type MenuId, type ObjectDataDef, type PanelDef, type PropDef, type SceneDataDef } from './registry';
@@ -26,7 +27,17 @@ export interface AddonInfo {
   id: string; name: string; version: string; author: string; description: string; category: string;
   source: 'builtin' | 'installed';
   enabled: boolean;
+  enabledByDefault: boolean;
   error: string | null; // 有効にできなかったわけ
+  contributes: AddonContributions; // 足しているもの (有効なときだけ)
+}
+// アドオンが足しているもの (アドオンマネージャーに出す)
+export interface AddonContributions {
+  menus: { menu: MenuId; label: string }[];
+  panels: { tab: string; title: string }[];
+  commands: string[];
+  objectData: string[]; // 物ごとの値の名前
+  sceneData: string[];  // 場面の値の名前
 }
 
 // 物ごとの値 (プロジェクトに保存し、元に戻せる)
@@ -139,8 +150,24 @@ export class Addons {
   list(): AddonInfo[] {
     return [...this.entries.values()].map(({ module: m, source, dispose, error }) => ({
       id: m.id, name: m.name, version: m.version ?? '', author: m.author ?? '', description: m.description ?? '', category: m.category ?? '',
-      source, enabled: !!dispose, error,
+      source, enabled: !!dispose, enabledByDefault: !!m.enabledByDefault, error, contributes: this.contributions(m.id),
     }));
+  }
+  private contributions(id: string): AddonContributions {
+    const mine = <T extends { key: string; source?: string }>(r: Registry<T>) => r.list().filter(x => x.source === id || x.key.startsWith(`${id}.`));
+    return {
+      menus: mine(this.menus).map(m => ({ menu: m.menu, label: m.label })),
+      panels: mine(this.panels).map(p => ({ tab: p.tab, title: p.title })),
+      commands: mine(this.commands).map(c => c.key),
+      objectData: mine(this.objectData).map(d => d.label),
+      sceneData: mine(this.sceneData).map(d => d.label),
+    };
+  }
+  // インストールしたアドオンのコードを、ファイルとして保存する
+  exportCode(id: string) {
+    const e = this.entries.get(id);
+    if (!e?.code) throw new Error('インストールしたアドオンではありません');
+    download(new TextEncoder().encode(e.code), `${id}.js`, 'text/javascript');
   }
   isEnabled(id: string) { return !!this.entries.get(id)?.dispose; }
 

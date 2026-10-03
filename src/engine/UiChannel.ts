@@ -37,7 +37,7 @@ export interface UiState {
   recovery: { time: number; name: string | null; banner: boolean } | null; // 自動保存した前回の続き (banner: 知らせを出す)
   // 参照だけのプロジェクトを開くときに見つからないファイル (探してもらう)
   missingFiles: { project: string; files: { name: string; size?: number; source?: string }[] } | null;
-  addons: AddonInfo[];      // アドオンの一覧 (プリファレンス)
+  addons: AddonInfo[];      // アドオンの一覧 (アドオンマネージャー)
   addonsVersion: number;       // アドオンのメニュー・パネル・値が変わった
 }
 type Version = 'modelVersion' | 'values' | 'keysVersion' | 'materialsVersion' | 'addonsVersion';

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { MenuContext } from './components/Menu';
-import { AddonPrefs } from './components/addons/AddonPrefs';
+import { AddonManager } from './components/addons/AddonManager';
 import { MissingFiles, RenderProgress, RenderResult } from './components/Dialogs';
 import { Palette, Toast } from './components/Overlays';
 import type { SideTab } from './components/sidebar/Sidebar';
@@ -28,9 +28,9 @@ export default function App() {
     if (e === 'shader') { setTlOpen(true); setBottomH(h => Math.max(h, Math.round(innerHeight * 0.45))); }
   }, []);
   const [openMenu, setOpenMenu] = useState<string | null>(null);
-  const [prefsOpen, setPrefsOpen] = useState(false);
-  const prefsRef = useRef(prefsOpen);
-  useLayoutEffect(() => { prefsRef.current = prefsOpen; }, [prefsOpen]);
+  const [managerOpen, setManagerOpen] = useState(false);
+  const managerRef = useRef(managerOpen);
+  useLayoutEffect(() => { managerRef.current = managerOpen; }, [managerOpen]);
   const hoverArea = useRef<Area>(null);
   const pmxInput = useRef<HTMLInputElement>(null);
   const poseInput = useRef<HTMLInputElement>(null);
@@ -78,15 +78,16 @@ export default function App() {
     toggleSide,
     openFiles,
     openProject,
-    dialogOpen: () => prefsRef.current,
-    closeDialog: () => { const was = prefsRef.current; setPrefsOpen(false); return was; },
+    openAddons: () => setManagerOpen(true),
+    dialogOpen: () => managerRef.current,
+    closeDialog: () => { const was = managerRef.current; setManagerOpen(false); return was; },
   });
 
   return (
     <MenuContext.Provider value={{ open: openMenu, setOpen: setOpenMenu }}>
       <div id="app" className={[!sideOpen && 'side-hidden', !tlOpen && 'tl-hidden'].filter(Boolean).join(' ')}
            style={{ '--tl-h': `${bottomH}px` } as React.CSSProperties}>
-        <TopBar onOpenFiles={openFiles} onLoadPose={openPose} onOpenProject={openProject} onOpenPrefs={() => setPrefsOpen(true)}
+        <TopBar onOpenFiles={openFiles} onLoadPose={openPose} onOpenProject={openProject} onOpenAddons={() => setManagerOpen(true)}
                 onOpenOutput={() => { setSideTab('output'); setSideOpen(true); }} />
         <div style={{ display: 'contents' }} onPointerEnter={() => { hoverArea.current = 'view'; }}>
           <ViewportArea sideOpen={sideOpen} toggleSide={toggleSide} tlOpen={tlOpen} toggleTl={() => setTlOpen(o => !o)}
@@ -110,7 +111,7 @@ export default function App() {
       <RenderProgress />
       <RenderResult />
       <MissingFiles />
-      {prefsOpen && <AddonPrefs onClose={() => setPrefsOpen(false)} />}
+      {managerOpen && <AddonManager onClose={() => setManagerOpen(false)} />}
       <input type="file" ref={pmxInput} multiple hidden
              accept=".pmx,.vmd,.vpd,.png,.jpg,.jpeg,.bmp,.tga,.gif,.spa,.sph,image/*,.mp3,.wav,.ogg,.oga,.m4a,.aac,.flac,.opus,audio/*"
              onChange={e => {
