@@ -99,7 +99,8 @@ const noOutline = () => ({ outlineParameters: { visible: false } });
 
 const scene = new THREE.Scene();
 // 以前のシェーダーと同じ画角 (画面の高さに対して焦点距離 1.6)
-const camera = new THREE.PerspectiveCamera(2 * Math.atan(0.5 / 1.6) * 180 / Math.PI, 1, 0.05, 1000);
+const DEFAULT_FOV = 2 * Math.atan(0.5 / 1.6) * 180 / Math.PI;
+const camera = new THREE.PerspectiveCamera(DEFAULT_FOV, 1, 0.05, 1000);
 
 // --- 光 ---
 const LIGHT = new THREE.Vector3(0.6, 1.0, 0.35).normalize();
@@ -222,9 +223,11 @@ function nextColor() {
 const MAX_BOXES = 32;
 
 // オービットカメラ (注視点を中心に回転 / 地面に沿って移動)
-const CAM_DEFAULT = { yaw: Math.PI / 4, pitch: 0.6, dist: 9.8, tx: 0, tz: 0 };
+// ty は注視点の高さ (ふだんは地面の 0。カメラモーションから引き継いだときだけ浮く)
+const CAM_DEFAULT = { yaw: Math.PI / 4, pitch: 0.6, dist: 9.8, tx: 0, ty: 0, tz: 0, fov: DEFAULT_FOV };
 const cam = { ...CAM_DEFAULT };
 document.getElementById('reset').addEventListener('click', () => {
+  stopCameraMotion(false);
   closePicker();
   Object.assign(cam, CAM_DEFAULT);
   while (boxes.length) removeObject(boxes[0]);
@@ -408,12 +411,15 @@ function camPos() {
   const cp = Math.cos(cam.pitch);
   return [
     cam.tx + cam.dist * cp * Math.cos(cam.yaw),
-    cam.dist * Math.sin(cam.pitch),
+    cam.ty + cam.dist * Math.sin(cam.pitch),
     cam.tz + cam.dist * cp * Math.sin(cam.yaw)];
 }
 function updateCamera() {
+  if (camMotion) { applyCameraMotion(); return; }
+  if (camera.fov !== cam.fov) { camera.fov = cam.fov; camera.updateProjectionMatrix(); }
+  camera.up.set(0, 1, 0);
   camera.position.set(...camPos());
-  camera.lookAt(cam.tx, 0, cam.tz);
+  camera.lookAt(cam.tx, cam.ty, cam.tz);
   camera.updateMatrixWorld();
 }
 const raycaster = new THREE.Raycaster();
@@ -501,6 +507,7 @@ canvas.addEventListener('pointerdown', e => {
     } else {
       // 形以外に置いた2本の指は、ピンチでズーム
       drag.pinch = { ids, last: pointerDistance(ids) };
+      stopCameraMotion(true);
     }
     return;
   }
@@ -621,11 +628,14 @@ canvas.addEventListener('pointermove', e => {
     }
     return;
   }
+  stopCameraMotion(true); // 自分でカメラを動かしたら、カメラモーションをやめる
   const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
   if (mode === 'orbit') {
     cam.yaw -= dx * 0.005;
     cam.pitch += dy * 0.005;
-    cam.pitch = Math.min(Math.max(cam.pitch, 0.05), 1.5);
+    // カメラが地面の下に潜らない角度まで (注視点が地面なら、これまでどおり約 3° まで)
+    const minPitch = cam.ty > 0 ? Math.asin(Math.min(Math.max((0.05 - cam.ty) / cam.dist, -1), 1)) : 0.05;
+    cam.pitch = Math.min(Math.max(cam.pitch, minPitch), 1.5);
   } else {
     // 画面上の動きを地面上の前後左右に変換 (掴んだ地面が付いてくるように)
     const k = cam.dist * 0.0015;
@@ -719,7 +729,8 @@ canvas.addEventListener('pointercancel', endDrag);
 canvas.addEventListener('contextmenu', e => e.preventDefault()); // 長押しでメニューを出さない
 // カメラの距離を factor 倍にする (ホイールとピンチで共通)
 function zoomBy(factor) {
-  cam.dist = Math.min(Math.max(cam.dist * factor, 2), 60);
+  stopCameraMotion(true);
+  cam.dist = Math.min(Math.max(cam.dist * factor, Math.min(2, cam.dist)), 60); // カメラモーションから引き継いだ近い距離は保つ
   requestDraw();
 }
 canvas.addEventListener('wheel', e => {
@@ -739,17 +750,20 @@ pmxInput.addEventListener('change', () => {
   if (files.length) loadFiles(files);
 });
 async function loadFiles(files) {
-  const vmd = files.find(f => /\.vmd$/i.test(f.name));
+  // .vmd は何個でも一緒に選べる (ダンス用とカメラ用など)
+  const vmds = files.filter(f => /\.vmd$/i.test(f.name));
+  let targets;
   if (files.some(f => /\.pmx$/i.test(f.name))) {
     const obj = await loadPmx(files);
-    if (obj && vmd) await playMotion(vmd, [obj]);
-  } else if (vmd) {
-    const models = boxes.filter(b => b.s === 3);
-    if (!models.length) { toast('先に .pmx のモデルを読み込んでください。'); return; }
-    await playMotion(vmd, models);
+    if (!obj) return;
+    targets = [obj];
+  } else if (vmds.length) {
+    targets = boxes.filter(b => b.s === 3);
   } else {
     toast('.pmx や .vmd が選ばれていません。モデルの .pmx とテクスチャ画像、またはモーションの .vmd を選んでください。');
+    return;
   }
+  if (vmds.length) await playMotions(vmds, targets);
 }
 // ファイル名の比較用: パスの区切りをそろえ、最後の名前だけを小文字・NFC で取り出す
 const fileKey = path => decodeURIComponent(path).replace(/\\/g, '/').split('/').pop().normalize('NFC').toLowerCase();
@@ -881,46 +895,128 @@ async function startPhysics(obj, mesh) {
 // MMDAnimationHelper が、モーションの再生・IK (足の接地など)・付与 (連動する骨) を計算する。
 // 物理演算は上の仕組みのまま、モーションのあとに計算する
 let animHelper = null;
-async function playMotion(vmd, objs) {
-  toast(`${vmd.name} を読み込み中…`, 0);
-  const url = URL.createObjectURL(vmd);
+async function playMotions(vmds, objs) {
+  const label = vmds.map(f => f.name).join('、');
+  toast(`${label} を読み込み中…`, 0);
   try {
     mmdLoaderModule ??= await import('three/addons/loaders/MMDLoader.js');
     const { MMDAnimationHelper } = await import('three/addons/animation/MMDAnimationHelper.js');
     animHelper ??= new MMDAnimationHelper();
     const loader = new mmdLoaderModule.MMDLoader();
-    let empty = 0;
-    for (const obj of objs) {
-      const mesh = obj.model;
-      const clip = await new Promise((resolve, reject) => loader.loadAnimation(url, mesh, resolve, undefined, reject));
-      if (!boxes.includes(obj)) continue; // 読み込み中に消された
-      if (!clip.tracks.length) { empty++; continue; } // 骨や表情の名前が1つも合わない
-      if (animHelper.objects.has(mesh)) animHelper.remove(mesh);
-      mesh.pose(); // 前のモーションの姿勢を元に戻してから付ける
-      animHelper.add(mesh, { animation: clip, physics: false });
-      obj.animated = true;
-      // 最初のフレームの姿勢に、物理演算の剛体を合わせる
-      animHelper.update(0);
-      const p = physicsList.find(p => p.obj === obj);
-      if (p) { obj.node.updateMatrixWorld(true); p.physics.reset(); p.physics.warmup(30); }
+    let used = false, hasModelMotion = false;
+    for (const file of vmds) {
+      const url = URL.createObjectURL(file);
+      let vmd;
+      try {
+        vmd = await new Promise((resolve, reject) => loader.loadVMD(url, resolve, undefined, reject));
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+      // カメラの動き
+      if (vmd.metadata.cameraCount > 0) {
+        startCameraMotion(loader.animationBuilder.buildCameraAnimation(vmd));
+        used = true;
+      }
+      // モデルの動き (骨と表情)
+      if (vmd.metadata.motionCount + vmd.metadata.morphCount > 0) {
+        hasModelMotion = true;
+        for (const obj of objs) {
+          if (!boxes.includes(obj)) continue; // 読み込み中に消された
+          const mesh = obj.model;
+          const clip = loader.animationBuilder.build(vmd, mesh);
+          if (!clip.tracks.length) continue; // 骨や表情の名前が1つも合わない
+          if (animHelper.objects.has(mesh)) animHelper.remove(mesh);
+          mesh.pose(); // 前のモーションの姿勢を元に戻してから付ける
+          animHelper.add(mesh, { animation: clip, physics: false });
+          obj.animated = true;
+          used = true;
+        }
+      }
     }
-    toast(empty === objs.length
-      ? `${vmd.name} には、このモデルの骨や表情に合う動きがありませんでした`
-      : `${vmd.name} を再生しています`);
+    if (!used) {
+      toast(hasModelMotion && !objs.length
+        ? '先に .pmx のモデルを読み込んでください。'
+        : `${label} には、このモデルの骨や表情に合う動きも、カメラの動きもありませんでした`, 8000);
+      return;
+    }
+    restartMotions();
+    toast(`${label} を再生しています${camMotion ? '。カメラを自分で動かすと、カメラモーションは止まります' : ''}`, 6000);
     startTicking();
   } catch (err) {
     console.error(err);
-    toast(`${vmd.name} を読み込めませんでした: ${err?.message ?? err}`, 8000);
-  } finally {
-    URL.revokeObjectURL(url);
+    toast(`${label} を読み込めませんでした: ${err?.message ?? err}`, 8000);
   }
+}
+// ダンスとカメラがずれないように、すべてのモーションを最初から再生し直す
+function restartMotions() {
+  // (animHelper.objects は WeakMap で中身をたどれないので、再生中のモデルとカメラを自分で並べる)
+  const targets = [...boxes.filter(b => b.animated).map(b => b.model), ...(camMotion ? [camMotion.cam] : [])];
+  for (const t of targets) animHelper.objects.get(t)?.mixer?.setTime(0);
+  animHelper.update(0);
+  // 最初のフレームの姿勢に、物理演算の剛体を合わせる
+  for (const p of physicsList) {
+    if (!p.obj.animated) continue;
+    p.obj.node.updateMatrixWorld(true);
+    p.physics.reset();
+    p.physics.warmup(30);
+  }
+}
+
+// --- VMD のカメラモーション ---
+// MMD のカメラは、モデルが原点に立っている MMD の単位の座標で動く。
+// 置いてある最初のモデルと同じ変換 (大きさ・向き・置き場所) をかけて、このページのカメラに写す
+let camMotion = null; // { cam: MMD の座標で動くカメラ }
+function startCameraMotion(clip) {
+  if (camMotion) animHelper.remove(camMotion.cam);
+  const mmdCam = new THREE.PerspectiveCamera(DEFAULT_FOV);
+  animHelper.add(mmdCam, { animation: clip });
+  camMotion = { cam: mmdCam };
+}
+const _stage = new THREE.Matrix4(), _target = new THREE.Vector3(), _up = new THREE.Vector3();
+function stageMatrix() {
+  const model = boxes.find(b => b.s === 3);
+  if (model) {
+    model.node.updateMatrixWorld(true);
+    return _stage.copy(model.model.matrixWorld);
+  }
+  // モデルがないときは、原点に身長 20 (MMD のモデルのよくある大きさ) のモデルが立っているとみなす
+  return _stage.makeScale(MODEL_HEIGHT / 20, MODEL_HEIGHT / 20, MODEL_HEIGHT / 20);
+}
+function applyCameraMotion() {
+  const c = camMotion.cam, m = stageMatrix();
+  camera.position.copy(c.position).applyMatrix4(m);
+  _target.copy(animHelper.cameraTarget.position).applyMatrix4(m);
+  camera.up.copy(_up.copy(c.up).transformDirection(m));
+  camera.lookAt(_target);
+  if (camera.fov !== c.fov) { camera.fov = c.fov; camera.updateProjectionMatrix(); }
+  camera.updateMatrixWorld();
+}
+// カメラモーションをやめる。keepView なら、いまの視点から手動の操作に引き継ぐ
+function stopCameraMotion(keepView) {
+  if (!camMotion) return;
+  if (keepView) {
+    // カメラモーションの注視点・位置・視野角をそのまま引き継ぐ (傾き (ロール) だけは引き継げない)
+    applyCameraMotion();
+    const off = camera.position.clone().sub(_target);
+    const len = Math.max(off.length(), 0.01);
+    Object.assign(cam, {
+      tx: _target.x, ty: Math.max(_target.y, 0), tz: _target.z,
+      dist: Math.min(len, 60),
+      yaw: Math.atan2(off.z, off.x),
+      pitch: Math.min(Math.max(Math.asin(off.y / len), -1.4), 1.5),
+      fov: camera.fov,
+    });
+  }
+  animHelper.remove(camMotion.cam);
+  camMotion = null;
+  requestDraw();
 }
 function stopMotion(obj) {
   if (!obj.animated) return;
   animHelper.remove(obj.model);
   obj.animated = false;
 }
-const hasMotion = () => boxes.some(b => b.animated);
+const hasMotion = () => !!camMotion || boxes.some(b => b.animated);
 
 function stopPhysics(obj) {
   const i = physicsList.findIndex(p => p.obj === obj);
@@ -1013,7 +1109,7 @@ resize();
 // 動作確認用: ?debug を付けて開いたときだけ、中の状態をコンソールから触れるようにする
 if (new URLSearchParams(location.search).has('debug')) {
   Object.assign(window, { THREE, renderer, scene, camera, boxes, cam, makeBox, settle, pickBox, screenRay, rayPlane,
-    loadPmx, loadFiles, getAnimHelper: () => animHelper, getDrag: () => drag, paletteEl, swatches, pointers, physicsList, outline });
+    loadPmx, loadFiles, getAnimHelper: () => animHelper, getCamMotion: () => camMotion, camera, getDrag: () => drag, paletteEl, swatches, pointers, physicsList, outline });
 }
 </script>
 </body>
