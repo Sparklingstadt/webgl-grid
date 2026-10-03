@@ -7,6 +7,7 @@ import { Cloners } from './Cloners';
 import { normalizeDeformers, type Deformer } from './deform';
 import { Deformers } from './Deformers';
 import { Emitter } from '../../core/events';
+import type { Polyline } from './splines';
 import { worldOf, type ClonerModeDef, type EffectorDef, type FieldDef, type LayoutEnv } from './effectors';
 
 // --- Cinema 4D アドオンの中身: クローナー・デフォーマと、MoGraph の登録口 (エフェクタ・フィールド・並べ方) ---
@@ -55,6 +56,14 @@ export class Cinema4d {
   addEffectorSource(fn: (o: Obj) => Effector[] | null) { this.sources.add(fn); return () => { this.sources.delete(fn); }; }
   effectorsOf(o: Obj): Effector[] {
     return [...(this.cloner(o)?.effectors ?? []), ...[...this.sources].flatMap(fn => fn(o) ?? [])];
+  }
+  // 物が出すスプライン (場面での折れ線)。MoSpline・トレーサーが addSplineSource で足し、スプラインに並べるクローナーなどが使う
+  private splineSources = new Set<(o: Obj) => Polyline[] | null>();
+  addSplineSource(fn: (o: Obj) => Polyline[] | null) { this.splineSources.add(fn); return () => { this.splineSources.delete(fn); }; }
+  splinesOf(o: Obj | null | undefined): Polyline[] {
+    if (!o) return [];
+    for (const fn of this.splineSources) { const l = fn(o); if (l?.length) return l; }
+    return [];
   }
   // 物 o の MoGraph を並べるときに使うもの (登録された種類・いまの時刻・物の位置)
   env(o: Obj): LayoutEnv {
