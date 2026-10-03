@@ -40,6 +40,7 @@ export interface EffectorDef {
   params?: EffectorParam[];
   live?: boolean | ((e: Effector) => boolean); // 時刻・物の位置で変わる (描くたびに並べ直す)
   note?(isModel: boolean): string; // パネルに出す注意 (MMD モデルのクローナーか)
+  check?(e: Effector): string | null; // 設定のまちがい (式が読めないなど。パネルに出す)
   // 強さ (既定 1)。フィールドの強さを掛けて、位置・回転・大きさに足す
   strength?(ctx: EffectorContext): number;
   // 自分でかける (strength の代わり。ctx.field を自分で使う)

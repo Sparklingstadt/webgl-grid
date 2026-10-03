@@ -82,6 +82,7 @@ export function EffectorList({ list, c4d, isModel, onChange }: { list: Effector[
                   <label>大きさ</label>
                   <NumField label={`${name}の大きさ`} value={e.scale} min={0.01} step={0.1} digits={2} onCommit={scale => update(i, { scale })} />
                 </>}
+                {def.check?.(e) && <div className="note addon-error" style={{ gridColumn: '1 / -1' }}>{def.check(e)}</div>}
                 <label title="効くクローンの番号。空なら全部">MoGraph 選択</label>
                 <TextInput label={`${name}の MoGraph 選択`} value={e.select} hint="全部 (例: 0-4, 7・偶数・奇数)" onCommit={select => update(i, { select })} />
               </div>
