@@ -62,7 +62,7 @@ export class Posing implements System {
     addGroup(t('その他'), [...ok]);
     return mesh.userData.boneGroups = groups;
   }
-  // サイドバーで選んでいるボーン (最初は一覧の先頭)
+  // ボーンのタブで選んでいるボーン (最初は一覧の先頭)
   boneSel(obj: ModelObj): number | undefined {
     const all = this.boneGroups(obj).flatMap(g => g.bones.map(b => b.index));
     if (obj.boneSel === undefined || !all.includes(obj.boneSel)) obj.boneSel = all[0];

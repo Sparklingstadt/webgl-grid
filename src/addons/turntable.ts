@@ -11,7 +11,7 @@ const turntable: AddonModule = {
   version: '1.0.0',
   author: 'webgl-grid',
   category: msg('カメラ'),
-  description: msg('再生中とアニメーションのレンダリング中に、カメラを注視点のまわりで回します。設定はサイドバーの「シーン」にあります。'),
+  description: msg('再生中とアニメーションのレンダリング中に、カメラを注視点のまわりで回します。設定はプロパティの「シーン」にあります。'),
   register(api) {
     const { engine } = api;
     const settings = api.addSceneData<Settings>({

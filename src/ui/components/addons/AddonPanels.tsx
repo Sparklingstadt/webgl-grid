@@ -9,7 +9,7 @@ import { HexColorField, SelectField } from '../fields';
 import { NumField } from '../NumField';
 import { Panel } from '../sidebar/Panel';
 
-// --- アドオンが足したサイドバーのパネル (タブごと) ---
+// --- アドオンが足したプロパティのパネル (タブごと) ---
 // 選択・値・フレーム・アドオンの変化で描き直す
 export function AddonPanels({ tab }: { tab: string }) {
   const engine = useEngine();

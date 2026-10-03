@@ -208,7 +208,7 @@ export function Timeline({ open, typeSelect, mode = 'timeline' }: { open: boolea
         }
         if (hit !== null) {
           if (e.shiftKey || !engine.keyframes.selected.has(hit)) engine.selectKeys([hit], e.shiftKey);
-          // チャンネルの ◆: そのボーンを選んで、そのフレームへ (サイドバーで補間曲線を変えられる)
+          // チャンネルの ◆: そのボーンを選んで、そのフレームへ (プロパティのボーンのタブで補間曲線を変えられる)
           if (row.channel) {
             if (row.channel.kind === 'bone') engine.setBoneSel(row.channel.index);
             clock.seekFrame(hit, 5);

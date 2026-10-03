@@ -32,7 +32,7 @@ export interface Obj {
   anim?: Animation | null;            // キーフレーム (ボーン・表情のチャンネルごと)
   solvers?: { ik: Any; grant: Any };  // IK と付与の計算
   ikOff?: Set<number>;                // 切った IK (ターゲットのボーンの番号)
-  boneSel?: number;                   // サイドバーで選んでいるボーン
+  boneSel?: number;                   // ボーンのタブで選んでいるボーン
   slots: (string | null)[];           // マテリアルスロット (マテリアルの id。なしは null)
   activeSlot?: number;                // サイドバーで選んでいるスロット
   light?: LightSettings | null;       // ライト (ライトのオブジェクトだけ)

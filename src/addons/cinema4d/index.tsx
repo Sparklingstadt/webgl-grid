@@ -9,7 +9,7 @@ import type { Deformer } from './deform';
 import { DeformerPanel } from './DeformerPanel';
 
 // --- Cinema 4D: クローナー (MoGraph のエフェクタ付き)・デフォーマ ---
-// 本体から切り出した組み込みのアドオン (最初から有効)。サイドバーの「オブジェクト」にパネルを足し、
+// 本体から切り出した組み込みのアドオン (最初から有効)。プロパティの「モディファイアー」にパネルを足し、
 // 「オブジェクト」のメニュー・MCP の命令 (cinema4d.set_cloner・set_deformers・bake_cloner) も足す
 const cinema4d: AddonModule = {
   id: 'cinema4d',
@@ -17,7 +17,7 @@ const cinema4d: AddonModule = {
   version: '1.0.0',
   author: 'webgl-grid',
   category: msg('モデリング'),
-  description: msg('Cinema 4D のクローナー (直線・放射・グリッドに並べる。エフェクタ: プレーン・ステップ・ディレイ) と、デフォーマ (ベンド・ツイスト・テーパー・バルジ)。サイドバーの「オブジェクト」で使います。'),
+  description: msg('Cinema 4D のクローナー (直線・放射・グリッドに並べる。エフェクタ: プレーン・ステップ・ディレイ) と、デフォーマ (ベンド・ツイスト・テーパー・バルジ)。プロパティの「モディファイアー」で使います。'),
   enabledByDefault: true,
   register(api) {
     const c4d = new Cinema4d(api);

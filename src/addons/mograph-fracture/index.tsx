@@ -13,7 +13,7 @@ const mographFracture: AddonModule = {
   version: '1.0.0',
   author: 'webgl-grid',
   category: 'MoGraph',
-  description: msg('形を破片に分け、エフェクタ (とフィールド) で動かす: ボロノイ分割 (凸な形) と PolyFX (面ごと)。サイドバーの「オブジェクト」の「分割」で使います。'),
+  description: msg('形を破片に分け、エフェクタ (とフィールド) で動かす: ボロノイ分割 (凸な形) と PolyFX (面ごと)。プロパティの「モディファイアー」の「分割」で使います。'),
   enabledByDefault: true,
   requires: ['cinema4d'],
   register(api) {

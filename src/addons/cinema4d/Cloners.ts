@@ -74,7 +74,7 @@ export class Cloners {
     return map;
   }
 
-  // クローンの数 (サイドバーに出す)
+  // クローンの数 (プロパティに出す)
   count(obj: Obj) { return this.settingsOf(obj) ? obj.node.getObjectByName(GROUP)?.children.length ?? 0 : 0; }
 
   // 描く前: 材質 (スロットを替えた・作り直した) と、MMD モデルの骨・表情を元の物に合わせる

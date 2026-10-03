@@ -12,7 +12,7 @@ const float: AddonModule = {
   version: '1.0.0',
   author: 'webgl-grid',
   category: msg('アニメーション'),
-  description: msg('物をタイムラインの時刻に合わせて、ふわふわ上下に揺らします。「オブジェクト > ふわふわさせる」か、サイドバーの「オブジェクト」で設定します。'),
+  description: msg('物をタイムラインの時刻に合わせて、ふわふわ上下に揺らします。「オブジェクト > ふわふわさせる」か、プロパティの「オブジェクト」で設定します。'),
   register(api) {
     const { engine } = api;
     const bob = api.addObjectData<Bob>({

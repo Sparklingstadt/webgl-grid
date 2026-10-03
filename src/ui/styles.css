@@ -4,8 +4,8 @@
   --gap: #161616;        /* 領域の間のすき間 */
   --topbar: #232323;
   --header: #303030;     /* 領域の見出し (ヘッダー) */
-  --region: #282828;     /* タイムラインやサイドバーの地 */
-  --panel: #383838;      /* サイドバーのパネル */
+  --region: #282828;     /* タイムラインや右の列の地 */
+  --panel: #383838;      /* プロパティのパネル */
   --panel-head: #3d3d3d;
   --widget: #545454;     /* ボタン */
   --widget-hi: #656565;
@@ -267,7 +267,7 @@ button.ol-twist[aria-expanded="true"]::before { border-left-color: transparent; 
 }
 .toast[hidden] { display: none; }
 
-/* 幅の狭い画面: サイドバーはビューポートの上に重ねて出し、タイムラインの見出しは 2 段にする */
+/* 幅の狭い画面: 右の列はビューポートの上に重ねて出し、タイムラインの見出しは 2 段にする */
 @media (max-width: 760px) {
   :root { --tl-h: 168px; }
   #app, #app.side-hidden { grid-template-columns: minmax(0, 1fr) 0 0; grid-template-rows: 28px minmax(0, 1fr) 4px var(--tl-h) 0; }

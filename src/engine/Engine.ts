@@ -303,7 +303,7 @@ export class Engine {
     this.selection.setMany(hits, hits.at(-1) ?? (extend ? this.selection.current : null), extend);
     this.viewport.requestDraw();
   }
-  // サイドバーの「オブジェクト」から位置・向き・色を変える
+  // プロパティの「オブジェクト」・N パネルから位置・向きを変える
   setObjProp(key: 'x' | 'z' | 'r', v: number) {
     const o = this.selection.current;
     if (!o || !Number.isFinite(v)) return;
@@ -447,7 +447,7 @@ export class Engine {
     this.viewport.requestDraw();
   }
 
-  // --- 名前・表示 (アウトライナー・サイドバー・H / Alt+H) ---
+  // --- 名前・表示 (アウトライナー・プロパティ・H / Alt+H) ---
   // 名前を付ける (空・null で種類の名前に戻す)
   renameObj(obj: Obj, name: string | null) {
     const n = name?.trim().slice(0, MAX_NAME) || undefined;
@@ -664,7 +664,7 @@ export class Engine {
       return;
     }
     const f = this.clock.frame;
-    // まだ何も動かしていない (キーもない) ときは、サイドバーで選んでいるボーンに打つ
+    // まだ何も動かしていない (キーもない) ときは、ボーンのタブで選んでいるボーンに打つ
     const inf: number[] | undefined = obj.model.morphTargetInfluences;
     const nothing = !obj.pose?.size && !keyFrames(obj.anim).length && !inf?.some(v => v !== 0);
     if (nothing) {

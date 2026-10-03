@@ -13,7 +13,7 @@ import { useEngine, useUi } from './EngineContext';
 import { useShortcuts, type Area } from './hooks/useShortcuts';
 import { t } from '../core/i18n';
 
-// 幅の狭い画面では、サイドバーはビューポートの上に重ねて出す (最初はしまっておく)
+// 幅の狭い画面では、右の列 (アウトライナー・プロパティ) はビューポートの上に重ねて出す (最初はしまっておく)
 const NARROW = '(max-width: 760px)';
 const isNarrow = () => matchMedia(NARROW).matches;
 
