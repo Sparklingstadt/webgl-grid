@@ -203,3 +203,23 @@ test('MoGraph フィールド: エフェクタに球のフィールドを足す�
   await expect.poll(ys).toEqual([0, 0.9, 1, 1, 1]);
   expect(errors).toEqual([]);
 });
+
+test('MoGraph 分割: 形をボロノイで破片に分け、エフェクタで破片を動かす。PolyFX にもでき、やめると戻る', async ({ page }) => {
+  const errors = await open(page);
+  const p = await screenPosOf(page, 0);
+  await page.mouse.click(p.x, p.y);
+  await page.getByRole('checkbox', { name: '分割する' }).click();
+  await expect(page.getByText('破片 12 個')).toBeVisible();
+  const top = () => page.evaluate(() => { const m = (window as Win).engine.world.objects[0].node.getObjectByName('__fracture'); m.geometry.computeBoundingBox(); return +m.geometry.boundingBox.max.y.toFixed(2); });
+  expect(await top()).toBeLessThanOrEqual(1);
+  const panel = page.locator('details.panel').filter({ has: page.getByRole('checkbox', { name: '分割する' }) });
+  await panel.getByRole('button', { name: '+ ランダム' }).click();
+  await panel.getByRole('spinbutton', { name: 'ランダムの位置 Y' }).fill('3');
+  await page.keyboard.press('Enter');
+  await expect.poll(top).toBeGreaterThan(1.5);
+  await choose(page, '分け方', 'PolyFX (面ごと)');
+  await expect(page.getByText('破片 12 個')).toBeVisible();
+  await page.getByRole('checkbox', { name: '分割する' }).click();
+  await expect.poll(() => page.evaluate(() => !(window as Win).engine.world.objects[0].node.getObjectByName('__fracture') && (window as Win).engine.world.objects[0].mesh.visible)).toBe(true);
+  expect(errors).toEqual([]);
+});

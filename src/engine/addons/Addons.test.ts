@@ -9,7 +9,7 @@ const start = async (e = new Engine(), storage = memoryAddonStorage()) => { awai
 describe('アドオン', () => {
   it('組み込みのアドオンは Cinema 4D と MoGraph だけ最初から有効で、有効にするとメニュー・パネル・命令が足され、切ると外れる', async () => {
     const e = await start();
-    expect(e.ui.state.addons.map(a => [a.id, a.enabled])).toEqual([['cinema4d', true], ['mograph', true], ['mograph-fields', true], ['mograph-modes', true], ['turntable', false], ['float', false], ['scatter', false]]);
+    expect(e.ui.state.addons.map(a => [a.id, a.enabled])).toEqual([['cinema4d', true], ['mograph', true], ['mograph-fields', true], ['mograph-modes', true], ['mograph-fracture', true], ['turntable', false], ['float', false], ['scatter', false]]);
     const before = { menus: e.addons.menus.list().length, panels: e.addons.panels.list().length, commands: e.addons.commands.list().length, objectData: e.addons.objectData.list().length };
     await e.addons.enable('float');
     expect(e.addons.isEnabled('float')).toBe(true);

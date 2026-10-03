@@ -90,6 +90,9 @@ function normalizeEffector(e: Partial<Effector> & { frames?: unknown }): Effecto
   };
 }
 
+// エフェクタの並びをそろえる (ほかの MoGraph の物でも使う)
+export const normalizeEffectors = (list: unknown): Effector[] => (Array.isArray(list) ? list : []).filter(e => isKind(e?.kind)).slice(0, 16).map(normalizeEffector);
+
 // 保存されていた・外から渡された設定を、使える値にそろえる
 export function normalizeCloner(s: Partial<ClonerSettings> | undefined): ClonerSettings {
   const d = CLONER_DEFAULT, o = s ?? {};
@@ -103,7 +106,7 @@ export function normalizeCloner(s: Partial<ClonerSettings> | undefined): ClonerS
     grid: vec(o.grid, d.grid).map(n => int(n, 1, 1, 50)) as Vec3, spacing: vec(o.spacing, d.spacing),
     random: { position: num(r.position, 0, 0), rotationDeg: num(r.rotationDeg, 0, 0), seed: int(r.seed, 1, 0, 1e9) },
     modeParams: normalizeParams(o.modeParams),
-    effectors: (Array.isArray(o.effectors) ? o.effectors : []).filter(e => isKind(e?.kind)).slice(0, 16).map(normalizeEffector),
+    effectors: normalizeEffectors(o.effectors),
   };
 }
 

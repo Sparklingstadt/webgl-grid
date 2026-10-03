@@ -111,7 +111,8 @@ export class ProjectIO {
     const filesOf = (mesh: Any): string[] => [...(mesh.userData.usedFiles ?? [mesh.userData.sourceFile])].map(asset);
     const objects: SavedObject[] = e.world.objects.map(o => {
       const base: SavedObject = { kind: kindOf(o), s: o.s, x: o.x, y: o.y, z: o.z, r: o.r, c: o.c, slots: [...o.slots], activeSlot: o.activeSlot };
-      for (const d of e.addons.objectData.list()) base[d.key] = d.get(o) ?? null; // 物ごとの値 (ライト・アドオンのもの)
+      // 物ごとの値 (ライト・アドオンのもの)。アドオンの値は、ある物だけ
+      for (const d of e.addons.objectData.list()) { const v = d.get(o) ?? null; if (v !== null || !d.key.includes('.')) base[d.key] = v; }
       if (!isModel(o)) return base;
       const inf: number[] | undefined = o.model.morphTargetInfluences;
       return {
@@ -284,7 +285,7 @@ export class ProjectIO {
     const missing = new Set<string>();
     const look = (o: Record<string, unknown>, known: (k: string) => boolean) => {
       for (const [k, v] of Object.entries(o)) {
-        if (k.includes('.') && !known(k)) missing.add(k.split('.')[0]);
+        if (k.includes('.') && v !== null && v !== undefined && !known(k)) missing.add(k.split('.')[0]);
         else if (k in MOVED_TO_ADDONS && v !== null && !known(k)) missing.add(MOVED_TO_ADDONS[k]);
       }
     };

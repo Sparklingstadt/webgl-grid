@@ -87,20 +87,34 @@ forward('set_object', '物の位置・向き・色を変える (重なる位置�
 });
 forward('delete_object', '物を消す', { id });
 const vec3 = z.array(z.number()).length(3);
-forwardAddon('set_cloner', 'cinema4d.set_cloner', 'クローナー (Cinema 4D のクローナー): 物を直線・放射・グリッドに並べる。元の物の位置と向きが中心。MMD モデルは全部が同じ動きで踊る。省いた設定は今のまま。off: true でやめる', {
+const paramRecord = z.record(z.string(), z.union([z.number(), z.boolean(), z.string()]));
+const effectorList = z.array(z.object({
+  kind: z.string().describe('plain・step・random・formula・time・target・delay・shader・pushapart・volume・inheritance・sound (MoGraph エフェクタのアドオン)'),
+  enabled: z.boolean().optional(), position: vec3.optional(), rotationDeg: z.number().optional(), scale: z.number().positive().optional(),
+  params: paramRecord.optional().describe('種類ごとの設定: random { seed }・formula { expression (Cinema 4D と同じ式。t・f・w・id・count・x y z・rnd。三角関数は度), frequency, waves }・'
+    + 'target { x, z }・delay { frames }・shader { size, speed, seed }・pushapart { radius, iterations }・volume { target: 物の id }・inheritance { target: クローナーの id }・sound { mode: bands / all, gain }'),
+  select: z.string().optional().describe('MoGraph 選択: 効くクローンの番号 ("0-4, 7"・"偶数"・"奇数"。空なら全部)'),
+  fields: z.array(z.object({
+    kind: z.string().describe('linear・sphere・box・cylinder・radial・random・noise・time (MoGraph フィールドのアドオン)'),
+    enabled: z.boolean().optional(), blend: z.enum(['normal', 'max', 'min', 'add', 'subtract', 'multiply']).optional(),
+    opacity: z.number().min(0).max(1).optional(), invert: z.boolean().optional(),
+    params: paramRecord.optional().describe('場所を持つものは cx・cy・cz (中心)。sphere { radius, inner }・box { sx, sy, sz, inner }・cylinder { radius, height, inner }・linear { axis, length }・radial { turns }・noise { size, speed, contrast, seed }・time { start, length }・random { seed }'),
+  })).optional().describe('フィールド (効く範囲。上から重ねる。なければ全体に効く)'),
+})).optional().describe('エフェクタ (上から順にかける。渡すと並びごと入れ替える)。位置・回転・大きさを、強さ (フィールドと MoGraph 選択も) に合わせて足す');
+forwardAddon('set_cloner', 'cinema4d.set_cloner', 'クローナー (Cinema 4D のクローナー): 物を並べる。元の物の位置と向きが中心。MMD モデルは全部が同じ動きで踊る。省いた設定は今のまま。off: true でやめる', {
   id, off: z.boolean().optional(),
-  mode: z.enum(['linear', 'radial', 'grid']).optional(),
+  mode: z.string().optional().describe('linear・radial・grid と、MoGraph 配置のアドオンの honeycomb (ハニカム)・object (ほかの物の頂点・面・表面・中身)'),
+  modeParams: paramRecord.optional().describe('honeycomb { width, height, spacing, plane: xz / xy }・object { target: 物の id, distribution: vertices / faces / surface / volume, count, seed, align }'),
   count: z.number().int().min(1).optional().describe('直線・放射の数'),
   step: vec3.optional().describe('直線: 1 つごとのずれ [x, y, z]'), stepRotDeg: z.number().optional().describe('直線: 1 つごとの回転 (度)'),
   radius: z.number().min(0).optional(), startDeg: z.number().optional(), endDeg: z.number().optional(), align: z.boolean().optional().describe('放射: 外を向く'),
   grid: vec3.optional().describe('グリッドの数 [x, y, z]'), spacing: vec3.optional().describe('グリッドの間隔 [x, y, z]'),
   random: z.object({ position: z.number().min(0).optional(), rotationDeg: z.number().min(0).optional(), seed: z.number().int().optional() }).optional().describe('ばらつき'),
-  effectors: z.array(z.object({
-    kind: z.string().describe('plain・step・random・formula・time・target・delay (MoGraph エフェクタのアドオン)'), enabled: z.boolean().optional(),
-    position: vec3.optional(), rotationDeg: z.number().optional(), scale: z.number().positive().optional(),
-    params: z.record(z.string(), z.union([z.number(), z.boolean(), z.string()])).optional()
-      .describe('種類ごとの設定: random { seed }・formula { frequency (Hz), waves }・target { x, z }・delay { frames }'),
-  })).optional().describe('エフェクタ (上から順にかける。渡すと並びごと入れ替える)。位置・回転・大きさを、強さに合わせて足す。plain: 全部に同じだけ / step: 最初の 0 から最後の値まで / random: クローンごとにばらつかせる / formula: 番号と時刻で波のように / time: 時刻 (秒) に合わせて / target: params の場所へ向ける / delay: MMD モデルのクローンを 1 つごとに params.frames フレーム遅らせる'),
+  effectors: effectorList,
+});
+forwardAddon('set_fracture', 'mograph-fracture.set', '分割 (Cinema 4D のボロノイ分割・PolyFX): 形を破片に分け、エフェクタで動かす。省いた設定は今のまま。off: true でやめる', {
+  id, off: z.boolean().optional(), mode: z.enum(['voronoi', 'polyfx']).optional(), count: z.number().int().min(1).optional().describe('破片の数'),
+  seed: z.number().int().optional(), spread: z.enum(['uniform', 'center', 'edge']).optional(), gap: z.number().min(0).max(0.9).optional(), effectors: effectorList,
 });
 const hexColor = z.string().regex(/^#?[0-9a-fA-F]{6}$/).describe('"#rrggbb"');
 const lightType = z.enum(['point', 'sun', 'spot', 'area']).describe('Blender のライトの種類: ポイント・サン・スポット・エリア');
