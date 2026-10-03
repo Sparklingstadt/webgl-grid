@@ -3,8 +3,8 @@ import { DEG } from './constants';
 import { msg } from './i18n';
 import { ZERO_BONE, type BoneValue } from './types';
 
-// --- キーフレームのアニメーション (ボーンと表情のチャンネルごと) ---
-// チャンネル (ボーン 1 本・表情 1 つ) ごとに、フレーム → キー を持つ。
+// --- キーフレームのアニメーション (ボーン・表情・物のチャンネルごと) ---
+// チャンネル (ボーン 1 本・表情 1 つ・物の位置 X など 1 つ) ごとに、フレーム → キー を持つ。
 // キーには、1 つ前のキーからこのキーまでのつなぎ方 (補間曲線) を持たせる (MMD と同じく、行き先のキーに付ける)。
 // 補間曲線は (0,0)-(x1,y1)-(x2,y2)-(1,1) の 3 次ベジェ曲線で、横が時間・縦が進み具合 (0〜1)
 export type Curve = [x1: number, y1: number, x2: number, y2: number];
@@ -21,11 +21,22 @@ export interface MorphKey { v: number; curve: Curve }
 export interface Animation {
   bones: Map<number, Map<number, BoneKey>>;  // ボーンの番号 → フレーム → キー
   morphs: Map<number, Map<number, MorphKey>>; // 表情の番号 → フレーム → キー
+  props: Map<number, Map<number, MorphKey>>;  // 物の値 (PROPS の番号: 位置 X・位置 Z・回転・大きさ) → フレーム → キー
 }
-export type Channel = { kind: 'bone' | 'morph'; index: number };
+export type Channel = { kind: 'bone' | 'morph' | 'prop'; index: number };
+// 物 (形・ライト) のキーにする値 (Blender の位置・回転・拡大縮小)。回転はラジアン
+export const PROPS = [
+  { key: 'x', name: msg('位置 X') },
+  { key: 'z', name: msg('位置 Z') },
+  { key: 'r', name: msg('回転') },
+  { key: 'scale', name: msg('大きさ') },
+] as const;
+export type PropKey = typeof PROPS[number]['key'];
 
-export const createAnimation = (): Animation => ({ bones: new Map(), morphs: new Map() });
-export const isEmpty = (a: Animation | null | undefined) => !a || (!a.bones.size && !a.morphs.size);
+export const createAnimation = (): Animation => ({ bones: new Map(), morphs: new Map(), props: new Map() });
+export const isEmpty = (a: Animation | null | undefined) => !a || (!a.bones.size && !a.morphs.size && !a.props.size);
+const mapsOf = (a: Animation) => [a.bones, a.morphs, a.props] as Map<number, Map<number, unknown>>[];
+const mapOf = (a: Animation, kind: Channel['kind']) => (kind === 'bone' ? a.bones : kind === 'morph' ? a.morphs : a.props) as Map<number, Map<number, unknown>>;
 
 // 補間曲線の、時間 x (0〜1) のときの進み具合
 export function curveAt([x1, y1, x2, y2]: Curve, x: number) {
@@ -56,7 +67,7 @@ function around<K>(keys: Map<number, K>, f: number): [number, K, number, K] | nu
 }
 const _qa = new THREE.Quaternion(), _qb = new THREE.Quaternion(), _e = new THREE.Euler();
 
-export function evaluate(anim: Animation, f: number): { pose: Map<number, BoneValue>; morphs: Map<number, number> } {
+export function evaluate(anim: Animation, f: number): { pose: Map<number, BoneValue>; morphs: Map<number, number>; props: Map<number, number> } {
   const pose = new Map<number, BoneValue>();
   for (const [bone, keys] of anim.bones) {
     const r = around(keys, f);
@@ -81,7 +92,15 @@ export function evaluate(anim: Animation, f: number): { pose: Map<number, BoneVa
     const s = f1 > f0 ? curveAt(k1.curve, (f - f0) / (f1 - f0)) : 0;
     morphs.set(m, k0.v + (k1.v - k0.v) * s);
   }
-  return { pose, morphs };
+  const props = new Map<number, number>();
+  for (const [p, keys] of anim.props) {
+    const r = around(keys, f);
+    if (!r) continue;
+    const [f0, k0, f1, k1] = r;
+    const s = f1 > f0 ? curveAt(k1.curve, (f - f0) / (f1 - f0)) : 0;
+    props.set(p, k0.v + (k1.v - k0.v) * s);
+  }
+  return { pose, morphs, props };
 }
 
 // --- 編集 ---
@@ -111,21 +130,30 @@ export function insertKeys(anim: Animation, frame: number, pose: Map<number, Bon
   }
   return n;
 }
+// 物の値 (values: PROPS の順) を、フレームに打つ。すでにキーがあれば値だけ替える。打ったチャンネルの数を返す
+export function insertPropKeys(anim: Animation, frame: number, values: number[]) {
+  values.forEach((v, p) => {
+    let keys = anim.props.get(p);
+    if (!keys) anim.props.set(p, keys = new Map());
+    keys.set(frame, { v, curve: [...(keys.get(frame)?.curve ?? LINEAR)] as Curve });
+  });
+  return values.length;
+}
 // キーのあるフレーム (全チャンネルをまとめて)
 export function keyFrames(anim: Animation | null | undefined): number[] {
   if (!anim) return [];
   const all = new Set<number>();
-  for (const map of [anim.bones, anim.morphs]) for (const keys of map.values()) for (const f of keys.keys()) all.add(f);
+  for (const map of mapsOf(anim)) for (const keys of map.values()) for (const f of keys.keys()) all.add(f);
   return [...all].sort((a, b) => a - b);
 }
-export const channelKeys = (anim: Animation, ch: Channel) => (ch.kind === 'bone' ? anim.bones : anim.morphs).get(ch.index) as Map<number, BoneKey | MorphKey> | undefined;
+export const channelKeys = (anim: Animation, ch: Channel) => mapOf(anim, ch.kind).get(ch.index) as Map<number, BoneKey | MorphKey> | undefined;
 // frames のキーを、すべてのチャンネル (channel を渡せばそのチャンネルだけ) から消す。消した数を返す
 export function deleteKeys(anim: Animation, frames: Iterable<number>, channel?: Channel) {
   let n = 0;
   const fs = [...frames];
-  for (const map of [anim.bones, anim.morphs] as Map<number, Map<number, unknown>>[]) {
+  for (const map of mapsOf(anim)) {
     for (const [ch, keys] of map) {
-      if (channel && (map !== (channel.kind === 'bone' ? anim.bones : anim.morphs) || ch !== channel.index)) continue;
+      if (channel && (map !== mapOf(anim, channel.kind) || ch !== channel.index)) continue;
       for (const f of fs) if (keys.delete(f)) n++;
       if (!keys.size) map.delete(ch);
     }
@@ -135,7 +163,7 @@ export function deleteKeys(anim: Animation, frames: Iterable<number>, channel?: 
 // frames のキーを delta フレームずらす (重なった先は上書き)。ずらした先のフレームを返す
 export function moveKeys(anim: Animation, frames: Iterable<number>, delta: number) {
   const fs = new Set(frames);
-  for (const map of [anim.bones, anim.morphs] as Map<number, Map<number, unknown>>[]) {
+  for (const map of mapsOf(anim)) {
     for (const keys of map.values()) {
       const moving = [...keys].filter(([f]) => fs.has(f));
       for (const [f] of moving) keys.delete(f);
@@ -149,14 +177,17 @@ export function moveKeys(anim: Animation, frames: Iterable<number>, delta: numbe
 export interface AnimationJson {
   bones: [number, [number, BoneValue, Curve][]][];
   morphs: [number, [number, number, Curve][]][];
+  props?: [number, [number, number, Curve][]][]; // (物の値。前の版にはない)
 }
 export const animationToJson = (a: Animation): AnimationJson => ({
   bones: [...a.bones].map(([b, keys]) => [b, [...keys].map(([f, k]) => [f, { ...k.v }, [...k.curve] as Curve])]),
   morphs: [...a.morphs].map(([m, keys]) => [m, [...keys].map(([f, k]) => [f, k.v, [...k.curve] as Curve])]),
+  ...(a.props.size ? { props: [...a.props].map(([p, keys]) => [p, [...keys].map(([f, k]) => [f, k.v, [...k.curve] as Curve])]) } : {}),
 });
 export const animationFromJson = (j: AnimationJson): Animation => ({
   bones: new Map(j.bones.map(([b, keys]) => [b, new Map(keys.map(([f, v, curve]) => [f, { v: { ...v }, curve: [...curve] as Curve }]))])),
   morphs: new Map(j.morphs.map(([m, keys]) => [m, new Map(keys.map(([f, v, curve]) => [f, { v, curve: [...curve] as Curve }]))])),
+  props: new Map((j.props ?? []).map(([p, keys]) => [p, new Map(keys.map(([f, v, curve]) => [f, { v, curve: [...curve] as Curve }]))])),
 });
 // 前の形 (フレームごとにポーズ全体と表情すべて) から変換する。つなぎ方は直線
 export function animationFromPoseKeys(keys: [number, { pose: [number, BoneValue][]; morphs: number[] | null }][]): Animation {

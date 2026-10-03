@@ -1,5 +1,5 @@
 import { Emitter } from '../../core/events';
-import { animationFromJson, animationToJson, isEmpty } from '../../core/animation';
+import { animationFromJson, animationToJson, isEmpty, PROPS } from '../../core/animation';
 import { describeChange, type ObjState, type SceneState } from '../../core/history';
 import { msg, t } from '../../core/i18n';
 import type { Clock } from '../anim/Clock';
@@ -135,10 +135,13 @@ export class History {
     const objects: ObjState[] = this.world.objects.map(o => {
       const data: Record<string, unknown> = {};
       for (const d of this.addons.objectData.list()) { const v = d.get(o); if (v !== undefined && v !== null) data[d.key] = structuredClone(v); }
-      const st: ObjState = { id: o.id, s: o.s, x: o.x, y: o.y, z: o.z, r: o.r, c: o.c, slots: [...o.slots], data };
-      if (!isModel(o)) return st;
-      // キーのあるボーン・表情の値は、いまのフレームで決まるので入れない
+      // キーのある位置・回転・大きさは、いまのフレームで決まるので入れない (再生しただけで手にならないように)
       const anim = o.anim;
+      const keyed = (k: string) => !!anim?.props.has(PROPS.findIndex(p => p.key === k));
+      if (keyed('scale')) delete data.scale;
+      const st: ObjState = { id: o.id, s: o.s, x: keyed('x') ? 0 : o.x, y: keyed('x') || keyed('z') ? 0 : o.y, z: keyed('z') ? 0 : o.z, r: keyed('r') ? 0 : o.r, c: o.c, slots: [...o.slots], data };
+      if (!isModel(o)) { st.anim = isEmpty(anim) ? null : animationToJson(anim!); return st; }
+      // キーのあるボーン・表情の値も、同じく入れない
       st.pose = [...(o.pose ?? [])].filter(([i]) => !anim?.bones.has(i)).map(([i, v]) => [i, { ...v }]);
       const inf: number[] | undefined = o.model.morphTargetInfluences;
       if (!o.animated && inf) st.morphs = Array.from(inf).map((v, m) => (anim?.morphs.has(m) ? 0 : v));
@@ -178,8 +181,8 @@ export class History {
         Object.assign(obj, { x: st.x, y: st.y, py: st.y, vy: 0, z: st.z, r: st.r, c: st.c });
         st.slots.forEach((id, k) => { if (obj.slots[k] !== id) world.setSlot(obj, k, id); });
         for (const d of this.addons.objectData.list()) applyObjectData(d, obj, st.data[d.key]);
+        obj.anim = st.anim ? animationFromJson(st.anim) : null; // (キーのある値は、下の applyAll でいまのフレームの値にする)
         if (!isModel(obj)) continue;
-        obj.anim = st.anim ? animationFromJson(st.anim) : null;
         if (st.pose) obj.pose = new Map(st.pose.map(([b, v]) => [b, { ...v }]));
         const inf: number[] | undefined = obj.model.morphTargetInfluences;
         if (st.morphs && inf) st.morphs.forEach((v, k) => { if (!obj.anim?.morphs.has(k)) inf[k] = v; });

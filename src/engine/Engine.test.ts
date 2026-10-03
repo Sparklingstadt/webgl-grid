@@ -157,9 +157,42 @@ describe('キーフレーム', () => {
     expect(e.clock.frame).toBe(5);
   });
 
-  it('モデルを選んでいなければ打たずに知らせる', () => {
+  it('何も選んでいなければ打たずに知らせる', () => {
     const e = engineWithCube();
     e.insertKey();
-    expect(e.ui.state.toast?.text).toContain('モデルをクリックして選んで');
+    expect(e.ui.state.toast?.text).toContain('物をクリックして選んで');
+    expect(e.world.objects[0].anim ?? null).toBeNull();
+  });
+
+  it('形・ライトは位置・回転・大きさにキーを打ち、あいだは補間する。元に戻す・プロジェクトにも残り、再生しただけでは手にならない', async () => {
+    const e = engineWithCube();
+    const cube = e.world.objects[0];
+    e.select(cube);
+    e.clock.seekFrame(0);
+    e.insertKey();
+    e.clock.seekFrame(20);
+    e.setObjProp('x', 4);
+    e.setObjProp('r', 90);
+    e.setScale(cube, 3);
+    e.insertKey();
+    expect(keyFrames(cube.anim)).toEqual([0, 20]);
+    expect([...cube.anim!.props.keys()]).toEqual([0, 1, 2, 3]);
+    e.clock.seekFrame(10);
+    expect(cube.x).toBeCloseTo(2);
+    expect(cube.r).toBeCloseTo(Math.PI / 4);
+    expect(cube.scale).toBeCloseTo(2);
+    expect(e.timelineRows()[0]).toMatchObject({ label: '立方体', keys: [0, 20], editable: true });
+    // 再生で動いても、元に戻すの手は増えない
+    e.history.checkpoint();
+    const steps = e.ui.state.history.labels.length;
+    e.clock.seekFrame(15);
+    e.history.checkpoint();
+    expect(e.ui.state.history.labels.length).toBe(steps);
+    // キーを消すと、その場に止まる
+    e.deleteKeyHere();
+    expect(keyFrames(cube.anim)).toEqual([0, 20]); // (15 にはキーがない)
+    e.clock.seekFrame(20);
+    e.deleteKeyHere();
+    expect(keyFrames(cube.anim)).toEqual([0]);
   });
 });

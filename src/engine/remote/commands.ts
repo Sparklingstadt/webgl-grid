@@ -194,9 +194,12 @@ export const COMMANDS: Record<string, Command> = {
     return sceneState(e).timeline;
   },
   insert_keyframe: (e, p) => {
-    const obj = modelOf(e, p?.id);
+    const target = objOf(e, p?.id);
     if (p?.frame !== undefined) e.clock.seekFrame(Number(p.frame));
-    e.select(obj);
+    e.select(target);
+    // 形・ライト: 位置・回転・大きさのキー
+    if (!isModel(target)) { e.insertKey(); return { frame: e.clock.frame, keyframes: keyFrames(target.anim) }; }
+    const obj = target;
     if (p?.bones?.length) {
       const bones = (p.bones as unknown[]).map(b => boneIndex(obj, b));
       e.keyframes.insert(obj, e.clock.frame, bones);
@@ -204,7 +207,7 @@ export const COMMANDS: Record<string, Command> = {
     return { frame: e.clock.frame, keyframes: keyFrames(obj.anim) };
   },
   delete_keyframe: (e, p) => {
-    const obj = modelOf(e, p?.id);
+    const obj = objOf(e, p?.id);
     if (p?.frame !== undefined) e.clock.seekFrame(Number(p.frame));
     e.select(obj);
     e.deleteKeyHere();

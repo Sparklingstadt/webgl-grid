@@ -174,8 +174,8 @@ tool('load_files', 'MMD のファイルを読み込む: .pmx (同じフォルダ
 forward('timeline', 'タイムライン: いまのフレームへ飛ぶ・範囲 (開始・終了) を変える・再生/停止', {
   frame, start: frame, end: frame, playing: z.boolean().optional(),
 });
-forward('insert_keyframe', 'モデルのいまのポーズと表情をキーフレームにする (frame を渡すとそこへ飛んでから)', { id, frame });
-forward('delete_keyframe', 'モデルのキーフレームを消す (frame を渡すとそこへ飛んでから)', { id, frame });
+forward('insert_keyframe', 'いまの値をキーフレームにする: モデルはポーズと表情、形・ライトは位置・回転・大きさ (frame を渡すとそこへ飛んでから)', { id, frame });
+forward('delete_keyframe', '物のキーフレームを消す (frame を渡すとそこへ飛んでから)', { id, frame });
 
 // ポーズ・表情
 forward('list_bones', 'モデルの動かせるボーンの名前 (表示枠ごと)', { id });

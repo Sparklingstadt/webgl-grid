@@ -114,7 +114,7 @@ export class ProjectIO {
       const base: SavedObject = { kind: kindOf(o), s: o.s, x: o.x, y: o.y, z: o.z, r: o.r, c: o.c, slots: [...o.slots], activeSlot: o.activeSlot };
       // 物ごとの値 (ライト・アドオンのもの)。アドオンの値は、ある物だけ
       for (const d of e.addons.objectData.list()) { const v = d.get(o) ?? null; if (v !== null || !d.key.includes('.')) base[d.key] = v; }
-      if (!isModel(o)) return base;
+      if (!isModel(o)) return isEmpty(o.anim) ? base : { ...base, anim: animationToJson(o.anim!) }; // (形・ライトの位置・回転・大きさのキー)
       const inf: number[] | undefined = o.model.morphTargetInfluences;
       return {
         ...base,
@@ -246,6 +246,7 @@ export class ProjectIO {
     // ポーズ・表情・キーフレーム・髪
     data.objects.forEach((so, i) => {
       const obj = objs[i];
+      if (obj && !isModel(obj)) { obj.anim = so.anim ? animationFromJson(so.anim) : null; return; }
       if (!isModel(obj) || !so.pose) return;
       const m = obj;
       m.pose = new Map(so.pose);

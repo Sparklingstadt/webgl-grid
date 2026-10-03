@@ -945,5 +945,8 @@ const dict: Dictionary = {
   "すべて選択": "Select All",
   "オブジェクトのメニュー": "Object Context Menu",
   "選択を反転": "Invert Selection",
+  "キーフレームを打つ物をクリックして選んでください。": "Click an object to select it before inserting a keyframe.",
+  "選んだ物のいまの値 (モデルはポーズと表情、形・ライトは位置・回転・大きさ) を、このフレームのキーフレームにする (I)": "Insert a keyframe at this frame from the selection's current values (pose and expressions for models; location, rotation, scale for shapes and lights) (I)",
+  "チャンネル (ボーン・表情・位置・回転・大きさ) ごとのキーの行を出す": "Show a key row per channel (bones, expressions, location, rotation, scale)",
 };
 export default dict;

@@ -1,4 +1,4 @@
-import { animationFromJson, animationToJson, channelKeys, isEmpty, keyFrames, type Channel, type Curve } from '../core/animation';
+import { animationFromJson, animationToJson, channelKeys, isEmpty, keyFrames, PROPS, type Channel, type Curve } from '../core/animation';
 import { radiusOf } from '../core/stacking';
 import { applyObjectData } from './addons/registry';
 import type { LightSettings, LightType } from '../core/light';
@@ -579,9 +579,17 @@ export class Engine {
 
   // --- キーフレーム ---
   // 選んでいるモデルの、いまのポーズと表情を、いまのフレームに記録する (I)
+  // 形・ライトは、選んでいる物すべての位置・回転・大きさに打つ
   insertKey() {
     const obj = this.model;
-    if (!obj) { this.ui.toast(t('キーフレームを打つ MMD モデルをクリックして選んでください。')); return; }
+    if (!obj) {
+      const f = this.clock.frame;
+      const objs = this.selection.list.filter(o => !isModel(o));
+      if (!objs.length) { this.ui.toast(t('キーフレームを打つ物をクリックして選んでください。')); return; }
+      this.keyframes.insertTransform(objs, f);
+      if (f > this.clock.end) this.clock.setRange(this.clock.start, f);
+      return;
+    }
     const f = this.clock.frame;
     // まだ何も動かしていない (キーもない) ときは、サイドバーで選んでいるボーンに打つ
     const inf: number[] | undefined = obj.model.morphTargetInfluences;
@@ -601,12 +609,14 @@ export class Engine {
     this.keyframes.insert(obj, f, [bone]);
     if (f > this.clock.end) this.clock.setRange(this.clock.start, f);
   }
-  deleteKeyHere(channel?: Channel) { if (this.model) this.keyframes.deleteAt(this.model, this.clock.frame, this.clock.t, channel); }
-  // 選んでいるモデルの、チャンネルのいまのフレームのキーの補間曲線 (キーがなければ null)
-  keyCurve(channel: Channel) { return this.model ? this.keyframes.curve(this.model, channel, this.clock.frame) : null; }
-  setKeyCurve(channel: Channel, curve: Curve) { if (this.model) this.keyframes.setCurve(this.model, channel, this.clock.frame, curve, this.clock.t); }
-  deleteSelectedKeys() { return this.model ? this.keyframes.deleteSelected(this.model, this.clock.t) : false; }
-  moveSelectedKeys(delta: number) { if (this.model) this.keyframes.moveSelected(this.model, delta, this.clock.t); }
+  // (キーフレームの編集は、アクティブな物 (モデル・形・ライト) のキー)
+  private get keyed() { return this.selection.current; }
+  deleteKeyHere(channel?: Channel) { if (this.keyed) this.keyframes.deleteAt(this.keyed, this.clock.frame, this.clock.t, channel); }
+  // 選んでいる物の、チャンネルのいまのフレームのキーの補間曲線 (キーがなければ null)
+  keyCurve(channel: Channel) { return this.keyed ? this.keyframes.curve(this.keyed, channel, this.clock.frame) : null; }
+  setKeyCurve(channel: Channel, curve: Curve) { if (this.keyed) this.keyframes.setCurve(this.keyed, channel, this.clock.frame, curve, this.clock.t); }
+  deleteSelectedKeys() { return this.keyed ? this.keyframes.deleteSelected(this.keyed, this.clock.t) : false; }
+  moveSelectedKeys(delta: number) { if (this.keyed) this.keyframes.moveSelected(this.keyed, delta, this.clock.t); }
   selectKeys(frames: number[], add: boolean) { this.keyframes.select(frames, add); }
 
   // --- タイムライン ---
@@ -629,7 +639,15 @@ export class Engine {
         }
       }
     } else if (obj) {
-      rows.push({ label: nameOf(obj), keys: [], motion: null, editable: false });
+      // 形・ライト: 位置・回転・大きさのキー
+      const anim = obj.anim;
+      rows.push({ label: nameOf(obj), keys: keyFrames(anim), motion: null, editable: true });
+      if (anim && this.keyframes.expanded) {
+        for (const p of [...anim.props.keys()].sort((a, b) => a - b)) {
+          const ch: Channel = { kind: 'prop', index: p };
+          rows.push({ label: t(PROPS[p]?.name ?? String(p)), keys: [...channelKeys(anim, ch)!.keys()].sort((a, b) => a - b), motion: null, editable: true, channel: ch });
+        }
+      }
     }
     const cam = this.motion.camera;
     if (cam) rows.push({ label: t('カメラ'), keys: [], motion: cam.motion.frames, editable: false });

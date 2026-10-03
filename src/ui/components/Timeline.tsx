@@ -6,7 +6,7 @@ import { NumField } from './NumField';
 
 // Blender のタイムライン: 上の目盛りで再生位置 (青い再生ヘッド) を動かし、下にキーフレームの ◆ を並べる。
 // ◆ はクリックで選び (Shift で追加)、左右にドラッグでずらす。ホイールで拡大縮小、Shift+ホイールで左右に動かす。
-// 「チャンネル」を押すと、モデルの行の下にボーン・表情ごとの行を出す (左端の名前の上でホイールすると上下に動く)
+// 「チャンネル」を押すと、選んでいる物の行の下にチャンネル (ボーン・表情、形・ライトは位置・回転・大きさ) ごとの行を出す (左端の名前の上でホイールすると上下に動く)
 const RULER = 24, ROW_Y = RULER + 6, ROW_H = 22, KEY_R = 6, LABEL_W = 140;
 
 export function Timeline({ open, typeSelect }: { open: boolean; typeSelect: React.ReactNode }) {
@@ -17,7 +17,7 @@ export function Timeline({ open, typeSelect }: { open: boolean; typeSelect: Reac
   const start = useUi(s => s.start);
   const end = useUi(s => s.end);
   const keysVersion = useUi(s => s.keysVersion);
-  const isModel = useUi(s => s.sel?.kind === 'model');
+  const canKey = useUi(s => !!s.sel); // (キーを打てる物を選んでいる)
   const lang = useUi(s => s.lang); // (言語を変えたら、キャンバスの文字も描き直す)
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // 見えている範囲 (フレーム)。自分で拡大・移動するまでは、開始〜終了がちょうど入るように合わせる
@@ -143,7 +143,7 @@ export function Timeline({ open, typeSelect }: { open: boolean; typeSelect: Reac
 
   // 開始・終了が変わったら合わせ直す (自分で拡大・移動していなければ)
   useEffect(() => { if (!view.current.user) fit(); draw(); }, [start, end, fit, draw]);
-  useEffect(() => { draw(); }, [frame, keysVersion, isModel, open, expanded, lang, draw]);
+  useEffect(() => { draw(); }, [frame, keysVersion, canKey, open, expanded, lang, draw]);
   useEffect(() => {
     const canvas = canvasRef.current!;
     const ro = new ResizeObserver(draw);
@@ -240,12 +240,12 @@ export function Timeline({ open, typeSelect }: { open: boolean; typeSelect: Reac
       <div className="area-header tl-header">
         {typeSelect}
         <div className="grp">
-          <button type="button" className="hbtn" disabled={!isModel} onClick={() => engine.insertKey()}
-                  title={t('選んだモデルのいまのポーズと表情を、このフレームのキーフレームにする (I)')}>◆ {t('キー挿入')}</button>
-          <button type="button" className="hbtn" disabled={!isModel} onClick={() => engine.deleteSelectedKeys()}
+          <button type="button" className="hbtn" disabled={!canKey} onClick={() => engine.insertKey()}
+                  title={t('選んだ物のいまの値 (モデルはポーズと表情、形・ライトは位置・回転・大きさ) を、このフレームのキーフレームにする (I)')}>◆ {t('キー挿入')}</button>
+          <button type="button" className="hbtn" disabled={!canKey} onClick={() => engine.deleteSelectedKeys()}
                   title={t('選んだキーフレームを削除 (タイムライン上で X)')}>{t('キー削除')}</button>
-          <button type="button" className="hbtn" disabled={!isModel} aria-pressed={expanded} onClick={() => engine.keyframes.setExpanded(!expanded)}
-                  title={t('ボーン・表情ごとのキーの行を出す')}>{expanded ? '▾' : '▸'} {t('チャンネル')}</button>
+          <button type="button" className="hbtn" disabled={!canKey} aria-pressed={expanded} onClick={() => engine.keyframes.setExpanded(!expanded)}
+                  title={t('チャンネル (ボーン・表情・位置・回転・大きさ) ごとのキーの行を出す')}>{expanded ? '▾' : '▸'} {t('チャンネル')}</button>
         </div>
         <div className="transport" role="group" aria-label={t('再生')}>
           <button type="button" onClick={() => clock.jumpToStart()} title={t('最初のフレームへ (Shift ←)')} aria-label={t('最初のフレームへ')}>
