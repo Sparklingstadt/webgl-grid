@@ -1,4 +1,5 @@
-import { FPS, PALETTE_NAMES, SHAPE_NAMES, VIEWPORT_BG } from '../../core/constants';
+import { FPS, PALETTE_NAMES, VIEWPORT_BG } from '../../core/constants';
+import { SHAPES, findShape, shapeName } from '../../core/shapes';
 import { hexToLinear, linearToHex } from '../../core/materials/color';
 import { NODE_TYPES } from '../../core/materials/nodes';
 import { surfaceShader } from '../../core/materials/tree';
@@ -30,10 +31,9 @@ function modelOf(e: Engine, id: unknown): ModelObj {
   return obj;
 }
 function shapeIndex(shape: unknown) {
-  const keys = ['cube', 'torus', 'pyramid'];
-  const i = typeof shape === 'number' ? shape : Math.max(keys.indexOf(String(shape)), SHAPE_NAMES.indexOf(String(shape)));
-  if (!(i >= 0 && i < 3)) throw new Error(`形は ${keys.join(' / ')} のどれかです`);
-  return i;
+  const s = findShape(shape);
+  if (s === null) throw new Error(`形は ${SHAPES.map(d => d.key).join(' / ')} のどれかです`);
+  return s;
 }
 function colorIndex(color: unknown) {
   const i = typeof color === 'number' ? color : PALETTE_NAMES.indexOf(String(color));
@@ -57,7 +57,7 @@ export function sceneState(e: Engine) {
     objects: e.world.objects.map(o => ({
       id: o.id,
       kind: isModel(o) ? 'model' : 'shape',
-      name: isModel(o) ? o.model.name : SHAPE_NAMES[o.s],
+      name: isModel(o) ? o.model.name : shapeName(o.s),
       position: [r3(o.x), r3(o.y), r3(o.z)],
       rotationDeg: r3(o.r * DEG),
       ...(isModel(o)

@@ -73,7 +73,7 @@ tool('screenshot', 'いまのビューポートの見た目 (グリッドや選�
 
 // 物
 forward('add_shape', '形を置いて選ぶ。x, z を省くと画面の中央付近の空いている所', {
-  shape: z.enum(['cube', 'torus', 'pyramid']).optional(), x: z.number().optional(), z: z.number().optional(),
+  shape: z.enum(['cube', 'sphere', 'cylinder', 'cone', 'capsule', 'torus', 'tube', 'disc', 'plane', 'pyramid', 'icosahedron']).optional(), x: z.number().optional(), z: z.number().optional(),
   color: z.union([z.number().int().min(0).max(7), z.string()]).optional().describe('0〜7 か色の名前 (黄土・赤・青緑・青・紫・緑・ピンク・灰)'),
 });
 forward('select', '物を選ぶ (id を省くと選択を解除)', { id });

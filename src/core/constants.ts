@@ -27,4 +27,3 @@ export const PALETTE: [number, number, number][] = [
 ];
 export const PALETTE_NAMES = ['黄土', '赤', '青緑', '青', '紫', '緑', 'ピンク', '灰'];
 export const paletteCss = (i: number) => `rgb(${PALETTE[i].map(v => Math.round(Math.pow(v, 1 / 2.2) * 255)).join(',')})`;
-export const SHAPE_NAMES = ['立方体', 'トーラス', '三角錐'];

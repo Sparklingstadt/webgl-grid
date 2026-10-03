@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { SHAPE_NAMES } from '../../core/constants';
+import { SHAPES } from '../../core/shapes';
 import { useEngine, useUi } from '../EngineContext';
 import { Gizmo } from './Gizmo';
 import { Menu, MenuItem, MenuLabel, MenuSep } from './Menu';
@@ -46,7 +46,7 @@ export function ViewportArea(props: {
         </Menu>
         <Menu id="add" label="追加">
           <MenuLabel>メッシュ</MenuLabel>
-          {SHAPE_NAMES.map((name, i) => <MenuItem key={name} label={name} disabled={!canAdd} onSelect={() => engine.addShape(i)} />)}
+          {SHAPES.map(d => <MenuItem key={d.key} label={d.name} disabled={!canAdd} onSelect={() => engine.addShape(d.s)} />)}
           <MenuSep />
           <MenuItem label="MMD モデル…" disabled={!canAdd} onSelect={props.onOpenFiles} />
         </Menu>

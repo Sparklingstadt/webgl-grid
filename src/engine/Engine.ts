@@ -1,7 +1,8 @@
 import { channelKeys, keyFrames, type Channel, type Curve } from '../core/animation';
 import { MAX_CLONES, clonerLayout, normalizeCloner, type ClonerSettings } from '../core/cloner';
 import { normalizeDeformers, type Deformer } from '../core/deform';
-import { FPS, MAX_BOXES, SHAPE_NAMES } from '../core/constants';
+import { FPS, MAX_BOXES } from '../core/constants';
+import { shapeName } from '../core/shapes';
 import { errorText } from '../core/errors';
 import { patchPmxMaterials } from '../core/pmxMaterials';
 import type { BoneValue } from '../core/types';
@@ -406,7 +407,7 @@ export class Engine {
         }
       }
     } else if (obj) {
-      rows.push({ label: SHAPE_NAMES[obj.s], keys: [], motion: null, editable: false });
+      rows.push({ label: shapeName(obj.s), keys: [], motion: null, editable: false });
     }
     const cam = this.motion.camera;
     if (cam) rows.push({ label: 'カメラ', keys: [], motion: cam.motion.frames, editable: false });

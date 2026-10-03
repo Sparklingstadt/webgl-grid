@@ -1,6 +1,6 @@
 import type * as THREE from 'three';
 import { Emitter } from '../../core/events';
-import { SHAPE_NAMES } from '../../core/constants';
+import { shapeName } from '../../core/shapes';
 import { isModel, type ModelObj, type Obj } from '../types';
 import type { UiChannel } from '../UiChannel';
 import type { World } from './World';
@@ -60,4 +60,4 @@ export class Selection {
   }
 }
 
-export const nameOf = (o: Obj) => (isModel(o) ? (o.model.name || 'モデル') : SHAPE_NAMES[o.s]);
+export const nameOf = (o: Obj) => (isModel(o) ? (o.model.name || 'モデル') : shapeName(o.s));

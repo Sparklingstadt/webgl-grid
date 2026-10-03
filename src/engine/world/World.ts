@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Emitter } from '../../core/events';
 import { MAX_BOXES, MMD_SCALE, PALETTE } from '../../core/constants';
+import { shapeDef } from '../../core/shapes';
 import { freeSpot, radiusOf, settleHeights, stackFrom } from '../../core/stacking';
 import { surfaceShader } from '../../core/materials/tree';
 import type { MaterialLibrary } from '../materials/MaterialLibrary';
@@ -9,14 +10,38 @@ import type { System, Viewport } from '../render/Viewport';
 import type { Any, ModelObj, Obj } from '../types';
 import type { UiChannel } from '../UiChannel';
 
-const SHAPE_GEOMETRY = [
-  new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0),
-  // 寝かせたトーラス: 中心円の半径 0.35、管の半径 0.15 (高さ 0.3)
-  new THREE.TorusGeometry(0.35, 0.15, 24, 64).rotateX(Math.PI / 2).translate(0, 0.15, 0),
-  // 三角錐: 底面は外接円の半径 0.5 の正三角形、高さ 0.8
-  new THREE.ConeGeometry(0.5, 0.8, 3, 1).translate(0, 0.4, 0),
-];
-const SHAPE_HEIGHT = [1, 0.3, 0.8];
+// 形の形状 (底が y = 0。形ごとに 1 つを、置いた物どうしで共有する)
+const SHAPE_GEOMETRY = new Map<number, THREE.BufferGeometry>();
+function makeGeometry(s: number): THREE.BufferGeometry {
+  switch (s) {
+    // 寝かせたトーラス: 中心円の半径 0.35、管の半径 0.15 (高さ 0.3)
+    case 1: return new THREE.TorusGeometry(0.35, 0.15, 24, 64).rotateX(Math.PI / 2).translate(0, 0.15, 0);
+    // 三角錐: 底面は外接円の半径 0.5 の正三角形、高さ 0.8
+    case 2: return new THREE.ConeGeometry(0.5, 0.8, 3, 1).translate(0, 0.4, 0);
+    case 4: return new THREE.SphereGeometry(0.5, 48, 24).translate(0, 0.5, 0);
+    case 5: return new THREE.CylinderGeometry(0.5, 0.5, 1, 48).translate(0, 0.5, 0);
+    case 6: return new THREE.ConeGeometry(0.5, 1, 48).translate(0, 0.5, 0);
+    case 7: return new THREE.CapsuleGeometry(0.3, 0.6, 12, 32).translate(0, 0.6, 0);
+    case 8: { // チューブ: 外の半径 0.5・内の半径 0.3 の輪を、高さ 1 に押し出す
+      const ring = new THREE.Shape().absarc(0, 0, 0.5, 0, Math.PI * 2, false);
+      ring.holes.push(new THREE.Path().absarc(0, 0, 0.3, 0, Math.PI * 2, true));
+      return new THREE.ExtrudeGeometry(ring, { depth: 1, bevelEnabled: false, curveSegments: 48 }).rotateX(-Math.PI / 2);
+    }
+    case 9: return new THREE.CylinderGeometry(0.5, 0.5, 0.1, 48).translate(0, 0.05, 0);
+    case 10: return new THREE.BoxGeometry(2, 0.02, 2).translate(0, 0.01, 0);
+    case 11: { // 正二十面体: 頂点が上下にないので、いちばん下を地面に合わせる
+      const g = new THREE.IcosahedronGeometry(0.5);
+      g.computeBoundingBox();
+      return g.translate(0, -g.boundingBox!.min.y, 0);
+    }
+    default: return new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
+  }
+}
+const shapeGeometry = (s: number) => {
+  let g = SHAPE_GEOMETRY.get(s);
+  if (!g) SHAPE_GEOMETRY.set(s, g = makeGeometry(s));
+  return g;
+};
 // 落下アニメーション: 表示上の高さ py を、重力で y まで落とす (着地で少し跳ねる)。
 // 上がるときは y より少し高くまで跳び上がってから、同じ重力で着地する
 const GRAVITY = 40;
@@ -51,15 +76,16 @@ export class World implements System {
     this.events.emit('added', obj);
     return obj;
   }
-  // 形 s (0: 立方体, 1: トーラス, 2: 三角錐) を (x, z) に置く。色 c を省くと、使われていない色。
+  // 形 s (core/shapes.ts) を (x, z) に置く。色 c を省くと、使われていない色。
   // 形ごとに、その色のマテリアルを 1 つ作ってスロットに入れる
   addShape(s: number, x: number, z: number, c = this.nextColor()): Obj {
     const mat = this.lib.create('マテリアル', { auto: true });
     surfaceShader(mat.tree)!.values.baseColor = [...PALETTE[c]];
     const material = this.lib.instance(mat.id);
-    material.flatShading = s === 2;
-    const mesh = new THREE.Mesh(SHAPE_GEOMETRY[s], material);
-    return this.add({ x, y: 0, z, c, s, r: 0, py: 0, vy: 0, h: SHAPE_HEIGHT[s], hx: 0.5, hz: 0.5, mesh, slots: [mat.id] }, mesh);
+    const def = shapeDef(s);
+    material.flatShading = !!def.flat;
+    const mesh = new THREE.Mesh(shapeGeometry(def.s), material);
+    return this.add({ x, y: 0, z, c, s: def.s, r: 0, py: 0, vy: 0, h: def.h, hx: def.hx, hz: def.hz, mesh, slots: [mat.id] }, mesh);
   }
   // 形の色を、パレットの色 c にする (スロットのマテリアルのベースカラー。ほかの物と共有していれば、そちらも変わる)
   setShapeColor(obj: Obj, c: number) {
@@ -78,7 +104,7 @@ export class World implements System {
     if (i < 0 || i >= list.length) return;
     this.lib.release(list[i]);
     const m = this.lib.instance(id);
-    if (obj.s === 2) m.flatShading = true;
+    if (obj.s !== 3 && shapeDef(obj.s).flat) m.flatShading = true;
     list[i] = m;
     target.material = Array.isArray(target.material) ? list : list[0];
     obj.slots[i] = id;
@@ -136,7 +162,7 @@ export class World implements System {
     const target: THREE.Mesh = obj.s === 3 ? obj.model : obj.mesh!;
     const list = obj.slots.map(id => {
       const m = this.lib.instance(id);
-      if (obj.s === 2) m.flatShading = true;
+      if (obj.s !== 3 && shapeDef(obj.s).flat) m.flatShading = true;
       return m;
     });
     target.material = Array.isArray(target.material) ? list : list[0];

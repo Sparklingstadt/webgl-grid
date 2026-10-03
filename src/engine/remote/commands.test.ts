@@ -30,6 +30,6 @@ describe('外部からの命令', () => {
     await expect(runCommand(e, 'toString', {})).rejects.toThrow('知らない命令です');
     await expect(runCommand(e, 'set_object', { id: 99, x: 1 })).rejects.toThrow('id 99 の物はありません');
     await expect(runCommand(e, 'set_bone', { bone: '右腕', rotationDeg: [0, 0, 1] })).rejects.toThrow('MMD モデルではありません');
-    await expect(runCommand(e, 'add_shape', { shape: 'sphere' })).rejects.toThrow('形は');
+    await expect(runCommand(e, 'add_shape', { shape: 'dodecahedron' })).rejects.toThrow('形は');
   });
 });
