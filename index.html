@@ -457,7 +457,8 @@ canvas.addEventListener('pointerdown', e => {
           d.pending = null;
           d.grabbed = true;
           grab();
-          navigator.vibrate?.(15);
+          // ブラウザは、まだ一度も操作されていないページからの振動を拒否する
+          if (navigator.userActivation?.hasBeenActive ?? true) navigator.vibrate?.(15);
         }, LONG_PRESS_MS),
       };
     } else {
