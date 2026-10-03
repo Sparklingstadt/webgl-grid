@@ -13,7 +13,7 @@ npm install
 npm run dev
 ```
 
-表示された http://localhost:5173/ を開きます。`npm run build` で `dist/` に書き出せます（相対パスで参照するので、どのフォルダに置いても開けます）。three.js の物理演算に使う Ammo.js だけは、剛体を持つモデルを初めて読み込んだときに CDN（jsDelivr）から取ってきます。
+表示された http://localhost:5173/ を開きます。`npm run build` で `dist/` に書き出せます（相対パスで参照するので、どのフォルダに置いても開けます）。物理演算に使う Ammo.js（`public/libs/`）は大きいので、剛体を持つモデルを初めて読み込んだときに読みます。どこからも取ってこないので、インターネットにつながっていなくても動きます。
 
 WebGL2 に対応したブラウザが必要です。URL に `?debug` を付けて開くと、動作確認用にエンジンを `window.engine` としてブラウザのコンソールから触れます（e2e テストもこれを使います）。
 
@@ -207,7 +207,6 @@ npm run test:all       # 型チェック・lint・単体テスト・e2e を同�
   - 単体テストは、ファイルごとに並列に動く Vitest。ビルドは Rust で書かれた Rolldown（Vite 8）。
   - e2e は、テストごとに並列に動く Playwright。開発サーバーではなく、ビルドした 1 つのファイルを `vite preview` で配ります（ページの読み込みが速い）。
   - e2e の WebGL は、Mac では GPU（Metal）で描きます。GPU のない CI などではソフトウェア描画（SwiftShader）にします。`E2E_GL=gpu` / `E2E_GL=software` で切り替えられます。
-  - e2e では、物理エンジン Ammo.js を CDN から取らず、`node_modules` から返します（`e2e/fixtures/test.ts`。インターネットにつながっていなくても動きます）。
   - `npm run test:all` は、型チェック・単体テスト・e2e を同時に動かします（`scripts/test-all.mjs`）。
 - e2e で使う MMD モデルは、配布の決まりがあるモデルをリポジトリに入れないように、`e2e/fixtures/pmx.ts` でテストのたびに小さな PMX（四角柱 1 本、ボーン 2 本、表情 1 つ。物理演算のテストでは剛体と関節、錘で形を保つ髪も）を、`e2e/fixtures/vmd.ts` で小さな VMD を組み立てています。WebGL は GPU のない環境でも動くよう、ソフトウェア描画（SwiftShader）で動かします。
 
@@ -253,13 +252,15 @@ src/
     components/             TopBar, Menu, ViewportArea, Gizmo, Timeline, BSlider, NumField, Overlays (お知らせ・パレット), Dialogs (レンダリング・ファイルを探す窓), sidebar/
     components/controls/    アプリ独自の入力部品 (BSelect・BCheck・BProgress・ColorPicker・Popover)
     hooks/useShortcuts.ts   キーボードショートカット
+src/vendor/three-mmd/        three.js r171 から取り込んだ MMD 用の部品 (MMDLoader・MMDAnimationHelper・MMDPhysics・CCDIKSolver など)
+public/libs/                物理演算の Ammo.js (WebAssembly)
 mcp/                        MCP サーバー (server: ツール・bridge: ページとの WebSocket・files: ファイルの読み書き・appServer: dist/ を配る・status: 動いているかの問い合わせに答える)
 e2e/                        e2e テスト (Playwright) と、テスト用 PMX を組み立てる fixtures/pmx.ts
 ```
 
 ## しくみ
 
-- 描画は three.js（0.171.0）です。PMX の読み込みには three.js の `MMDLoader` を使っています。`MMDLoader` は r172 で three.js 本体から外されたため、three.js はこれが入っている最後の版に固定しています。MMD の読み込みや後処理などの大きな部品は、初めて使うときに読み込みます（Vite がファイルを分けます）。
+- 描画は three.js（0.186）です。PMX・VMD の読み込みと MMD の動き（MMDLoader・MMDAnimationHelper・MMDPhysics など）は、three.js が r172 で本体から外したので、外される前の r171 のものを `src/vendor/three-mmd/` に取り込んで使っています（これで three.js 本体は新しい版にできます）。MMD の読み込みや後処理などの大きな部品は、初めて使うときに読み込みます（Vite がファイルを分けます）。
 - 画面の部品は React で、three.js の場面はエンジン（`src/engine`）が持ちます。エンジンは状態が変わると `UiChannel` のストアに書き、部品は `useUi`（`useSyncExternalStore`）でそれを読んで描き直します。毎フレーム変わるもの（再生中の表情・ボーンの値）は、描き直しを 0.1 秒に 1 回に間引きます。タイムラインとナビゲーションギズモは 2D の canvas に直接描きます。
 - 地面は大きな板に専用のシェーダーを当てて描いています。Blender の床のように面は塗らず、`fwidth` で距離に関係なく線幅が一定になるようにアンチエイリアスした 1 単位ごとの細線と 5 単位ごとの太線、X 軸（赤）と Z 軸（青）だけを引き、遠くほど透明にしています。
 - マテリアルは three.js の物理ベースの材質（`MeshPhysicalMaterial`）で描き、ノードツリーから組み立てた GLSL を `onBeforeCompile` で差し込みます（ベースカラー・アルファ・メタリック・粗さ・放射）。つながっていない入力は uniform にし、形が同じなら `customProgramCacheKey` で同じシェーダーを使い回します。IOR などのつなげない入力と、ノーマルマップ（画像テクスチャ → ノーマルマップ → 法線）は材質の値として入れます。映り込みと環境の光は、three.js の `RoomEnvironment` から作ります。

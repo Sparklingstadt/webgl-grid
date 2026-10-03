@@ -6,8 +6,9 @@ import type { Any, ModelObj, Obj } from '../types';
 import type { UiChannel } from '../UiChannel';
 import type { World } from '../world/World';
 
-// 物理エンジン Ammo.js (WebAssembly 版) は大きいので、剛体を持つモデルを初めて読んだときに取りに行く
-const AMMO_URL = 'https://cdn.jsdelivr.net/npm/three@0.171.0/examples/jsm/libs/ammo.wasm.js';
+// 物理エンジン Ammo.js (WebAssembly 版) は大きいので、剛体を持つモデルを初めて読んだときに取りに行く。
+// アプリと同じ場所 (public/libs/) から配る (ページからの相対パス)
+const AMMO_URL = 'libs/ammo.wasm.js';
 let ammoReady: Promise<Any> | null = null;
 function loadAmmo() {
   ammoReady ??= new Promise((resolve, reject) => {

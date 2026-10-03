@@ -54,7 +54,7 @@ export class Viewport {
     const { renderer } = this;
     renderer.setClearColor(0x000000, 0); // 背景は CSS の色 (Blender のビューポートの灰色) を見せる
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.PCFShadowMap; // (新しい three.js には PCFSoftShadowMap がない)
     // MMD モデルの輪郭線。太さ・色・表示の有無は、MMDLoader が .pmx の材質から読んで
     // material.userData.outlineParameters に入れてくれる
     this.outline = new OutlineEffect(renderer);

@@ -84,15 +84,11 @@ export class RenderOutput {
   // --- データを作る ---
   // いまのフレームを 1 枚描いて、PNG にする
   async renderPng(): Promise<Blob> {
-    const { width, height } = this.settings;
-    const copy = document.createElement('canvas');
-    copy.width = width;
-    copy.height = height;
+    const copy = this.flatCanvas();
     try {
       this.begin();
       this.viewport.render();
-      // WebGL の描画結果は、すぐ (次に画面へ出す前に) 写し取る
-      copy.getContext('2d')!.drawImage(this.viewport.canvas!, 0, 0);
+      this.flatten(copy); // WebGL の描画結果は、すぐ (次に画面へ出す前に) 写し取る
     } finally {
       this.end();
     }
@@ -136,6 +132,7 @@ export class RenderOutput {
     try {
       this.begin();
       clock.seekFrame(start); // 飛んだ先の姿勢に、物理演算をなじませる (再生を始めるときと同じ)
+      const flat = this.flatCanvas();
       let yielded = performance.now();
       for (let i = 0; i < count; i++) {
         if (this.cancelled) throw new RenderCancelled();
@@ -144,7 +141,8 @@ export class RenderOutput {
           this.viewport.stepSystems(1 / FPS);
         }
         this.viewport.render();
-        const frame = new VideoFrame(this.viewport.canvas!, { timestamp: Math.round(i * 1e6 / FPS), duration: Math.round(1e6 / FPS) });
+        this.flatten(flat);
+        const frame = new VideoFrame(flat, { timestamp: Math.round(i * 1e6 / FPS), duration: Math.round(1e6 / FPS) });
         const sample = new mb.VideoSample(frame, { timestamp: i / FPS, duration: 1 / FPS });
         try {
           await video.add(sample);
@@ -170,6 +168,19 @@ export class RenderOutput {
       if (wasPlaying) clock.setPlaying(true);
     }
     return { bytes: new Uint8Array((output.target as InstanceType<typeof mb.BufferTarget>).buffer!), ext: fmt.ext, mime: format.mimeType, codec, frames: count };
+  }
+
+  // 出力の大きさの 2D の canvas (背景を塗ってから 3D の絵を重ね、透けない絵にする)
+  private flatCanvas() {
+    return Object.assign(document.createElement('canvas'), { width: this.settings.width, height: this.settings.height });
+  }
+  // 地面の影や半透明の物は、描いた所の透明度をそのまま残すので (画面では CSS の背景色が透けて見える)、
+  // 書き出すときは背景色の上に重ねる
+  private flatten(to: HTMLCanvasElement) {
+    const g = to.getContext('2d')!;
+    g.fillStyle = VIEWPORT_BG;
+    g.fillRect(0, 0, to.width, to.height);
+    g.drawImage(this.viewport.canvas!, 0, 0);
   }
 
   // 描く準備: 出力の大きさ・背景を塗る・編集用の表示を隠す

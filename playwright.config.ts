@@ -3,7 +3,8 @@ import { defineConfig, devices } from '@playwright/test';
 // e2e テスト: アプリをビルドして配り、本物のブラウザ (Chromium) で画面を操作して確かめる。
 // WebGL は、Mac では GPU (Metal) で描く (速い)。GPU のない CI などではソフトウェア描画 (SwiftShader)。
 // E2E_GL=gpu / E2E_GL=software で切り替えられる
-const PORT = 5174;
+// e2e 用のサーバーのポート (よく使われる 5173・5174 は、ほかのプロジェクトの開発サーバーとぶつかりやすいので避ける)
+const PORT = Number(process.env.E2E_PORT) || 41730;
 const GPU = process.env.E2E_GL ? process.env.E2E_GL === 'gpu' : process.platform === 'darwin' && !process.env.CI;
 
 export default defineConfig({
