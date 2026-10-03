@@ -16,6 +16,7 @@ export function registerBuiltins(e: Engine) {
   const flag = (raw: unknown) => (raw === true ? true : null);
   objectData.add({ key: 'hidden', label: msg('ビューポートで隠す'), get: o => o.hidden ?? null, set: (o, v) => e.setVisibility(o, { hidden: !!v }), normalize: flag });
   objectData.add({ key: 'hideRender', label: msg('レンダリングに写さない'), get: o => o.hideRender ?? null, set: (o, v) => e.setVisibility(o, { hideRender: !!v }), normalize: flag });
+  objectData.add({ key: 'scale', label: msg('大きさ'), get: o => o.scale ?? null, set: (o, v) => e.setScale(o, v ?? 1), normalize: raw => (typeof raw === 'number' && Number.isFinite(raw) && raw !== 1 ? Math.min(Math.max(raw, 0.05), 20) : null) });
   // 場面の値
   sceneData.add({
     key: 'scene', label: msg('シーン'), history: true,

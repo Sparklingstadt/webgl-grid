@@ -34,6 +34,7 @@ export function ViewportArea(props: {
   const selIds = useUi(s => s.selIds);
   const boxSelect = useUi(s => s.boxSelect);
   const box = useUi(s => s.box);
+  const transform = useUi(s => s.transform);
   useUi(s => s.sceneVersion);
   const empty = !engine.world.objects.length && !engine.stage.model; // 何も置いていない (始めたとき・最初の状態に戻したとき)
   const [showFrame, setShowFrame] = useShowFrame();
@@ -85,6 +86,13 @@ export function ViewportArea(props: {
           <AddonMenuItems menu="add" />
         </Menu>
         <Menu id="object" label={t('オブジェクト')}>
+          <MenuLabel>{t('トランスフォーム')}</MenuLabel>
+          <MenuItem label={t('移動')} kbd="G" disabled={!selIds.length} onSelect={() => engine.transform.start('grab')} />
+          <MenuItem label={t('回転')} kbd="R" disabled={!selIds.length} onSelect={() => engine.transform.start('rotate')} />
+          <MenuItem label={t('拡大縮小')} kbd="S" disabled={!selIds.length} onSelect={() => engine.transform.start('scale')} />
+          <MenuItem label={t('位置・回転・大きさを元に戻す')} kbd="Alt G / R / S" disabled={!selIds.length}
+                    onSelect={() => { engine.clearTransform('location'); engine.clearTransform('rotation'); engine.clearTransform('scale'); }} />
+          <MenuSep />
           <MenuItem label={t('複製')} kbd="Shift D" disabled={!sel || !canAdd} onSelect={() => void engine.duplicateSelected()} />
           <MenuItem label={t('削除')} kbd="X" disabled={!sel} onSelect={() => engine.deleteSelected()} />
           <MenuItem label={t('名前を変更')} kbd="F2" disabled={!sel} onSelect={() => { if (!props.sideOpen) props.toggleSide(); requestRename(); }} />
@@ -120,6 +128,14 @@ export function ViewportArea(props: {
           <div className="view-info" aria-live="off">{viewInfo}</div>
           {box && <div className="select-box" style={{ left: Math.min(box.x0, box.x1), top: Math.min(box.y0, box.y1), width: Math.abs(box.x1 - box.x0), height: Math.abs(box.y1 - box.y0) }} />}
           {boxSelect && <div className="view-mode-hint">{t('ボックス選択: ドラッグで囲む (Shift で足す・Esc でやめる)')}</div>}
+          {transform && (
+            <div className="view-mode-hint" role="status">
+              <b>{transform.mode === 'grab' ? t('移動') : transform.mode === 'rotate' ? t('回転') : t('拡大縮小')}</b>
+              {transform.axis && ` ${transform.axis === 'x' ? t('X 軸') : t('Y 軸 (奥行き)')}`}
+              {`  ${transform.value}  `}
+              <span className="dim">{transform.mode === 'grab' ? t('X・Y で軸、数字で値。クリック・Enter で決定、Esc・右クリックでやめる') : t('数字で値。クリック・Enter で決定、Esc・右クリックでやめる')}</span>
+            </div>
+          )}
           {empty && <div className="view-hint">{t('Shift+A (追加) で形やライトを置く・ファイル > MMD を読み込む… でモデルを置く')}</div>}
           <RecoverBanner />
           <ModelPicker />

@@ -40,6 +40,7 @@ export interface Obj {
   name?: string;                      // 付けた名前 (なしは種類の名前。アウトライナー・サイドバーで変える)
   hidden?: boolean;                   // ビューポートで隠す (Blender の目のアイコン。レンダリングには写る)
   hideRender?: boolean;               // レンダリングに写さない (Blender のカメラのアイコン)
+  scale?: number;                     // 大きさ (拡大率。形だけ。なしは 1。積み重ねの高さと足場にも掛ける)
 }
 export type ModelObj = Obj & { model: Any };
 export const isModel = (o: Obj | null | undefined): o is ModelObj => o?.s === MODEL_KIND;

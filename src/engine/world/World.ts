@@ -245,6 +245,7 @@ export class World implements System {
     for (const b of this.objects) {
       b.node.position.set(b.x, b.py, b.z);
       b.node.rotation.y = b.r;
+      b.node.scale.setScalar(b.scale ?? 1);
     }
   }
   // 掴んでいる物 (とパレットで色を変えている形) を明るくする

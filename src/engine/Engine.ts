@@ -38,6 +38,7 @@ import { isModel, isShape, type ModelObj, type Obj } from './types';
 import { UiChannel } from './UiChannel';
 import { CameraController } from './view/CameraController';
 import { InputController } from './view/InputController';
+import { TransformTool } from './view/TransformTool';
 import { Lights } from './world/Lights';
 import { nameOf } from './world/Selection';
 import { ColorPicker } from './world/ColorPicker';
@@ -87,6 +88,7 @@ export class Engine {
   readonly loader = new MmdLoader(this.ui, this.library, () => this.viewport.requestDraw());
   readonly vpd = new VpdIO(this.posing, this.viewport, this.ui);
   readonly history = new History(this.world, this.library, this.physics, this.motion, this.posing, this.keyframes, this.clock, this.selection, this.viewport, this.ui, this.addons);
+  readonly transform = new TransformTool(this.world, this.selection, this.camera, this.graph, this.viewport, this.history, this.ui); // G・R・S
   readonly project = new ProjectIO(this);
   readonly autosave = new Autosave(this.project, this.history, this.ui);
   readonly remote = new RemoteLink(this);
@@ -158,6 +160,7 @@ export class Engine {
   mount(canvas: HTMLCanvasElement, container: HTMLElement) {
     if (!this.viewport.mount(canvas, container)) { this.ui.toast(t('WebGL2 に対応していません'), 0); return; }
     this.pose.mount(canvas); // (ギズモは、ほかの操作より先にポインターを受け取る)
+    this.unmountTransform = this.transform.mount();
     this.input = new InputController(canvas, this.viewport, this.world, this.camera, this.selection, this.picker, {
       placeShape: (x, z) => this.placeShape(x, z),
       pose: {
@@ -175,7 +178,10 @@ export class Engine {
     });
     this.effects.restore();
   }
+  private unmountTransform: (() => void) | null = null;
   unmount() {
+    this.unmountTransform?.();
+    this.unmountTransform = null;
     this.pose.unmount();
     this.input?.dispose();
     this.input = null;
@@ -213,6 +219,21 @@ export class Engine {
     this.selection.setMany(next, next.at(-1) ?? null);
     this.viewport.requestDraw();
   }
+  // Alt+G・Alt+R・Alt+S: 選んでいる物の位置 (原点へ)・回転・大きさを元に戻す (Blender の「クリア」)
+  clearTransform(what: 'location' | 'rotation' | 'scale') {
+    const list = this.selection.list;
+    if (!list.length) return;
+    for (const o of list) {
+      if (what === 'location') { o.x = 0; o.z = 0; }
+      else if (what === 'rotation') o.r = 0;
+      else if (isShape(o)) o.scale = undefined;
+    }
+    this.world.settle();
+    this.selection.publish();
+    this.history.soon();
+    this.viewport.requestDraw();
+  }
+
   // B: 次のドラッグで四角を描いて選ぶ。Esc でやめる
   startBoxSelect() { this.ui.set({ boxSelect: true }); }
   cancelBoxSelect() { if (!this.ui.state.boxSelect) return false; this.ui.set({ boxSelect: false, box: null }); return true; }
@@ -224,7 +245,7 @@ export class Engine {
     const [l, rr, top, bottom] = [Math.min(x0, x1), Math.max(x0, x1), Math.min(y0, y1), Math.max(y0, y1)];
     const hits = this.world.objects.filter(o => {
       if (o.hidden) return false;
-      v.set(o.x, o.py + o.h / 2, o.z).project(cam);
+      v.set(o.x, o.py + o.h * (o.scale ?? 1) / 2, o.z).project(cam);
       if (v.z > 1) return false; // (カメラの後ろ)
       const sx = r.left + (v.x + 1) / 2 * r.width, sy = r.top + (1 - v.y) / 2 * r.height;
       return sx >= l && sx <= rr && sy >= top && sy <= bottom;
@@ -328,6 +349,18 @@ export class Engine {
       const next = `${base}.${String(n).padStart(3, '0')}`;
       if (!used.has(next)) return next;
     }
+  }
+
+  // 大きさ (拡大率。形だけ: MMD モデルは物理演算の剛体が合わなくなり、ライトは目印だけなので変えない)
+  setScale(obj: Obj, k: number) {
+    if (!isShape(obj) || !Number.isFinite(k)) return;
+    const v = Math.min(Math.max(k, 0.05), 20);
+    if ((obj.scale ?? 1) === v) return;
+    obj.scale = v === 1 ? undefined : v;
+    this.world.settle();
+    this.selection.publish();
+    this.history.soon();
+    this.viewport.requestDraw();
   }
 
   // --- 名前・表示 (アウトライナー・サイドバー・H / Alt+H) ---

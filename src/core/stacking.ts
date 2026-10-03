@@ -1,23 +1,23 @@
 // 積み重ねの計算 (three.js の場面には触らない計算だけ)
 
-// 上から見た足場: 中心 (x, z)、縦軸まわりの回転 r、回転前の半分の幅 hx / hz
-export interface Footprint { x: number; z: number; r: number; hx: number; hz: number }
+// 上から見た足場: 中心 (x, z)、縦軸まわりの回転 r、回転前の半分の幅 hx / hz、大きさ (拡大率 scale。なしは 1)
+export interface Footprint { x: number; z: number; r: number; hx: number; hz: number; scale?: number }
 // 積める物: 足場と、積み重ねで決まる高さ y と、自分の高さ h
 export interface Stackable extends Footprint { y: number; h: number }
 
-export const topOf = (b: Stackable) => b.y + b.h; // 上に載せられる高さ
-export const radiusOf = (b: { hx: number; hz: number }) => Math.hypot(b.hx, b.hz);
+export const topOf = (b: Stackable) => b.y + b.h * (b.scale ?? 1); // 上に載せられる高さ
+export const radiusOf = (b: { hx: number; hz: number; scale?: number }) => Math.hypot(b.hx, b.hz) * (b.scale ?? 1);
 
 // 上から見て足場が重なっているか (回転した長方形どうしを分離軸判定で調べる)
 export function overlaps(a: Footprint, b: Footprint) {
   const e = 0.0005; // 辺がちょうど接しているだけなら重なりとしない
   const axes = (r: number) => [[Math.cos(r), -Math.sin(r)], [Math.sin(r), Math.cos(r)]];
-  const aa = axes(a.r), ba = axes(b.r);
+  const aa = axes(a.r), ba = axes(b.r), ka = a.scale ?? 1, kb = b.scale ?? 1;
   const d = [b.x - a.x, b.z - a.z];
   const dot = (u: number[], v: number[]) => u[0] * v[0] + u[1] * v[1];
   for (const u of [...aa, ...ba]) {
-    const ra = (a.hx - e) * Math.abs(dot(u, aa[0])) + (a.hz - e) * Math.abs(dot(u, aa[1]));
-    const rb = (b.hx - e) * Math.abs(dot(u, ba[0])) + (b.hz - e) * Math.abs(dot(u, ba[1]));
+    const ra = (a.hx * ka - e) * Math.abs(dot(u, aa[0])) + (a.hz * ka - e) * Math.abs(dot(u, aa[1]));
+    const rb = (b.hx * kb - e) * Math.abs(dot(u, ba[0])) + (b.hz * kb - e) * Math.abs(dot(u, ba[1]));
     if (Math.abs(dot(d, u)) >= ra + rb) return false;
   }
   return true;

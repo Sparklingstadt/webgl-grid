@@ -932,5 +932,14 @@ const dict: Dictionary = {
   "なし": "None",
   "ボックス選択": "Box Select",
   "ボックス選択: ドラッグで囲む (Shift で足す・Esc でやめる)": "Box Select: drag to enclose (Shift to extend, Esc to cancel)",
+  "X 軸": "X Axis",
+  "X・Y で軸、数字で値。クリック・Enter で決定、Esc・右クリックでやめる": "X/Y: axis, numbers: value. Click/Enter to confirm, Esc/right-click to cancel",
+  "Y 軸 (奥行き)": "Y Axis (Depth)",
+  "位置・回転・大きさを元に戻す": "Clear Location / Rotation / Scale",
+  "大きさ (サイドバー)": "Scale (Sidebar)",
+  "大きさ (倍)": "Scale (×)",
+  "拡大縮小": "Scale",
+  "数字で値。クリック・Enter で決定、Esc・右クリックでやめる": "Numbers: value. Click/Enter to confirm, Esc/right-click to cancel",
+  "移動 / 回転 / 拡大縮小 (Alt で元に戻す)": "Move / Rotate / Scale (Alt to clear)",
 };
 export default dict;

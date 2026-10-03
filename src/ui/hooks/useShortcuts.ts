@@ -30,6 +30,7 @@ export function useShortcuts(engine: Engine, actions: {
       if (engine.ui.state.missingFiles) { if (e.key === 'Escape') engine.project.answerMissing('cancel'); return; }
       if (engine.ui.state.missingTextures) { if (e.key === 'Escape') engine.loader.answerTextures([]); return; }
       if (a.dialogOpen()) { if (e.key === 'Escape') a.closeDialog(); return; } // (アドオンマネージャーのあいだは、場面のショートカットを使わない)
+      if (engine.transform.active) return; // (G・R・S で動かしているあいだのキーは、TransformTool が先に受け取る)
       if (e.key === 'Escape') { if (!a.closeMenus() && !engine.cancelBoxSelect()) engine.picker.close(); return; }
       // Ctrl+,: アドオンマネージャー (Blender のプリファレンスと同じキー)
       if (e.key === ',' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); a.openAddons(); return; }
@@ -80,11 +81,23 @@ export function useShortcuts(engine: Engine, actions: {
         case 'Tab':
           if (engine.selection.model || engine.pose.active) { e.preventDefault(); engine.togglePoseMode(); }
           break;
+        // G 移動・R 回転・S 拡大縮小 (Alt で元に戻す)。ポーズモードの R・G はボーンのギズモ
         case 'KeyR':
-          if (engine.pose.active) { e.preventDefault(); if (e.altKey) engine.pose.resetSelected('rotate'); else engine.pose.setTool('rotate'); }
+          e.preventDefault();
+          if (engine.pose.active) { if (e.altKey) engine.pose.resetSelected('rotate'); else engine.pose.setTool('rotate'); }
+          else if (e.altKey) engine.clearTransform('rotation');
+          else if (a.hoverArea.current !== 'timeline') engine.transform.start('rotate');
           break;
         case 'KeyG':
-          if (engine.pose.active) { e.preventDefault(); if (e.altKey) engine.pose.resetSelected('translate'); else engine.pose.setTool('translate'); }
+          e.preventDefault();
+          if (engine.pose.active) { if (e.altKey) engine.pose.resetSelected('translate'); else engine.pose.setTool('translate'); }
+          else if (e.altKey) engine.clearTransform('location');
+          else if (a.hoverArea.current !== 'timeline') engine.transform.start('grab');
+          break;
+        case 'KeyS':
+          if (engine.pose.active) break;
+          e.preventDefault();
+          if (e.altKey) engine.clearTransform('scale'); else if (a.hoverArea.current !== 'timeline') engine.transform.start('scale');
           break;
         // A: すべて選択、Alt+A: 選択を解除、Shift+A: 追加メニュー
         case 'KeyA':

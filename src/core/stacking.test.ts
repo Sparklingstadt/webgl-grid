@@ -53,3 +53,13 @@ describe('freeSpot', () => {
     expect(Math.max(Math.abs(x), Math.abs(z))).toBe(2);
   });
 });
+
+describe('大きさ (scale)', () => {
+  it('高さと足場に大きさを掛ける: 2 倍の立方体の上は高さ 2、離れていても足場が広がって重なる', () => {
+    const big = { ...cube(0, 0), scale: 2 }, top = cube(0.9, 0);
+    settleHeights([big, top]);
+    expect(top.y).toBe(2);
+    expect(overlaps({ ...cube(0, 0), scale: 2 }, cube(1.4, 0))).toBe(true);
+    expect(overlaps(cube(0, 0), cube(1.4, 0))).toBe(false);
+  });
+});

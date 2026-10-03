@@ -12,7 +12,7 @@ import { FX_LEVEL_DEFAULT, type FxLevel, type FxState } from './render/postfx';
 export interface SelInfo {
   id: number; kind: 'shape' | 'model' | 'light'; name: string; c: number;
   light: LightSettings | null;   // ライトの設定 (ライトだけ)
-  x: number; y: number; z: number; r: number; animated: boolean;
+  x: number; y: number; z: number; r: number; scale: number; animated: boolean;
 }
 export interface UiState {
   mode: 'orbit' | 'pan';
@@ -20,6 +20,7 @@ export interface UiState {
   selIds: number[];      // 選んでいる物 (置いた順)
   boxSelect: boolean;    // ボックス選択 (B) を待っている
   box: { x0: number; y0: number; x1: number; y1: number } | null; // ドラッグしているボックス (クライアント座標)
+  transform: { mode: 'grab' | 'rotate' | 'scale'; axis: 'x' | 'z' | null; value: string; count: number } | null; // G・R・S で動かしている途中
   modelVersion: number;  // 選んでいるモデルの中身 (表情・ボーンの一覧) が変わった
   values: number;        // 表情・ボーンの値が変わった
   canAdd: boolean;
@@ -56,7 +57,7 @@ type Version = 'modelVersion' | 'values' | 'keysVersion' | 'materialsVersion' | 
 
 export class UiChannel {
   readonly store: Store<UiState> = createStore<UiState>({
-    mode: 'orbit', sel: null, selIds: [], boxSelect: false, box: null, modelVersion: 0, values: 0, canAdd: true,
+    mode: 'orbit', sel: null, selIds: [], boxSelect: false, box: null, transform: null, modelVersion: 0, values: 0, canAdd: true,
     frame: 0, playing: false, start: 0, end: TL_DEFAULT_END, keysVersion: 0,
     fxState: { ao: false, dof: false, bloom: false, diffusion: false, color: false }, fxLevel: { ...FX_LEVEL_DEFAULT },
     toast: null, palette: null, viewInfo: '', hairHang: null, materialsVersion: 0, projectName: null,

@@ -89,6 +89,8 @@ canvas#c.over-box { cursor: pointer; }
 .tools svg { width: 20px; height: 20px; }
 .select-box { position: fixed; z-index: 8; pointer-events: none; border: 1px dashed #fff; background: rgba(255, 255, 255, 0.06); }
 .viewport.box-select canvas#c { cursor: crosshair; }
+canvas#c.transforming { cursor: move; }
+.view-mode-hint .dim { color: var(--dim); }
 .view-mode-hint { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); padding: 4px 10px; border-radius: 4px; pointer-events: none;
                   background: rgba(20, 20, 20, 0.8); color: var(--text); white-space: nowrap; }
 .view-hint { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); max-width: calc(100% - 32px); pointer-events: none;

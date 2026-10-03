@@ -11,7 +11,7 @@ import type { Engine } from '../Engine';
 import { nameOf } from '../world/Selection';
 import { projectBaseName } from '../project/ProjectIO';
 import type { FxKey, FxLevel } from '../render/postfx';
-import { isModel, kindOf, type Any, type ModelObj, type Obj } from '../types';
+import { isModel, isShape, kindOf, type Any, type ModelObj, type Obj } from '../types';
 
 // --- 外部 (MCP) から使える操作 ---
 // 名前 → (エンジン, 引数) → 結果 (JSON にできる値)。ファイルは base64 でやりとりする。
@@ -65,6 +65,7 @@ export function sceneState(e: Engine) {
       ...(o.light ? { light: o.light } : {}),
       position: [r3(o.x), r3(o.y), r3(o.z)],
       rotationDeg: r3(o.r * DEG),
+      ...(o.scale ? { scale: r3(o.scale) } : {}),
       ...(isModel(o)
         ? { motion: o.motionFiles?.map(f => f.name).join(', ') || null, keyframes: keyFrames(o.anim), hairHang: e.physics.hairHang(o) }
         : { color: PALETTE_NAMES[o.c] }),
@@ -132,6 +133,10 @@ export const COMMANDS: Record<string, Command> = {
     if (p.color !== undefined) {
       if (isModel(obj)) throw new Error('MMD モデルの色は set_material で変えます');
       e.world.setShapeColor(obj, colorIndex(p.color));
+    }
+    if (p.scale !== undefined) {
+      if (!isShape(obj)) throw new Error('大きさを変えられるのは形だけです');
+      e.setScale(obj, Number(p.scale));
     }
     if (p.name !== undefined) e.renameObj(obj, p.name === null ? null : String(p.name));
     if (p.hidden !== undefined || p.hideRender !== undefined) e.setVisibility(obj, { hidden: p.hidden === undefined ? undefined : !!p.hidden, hideRender: p.hideRender === undefined ? undefined : !!p.hideRender });
