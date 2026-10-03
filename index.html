@@ -11,19 +11,20 @@
   canvas.dragging { cursor: grabbing; }
   canvas.pan { cursor: move; }
   canvas.over-box { cursor: pointer; }
-  .modes {
+  .modes, .shapes {
     position: fixed; right: 16px; bottom: 16px;
     display: flex; gap: 2px; padding: 3px;
     background: rgba(20, 24, 32, 0.85); border: 1px solid #2c3340; border-radius: 10px;
     backdrop-filter: blur(6px); user-select: none;
   }
-  .modes button {
+  .modes button, .shapes button {
     font: 13px/1 system-ui, sans-serif; color: #9aa4b5;
     background: transparent; border: 0; border-radius: 7px;
     padding: 9px 14px; cursor: pointer;
   }
-  .modes button:hover { color: #dce3ee; }
-  .modes button[aria-pressed="true"] { background: #3a4558; color: #fff; }
+  .modes button:hover, .shapes button:hover { color: #dce3ee; }
+  .shapes { bottom: 66px; }
+  .modes button[aria-pressed="true"], .shapes button[aria-pressed="true"] { background: #3a4558; color: #fff; }
   .modes .sep { width: 1px; margin: 4px 3px; background: #2c3340; }
   .modes button:disabled { opacity: 0.4; cursor: default; }
   .palette {
@@ -41,12 +42,17 @@
 </head>
 <body>
 <canvas id="c"></canvas>
-<div class="palette" id="palette" role="group" aria-label="立方体の色" hidden></div>
+<div class="palette" id="palette" role="group" aria-label="色" hidden></div>
+<div class="shapes" role="group" aria-label="追加する形">
+  <button type="button" data-shape="0" aria-pressed="true">立方体</button>
+  <button type="button" data-shape="1" aria-pressed="false">トーラス</button>
+  <button type="button" data-shape="2" aria-pressed="false">三角錐</button>
+</div>
 <div class="modes" role="group" aria-label="操作モード">
   <button type="button" data-mode="orbit" aria-pressed="true">回転</button>
   <button type="button" data-mode="pan" aria-pressed="false">移動</button>
   <span class="sep"></span>
-  <button type="button" id="add">立方体を追加</button>
+  <button type="button" id="add">追加</button>
   <button type="button" id="reset">リセット</button>
 </div>
 <script>
@@ -68,6 +74,7 @@ uniform vec3 uBoxes[MAX_BOXES];
 uniform int uCount;
 uniform vec3 uColors[MAX_BOXES];
 uniform float uRots[MAX_BOXES];
+uniform int uShapes[MAX_BOXES]; // 0: 立方体, 1: トーラス, 2: 三角錐
 uniform int uSel; // 掴んでいる立方体の番号 (なければ -1)
 out vec4 outColor;
 
@@ -79,31 +86,83 @@ float grid(vec2 p, float lineWidth) {
   return 1.0 - clamp(line - lineWidth + 1.0, 0.0, 1.0);
 }
 
-// 立方体 (1x1x1、uBoxes[i] が底面中心の座標)
-const vec3 BOX_MIN = vec3(-0.5, 0.0, -0.5);
-const vec3 BOX_MAX = vec3( 0.5, 1.0,  0.5);
+// 形はどれも底面中心が原点のローカル座標で定義し、uBoxes[i] (底面中心) と uRots[i] で置く。
+// 足場は 1x1。高さは 立方体 1、トーラス 0.3、三角錐 0.8
 const vec3 LIGHT = normalize(vec3(0.6, 1.0, 0.35));
+const float TORUS_R = 0.35, TORUS_r = 0.15; // 中心円の半径と管の半径 (寝かせて置く)
+const float PYR_H = 0.8;                    // 三角錐の高さ (底面は外接円の半径 0.5 の正三角形)
 
-// レイと箱の交差距離 (当たらなければ -1)。法線も返す
 // 縦軸 (y) まわりの回転
 vec3 rotY(vec3 v, float a) {
   float c = cos(a), s = sin(a);
   return vec3(v.x * c + v.z * s, v.y, -v.x * s + v.z * c);
 }
 
-// o は底面中心、r は縦軸まわりの回転角。レイを立方体のローカル座標に直して判定する
-float boxHit(vec3 ro, vec3 rd, vec3 o, float r, out vec3 n) {
+// レイと箱 [mn, mx] の交差区間 [tn, tf]。当たらなければ false。n は入る面の法線
+bool slab(vec3 ro, vec3 rd, vec3 mn, vec3 mx, out float tn, out float tf, out vec3 n) {
+  vec3 inv = 1.0 / rd;
+  vec3 t0 = (mn - ro) * inv, t1 = (mx - ro) * inv;
+  vec3 tmin = min(t0, t1), tmax = max(t0, t1);
+  tn = max(max(tmin.x, tmin.y), tmin.z);
+  tf = min(min(tmax.x, tmax.y), tmax.z);
+  n = -sign(rd) * step(tmin.yzx, tmin.xyz) * step(tmin.zxy, tmin.xyz);
+  return tn <= tf && tf >= 0.0;
+}
+
+// トーラス: 囲む箱の中だけを距離関数でレイマーチする
+float torusHit(vec3 ro, vec3 rd, out vec3 n) {
+  float tn, tf;
+  vec3 nb;
+  if (!slab(ro, rd, vec3(-0.5, 0.0, -0.5), vec3(0.5, 2.0 * TORUS_r, 0.5), tn, tf, nb)) return -1.0;
+  float t = max(tn, 0.0);
+  for (int k = 0; k < 64; k++) {
+    vec3 p = ro + rd * t - vec3(0.0, TORUS_r, 0.0);
+    float d = length(vec2(length(p.xz) - TORUS_R, p.y)) - TORUS_r;
+    if (d < 0.0005) {
+      n = normalize(p - TORUS_R * normalize(vec3(p.x, 0.0, p.z)));
+      return t;
+    }
+    t += d;
+    if (t > tf) break;
+  }
+  return -1.0;
+}
+
+// 三角錐: 底面と3つの側面の半空間の共通部分として判定する
+float pyramidHit(vec3 ro, vec3 rd, out vec3 n) {
+  float tn = -1e9, tf = 1e9;
+  for (int k = 0; k < 4; k++) {
+    vec3 N; float D;
+    if (k == 0) { N = vec3(0.0, -1.0, 0.0); D = 0.0; }
+    else {
+      // 側面の外向き法線。底辺の中点の向き φ = 30°, 150°, 270°、底辺までの距離 0.25
+      float phi = radians(30.0 + 120.0 * float(k - 1));
+      N = normalize(vec3(PYR_H * cos(phi), 0.25, PYR_H * sin(phi)));
+      D = dot(N, vec3(0.25 * cos(phi), 0.0, 0.25 * sin(phi)));
+    }
+    float den = dot(N, rd), dist = D - dot(N, ro);
+    if (abs(den) < 1e-7) { if (dist < 0.0) return -1.0; continue; }
+    float t = dist / den;
+    if (den < 0.0) { if (t > tn) { tn = t; n = N; } }
+    else tf = min(tf, t);
+  }
+  return (tn <= tf && tf >= 0.0) ? tn : -1.0;
+}
+
+// o は底面中心、r は縦軸まわりの回転角。レイを形のローカル座標に直して判定する
+float shapeHit(vec3 ro, vec3 rd, vec3 o, float r, int shape, out vec3 n) {
   ro = rotY(ro - o, -r);
   rd = rotY(rd, -r);
-  vec3 inv = 1.0 / rd;
-  vec3 t0 = (BOX_MIN - ro) * inv;
-  vec3 t1 = (BOX_MAX - ro) * inv;
-  vec3 tmin = min(t0, t1), tmax = max(t0, t1);
-  float tn = max(max(tmin.x, tmin.y), tmin.z);
-  float tf = min(min(tmax.x, tmax.y), tmax.z);
-  if (tn > tf || tf < 0.0) return -1.0;
-  n = rotY(-sign(rd) * step(tmin.yzx, tmin.xyz) * step(tmin.zxy, tmin.xyz), r);
-  return tn;
+  vec3 ln = vec3(0.0, 1.0, 0.0);
+  float t;
+  if (shape == 1) t = torusHit(ro, rd, ln);
+  else if (shape == 2) t = pyramidHit(ro, rd, ln);
+  else {
+    float tf;
+    t = slab(ro, rd, vec3(-0.5, 0.0, -0.5), vec3(0.5, 1.0, 0.5), t, tf, ln) ? t : -1.0;
+  }
+  n = rotY(ln, r);
+  return t;
 }
 
 // すべての立方体のうち一番手前の交差 (当たらなければ -1)。法線と番号も返す
@@ -112,7 +171,7 @@ float sceneHit(vec3 ro, vec3 rd, out vec3 n, out int id) {
   for (int i = 0; i < MAX_BOXES; i++) {
     if (i >= uCount) break;
     vec3 ni;
-    float t = boxHit(ro, rd, uBoxes[i], uRots[i], ni);
+    float t = shapeHit(ro, rd, uBoxes[i], uRots[i], uShapes[i], ni);
     if (t > 0.0 && (best < 0.0 || t < best)) { best = t; n = ni; id = i; }
   }
   return best;
@@ -204,6 +263,7 @@ const uCount = gl.getUniformLocation(prog, 'uCount');
 const uColors = gl.getUniformLocation(prog, 'uColors');
 const uRots = gl.getUniformLocation(prog, 'uRots');
 const uSel = gl.getUniformLocation(prog, 'uSel');
+const uShapes = gl.getUniformLocation(prog, 'uShapes');
 
 // 立方体の色 (リニア値。シェーダーでガンマ補正される)
 const PALETTE = [
@@ -281,7 +341,19 @@ modeButtons.forEach(b => b.addEventListener('click', () => setMode(b.dataset.mod
 // 立方体の位置 (底面中心の xz)
 // y は積み重ねで決まる高さ、py は画面に表示している高さ (落下中は y より上)、vy は落下速度
 // r は縦軸まわりの回転角 (ラジアン)
-const makeBox = (x, z, c) => ({ x, y: 0, z, c, r: 0, py: 0, vy: 0 });
+// s は形 (0: 立方体, 1: トーラス, 2: 三角錐)
+const SHAPE_HEIGHT = [1, 0.3, 0.8];
+const TORUS_R = 0.35, TORUS_r = 0.15, PYR_H = 0.8; // シェーダーと同じ値
+const makeBox = (x, z, c, s = 0) => ({ x, y: 0, z, c, s, r: 0, py: 0, vy: 0 });
+const topOf = b => b.y + SHAPE_HEIGHT[b.s]; // 上に載せられる高さ
+
+// 追加する形の選択
+let currentShape = 0;
+const shapeButtons = document.querySelectorAll('.shapes button');
+shapeButtons.forEach(b => b.addEventListener('click', () => {
+  currentShape = +b.dataset.shape;
+  shapeButtons.forEach(o => o.setAttribute('aria-pressed', o === b));
+}));
 const boxes = [makeBox(0, 0, 0)];
 
 // --- 積み重ね ---
@@ -306,7 +378,7 @@ function stackFrom(b) {
   for (let i = 0; i < group.length; i++) {
     const s = group[i];
     for (const o of boxes) {
-      if (!group.includes(o) && overlaps(o, s) && Math.abs(o.y - (s.y + 1)) < 1e-3) group.push(o);
+      if (!group.includes(o) && overlaps(o, s) && Math.abs(o.y - topOf(s)) < 1e-3) group.push(o);
     }
   }
   return group;
@@ -315,7 +387,7 @@ function stackFrom(b) {
 function settle(exclude = []) {
   const placed = [];
   for (const b of boxes.filter(b => !exclude.includes(b)).sort((a, b) => a.y - b.y)) {
-    b.y = Math.max(0, ...placed.filter(o => overlaps(o, b)).map(o => o.y + 1));
+    b.y = Math.max(0, ...placed.filter(o => overlaps(o, b)).map(topOf));
     placed.push(b);
   }
   startFall();
@@ -368,7 +440,7 @@ addButton.addEventListener('click', () => {
     for (let i = -r; i <= r; i++) {
       for (const [x, z] of [[cx + i, cz - r], [cx + i, cz + r], [cx - r, cz + i], [cx + r, cz + i]]) {
         if (free(x, z)) {
-          boxes.push(makeBox(x, z, nextColor()));
+          boxes.push(makeBox(x, z, nextColor(), currentShape));
           updateAddButton();
           requestDraw();
           return;
@@ -405,18 +477,57 @@ const rotY = (v, a) => {
   const c = Math.cos(a), s = Math.sin(a);
   return [v[0] * c + v[2] * s, v[1], -v[0] * s + v[2] * c];
 };
-function rayBox(ray, box) {
-  // シェーダーと同じく、レイを立方体のローカル座標に直して判定する
-  const ro = rotY(sub(ray.ro, [box.x, box.py, box.z]), -box.r);
-  const rd = rotY(ray.rd, -box.r);
-  const mn = [-0.5, 0, -0.5], mx = [0.5, 1, 0.5];
+// レイと箱 [mn, mx] の交差区間 [tn, tf] (当たらなければ null)
+function slab(ro, rd, mn, mx) {
   let tn = -Infinity, tf = Infinity;
   for (let i = 0; i < 3; i++) {
     const a = (mn[i] - ro[i]) / rd[i], b = (mx[i] - ro[i]) / rd[i];
     tn = Math.max(tn, Math.min(a, b));
     tf = Math.min(tf, Math.max(a, b));
   }
-  return tn <= tf && tn > 0 ? tn : -1;
+  return tn <= tf && tf >= 0 ? [tn, tf] : null;
+}
+const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+// 形ごとの交差判定 (シェーダーと同じ。ro, rd はローカル座標)
+function localHit(s, ro, rd) {
+  if (s === 1) {
+    const iv = slab(ro, rd, [-0.5, 0, -0.5], [0.5, 2 * TORUS_r, 0.5]);
+    if (!iv) return -1;
+    let t = Math.max(iv[0], 0);
+    for (let k = 0; k < 64 && t <= iv[1]; k++) {
+      const p = [ro[0] + rd[0] * t, ro[1] + rd[1] * t - TORUS_r, ro[2] + rd[2] * t];
+      const d = Math.hypot(Math.hypot(p[0], p[2]) - TORUS_R, p[1]) - TORUS_r;
+      if (d < 0.0005) return t;
+      t += d;
+    }
+    return -1;
+  }
+  if (s === 2) {
+    let tn = -Infinity, tf = Infinity;
+    for (let k = 0; k < 4; k++) {
+      let N, D;
+      if (k === 0) { N = [0, -1, 0]; D = 0; }
+      else {
+        const phi = (30 + 120 * (k - 1)) * Math.PI / 180;
+        N = norm([PYR_H * Math.cos(phi), 0.25, PYR_H * Math.sin(phi)]);
+        D = dot3(N, [0.25 * Math.cos(phi), 0, 0.25 * Math.sin(phi)]);
+      }
+      const den = dot3(N, rd), dist = D - dot3(N, ro);
+      if (Math.abs(den) < 1e-7) { if (dist < 0) return -1; continue; }
+      const t = dist / den;
+      if (den < 0) tn = Math.max(tn, t); else tf = Math.min(tf, t);
+    }
+    return tn <= tf && tf >= 0 ? tn : -1;
+  }
+  const iv = slab(ro, rd, [-0.5, 0, -0.5], [0.5, 1, 0.5]);
+  return iv ? iv[0] : -1;
+}
+function rayBox(ray, box) {
+  // シェーダーと同じく、レイを形のローカル座標に直して判定する
+  const ro = rotY(sub(ray.ro, [box.x, box.py, box.z]), -box.r);
+  const rd = rotY(ray.rd, -box.r);
+  const t = localHit(box.s, ro, rd);
+  return t > 0 ? t : -1;
 }
 // 一番手前で当たる立方体 { box, t } (なければ null)
 function pickBox(ray) {
@@ -441,7 +552,7 @@ const buzz = () => { if (navigator.userActivation?.hasBeenActive ?? true) naviga
 // 指定した地面の位置に立方体を置く。ほかの立方体と重なればその上に積む。少し上から落として置く
 function placeBox(x, z) {
   if (boxes.length >= MAX_BOXES) return false;
-  const b = makeBox(x, z, nextColor());
+  const b = makeBox(x, z, nextColor(), currentShape);
   boxes.push(b);
   settle();
   b.py = b.y + 1.5;
@@ -591,7 +702,7 @@ canvas.addEventListener('pointermove', e => {
       settle(members);
       const others = boxes.filter(o => !members.includes(o));
       const base = Math.max(drag.box.held, ...group.map(g =>
-        Math.max(0, ...others.filter(o => overlaps(o, g.o)).map(o => o.y + 1)) - g.dy));
+        Math.max(0, ...others.filter(o => overlaps(o, g.o)).map(topOf)) - g.dy));
       drag.box.held = base;
       for (const g of group) {
         if (g.o.py > base + g.dy) { g.o.py = base + g.dy; g.o.vy = 0; } // 下がる分は手で持っているので即座に
@@ -722,6 +833,7 @@ function render() {
     gl.uniform3fv(uBoxes, boxes.flatMap(b => [b.x, b.py, b.z]));
     gl.uniform3fv(uColors, boxes.flatMap(b => PALETTE[b.c]));
     gl.uniform1fv(uRots, boxes.map(b => b.r));
+    gl.uniform1iv(uShapes, boxes.map(b => b.s));
     const held = drag?.box?.box ?? drag?.rot?.box ?? drag?.twist?.box ?? pickerBox;
     gl.uniform1i(uSel, held ? boxes.indexOf(held) : -1);
   }
