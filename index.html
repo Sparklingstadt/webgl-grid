@@ -28,6 +28,10 @@
   .modes button[aria-pressed="true"], .shapes button[aria-pressed="true"] { background: #3a4558; color: #fff; }
   .modes .sep, .shapes .sep { width: 1px; margin: 4px 3px; background: #2c3340; }
   .modes button:disabled, .shapes button:disabled { opacity: 0.4; cursor: default; }
+  /* 幅の狭いスマホでは、ボタンの左右の余白を詰めて 1 段に収める */
+  @media (max-width: 400px) {
+    .modes button, .shapes button { padding: 9px 10px; }
+  }
   .palette {
     position: fixed; display: grid; grid-template-columns: repeat(4, 40px); gap: 8px; padding: 10px;
     background: rgba(20, 24, 32, 0.92); border: 1px solid #2c3340; border-radius: 12px;
@@ -65,10 +69,11 @@
   <button type="button" data-shape="1" aria-pressed="false">トーラス</button>
   <button type="button" data-shape="2" aria-pressed="false">三角錐</button>
   <span class="sep"></span>
-  <button type="button" id="load-pmx" aria-label="MMD のモデル (.pmx) やモーション (.vmd) を読み込む">MMD…</button>
+  <button type="button" id="load-pmx" aria-label="MMD のモデル (.pmx)・モーション (.vmd)・曲を読み込む">MMD…</button>
+  <button type="button" id="music" aria-label="曲とモーションを一時停止" hidden>⏸</button>
 </div>
 <input type="file" id="pmx-input" multiple hidden
-       accept=".pmx,.vmd,.png,.jpg,.jpeg,.bmp,.tga,.gif,.spa,.sph,image/*">
+       accept=".pmx,.vmd,.png,.jpg,.jpeg,.bmp,.tga,.gif,.spa,.sph,image/*,.mp3,.wav,.ogg,.oga,.m4a,.aac,.flac,.opus,audio/*">
 <div class="modes" role="group" aria-label="操作モード">
   <button type="button" data-mode="orbit" aria-pressed="true">回転</button>
   <button type="button" data-mode="pan" aria-pressed="false">移動</button>
@@ -227,6 +232,7 @@ const MAX_BOXES = 32;
 const CAM_DEFAULT = { yaw: Math.PI / 4, pitch: 0.6, dist: 9.8, tx: 0, ty: 0, tz: 0, fov: DEFAULT_FOV };
 const cam = { ...CAM_DEFAULT };
 document.getElementById('reset').addEventListener('click', () => {
+  stopMusic();
   stopCameraMotion(false);
   closePicker();
   Object.assign(cam, CAM_DEFAULT);
@@ -492,6 +498,7 @@ const pointerDistance = ([a, b]) => {
 };
 
 canvas.addEventListener('pointerdown', e => {
+  if (musicWaiting) playMusic(); // 自動再生を止められていた曲は、画面を触ったときに再生する
   closePicker(); // パレットの外を触ったら閉じる
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   try { canvas.setPointerCapture(e.pointerId); } catch {} // 捕捉できなくても操作は続ける
@@ -749,21 +756,25 @@ pmxInput.addEventListener('change', () => {
   pmxInput.value = ''; // 同じファイルをもう一度選べるようにする
   if (files.length) loadFiles(files);
 });
+const isAudio = f => f.type.startsWith('audio/') || /\.(mp3|wav|ogg|oga|m4a|aac|flac|opus)$/i.test(f.name);
 async function loadFiles(files) {
-  // .vmd は何個でも一緒に選べる (ダンス用とカメラ用など)
+  // .vmd は何個でも一緒に選べる (ダンス用とカメラ用など)。曲は 1 つ
   const vmds = files.filter(f => /\.vmd$/i.test(f.name));
+  const song = files.find(isAudio);
   let targets;
   if (files.some(f => /\.pmx$/i.test(f.name))) {
     const obj = await loadPmx(files);
     if (!obj) return;
     targets = [obj];
-  } else if (vmds.length) {
+  } else if (vmds.length || song) {
     targets = boxes.filter(b => b.s === 3);
   } else {
-    toast('.pmx や .vmd が選ばれていません。モデルの .pmx とテクスチャ画像、またはモーションの .vmd を選んでください。');
+    toast('.pmx・.vmd・曲のどれも選ばれていません。モデルの .pmx とテクスチャ画像、モーションの .vmd、曲のファイルを選んでください。');
     return;
   }
-  if (vmds.length) await playMotions(vmds, targets);
+  const motionOk = vmds.length ? await playMotions(vmds, targets) : true;
+  // モーションの読み込みに失敗したときは、そのお知らせを曲のお知らせで消さない
+  if (song) startMusic(song, motionOk);
 }
 // ファイル名の比較用: パスの区切りをそろえ、最後の名前だけを小文字・NFC で取り出す
 const fileKey = path => decodeURIComponent(path).replace(/\\/g, '/').split('/').pop().normalize('NFC').toLowerCase();
@@ -812,7 +823,8 @@ function addModel(mesh) {
     if (!o.geometry) return;
     const ma = o.geometry.morphAttributes;
     for (const k of Object.keys(ma)) if (!ma[k].length) delete ma[k];
-    if (o.morphTargetInfluences?.length === 0) { o.morphTargetInfluences = undefined; o.morphTargetDictionary = undefined; }
+    // (表情の対応表は空のまま残す。消すと、表情の動きを含む .vmd を読むときに MMDLoader が止まる)
+    if (o.morphTargetInfluences?.length === 0) { o.morphTargetInfluences = undefined; o.morphTargetDictionary = {}; }
   });
   // 大きさを高さ MODEL_HEIGHT にそろえ、足元の中心が原点に来るようにずらす
   const bbox = new THREE.Box3().setFromObject(mesh);
@@ -937,14 +949,17 @@ async function playMotions(vmds, objs) {
       toast(hasModelMotion && !objs.length
         ? '先に .pmx のモデルを読み込んでください。'
         : `${label} には、このモデルの骨や表情に合う動きも、カメラの動きもありませんでした`, 8000);
-      return;
+      return false;
     }
     restartMotions();
+    if (music) { music.currentTime = 0; motionClock = 0; } // 曲も最初から
     toast(`${label} を再生しています${camMotion ? '。カメラを自分で動かすと、カメラモーションは止まります' : ''}`, 6000);
     startTicking();
+    return true;
   } catch (err) {
     console.error(err);
     toast(`${label} を読み込めませんでした: ${err?.message ?? err}`, 8000);
+    return false;
   }
 }
 // ダンスとカメラがずれないように、すべてのモーションを最初から再生し直す
@@ -1018,6 +1033,67 @@ function stopMotion(obj) {
 }
 const hasMotion = () => !!camMotion || boxes.some(b => b.animated);
 
+// --- 曲 ---
+// 曲のファイルを一緒に選ぶと、モーションと一緒に繰り返し再生する。モーションは曲の再生位置に合わせて進める
+let music = null;          // <audio>
+let musicWaiting = false;  // ブラウザに自動再生を止められ、画面を触るのを待っている
+let motionClock = 0;       // モーションを進めた時間 (曲の再生位置とのずれを見る)
+const musicButton = document.getElementById('music');
+function startMusic(file, announce = true) {
+  stopMusic();
+  music = new Audio(URL.createObjectURL(file));
+  music.loop = true;
+  music.addEventListener('play', () => { updateMusicButton(); startTicking(); });
+  music.addEventListener('pause', updateMusicButton);
+  musicButton.hidden = false;
+  if (animHelper && hasMotion()) restartMotions(); // ダンスも最初から
+  motionClock = 0;
+  playMusic(announce ? file.name : null, announce);
+}
+function playMusic(name, announce = true) {
+  musicWaiting = false;
+  music.play().then(() => {
+    if (name) toast(`${name} を再生しています`);
+    else if (announce) toastEl.hidden = true; // 「画面をタップ…」のお知らせを消す
+  }, () => {
+    musicWaiting = true;
+    toast('画面をタップ (クリック) すると曲を再生します', 0);
+  });
+}
+function stopMusic() {
+  if (!music) return;
+  music.pause();
+  URL.revokeObjectURL(music.src);
+  music = null;
+  musicWaiting = false;
+  musicButton.hidden = true;
+}
+function updateMusicButton() {
+  const paused = !music || music.paused;
+  musicButton.textContent = paused ? '▶' : '⏸';
+  musicButton.setAttribute('aria-label', paused ? '曲とモーションを再生' : '曲とモーションを一時停止');
+}
+musicButton.addEventListener('click', () => {
+  if (!music) return;
+  if (music.paused) playMusic(); else music.pause();
+});
+// このフレームでモーションを進める時間。曲がなければ経過時間そのまま
+function motionDelta(dt) {
+  if (!music) return dt;
+  if (music.paused) return 0; // 一時停止中 (自動再生待ちも含む) はモーションも止める
+  const t = music.currentTime;
+  if (t < motionClock - 1) { // 曲が最初に戻った
+    restartMotions();
+    motionClock = t;
+    return t;
+  }
+  // 曲の再生位置に合わせる。少しのずれはなめらかに寄せ、大きくずれたら一気に合わせる
+  const drift = t - motionClock;
+  const d = Math.abs(drift) > 0.5 ? Math.max(drift, 0) : Math.max(dt + drift * 0.1, 0);
+  motionClock += d;
+  return d;
+}
+
 function stopPhysics(obj) {
   const i = physicsList.findIndex(p => p.obj === obj);
   if (i >= 0) physicsList.splice(i, 1); // Ammo 側の後片付けの API はないので、参照を外すだけ
@@ -1035,7 +1111,7 @@ function tick(now) {
   if (!physicsList.length && !hasMotion()) { ticking = false; return; }
   const dt = tickLast ? Math.min(Math.max(now - tickLast, 0) / 1000, 1 / 20) : 1 / 60;
   tickLast = now;
-  if (hasMotion()) animHelper.update(dt); // モーションを先に進めてから物理演算
+  if (hasMotion()) animHelper.update(motionDelta(dt)); // モーションを先に進めてから物理演算
   for (const p of physicsList) {
     // モデルの動きの加速度を「見かけの重力」として足す (運ぶと髪がなびき、落ちると浮く)。
     // MMDPhysics はモデル自身の座標で計算するので、置き場所の動きはこうしないと伝わらない
@@ -1109,7 +1185,7 @@ resize();
 // 動作確認用: ?debug を付けて開いたときだけ、中の状態をコンソールから触れるようにする
 if (new URLSearchParams(location.search).has('debug')) {
   Object.assign(window, { THREE, renderer, scene, camera, boxes, cam, makeBox, settle, pickBox, screenRay, rayPlane,
-    loadPmx, loadFiles, getAnimHelper: () => animHelper, getCamMotion: () => camMotion, camera, getDrag: () => drag, paletteEl, swatches, pointers, physicsList, outline });
+    loadPmx, loadFiles, getAnimHelper: () => animHelper, getCamMotion: () => camMotion, getMusic: () => music, camera, getDrag: () => drag, paletteEl, swatches, pointers, physicsList, outline });
 }
 </script>
 </body>
