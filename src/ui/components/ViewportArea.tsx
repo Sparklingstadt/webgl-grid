@@ -31,6 +31,9 @@ export function ViewportArea(props: {
   const canAdd = useUi(s => s.canAdd);
   const sel = useUi(s => s.sel);
   const viewInfo = useUi(s => s.viewInfo);
+  const selIds = useUi(s => s.selIds);
+  const boxSelect = useUi(s => s.boxSelect);
+  const box = useUi(s => s.box);
   useUi(s => s.sceneVersion);
   const empty = !engine.world.objects.length && !engine.stage.model; // 何も置いていない (始めたとき・最初の状態に戻したとき)
   const [showFrame, setShowFrame] = useShowFrame();
@@ -63,6 +66,14 @@ export function ViewportArea(props: {
           <MenuItem label={props.maximized ? t('エリアを元に戻す') : t('エリアを最大化')} kbd="Ctrl Space" onSelect={props.toggleMax} />
           <AddonMenuItems menu="view" />
         </Menu>
+        <Menu id="select" label={t('選択')}>
+          <MenuItem label={t('すべて')} kbd="A" onSelect={() => engine.selectAll()} />
+          <MenuItem label={t('なし')} kbd="Alt A" disabled={!selIds.length} onSelect={() => engine.select(null)} />
+          <MenuItem label={t('反転')} kbd="Ctrl I" onSelect={() => engine.invertSelection()} />
+          <MenuSep />
+          <MenuItem label={t('ボックス選択')} kbd="B" onSelect={() => engine.startBoxSelect()} />
+          <AddonMenuItems menu="select" />
+        </Menu>
         <Menu id="add" label={t('追加')}>
           <MenuLabel>{t('メッシュ')}</MenuLabel>
           {SHAPES.map(d => <MenuItem key={d.key} label={t(d.name)} disabled={!canAdd} onSelect={() => engine.addShape(d.s)} />)}
@@ -76,7 +87,6 @@ export function ViewportArea(props: {
         <Menu id="object" label={t('オブジェクト')}>
           <MenuItem label={t('複製')} kbd="Shift D" disabled={!sel || !canAdd} onSelect={() => void engine.duplicateSelected()} />
           <MenuItem label={t('削除')} kbd="X" disabled={!sel} onSelect={() => engine.deleteSelected()} />
-          <MenuItem label={t('選択を解除')} kbd="Alt A" disabled={!sel} onSelect={() => engine.select(null)} />
           <MenuItem label={t('名前を変更')} kbd="F2" disabled={!sel} onSelect={() => { if (!props.sideOpen) props.toggleSide(); requestRename(); }} />
           <MenuSep />
           <MenuItem label={t('選択物を隠す')} kbd="H" disabled={!sel} onSelect={() => engine.hideSelected()} />
@@ -90,7 +100,7 @@ export function ViewportArea(props: {
         <button type="button" className="hbtn" aria-pressed={props.sideOpen} aria-controls="side-column" title={t('アウトライナーとプロパティ')} onClick={props.toggleSide}>{t('プロパティ')}</button>
       </div>
       <div className="view-body">
-        <div className={`viewport${props.nOpen ? ' n-open' : ''}${props.toolsOpen ? '' : ' tools-hidden'}`} ref={el => { viewportRef.current = el; setViewportEl(el); }} onPointerDown={props.onViewportPointerDown}>
+        <div className={`viewport${props.nOpen ? ' n-open' : ''}${props.toolsOpen ? '' : ' tools-hidden'}${boxSelect ? ' box-select' : ''}`} ref={el => { viewportRef.current = el; setViewportEl(el); }} onPointerDown={props.onViewportPointerDown}>
           <canvas id="c" ref={canvasRef} />
           {showFrame && <OutputFrame container={viewportEl} />}
           {props.toolsOpen && <div className="tools" role="group" aria-label={t('カメラの操作')}>
@@ -108,6 +118,8 @@ export function ViewportArea(props: {
             </div>
           )}
           <div className="view-info" aria-live="off">{viewInfo}</div>
+          {box && <div className="select-box" style={{ left: Math.min(box.x0, box.x1), top: Math.min(box.y0, box.y1), width: Math.abs(box.x1 - box.x0), height: Math.abs(box.y1 - box.y0) }} />}
+          {boxSelect && <div className="view-mode-hint">{t('ボックス選択: ドラッグで囲む (Shift で足す・Esc でやめる)')}</div>}
           {empty && <div className="view-hint">{t('Shift+A (追加) で形やライトを置く・ファイル > MMD を読み込む… でモデルを置く')}</div>}
           <RecoverBanner />
           <ModelPicker />

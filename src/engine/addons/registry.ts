@@ -36,7 +36,7 @@ export interface CommandDef {
 }
 
 // メニューの項目 (メニューの最後に足す)
-export type MenuId = 'file' | 'edit' | 'render' | 'view' | 'add' | 'object';
+export type MenuId = 'file' | 'edit' | 'render' | 'view' | 'select' | 'add' | 'object';
 export interface MenuDef {
   key: string;
   menu: MenuId;

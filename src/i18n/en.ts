@@ -929,5 +929,8 @@ const dict: Dictionary = {
   "エリアを元に戻す": "Restore Area",
   "エリアを最大化 / 元に戻す": "Maximize / Restore Area",
   "これ以上置けません": "No more objects can be placed",
+  "なし": "None",
+  "ボックス選択": "Box Select",
+  "ボックス選択: ドラッグで囲む (Shift で足す・Esc でやめる)": "Box Select: drag to enclose (Shift to extend, Esc to cancel)",
 };
 export default dict;

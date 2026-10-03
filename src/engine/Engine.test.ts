@@ -61,6 +61,35 @@ describe('Engine (描画なし)', () => {
     expect(e.ui.state).toMatchObject({ frame: 0, end: 250, playing: false, sel: null });
   });
 
+  it('複数選択: Shift で足す・外す、すべて・反転。消す・隠す・複製は選んでいる物すべて', async () => {
+    const e = engineWithCube();
+    e.addShape(1); e.addShape(2);
+    const [a, b, c] = e.world.objects;
+    e.select(a);
+    e.selection.toggle(b);
+    expect([e.selection.list, e.selection.current, e.ui.state.selIds]).toEqual([[a, b], b, [a.id, b.id]]);
+    e.selection.toggle(a); // 選んでいてアクティブでない → アクティブに
+    expect([e.selection.list, e.selection.current]).toEqual([[a, b], a]);
+    e.selection.toggle(a); // アクティブ → 外す
+    expect([e.selection.list, e.selection.current]).toEqual([[b], null]);
+    e.invertSelection();
+    expect(e.selection.list).toEqual([a, c]);
+    e.selectAll();
+    expect(e.selection.list).toEqual([a, b, c]);
+    // 複製: 全部を複製して、新しい方を選ぶ
+    const copy = await e.duplicateSelected();
+    expect(e.world.objects.length).toBe(6);
+    expect(e.selection.list.length).toBe(3);
+    expect(e.selection.list).not.toContain(a);
+    expect(e.selection.current).toBe(copy);
+    // 隠すと選択から外れる。消すと選んでいる物すべてが消える
+    e.setVisibility(copy!, { hidden: true });
+    expect(e.selection.list.length).toBe(2);
+    e.deleteSelected();
+    expect(e.world.objects.length).toBe(4);
+    expect(e.selection.list).toEqual([]);
+  });
+
   it('上から見る・視点を戻す', () => {
     const e = engineWithCube();
     e.camera.snapView('top');

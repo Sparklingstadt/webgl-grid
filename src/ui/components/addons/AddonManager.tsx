@@ -13,8 +13,8 @@ const SHOWS: { value: Show; label: string }[] = [
   { value: 'all', label: msg('すべて') }, { value: 'enabled', label: msg('有効') }, { value: 'disabled', label: msg('切ってある') },
   { value: 'builtin', label: msg('組み込み') }, { value: 'installed', label: msg('インストールしたもの') }, { value: 'error', label: msg('エラーのあるもの') },
 ];
-const MENU_NAMES: Record<MenuId, string> = { file: msg('ファイル'), edit: msg('編集'), render: msg('レンダー'), view: msg('ビュー'), add: msg('追加'), object: msg('オブジェクト') };
-const TAB_NAMES: Record<string, string> = { object: msg('オブジェクト'), material: msg('マテリアル'), morph: msg('表情'), bone: msg('ボーン'), scene: msg('シーン'), fx: msg('効果'), output: msg('出力') };
+const MENU_NAMES: Record<MenuId, string> = { file: msg('ファイル'), edit: msg('編集'), render: msg('レンダー'), view: msg('ビュー'), select: msg('選択'), add: msg('追加'), object: msg('オブジェクト') };
+const TAB_NAMES: Record<string, string> = { object: msg('オブジェクト'), modifier: msg('モディファイアー'), physics: msg('物理演算'), light: msg('ライト'), material: msg('マテリアル'), morph: msg('表情'), bone: msg('ボーン'), scene: msg('シーン'), fx: msg('効果'), output: msg('出力') };
 
 // (訳した名前・説明でも探せる)
 const matches = (a: AddonInfo, show: Show, category: string, q: string) =>

@@ -16,7 +16,10 @@ export interface SelInfo {
 }
 export interface UiState {
   mode: 'orbit' | 'pan';
-  sel: SelInfo | null;
+  sel: SelInfo | null;   // アクティブな物
+  selIds: number[];      // 選んでいる物 (置いた順)
+  boxSelect: boolean;    // ボックス選択 (B) を待っている
+  box: { x0: number; y0: number; x1: number; y1: number } | null; // ドラッグしているボックス (クライアント座標)
   modelVersion: number;  // 選んでいるモデルの中身 (表情・ボーンの一覧) が変わった
   values: number;        // 表情・ボーンの値が変わった
   canAdd: boolean;
@@ -53,7 +56,7 @@ type Version = 'modelVersion' | 'values' | 'keysVersion' | 'materialsVersion' | 
 
 export class UiChannel {
   readonly store: Store<UiState> = createStore<UiState>({
-    mode: 'orbit', sel: null, modelVersion: 0, values: 0, canAdd: true,
+    mode: 'orbit', sel: null, selIds: [], boxSelect: false, box: null, modelVersion: 0, values: 0, canAdd: true,
     frame: 0, playing: false, start: 0, end: TL_DEFAULT_END, keysVersion: 0,
     fxState: { ao: false, dof: false, bloom: false, diffusion: false, color: false }, fxLevel: { ...FX_LEVEL_DEFAULT },
     toast: null, palette: null, viewInfo: '', hairHang: null, materialsVersion: 0, projectName: null,

@@ -21,6 +21,7 @@ type Drag = {
   pinch?: { ids: number[]; last: number } | null;
   pending?: { obj?: Obj; timer: ReturnType<typeof setTimeout> } | null;
   grabbed?: boolean; placed?: boolean;
+  box?: boolean; // ボックス選択 (B のあとのドラッグ)
 };
 const LONG_PRESS_MS = 400; // スマホで形を掴む・置くまでの長押し時間
 const DOUBLE_TAP_MS = 300;
@@ -33,6 +34,8 @@ export interface InputActions {
   userGesture(): void;                       // 画面を触った (自動再生を止められた曲を鳴らす)
   // ポーズモード: そのあいだは物を選ばず・運ばず・消さない。関節を押したらボーンを選ぶ。ギズモを触っているあいだはカメラも動かさない
   pose?: { active(): boolean; busy(): boolean; pick(x: number, y: number): boolean };
+  // ボックス選択 (B): 次のドラッグで四角を描き、離したら中の物を選ぶ (Shift で足す)
+  box?: { active(): boolean; show(rect: { x0: number; y0: number; x1: number; y1: number } | null): void; done(x0: number, y0: number, x1: number, y1: number, extend: boolean): void };
 }
 
 export class InputController {
@@ -126,6 +129,7 @@ export class InputController {
       return;
     }
     const d: Drag = this.drag = { id: e.pointerId, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY };
+    if (this.actions.box?.active()) { d.box = true; this.canvas.classList.add('dragging'); return; }
     // 形を掴んだら、掴んだ点の高さの水平面に沿って動かす
     const ray = camera.screenRay(e.clientX, e.clientY);
     const picked = this.actions.pose?.active() ? null : camera.pick(ray);
@@ -137,13 +141,13 @@ export class InputController {
       const grab = () => {
         const group = world.stackFrom(obj).map(o => ({ o, dx: o.x - obj.x, dy: o.y - obj.y, dz: o.z - obj.z }));
         d.carry = { obj, group, held: obj.py, h: hy, ox: obj.x - hit[0], oz: obj.z - hit[1] };
-        this.selection.select(obj); // 掴んだ物を選ぶ
+        // 掴んだ物を選ぶ (選んでいる物の 1 つなら、ほかの選択はそのままでアクティブに)
+        if (this.selection.isSelected(obj)) this.selection.setActive(obj); else this.selection.select(obj);
         this.viewport.requestDraw();
       };
       if (e.shiftKey) {
-        // Shift+ドラッグ: 縦軸まわりに回す
+        // Shift+ドラッグ: 縦軸まわりに回す (動かさずに離したら、Shift+クリックで選択に足す・外す)
         d.rot = this.rotationGroup(obj);
-        this.selection.select(obj);
       } else if (e.pointerType === 'touch') {
         // スマホは長押しで掴む。その前に指を動かしたら、ふつうにカメラを動かす
         d.pending = {
@@ -216,7 +220,12 @@ export class InputController {
       clearTimeout(drag.pending.timer);
       drag.pending = null;
     }
+    if (drag.box) {
+      this.actions.box?.show({ x0: drag.sx, y0: drag.sy, x1: e.clientX, y1: e.clientY });
+      return;
+    }
     if (drag.rot) {
+      if (!this.selection.isSelected(drag.rot.obj)) this.selection.select(drag.rot.obj);
       // 右へドラッグすると手前の面が右へ動く向きに回す
       this.rotateGroup(drag.rot, (e.clientX - drag.sx) * 0.01);
       return;
@@ -259,6 +268,8 @@ export class InputController {
     if (this.actions.pose?.active()) return;
     if (this.wasDragged || e.detail > 1 || performance.now() < this.ignoreClicksUntil) return;
     const picked = this.camera.pick(this.camera.screenRay(e.clientX, e.clientY));
+    // Shift+クリック: 選択に足す・外す (Blender と同じ)。何もない所の Shift+クリックでは何もしない
+    if (e.shiftKey) { if (picked) this.selection.toggle(picked.obj); return; }
     this.selection.select(picked?.obj ?? null);
     if (!picked || isModel(picked.obj) || this.lastPointerType !== 'touch') return;
     clearTimeout(this.colorTimer);
@@ -310,6 +321,11 @@ export class InputController {
       if (!this.wasDragged && e.type === 'pointerup' && e.pointerType === 'touch') this.handleTap(e);
     }
     if (drag.pending) clearTimeout(drag.pending.timer);
+    if (drag.box) {
+      this.actions.box?.show(null);
+      if (e.type === 'pointerup') this.actions.box?.done(drag.sx, drag.sy, e.clientX, e.clientY, e.shiftKey);
+      this.ignoreClicksUntil = performance.now() + 100; // (離したときのクリックで選び直さない)
+    }
     if (drag.carry || drag.rot || drag.twist) this.world.settle();
     this.drag = null;
     this.viewport.requestDraw();

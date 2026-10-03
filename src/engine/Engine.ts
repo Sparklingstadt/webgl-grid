@@ -8,6 +8,7 @@ import { errorText } from '../core/errors';
 import { langEvents, t } from '../core/i18n';
 import { patchPmxMaterials } from '../core/pmxMaterials';
 import type { BoneValue } from '../core/types';
+import * as THREE from 'three';
 import { Clock } from './anim/Clock';
 import { Keyframes } from './anim/Keyframes';
 import { Music } from './anim/Music';
@@ -165,6 +166,11 @@ export class Engine {
         pick: (x, y) => { const b = this.pose.pickBone(x, y); if (b === null) return false; this.pose.selectBone(b); return true; },
       },
       remove: obj => this.world.remove(obj),
+      box: {
+        active: () => this.ui.state.boxSelect,
+        show: box => this.ui.set({ box }),
+        done: (x0, y0, x1, y1, extend) => { this.ui.set({ boxSelect: false }); this.boxSelect(x0, y0, x1, y1, extend); },
+      },
       userGesture: () => this.music.resume(), // 自動再生を止められていた曲は、画面を触ったときに再生する
     });
     this.effects.restore();
@@ -197,7 +203,35 @@ export class Engine {
   }
   select(obj: Obj | null) { this.selection.select(obj); this.viewport.requestDraw(); }
   selectById(id: number | null) { this.select(this.world.find(id)); }
-  deleteSelected() { if (this.selection.current) this.world.remove(this.selection.current); }
+  // X: 選んでいる物を全部消す
+  deleteSelected() { for (const o of this.selection.list) this.world.remove(o); }
+  // --- 選択 (Blender の「選択」のメニュー): すべて (A)・なし (Alt+A)・反転 (Ctrl+I)・ボックス選択 (B) ---
+  // (隠している物は選ばない)
+  selectAll() { const all = this.world.objects.filter(o => !o.hidden); this.selection.setMany(all, this.selection.current && all.includes(this.selection.current) ? this.selection.current : all.at(-1) ?? null); this.viewport.requestDraw(); }
+  invertSelection() {
+    const next = this.world.objects.filter(o => !o.hidden && !this.selection.isSelected(o));
+    this.selection.setMany(next, next.at(-1) ?? null);
+    this.viewport.requestDraw();
+  }
+  // B: 次のドラッグで四角を描いて選ぶ。Esc でやめる
+  startBoxSelect() { this.ui.set({ boxSelect: true }); }
+  cancelBoxSelect() { if (!this.ui.state.boxSelect) return false; this.ui.set({ boxSelect: false, box: null }); return true; }
+  // 画面の四角 (クライアント座標) の中に、中心が見えている物を選ぶ (extend: いまの選択に足す)
+  boxSelect(x0: number, y0: number, x1: number, y1: number, extend = false) {
+    const canvas = this.viewport.canvas;
+    if (!canvas) return;
+    const r = canvas.getBoundingClientRect(), cam = this.graph.camera, v = new THREE.Vector3();
+    const [l, rr, top, bottom] = [Math.min(x0, x1), Math.max(x0, x1), Math.min(y0, y1), Math.max(y0, y1)];
+    const hits = this.world.objects.filter(o => {
+      if (o.hidden) return false;
+      v.set(o.x, o.py + o.h / 2, o.z).project(cam);
+      if (v.z > 1) return false; // (カメラの後ろ)
+      const sx = r.left + (v.x + 1) / 2 * r.width, sy = r.top + (1 - v.y) / 2 * r.height;
+      return sx >= l && sx <= rr && sy >= top && sy <= bottom;
+    });
+    this.selection.setMany(hits, hits.at(-1) ?? (extend ? this.selection.current : null), extend);
+    this.viewport.requestDraw();
+  }
   // サイドバーの「オブジェクト」から位置・向き・色を変える
   setObjProp(key: 'x' | 'z' | 'r', v: number) {
     const o = this.selection.current;
@@ -227,11 +261,27 @@ export class Engine {
   // --- 複製 (Shift+D。Blender と同じく、マテリアルは元と共有し、名前に番号を付ける) ---
   // 隣の空いている場所に置いて、新しい方を選ぶ。向き・表示・物ごとの値 (ライト・アドオン) も写す。
   // MMD モデルは同じファイルから読み直し、ポーズ・表情・キーフレーム・モーション・IK・髪も写す。元に戻すでは 1 手
+  // (選んでいる物が いくつかなら全部。新しい方を選び、アクティブの複製をアクティブに)
   duplicateSelected(): Promise<Obj | null> {
-    const src = this.selection.current;
-    if (!src) return Promise.resolve(null);
+    const list = this.selection.list, active = this.selection.current;
+    if (!list.length) return Promise.resolve(null);
     if (this.world.full) { this.ui.toast(t('これ以上置けません')); return Promise.resolve(null); }
     return this.history.batch(async () => {
+      const made = new Map<Obj, Obj>();
+      for (const src of list) {
+        if (this.world.full) break;
+        const obj = await this.duplicateOne(src);
+        if (obj) made.set(src, obj);
+      }
+      if (!made.size) return null;
+      const copies = [...made.values()];
+      this.selection.setMany(copies, (active && made.get(active)) ?? copies.at(-1)!);
+      this.objChanged();
+      return (active && made.get(active)) ?? copies.at(-1)!;
+    });
+  }
+  private async duplicateOne(src: Obj): Promise<Obj | null> {
+    {
       const [x, z] = this.world.findFreeSpot(radiusOf(src), src.x + 1, src.z);
       let obj: Obj;
       if (isModel(src)) {
@@ -267,10 +317,8 @@ export class Engine {
       }
       obj.name = this.nextName(nameOf(src));
       this.world.settle();
-      this.selection.select(obj);
-      this.objChanged();
       return obj;
-    });
+    }
   }
   // 「名前.001」から始めて、使われていない番号の名前 (Blender と同じ)
   private nextName(name: string) {
@@ -300,14 +348,13 @@ export class Engine {
     }
     if (!changed) return;
     obj.node.visible = shownIn(obj, false); // (すぐにクリックで選べなくなるよう、描く前にも合わせる)
-    if (obj.hidden && this.selection.current === obj) this.selection.select(null);
+    if (obj.hidden) this.selection.deselect(obj);
     this.objChanged();
   }
   // H: 選んでいる物を隠す、Shift+H: ほかを隠す、Alt+H: 全部見せる
   hideSelected(others = false) {
-    const cur = this.selection.current;
-    if (!cur) return;
-    for (const o of [...this.world.objects]) if ((o === cur) !== others) this.setVisibility(o, { hidden: true });
+    if (!this.selection.selected.size) return;
+    for (const o of [...this.world.objects]) if (this.selection.isSelected(o) !== others) this.setVisibility(o, { hidden: true });
   }
   revealAll() { for (const o of this.world.objects) this.setVisibility(o, { hidden: false }); }
   // 並べ替え (アウトライナーでドラッグ): obj を target の前 (後) に。並びは一覧の順で、積み重ねは変えない

@@ -30,7 +30,7 @@ export function useShortcuts(engine: Engine, actions: {
       if (engine.ui.state.missingFiles) { if (e.key === 'Escape') engine.project.answerMissing('cancel'); return; }
       if (engine.ui.state.missingTextures) { if (e.key === 'Escape') engine.loader.answerTextures([]); return; }
       if (a.dialogOpen()) { if (e.key === 'Escape') a.closeDialog(); return; } // (アドオンマネージャーのあいだは、場面のショートカットを使わない)
-      if (e.key === 'Escape') { if (!a.closeMenus()) engine.picker.close(); return; }
+      if (e.key === 'Escape') { if (!a.closeMenus() && !engine.cancelBoxSelect()) engine.picker.close(); return; }
       // Ctrl+,: アドオンマネージャー (Blender のプリファレンスと同じキー)
       if (e.key === ',' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); a.openAddons(); return; }
       // F12: 画像をレンダリング、Ctrl+F12: アニメーションをレンダリング (Blender と同じ)
@@ -52,6 +52,8 @@ export function useShortcuts(engine: Engine, actions: {
       }
       // Ctrl+Space: マウスが乗っているエリアを最大化する・戻す (Blender と同じ)
       if (e.ctrlKey && e.code === 'Space') { e.preventDefault(); a.toggleMax(); return; }
+      // Ctrl+I: 選択を反転
+      if ((e.ctrlKey || e.metaKey) && e.code === 'KeyI') { e.preventDefault(); engine.invertSelection(); return; }
       if ((e.ctrlKey || e.metaKey) && e.code === 'KeyS') { e.preventDefault(); engine.project.saveFile(e.altKey ? 'reference' : 'embedded'); return; }
       if (e.ctrlKey || e.metaKey) return;
       const hoverTl = a.hoverArea.current === 'timeline';
@@ -84,8 +86,15 @@ export function useShortcuts(engine: Engine, actions: {
         case 'KeyG':
           if (engine.pose.active) { e.preventDefault(); if (e.altKey) engine.pose.resetSelected('translate'); else engine.pose.setTool('translate'); }
           break;
+        // A: すべて選択、Alt+A: 選択を解除、Shift+A: 追加メニュー
         case 'KeyA':
-          if (e.shiftKey) { e.preventDefault(); a.openAddMenu(); } else if (e.altKey) { e.preventDefault(); engine.select(null); }
+          if (engine.pose.active) break;
+          e.preventDefault();
+          if (e.shiftKey) a.openAddMenu(); else if (e.altKey) engine.select(null); else engine.selectAll();
+          break;
+        // B: ボックス選択
+        case 'KeyB':
+          if (!engine.pose.active) engine.startBoxSelect();
           break;
         case 'KeyN':
           a.toggleN();

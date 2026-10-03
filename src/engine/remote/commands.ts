@@ -55,6 +55,7 @@ export function sceneState(e: Engine) {
     project: e.ui.state.projectName,
     timeline: { frame: e.clock.frame, start: e.clock.start, end: e.clock.end, playing: e.clock.playing, fps: FPS },
     selected: e.selection.current?.id ?? null,
+    selectedIds: e.selection.list.map(o => o.id),
     objects: e.world.objects.map(o => ({
       id: o.id,
       kind: kindOf(o),
@@ -118,7 +119,11 @@ export const COMMANDS: Record<string, Command> = {
     if (p?.x !== undefined || p?.z !== undefined) COMMANDS.set_object(e, { id: obj.id, x: p.x, z: p.z });
     return { id: obj.id };
   },
-  select: (e, p) => { e.selectById(p?.id ?? null); return { selected: e.selection.current?.id ?? null }; },
+  select: (e, p) => {
+    if (Array.isArray(p?.ids)) { e.selection.setMany((p.ids as number[]).map(id => objOf(e, id))); e.viewport.requestDraw(); }
+    else e.selectById(p?.id ?? null);
+    return { selected: e.selection.current?.id ?? null, selectedIds: e.selection.list.map(o => o.id) };
+  },
   set_object: (e, p) => {
     const obj = objOf(e, p?.id);
     if (p.x !== undefined) obj.x = Number(p.x);

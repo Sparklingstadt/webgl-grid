@@ -9,6 +9,7 @@ export function StatusBar({ maximized }: { maximized: boolean }) {
   const mode = useUi(s => s.mode);
   const poseMode = useUi(s => s.poseMode);
   const frame = useUi(s => s.frame);
+  const selIds = useUi(s => s.selIds);
   useUi(s => s.sceneVersion);
   const count = engine.world.objects.length;
   return (
@@ -21,7 +22,7 @@ export function StatusBar({ maximized }: { maximized: boolean }) {
       {maximized && <span className="hint"><kbd>Ctrl Space</kbd>{t('エリアを元に戻す')}</span>}
       <span className="spacer" />
       <span className="stats">
-        {sel ? `${t(sel.name)} | ` : ''}{t('オブジェクト {sel}/{n}', { sel: sel ? 1 : 0, n: count })} | {t('フレーム {f}', { f: frame })}
+        {sel ? `${t(sel.name)} | ` : ''}{t('オブジェクト {sel}/{n}', { sel: selIds.length, n: count })} | {t('フレーム {f}', { f: frame })}
       </span>
     </footer>
   );

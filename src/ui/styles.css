@@ -87,6 +87,10 @@ canvas#c.over-box { cursor: pointer; }
 .tools button:hover { background: #474747; }
 .tools button[aria-pressed="true"] { background: var(--accent); }
 .tools svg { width: 20px; height: 20px; }
+.select-box { position: fixed; z-index: 8; pointer-events: none; border: 1px dashed #fff; background: rgba(255, 255, 255, 0.06); }
+.viewport.box-select canvas#c { cursor: crosshair; }
+.view-mode-hint { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); padding: 4px 10px; border-radius: 4px; pointer-events: none;
+                  background: rgba(20, 20, 20, 0.8); color: var(--text); white-space: nowrap; }
 .view-hint { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); max-width: calc(100% - 32px); pointer-events: none;
              color: var(--dim); text-align: center; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6); }
 .view-info { position: absolute; left: 52px; top: 8px; pointer-events: none; white-space: pre; color: #ececec;
@@ -136,6 +140,8 @@ canvas#c.over-box { cursor: pointer; }
 .ol-row:hover { background: #333; }
 .ol-row.active { background: #334d80; }
 .ol-row.active .ol-name { color: var(--select); }
+.ol-row.selected { background: #2f3f5e; }
+.ol-row.selected .ol-name { color: #f08a3c; }
 .ol-row.hidden .ol-name, .ol-row.hidden .ol-icon { opacity: 0.45; }
 .ol-tree.dragging, .ol-tree.dragging .ol-row { cursor: grabbing; }
 .ol-row.drag-source { opacity: 0.5; }
