@@ -2,7 +2,7 @@
 
 three.js で描いた、無限に続くグリッドの上に、立方体・トーラス・三角錐や MMD モデル（.pmx）やステージを置いて、モーション（.vmd）と曲で踊らせたりできるデモです。
 
-デモ: https://sparklingstadt.github.io/webgl-grid/
+GitHub Pages での公開は停止中です。手元で動かすときは、このフォルダで `python3 -m http.server` などを起動して http://localhost:8000/ を開いてください。
 
 ## 操作
 
