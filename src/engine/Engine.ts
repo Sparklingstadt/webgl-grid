@@ -50,7 +50,7 @@ export class Engine {
   readonly library = new MaterialLibrary();
   readonly world = new World(this.graph, this.viewport, this.ui, this.library);
   readonly selection = new Selection(this.world, this.ui);
-  readonly cloners = new Cloners(this.world, this.viewport);
+  readonly cloners = new Cloners(this.world, this.viewport, () => this.clock.frame);
   readonly materials = new MaterialEditor(this.library, this.world, this.selection, this.ui);
   readonly picker = new ColorPicker(this.world, this.viewport, this.ui);
   readonly camera = new CameraController(this.graph, this.viewport, this.ui, this.world);

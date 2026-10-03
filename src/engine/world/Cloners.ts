@@ -1,20 +1,26 @@
 import * as THREE from 'three';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
-import { MAX_CLONES, clonerLayout, cloneCount, type ClonerSettings } from '../../core/cloner';
+import { MAX_CLONES, MAX_DELAY_FRAMES, clonerLayout, cloneCount, type ClonerSettings } from '../../core/cloner';
 import type { Viewport } from '../render/Viewport';
 import { isModel, type Any, type Obj } from '../types';
 import type { World } from './World';
 
 const GROUP = '__clones';
 const noRaycast = () => {};
+// MMD モデルの、あるフレームの姿勢 (ディレイのために覚えておく)
+interface PoseSnap { pos: Float32Array; quat: Float32Array; morphs: Float32Array | null }
 
 // --- クローナー (Cinema 4D のクローナー) ---
 // 物をクローナーにすると、元の物は隠し、その位置と向きを中心に、クローンを直線・放射・グリッドに並べる (core/cloner.ts)。
 // クローンは物の three.js のグループ (node) の子なので、元の物を動かす・回すと一緒に動く。
 // 形のクローンは同じ形状と材質を使う普通のメッシュ。MMD モデルのクローンは骨ごと複製し、
-// 毎フレーム元のモデルの骨と表情を写す (モーション・物理演算・手で動かしたボーンが、そのまま全部のクローンに出る)
+// 毎フレーム元のモデルの骨と表情を写す (モーション・物理演算・手で動かしたボーンが、そのまま全部のクローンに出る)。
+// ディレイのエフェクタがあれば、元のモデルの姿勢をフレームごとに覚えておき、遅れたクローンには前のフレームの姿勢を写す
+// (再生していくと覚えるので、飛んだ直後はまだ遅れない)
 export class Cloners {
-  constructor(private world: World, private viewport: Viewport) {
+  private history = new WeakMap<Obj, Map<number, PoseSnap>>();
+
+  constructor(private world: World, private viewport: Viewport, private frameNow: () => number) {
     viewport.onBeforeRender(() => this.sync());
   }
 
@@ -41,6 +47,8 @@ export class Cloners {
       const g = new THREE.Group();
       g.position.set(p.x, p.y, p.z);
       g.rotation.y = p.ry;
+      g.scale.setScalar(p.scale);
+      g.userData.delay = Math.round(p.delay);
       if (isModel(obj)) {
         const m: Any = cloneSkinned(obj.model);
         m.visible = true;
@@ -60,6 +68,13 @@ export class Cloners {
     obj.node.add(group);
   }
 
+  private remember(obj: Obj, bones: THREE.Bone[], inf: number[] | undefined) {
+    let map = this.history.get(obj);
+    if (!map) this.history.set(obj, map = new Map());
+    rememberPose(map, this.frameNow(), bones, inf);
+    return map;
+  }
+
   // クローンの数 (サイドバーに出す)
   count(obj: Obj) { return obj.cloner ? cloneCount(obj.cloner, isModel(obj) ? MAX_CLONES.model : MAX_CLONES.shape) : 0; }
 
@@ -77,10 +92,22 @@ export class Cloners {
         continue;
       }
       const src = obj.model, bones: THREE.Bone[] = src.skeleton.bones, inf: number[] | undefined = src.morphTargetInfluences;
+      const delayed = group.children.some(g => g.userData.delay > 0);
+      const snaps = delayed ? this.remember(obj, bones, inf) : null;
+      const frame = this.frameNow();
       for (const g of group.children) {
         const m = g.children[0] as Any;
         syncMaterials(m, src);
         const cb: THREE.Bone[] = m.skeleton.bones;
+        const snap = snaps && g.userData.delay > 0 ? nearest(snaps, frame - g.userData.delay) : null;
+        if (snap) {
+          for (let i = 0; i < bones.length; i++) {
+            cb[i].position.fromArray(snap.pos, i * 3);
+            cb[i].quaternion.fromArray(snap.quat, i * 4);
+          }
+          if (snap.morphs && m.morphTargetInfluences) for (let k = 0; k < snap.morphs.length; k++) m.morphTargetInfluences[k] = snap.morphs[k];
+          continue;
+        }
         for (let i = 0; i < bones.length; i++) {
           cb[i].position.copy(bones[i].position);
           cb[i].quaternion.copy(bones[i].quaternion);
@@ -90,6 +117,21 @@ export class Cloners {
       }
     }
   }
+}
+
+// いまのフレームの元のモデルの姿勢を覚え、遅れの範囲より前のものは捨てる
+function rememberPose(map: Map<number, PoseSnap>, frame: number, bones: THREE.Bone[], inf: number[] | undefined) {
+  let snap = map.get(frame);
+  if (!snap) map.set(frame, snap = { pos: new Float32Array(bones.length * 3), quat: new Float32Array(bones.length * 4), morphs: inf ? new Float32Array(inf.length) : null });
+  bones.forEach((b, i) => { b.position.toArray(snap.pos, i * 3); b.quaternion.toArray(snap.quat, i * 4); });
+  if (inf && snap.morphs) snap.morphs.set(inf);
+  for (const f of map.keys()) if (f > frame || f < frame - MAX_DELAY_FRAMES) map.delete(f); // (戻ったときは、先のフレームは捨てる)
+}
+// フレーム f にいちばん近い、覚えている姿勢
+function nearest(map: Map<number, PoseSnap>, f: number): PoseSnap | null {
+  let best: PoseSnap | null = null, bd = Infinity;
+  for (const [k, s] of map) { const d = Math.abs(k - f); if (d < bd) { bd = d; best = s; } }
+  return best;
 }
 
 // クローンの材質を元のモデルに合わせる (配列は別のまま、中身だけ)

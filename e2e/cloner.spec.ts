@@ -86,3 +86,41 @@ test('MMD モデルをクローナーにすると、クローンも同じ動き�
   await expect(page.getByRole('button', { name: '1 つずつの物にする' })).toHaveCount(0);
   expect(errors).toEqual([]);
 });
+
+test('エフェクタ: ステップで 1 つずつ大きく、ディレイで MMD モデルのクローンが遅れて動く', async ({ page }) => {
+  const errors = await open(page);
+  const p = await screenPosOf(page, 0);
+  await page.mouse.click(p.x, p.y);
+  await page.getByRole('checkbox', { name: 'クローナーにする' }).click();
+  await choose(page, 'クローナーの並べ方', '直線');
+  await page.getByRole('button', { name: '+ ステップ' }).click();
+  const group = page.getByRole('group', { name: 'エフェクタ 1 ステップ' });
+  await group.getByRole('spinbutton', { name: 'ステップの大きさ' }).fill('3');
+  await page.keyboard.press('Enter');
+  const scales = () => page.evaluate(() => (window as Win).engine.world.objects[0].node.getObjectByName('__clones').children.map((g: Win) => +g.scale.x.toFixed(2)));
+  await expect.poll(scales).toEqual([1, 1.5, 2, 2.5, 3]);
+  // オフにすると効かない
+  await group.getByRole('checkbox', { name: 'ステップ' }).click();
+  await expect.poll(scales).toEqual([1, 1, 1, 1, 1]);
+
+  // MMD モデル + ディレイ: 再生すると、クローンごとに違う姿勢 (遅れ)
+  const vmd = makeVmd([{ bone: 'センター', frame: 0, pos: [0, 0, 0] }, { bone: 'センター', frame: 30, pos: [0, 0, 6] }]);
+  await loadTestModel(page, [{ name: 'テスト.vmd', mimeType: 'application/octet-stream', buffer: Buffer.from(vmd) }]);
+  const spread = await page.evaluate(async () => {
+    const { engine } = window as Win;
+    const m = engine.world.models[0];
+    engine.select(m);
+    engine.setCloner({ mode: 'linear', count: 3, step: [2, 0, 0], effectors: [{ kind: 'delay', enabled: true, position: [0, 0, 0], rotationDeg: 0, scale: 1, frames: 8 }] });
+    engine.clock.seekFrame(0);
+    engine.clock.setPlaying(true);
+    await new Promise<void>(r => { const f = () => (engine.clock.frame >= 20 ? r() : requestAnimationFrame(f)); requestAnimationFrame(f); });
+    engine.clock.setPlaying(false);
+    await new Promise(r => requestAnimationFrame(r));
+    const i = m.model.skeleton.bones.findIndex((b: Win) => b.name === 'センター');
+    return m.node.getObjectByName('__clones').children.map((g: Win) => +g.children[0].skeleton.bones[i].position.z.toFixed(2));
+  });
+  // 遅れているクローンほど、センターがまだ前へ出ていない (z の動きが小さい)
+  expect(Math.abs(spread[0])).toBeGreaterThan(Math.abs(spread[1]));
+  expect(Math.abs(spread[1])).toBeGreaterThan(Math.abs(spread[2]));
+  expect(errors).toEqual([]);
+});

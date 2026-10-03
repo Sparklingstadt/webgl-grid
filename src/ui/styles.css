@@ -335,3 +335,9 @@ canvas#c.over-box { cursor: pointer; }
 .prop.cloner .row .bnum { flex: 1; }
 details.sub { margin-top: 4px; }
 details.sub > summary { cursor: pointer; color: var(--dim); font-size: 11px; padding: 2px 0; }
+.effectors { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.effectors-head { color: var(--dim); font-size: 11px; }
+.effector { padding: 4px; border-radius: 4px; background: rgba(0, 0, 0, 0.15); }
+.effector-title { display: flex; align-items: center; justify-content: space-between; }
+.effectors > .row { display: flex; flex-wrap: wrap; gap: 3px; }
+.effectors > .row .bbtn { flex: 1 1 auto; }

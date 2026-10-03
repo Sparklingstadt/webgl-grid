@@ -91,6 +91,10 @@ forward('set_cloner', 'クローナー (Cinema 4D のクローナー): 物を直
   radius: z.number().min(0).optional(), startDeg: z.number().optional(), endDeg: z.number().optional(), align: z.boolean().optional().describe('放射: 外を向く'),
   grid: vec3.optional().describe('グリッドの数 [x, y, z]'), spacing: vec3.optional().describe('グリッドの間隔 [x, y, z]'),
   random: z.object({ position: z.number().min(0).optional(), rotationDeg: z.number().min(0).optional(), seed: z.number().int().optional() }).optional().describe('ばらつき'),
+  effectors: z.array(z.object({
+    kind: z.enum(['plain', 'step', 'delay']), enabled: z.boolean().optional(), position: vec3.optional(), rotationDeg: z.number().optional(),
+    scale: z.number().positive().optional(), frames: z.number().min(0).optional(),
+  })).optional().describe('エフェクタ (上から順にかける。渡すと並びごと入れ替える)。plain: 全部に同じだけ / step: 最初の 0 から最後の値まで / delay: MMD モデルのクローンを 1 つごとに frames フレーム遅らせる'),
 });
 forward('bake_cloner', '形のクローナーのクローンを、1 つずつの物にする (Cinema 4D の「現在の状態をオブジェクト化」)', { id });
 forward('reset_scene', '最初の状態 (立方体 1 個) に戻す', {});

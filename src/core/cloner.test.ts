@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { CLONER_DEFAULT, clonerLayout, cloneCount, normalizeCloner, type ClonerSettings } from './cloner';
+import { CLONER_DEFAULT, clonerLayout, cloneCount, newEffector, normalizeCloner, type ClonerSettings } from './cloner';
 
 const s = (p: Partial<ClonerSettings>): ClonerSettings => normalizeCloner({ ...CLONER_DEFAULT, ...p });
 const r2 = (p: { x: number; y: number; z: number; ry: number }) => [p.x, p.y, p.z, p.ry].map(v => Math.round(v * 100) / 100 + 0);
+const r1 = (v: number) => Math.round(v * 100) / 100 + 0;
 
 describe('クローナーの並べ方', () => {
   it('直線: 元の位置から 1 つずつずらし、回す', () => {
@@ -40,5 +41,21 @@ describe('クローナーの並べ方', () => {
     const n = normalizeCloner({ mode: 'spiral' as never, count: 0, grid: [0, 99, 2.4] as never, radius: -1 });
     expect(n).toMatchObject({ mode: 'grid', count: 1, grid: [1, 50, 2], radius: 0 });
     expect(normalizeCloner(undefined)).toEqual(CLONER_DEFAULT);
+  });
+  it('エフェクタ: プレーンは全部に同じだけ、ステップは最初の 0 から最後の値まで、ディレイは 1 つごとに遅らせる。上から順に', () => {
+    const base = { mode: 'linear' as const, count: 3, step: [1, 0, 0] as [number, number, number] };
+    const plain = clonerLayout(s({ ...base, effectors: [{ ...newEffector('plain'), position: [0, 1, 0], scale: 2 }] }), 100);
+    expect(plain.map(p => [r1(p.y), r1(p.scale)])).toEqual([[1, 2], [1, 2], [1, 2]]);
+    const step = clonerLayout(s({ ...base, effectors: [{ ...newEffector('step'), rotationDeg: 90, scale: 3 }] }), 100);
+    expect(step.map(p => [r1(p.ry), r1(p.scale)])).toEqual([[0, 1], [0.79, 2], [1.57, 3]]);
+    const delay = clonerLayout(s({ ...base, effectors: [{ ...newEffector('delay'), frames: 4 }, { ...newEffector('delay'), frames: 1, enabled: false }] }), 100);
+    expect(delay.map(p => p.delay)).toEqual([0, 4, 8]);
+    // 2 つ重ねると掛け合わさる
+    const both = clonerLayout(s({ ...base, effectors: [{ ...newEffector('plain'), scale: 2 }, { ...newEffector('step'), scale: 2 }] }), 100);
+    expect(both.map(p => r1(p.scale))).toEqual([2, 3, 4]);
+  });
+  it('エフェクタの設定をそろえる (知らない種類は外し、遅れと大きさは範囲に収める)', () => {
+    const n = normalizeCloner({ effectors: [{ kind: 'shader' } as never, { kind: 'delay', frames: 9999, scale: -1 } as never] });
+    expect(n.effectors).toEqual([{ kind: 'delay', enabled: true, position: [0, 0, 0], rotationDeg: 0, scale: 0.01, frames: 300 }]);
   });
 });
