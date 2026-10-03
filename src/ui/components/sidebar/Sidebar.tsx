@@ -8,12 +8,12 @@ import { ObjectPage } from './ObjectPage';
 export type SideTab = 'object' | 'material' | 'morph' | 'bone' | 'fx';
 const TABS: [SideTab, string][] = [['object', 'オブジェクト'], ['material', 'マテリアル'], ['morph', '表情'], ['bone', 'ボーン'], ['fx', '効果']];
 
-export function Sidebar({ tab, setTab, onLoadPose }: { tab: SideTab; setTab: (t: SideTab) => void; onLoadPose: () => void }) {
+export function Sidebar({ tab, setTab, onLoadPose, onOpenShaderEditor }: { tab: SideTab; setTab: (t: SideTab) => void; onLoadPose: () => void; onOpenShaderEditor: () => void }) {
   return (
     <aside className="sidebar" id="sidebar" aria-label="サイドバー">
       <div className="side-content">
         {tab === 'object' && <ObjectPage />}
-        {tab === 'material' && <MaterialPage />}
+        {tab === 'material' && <MaterialPage onOpenShaderEditor={onOpenShaderEditor} />}
         {tab === 'morph' && <MorphPage />}
         {tab === 'bone' && <BonePage onLoadPose={onLoadPose} />}
         {tab === 'fx' && <FxPage />}

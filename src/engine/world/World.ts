@@ -2,7 +2,9 @@ import * as THREE from 'three';
 import { Emitter } from '../../core/events';
 import { MAX_BOXES, MMD_SCALE, PALETTE } from '../../core/constants';
 import { freeSpot, radiusOf, settleHeights, stackFrom } from '../../core/stacking';
-import { noOutline, type SceneGraph } from '../render/SceneGraph';
+import { surfaceShader } from '../../core/materials/tree';
+import type { MaterialLibrary } from '../materials/MaterialLibrary';
+import type { SceneGraph } from '../render/SceneGraph';
 import type { System, Viewport } from '../render/Viewport';
 import type { Any, ModelObj, Obj } from '../types';
 import type { UiChannel } from '../UiChannel';
@@ -28,7 +30,7 @@ export class World implements System {
   readonly events = new Emitter<WorldEvents>();
   private nextId = 1;
 
-  constructor(private graph: SceneGraph, private viewport: Viewport, private ui: UiChannel) {}
+  constructor(private graph: SceneGraph, private viewport: Viewport, private ui: UiChannel, private lib: MaterialLibrary) {}
 
   has(obj: Obj) { return this.objects.includes(obj); }
   find(id: number | null) { return this.objects.find(o => o.id === id) ?? null; }
@@ -47,13 +49,41 @@ export class World implements System {
     this.events.emit('added', obj);
     return obj;
   }
-  // 形 s (0: 立方体, 1: トーラス, 2: 三角錐) を (x, z) に置く。色 c を省くと、使われていない色
+  // 形 s (0: 立方体, 1: トーラス, 2: 三角錐) を (x, z) に置く。色 c を省くと、使われていない色。
+  // 形ごとに、その色のマテリアルを 1 つ作ってスロットに入れる
   addShape(s: number, x: number, z: number, c = this.nextColor()): Obj {
-    const mesh = new THREE.Mesh(SHAPE_GEOMETRY[s], new THREE.MeshLambertMaterial({ flatShading: s === 2, userData: noOutline() }));
-    return this.add({ x, y: 0, z, c, s, r: 0, py: 0, vy: 0, h: SHAPE_HEIGHT[s], hx: 0.5, hz: 0.5, mesh }, mesh);
+    const mat = this.lib.create('マテリアル', { auto: true });
+    surfaceShader(mat.tree)!.values.baseColor = [...PALETTE[c]];
+    const material = this.lib.instance(mat.id);
+    material.flatShading = s === 2;
+    const mesh = new THREE.Mesh(SHAPE_GEOMETRY[s], material);
+    return this.add({ x, y: 0, z, c, s, r: 0, py: 0, vy: 0, h: SHAPE_HEIGHT[s], hx: 0.5, hz: 0.5, mesh, slots: [mat.id] }, mesh);
   }
-  // MMD モデルを、(cx, cz) に近い空いている場所に置く
-  addModel(mesh: Any, cx: number, cz: number): ModelObj {
+  // 形の色を、パレットの色 c にする (スロットのマテリアルのベースカラー。ほかの物と共有していれば、そちらも変わる)
+  setShapeColor(obj: Obj, c: number) {
+    obj.c = c;
+    const id = obj.slots[0];
+    if (!id) return;
+    this.lib.edit(id, data => {
+      const bsdf = surfaceShader(data.tree);
+      if (bsdf) bsdf.values.baseColor = [...PALETTE[c]];
+    });
+  }
+  // スロット i のマテリアルを替える (null ならマテリアルなし)
+  setSlot(obj: Obj, i: number, id: string | null) {
+    const target: THREE.Mesh = obj.s === 3 ? obj.model : obj.mesh!;
+    const list = [target.material].flat();
+    if (i < 0 || i >= list.length) return;
+    this.lib.release(list[i]);
+    const m = this.lib.instance(id);
+    if (obj.s === 2) m.flatShading = true;
+    list[i] = m;
+    target.material = Array.isArray(target.material) ? list : list[0];
+    obj.slots[i] = id;
+    this.viewport.requestDraw();
+  }
+  // MMD モデル (材質はマテリアルに変換したもの。slots はそのマテリアル) を、(cx, cz) に近い空いている場所に置く
+  addModel(mesh: Any, cx: number, cz: number, slots: string[]): ModelObj {
     // MMD_SCALE 倍にして、足元の中心が置き場所に来るようにずらす
     const bbox = new THREE.Box3().setFromObject(mesh);
     const size = bbox.getSize(new THREE.Vector3()), center = bbox.getCenter(new THREE.Vector3());
@@ -63,7 +93,7 @@ export class World implements System {
     const base = { x: 0, y: 0, z: 0, c: -1, s: 3, r: 0, py: 0, vy: 0,
                    h: size.y * k, hx: Math.max(size.x * k / 2, 0.05), hz: Math.max(size.z * k / 2, 0.05) };
     [base.x, base.z] = this.findFreeSpot(radiusOf(base), cx, cz);
-    const obj = this.add({ ...base, model: mesh }, mesh) as ModelObj;
+    const obj = this.add({ ...base, model: mesh, slots }, mesh) as ModelObj;
     // 当たり判定用の複製。置いたモデルはポーズを変えないので、骨やモーフの計算をしない普通のメッシュで判定する
     // (骨で変形するメッシュのまま判定すると、頂点ごとに骨を計算するので 9 万ポリゴンで 1 回 50ms ほどかかる)
     const proxy: Any = new THREE.Mesh(mesh.geometry, new THREE.MeshBasicMaterial());
@@ -82,8 +112,8 @@ export class World implements System {
     this.graph.scene.remove(obj.node);
     this.objects.splice(this.objects.indexOf(obj), 1);
     this.events.emit('removed', obj); // 物理演算・モーション・選択などが後片付けする
+    this.lib.releaseAll(obj.node);
     if (obj.s === 3) disposeModel(obj.node);
-    else obj.mesh!.material.dispose();
     this.settle();
     this.publishCanAdd();
     this.viewport.requestDraw();
@@ -145,7 +175,6 @@ export class World implements System {
     for (const b of this.objects) {
       b.node.position.set(b.x, b.py, b.z);
       b.node.rotation.y = b.r;
-      if (b.mesh) b.mesh.material.color.setRGB(...PALETTE[b.c], THREE.LinearSRGBColorSpace);
     }
   }
   // 掴んでいる物 (とパレットで色を変えている形) を明るくする
@@ -165,18 +194,10 @@ export class World implements System {
   }
 }
 
-// MMD モデルの形状・材質・テクスチャを片付ける
+// MMD モデルの形状を片付ける (材質は MaterialLibrary に返す。テクスチャはマテリアルの画像として残る)
 export function disposeModel(root: THREE.Object3D) {
   root.traverse(o => {
     const mesh = o as THREE.Mesh;
-    if (!mesh.isMesh) return;
-    mesh.geometry.dispose();
-    for (const m of [mesh.material].flat() as Any[]) {
-      // MMD の材質はテクスチャを uniforms の中に持っている
-      for (const v of [...Object.values(m), ...Object.values(m.uniforms ?? {}).map((u: Any) => u.value)]) {
-        if ((v as Any)?.isTexture) (v as THREE.Texture).dispose();
-      }
-      m.dispose();
-    }
+    if (mesh.isMesh) mesh.geometry.dispose();
   });
 }

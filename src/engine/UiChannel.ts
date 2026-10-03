@@ -20,16 +20,17 @@ export interface UiState {
   toast: { text: string; id: number } | null;
   palette: { x: number; y: number; c: number } | null;
   viewInfo: string;
-  hairHang: boolean | null; // 選んでいるモデルの髪を重力で垂らしているか (髪の形を保つ錘がなければ null)
+  hairHang: boolean | null;
+  materialsVersion: number; // マテリアル (スロット・ノード・値) が変わった // 選んでいるモデルの髪を重力で垂らしているか (髪の形を保つ錘がなければ null)
 }
-type Version = 'modelVersion' | 'values' | 'keysVersion';
+type Version = 'modelVersion' | 'values' | 'keysVersion' | 'materialsVersion';
 
 export class UiChannel {
   readonly store: Store<UiState> = createStore<UiState>({
     mode: 'orbit', sel: null, modelVersion: 0, values: 0, canAdd: true,
     frame: 0, playing: false, start: 0, end: TL_DEFAULT_END, keysVersion: 0,
     fxState: { ao: false, dof: false, bloom: false, diffusion: false, color: false }, fxLevel: { ...FX_LEVEL_DEFAULT },
-    toast: null, palette: null, viewInfo: '', hairHang: null,
+    toast: null, palette: null, viewInfo: '', hairHang: null, materialsVersion: 0,
   });
   private valuesAt = 0;
   private toastTimer: ReturnType<typeof setTimeout> | undefined;

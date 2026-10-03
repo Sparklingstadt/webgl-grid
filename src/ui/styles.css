@@ -20,8 +20,8 @@
 html, body { margin: 0; height: 100%; overflow: hidden; background: var(--gap); color: var(--text);
              font: 12px/1.35 system-ui, -apple-system, "Segoe UI", sans-serif; }
 button, input, select { font: inherit; color: inherit; }
-#app { position: fixed; inset: 0; display: grid; grid-template-rows: 28px minmax(0, 1fr) var(--tl-h); gap: 2px; padding: 0 2px 2px; }
-#app.tl-hidden { grid-template-rows: 28px minmax(0, 1fr) 26px; }
+#app { position: fixed; inset: 0; display: grid; grid-template-rows: 28px minmax(0, 1fr) 4px var(--tl-h); gap: 1px; padding: 0 2px 2px; }
+#app.tl-hidden { grid-template-rows: 28px minmax(0, 1fr) 4px 26px; }
 
 /* --- 上のバー (メニュー) --- */
 .topbar { display: flex; align-items: center; gap: 2px; padding: 0 4px; background: var(--topbar); margin: 0 -2px; user-select: none; }
@@ -107,9 +107,6 @@ canvas#c.over-box { cursor: pointer; }
 .mat-list li[aria-selected="true"] { background: var(--accent); }
 .mat-list .mat-name { flex: 1; min-width: 0; padding: 3px 6px; border: 0; background: transparent; text-align: left; cursor: pointer;
                       white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.mat-list .mat-eye { width: 22px; height: 20px; padding: 0; border: 0; background: transparent; cursor: pointer; color: var(--text); display: grid; place-items: center; }
-.mat-list .mat-eye[aria-pressed="false"] { opacity: 0.35; }
-.mat-list .mat-edited { color: var(--select); padding-right: 6px; }
 .color-field { display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: center; gap: 6px; }
 .color-field > span { color: var(--dim); text-align: right; }
 .color-field input[type="color"] { width: 100%; height: 22px; padding: 0; border: 0; border-radius: 4px; background: var(--field); cursor: pointer; }
@@ -192,3 +189,53 @@ select.bselect { padding: 3px 6px; background: var(--field); border: 1px solid #
   .frames .num { width: 48px; }
   #tl-frame { width: 54px; }
 }
+
+/* --- 領域の境目 (ドラッグで下の領域の高さを変える) --- */
+.area-resizer { cursor: ns-resize; touch-action: none; }
+.area-resizer:hover { background: #3a3a3a; }
+.editor-select { margin: 0 4px 0 2px; padding: 2px 4px; background: var(--widget); border: 0; border-radius: 4px; color: var(--text); }
+
+/* --- シェーダーエディター (Blender のノードエディター) --- */
+.node-editor { position: relative; flex: 1; min-height: 0; overflow: hidden; cursor: default; touch-action: none; user-select: none;
+               background-color: #1d1d1d;
+               background-image: linear-gradient(#262626 1px, transparent 1px), linear-gradient(90deg, #262626 1px, transparent 1px); }
+.node-editor.panning { cursor: grabbing; }
+.node-layer { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+.node-links { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
+.node-links path { fill: none; stroke-width: 2.4; }
+.node-links path.dragging { stroke-dasharray: 6 4; }
+.node-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--dim); pointer-events: none; }
+.node { position: absolute; background: #303030; border-radius: 6px; box-shadow: 0 3px 10px rgba(0, 0, 0, 0.5); border: 1px solid #111; }
+.node.selected { border-color: var(--select); box-shadow: 0 0 0 1px var(--select), 0 3px 10px rgba(0, 0, 0, 0.5); }
+.node-header { height: 24px; line-height: 24px; padding: 0 8px; border-radius: 5px 5px 0 0; color: #f0f0f0; cursor: move;
+               white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 1px rgba(0, 0, 0, 0.4); }
+.node-body { padding: 4px 0; }
+.node-row { position: relative; height: 24px; display: flex; align-items: center; padding: 0 10px; box-sizing: border-box; }
+.node-row.out { justify-content: flex-end; }
+.node-row > .bslider, .node-row > .color-field, .node-row > select, .node-row > .image-pick { flex: 1; min-width: 0; }
+.node-row .bslider { height: 20px; }
+.node-row .bslider .name { line-height: 20px; }
+.node-row select { padding: 1px 4px; }
+.socket { position: absolute; top: 50%; width: 11px; height: 11px; margin-top: -6px; border-radius: 50%; border: 1px solid #111; cursor: crosshair; }
+.socket.out { right: -6px; }
+.socket.in { left: -6px; }
+.socket:hover { transform: scale(1.3); }
+.socket-label { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.node-out-label { color: var(--text); }
+.image-pick { display: flex; gap: 3px; }
+.image-pick select { flex: 1; min-width: 0; }
+.image-pick .bbtn { padding: 2px 6px; }
+.shader-mat { color: var(--dim); padding-right: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.shader-mat b { color: var(--text); font-weight: 500; }
+
+/* --- マテリアルのプロパティ --- */
+.color-field.compact { grid-template-columns: minmax(0, 1fr) 54px; }
+.color-field.compact > span { text-align: left; color: var(--text); }
+.mat-block { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 3px; }
+.text-field { min-width: 0; padding: 3px 6px; background: var(--field); border: 0; border-radius: 4px; color: var(--text); }
+.text-field:focus { outline: 1px solid var(--accent); }
+.mat-ball { display: inline-block; width: 10px; height: 10px; margin-right: 6px; border-radius: 50%; vertical-align: -1px;
+            background: radial-gradient(circle at 35% 35%, #ddd, #666 60%, #333); }
+.linked-input { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); align-items: center; gap: 6px; }
+.linked-input > span { color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.linked-input .bbtn { text-align: left; }

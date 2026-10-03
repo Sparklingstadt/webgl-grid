@@ -7,7 +7,7 @@ import { NumField } from './NumField';
 // ◆ はクリックで選び (Shift で追加)、左右にドラッグでずらす。ホイールで拡大縮小、Shift+ホイールで左右に動かす
 const RULER = 24, ROW_Y = RULER + 6, ROW_H = 22, KEY_R = 6;
 
-export function Timeline({ open }: { open: boolean }) {
+export function Timeline({ open, typeSelect }: { open: boolean; typeSelect: React.ReactNode }) {
   const engine = useEngine();
   const { clock } = engine;
   const frame = useUi(s => s.frame);
@@ -213,7 +213,7 @@ export function Timeline({ open }: { open: boolean }) {
   return (
     <>
       <div className="area-header tl-header">
-        <svg className="editor-type" viewBox="0 0 18 18" aria-hidden="true"><circle cx="9" cy="9" r="6.5" fill="none" stroke="#ccc" strokeWidth="1.3" /><path d="M9 5v4l2.5 2" fill="none" stroke="#ccc" strokeWidth="1.3" strokeLinecap="round" /></svg>
+        {typeSelect}
         <div className="grp">
           <button type="button" className="hbtn" disabled={!isModel} onClick={() => engine.insertKey()}
                   title="選んだモデルのいまのポーズと表情を、このフレームのキーフレームにする (I)">◆ キー挿入</button>

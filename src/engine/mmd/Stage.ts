@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { MMD_SCALE } from '../../core/constants';
+import type { MaterialLibrary } from '../materials/MaterialLibrary';
 import type { SceneGraph } from '../render/SceneGraph';
 import type { Viewport } from '../render/Viewport';
 import type { Any } from '../types';
@@ -11,7 +12,7 @@ import { disposeModel } from '../world/World';
 export class Stage {
   model: Any = null;
 
-  constructor(private graph: SceneGraph, private viewport: Viewport) {}
+  constructor(private graph: SceneGraph, private viewport: Viewport, private lib: MaterialLibrary) {}
 
   static isStage(mesh: THREE.Object3D, fileName: string) {
     const size = new THREE.Box3().setFromObject(mesh).getSize(new THREE.Vector3());
@@ -35,6 +36,7 @@ export class Stage {
   clear() {
     if (!this.model) return;
     this.graph.scene.remove(this.model);
+    this.lib.releaseAll(this.model);
     disposeModel(this.model);
     this.model = null;
     this.graph.setGroundVisible(true);

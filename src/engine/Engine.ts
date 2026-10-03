@@ -1,9 +1,15 @@
+import * as THREE from 'three';
 import { FPS, SHAPE_NAMES } from '../core/constants';
 import type { BoneValue } from '../core/types';
 import { Clock } from './anim/Clock';
 import { Keyframes } from './anim/Keyframes';
 import { Music } from './anim/Music';
-import { Materials, type MaterialProps } from './mmd/Materials';
+import type { NodeType, SocketValue } from '../core/materials/nodes';
+import { addNode, connect, disconnect, findNode, removeNode, surfaceShader, whyNotConnect, type SocketRef } from '../core/materials/tree';
+import { patchPmxMaterials } from '../core/pmxMaterials';
+import { convertMmdMesh } from './materials/fromMmd';
+import { MaterialLibrary, type MaterialData, type MaterialOutline, type MaterialSettings } from './materials/MaterialLibrary';
+import { toPmxValues } from './materials/toPmx';
 import { MmdLoader } from './mmd/MmdLoader';
 import { Motion } from './mmd/Motion';
 import { Physics } from './mmd/Physics';
@@ -34,12 +40,13 @@ export class Engine {
   readonly ui = new UiChannel();
   readonly graph = new SceneGraph();
   readonly viewport = new Viewport(this.graph);
-  readonly world = new World(this.graph, this.viewport, this.ui);
+  readonly library = new MaterialLibrary();
+  readonly world = new World(this.graph, this.viewport, this.ui, this.library);
   readonly selection = new Selection(this.world, this.ui);
   readonly picker = new ColorPicker(this.world, this.viewport, this.ui);
   readonly camera = new CameraController(this.graph, this.viewport, this.ui, this.world);
   readonly physics = new Physics(this.world, this.viewport, this.ui);
-  readonly stage = new Stage(this.graph, this.viewport);
+  readonly stage = new Stage(this.graph, this.viewport, this.library);
   readonly motion = new Motion(this.world, this.physics, this.stage, this.camera, this.ui);
   readonly posing = new Posing(this.world, this.physics, this.motion, this.viewport, this.ui);
   readonly clock = new Clock();
@@ -48,7 +55,6 @@ export class Engine {
   readonly effects = new Effects(this.viewport, this.ui, () => this.camera.focusPoint());
   readonly loader = new MmdLoader(this.ui, () => this.viewport.requestDraw());
   readonly vpd = new VpdIO(this.posing, this.viewport, this.ui);
-  readonly materials = new Materials(this.viewport, this.ui);
   input: InputController | null = null;
 
   constructor() {
@@ -77,7 +83,8 @@ export class Engine {
     clock.events.on('change', () => ui.set({ frame: clock.frame, playing: clock.playing, start: clock.start, end: clock.end }));
     music.events.on('loaded', () => this.fitEndToContent());
     music.events.on('playing', () => viewport.startTicking());
-    selection.events.on('changed', () => keyframes.clearSelection());
+    selection.events.on('changed', () => { keyframes.clearSelection(); ui.bump('materialsVersion'); });
+    this.library.events.on('changed', () => { ui.bump('materialsVersion'); viewport.requestDraw(); });
 
     // 描く前: カメラ・物の位置・掴んでいる物の明るさ・選択の輪郭線・影の範囲
     viewport.onBeforeRender(() => {
@@ -152,7 +159,7 @@ export class Engine {
   setObjColor(c: number) {
     const o = this.selection.current;
     if (!o || o.s === 3) return;
-    o.c = c;
+    this.world.setShapeColor(o, c);
     this.viewport.requestDraw();
   }
 
@@ -170,6 +177,8 @@ export class Engine {
       if (world.full) return;
       const mesh = await this.loader.loadPmx(files);
       if (!mesh) return;
+      mesh.userData.sourceFile = pmx; // .pmx に書き出すときの元のファイル
+      const slots = convertMmdMesh(mesh, this.library); // 材質はプリンシプル BSDF のマテリアルに変換する
       if (Stage.isStage(mesh, pmx.name)) {
         this.stage.set(mesh);
         ui.toast(`${pmx.name} をステージとして置きました`);
@@ -177,7 +186,7 @@ export class Engine {
       } else {
         // ステージがあるときは、ステージの中心 (MMD で人物が立つ原点) の近くに置く
         const atStage = !!this.stage.model;
-        const obj = world.addModel(mesh, atStage ? 0 : this.camera.cam.tx, atStage ? 0 : this.camera.cam.tz);
+        const obj = world.addModel(mesh, atStage ? 0 : this.camera.cam.tx, atStage ? 0 : this.camera.cam.tz, slots);
         this.selection.select(obj);
         await this.physics.start(obj);
         ui.toast(`${pmx.name} を置きました`);
@@ -246,12 +255,109 @@ export class Engine {
   boneNote(i: number) { return this.model ? this.posing.boneNote(this.model, i) : ''; }
   setBone(i: number, key: keyof BoneValue, v: number) { if (this.model) this.posing.setBone(this.model, i, key, v); }
   resetPose() { if (this.model) this.posing.resetPose(this.model); }
-  // 材質 (サイドバーの「マテリアル」)
-  materialList() { return this.model ? this.materials.list(this.model) : []; }
-  material(i: number) { return this.model ? this.materials.get(this.model, i) : null; }
-  setMaterial(i: number, patch: Partial<Omit<MaterialProps, 'name'>>) { if (this.model) this.materials.set(this.model, i, patch); }
-  resetMaterial(i: number) { if (this.model) this.materials.reset(this.model, i); }
-  resetAllMaterials() { if (this.model) this.materials.resetAll(this.model); }
+  // --- マテリアル (選んでいる物のマテリアルスロット。Blender の「マテリアル」プロパティとシェーダーエディター) ---
+  slots(): { index: number; id: string | null; name: string }[] {
+    const o = this.selection.current;
+    return o ? o.slots.map((id, index) => ({ index, id, name: (id && this.library.materials.get(id)?.name) || '' })) : [];
+  }
+  activeSlot() {
+    const o = this.selection.current;
+    return o ? Math.min(o.activeSlot ?? 0, Math.max(o.slots.length - 1, 0)) : 0;
+  }
+  setActiveSlot(i: number) {
+    const o = this.selection.current;
+    if (!o) return;
+    o.activeSlot = i;
+    this.ui.bump('materialsVersion');
+  }
+  // 選んでいるスロットのマテリアル
+  activeMaterial(): MaterialData | null {
+    const id = this.selection.current?.slots[this.activeSlot()];
+    return (id && this.library.materials.get(id)) || null;
+  }
+  materialList() { return this.library.list(); }
+  // 選んでいるスロットに、マテリアル id を入れる (null で外す)
+  assignMaterial(id: string | null) {
+    const o = this.selection.current;
+    if (!o) return;
+    this.world.setSlot(o, this.activeSlot(), id);
+    this.ui.bump('materialsVersion');
+  }
+  newMaterial() { this.assignMaterial(this.library.create().id); }
+  // 選んでいるスロットのマテリアルを複製して、そのスロットに入れる (Blender の「新規マテリアル」ボタン)
+  duplicateMaterial() {
+    const cur = this.activeMaterial();
+    if (!cur) { this.newMaterial(); return; }
+    const copy = this.library.duplicate(cur.id);
+    if (copy) this.assignMaterial(copy.id);
+  }
+  renameMaterial(name: string) { const cur = this.activeMaterial(); if (cur) this.library.rename(cur.id, name); }
+  private editMaterial(fn: (data: MaterialData) => void) { const cur = this.activeMaterial(); if (cur) this.library.edit(cur.id, fn); }
+  setMaterialSettings(patch: Partial<MaterialSettings>) { this.editMaterial(d => Object.assign(d.settings, patch)); }
+  setMaterialOutline(patch: Partial<MaterialOutline>) { this.editMaterial(d => Object.assign(d.outline, patch)); }
+  // ノード (選んでいるスロットのマテリアルの)
+  setNodeValue(node: string, socket: string, value: SocketValue) {
+    this.editMaterial(d => { const n = findNode(d.tree, node); if (n) n.values[socket] = value; });
+  }
+  setNodeProp(node: string, prop: string, value: string) {
+    this.editMaterial(d => { const n = findNode(d.tree, node); if (n) n.props[prop] = value; });
+  }
+  addShaderNode(type: NodeType, x: number, y: number) {
+    let id: string | null = null;
+    this.editMaterial(d => { id = addNode(d.tree, type, x, y).id; });
+    return id;
+  }
+  removeShaderNode(node: string) { this.editMaterial(d => { removeNode(d.tree, node); }); }
+  moveShaderNode(node: string, x: number, y: number) {
+    this.editMaterial(d => { const n = findNode(d.tree, node); if (n) Object.assign(n, { x, y }); });
+  }
+  // つなぐ。つなげなければ、その理由を返す
+  connectNodes(from: SocketRef, to: SocketRef): string | null {
+    const cur = this.activeMaterial();
+    if (!cur) return 'マテリアルがありません';
+    const why = whyNotConnect(cur.tree, from, to);
+    if (why) return why;
+    this.editMaterial(d => { connect(d.tree, from, to); });
+    return null;
+  }
+  disconnectNode(to: SocketRef) { this.editMaterial(d => { disconnect(d.tree, to); }); }
+  // プリンシプル BSDF (サーフェス) の、つながっている入力の相手
+  surfaceShader() { const cur = this.activeMaterial(); return cur ? surfaceShader(cur.tree) : null; }
+  images() { return [...this.library.images.values()].map(i => ({ id: i.id, name: i.name })); }
+  // 画像ファイルを読み込んで、画像として登録する (MMD のモデルに使うときは、MMD と同じく上下を反転しない)
+  async openImage(file: File): Promise<string> {
+    const url = URL.createObjectURL(file);
+    try {
+      const texture = await new THREE.TextureLoader().loadAsync(url);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.flipY = !this.selection.model;
+      texture.name = file.name;
+      return this.library.addImage(file.name, texture).id;
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+  // マテリアルを変えた .pmx を書き出す (MMD で表せる範囲。ほかの部分は元の .pmx のまま)
+  async exportPmx() {
+    const o = this.model;
+    const file: File | undefined = o?.model.userData.sourceFile;
+    if (!o || !file) { this.ui.toast('書き出す MMD モデルをクリックして選んでください。'); return; }
+    try {
+      const sources = o.model.userData.slotSources;
+      const patches = new Map(o.slots.map((id, i) => [i, toPmxValues(id ? this.library.materials.get(id) ?? null : null, sources[i])]));
+      const bytes = patchPmxMaterials(await file.arrayBuffer(), patches);
+      const name = `${file.name.replace(/\.pmx$/i, '')}_edited.pmx`;
+      const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([bytes as BlobPart])), download: name });
+      document.body.append(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      this.ui.toast(`${name} を書き出しました。テクスチャを読めるよう、元の .pmx と同じフォルダに置いてください`, 6000);
+    } catch (err) {
+      console.error(err);
+      this.ui.toast(`書き出せませんでした: ${(err as Error)?.message ?? err}`, 8000);
+    }
+  }
   // 髪の形を保つ錘を外して、髪を重力で垂らす (MMD とは見た目が変わる)
   setHairHang(on: boolean) {
     if (!this.model) return;

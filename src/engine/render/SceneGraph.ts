@@ -18,7 +18,7 @@ export class SceneGraph {
   );
 
   constructor() {
-    this.scene.add(new THREE.AmbientLight(0xffffff, 0.18 * Math.PI));
+    // 全体を照らす光は、描き始めたときに部屋の環境 (Viewport.mount の RoomEnvironment) から当てる
     const { sun } = this;
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);

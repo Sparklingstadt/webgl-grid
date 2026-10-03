@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { MenuContext } from './components/Menu';
 import { Palette, Toast } from './components/Overlays';
 import type { SideTab } from './components/sidebar/Sidebar';
-import { Timeline } from './components/Timeline';
+import { BottomArea, type BottomEditor } from './components/BottomArea';
 import { TopBar } from './components/TopBar';
 import { ViewportArea } from './components/ViewportArea';
 import { useEngine } from './EngineContext';
@@ -18,6 +18,13 @@ export default function App() {
   const [sideOpen, setSideOpen] = useState(() => !isNarrow());
   const [tlOpen, setTlOpen] = useState(true);
   const [sideTab, setSideTab] = useState<SideTab>('object');
+  const [bottom, setBottom] = useState<BottomEditor>('timeline');
+  const [bottomH, setBottomH] = useState(() => (isNarrow() ? 168 : 150)); // 下の領域の高さ (px)。境目をドラッグで変える
+  // シェーダーエディターにしたときは、ノードが見える高さまで広げる (Blender の「シェーディング」のように)
+  const showEditor = useCallback((e: BottomEditor) => {
+    setBottom(e);
+    if (e === 'shader') { setTlOpen(true); setBottomH(h => Math.max(h, Math.round(innerHeight * 0.45))); }
+  }, []);
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const hoverArea = useRef<Area>(null);
   const pmxInput = useRef<HTMLInputElement>(null);
@@ -46,16 +53,24 @@ export default function App() {
 
   return (
     <MenuContext.Provider value={{ open: openMenu, setOpen: setOpenMenu }}>
-      <div id="app" className={[!sideOpen && 'side-hidden', !tlOpen && 'tl-hidden'].filter(Boolean).join(' ')}>
+      <div id="app" className={[!sideOpen && 'side-hidden', !tlOpen && 'tl-hidden'].filter(Boolean).join(' ')}
+           style={{ '--tl-h': `${bottomH}px` } as React.CSSProperties}>
         <TopBar onOpenFiles={openFiles} onLoadPose={openPose} />
         <div style={{ display: 'contents' }} onPointerEnter={() => { hoverArea.current = 'view'; }}>
           <ViewportArea sideOpen={sideOpen} toggleSide={toggleSide} tlOpen={tlOpen} toggleTl={() => setTlOpen(o => !o)}
                         sideTab={sideTab} setSideTab={setSideTab} onOpenFiles={openFiles} onLoadPose={openPose}
+                        onOpenShaderEditor={() => showEditor('shader')}
                         onViewportPointerDown={() => { if (isNarrow()) setSideOpen(false); }} />
         </div>
-        <section className="area" aria-label="タイムライン" onPointerEnter={() => { hoverArea.current = 'timeline'; }}>
-          <Timeline open={tlOpen} />
-        </section>
+        <div className="area-resizer" role="separator" aria-orientation="horizontal" aria-label="下の領域の高さ"
+             onPointerDown={e => {
+               const startY = e.clientY, startH = bottomH;
+               const move = (ev: PointerEvent) => setBottomH(Math.min(Math.max(startH + startY - ev.clientY, 60), innerHeight - 160));
+               const up = () => { removeEventListener('pointermove', move); removeEventListener('pointerup', up); };
+               addEventListener('pointermove', move);
+               addEventListener('pointerup', up);
+             }} />
+        <BottomArea editor={bottom} setEditor={showEditor} open={tlOpen} onHover={a => { hoverArea.current = a; }} />
       </div>
       <Toast />
       <Palette />

@@ -19,7 +19,7 @@ export interface Obj {
   x: number; y: number; z: number; c: number; s: number; r: number; py: number; vy: number;
   h: number; hx: number; hz: number;
   node: THREE.Group;
-  mesh?: THREE.Mesh<THREE.BufferGeometry, THREE.MeshLambertMaterial>;
+  mesh?: THREE.Mesh;
   model?: Any;                        // THREE.SkinnedMesh (MMD)
   animated?: boolean;
   motion?: MotionInfo | null;
@@ -27,7 +27,8 @@ export interface Obj {
   keys?: Map<number, PoseKey> | null; // キーフレーム (フレーム番号 → ポーズと表情)
   solvers?: { ik: Any; grant: Any };  // IK と付与の計算
   boneSel?: number;                   // サイドバーで選んでいるボーン
-  outlined?: boolean;                 // 選択中のオレンジの輪郭線を付けている
+  slots: (string | null)[];           // マテリアルスロット (マテリアルの id。なしは null)
+  activeSlot?: number;                // サイドバーで選んでいるスロット
   highlighted?: boolean;              // 掴んでいるので明るくしている
 }
 export type ModelObj = Obj & { model: Any };

@@ -12,7 +12,7 @@ engine/  three.js の実行部 (場面・描画・操作・アニメーション
 core/    純粋な計算とデータ (three.js の数学ライブラリは使ってよいが、場面・DOM・WebGL には触らない)
 ```
 
-- **core** は単体テストしやすい計算をまとめた場所です（積み重ねの判定、髪の錘の見つけ方、キーフレームの補間、.vpd の書式、Shift-JIS、タイムラインの目盛り、ストア、イベント）。
+- **core** は単体テストしやすい計算をまとめた場所です（シェーダーノードとノードツリー、ノードからの GLSL の組み立て、.pmx の材質の書き換え、積み重ねの判定、髪の錘の見つけ方、キーフレームの補間、.vpd の書式、Shift-JIS、タイムラインの目盛り、ストア、イベント）。
 - **engine** は、役割ごとのクラス（サービス）でできています。モジュールのグローバル変数は持たず、使う相手はコンストラクタで受け取ります。`Engine` がすべてを組み立てる場所（コンポジションルート）で、画面への窓口（ファサード）も兼ねます。
 - **ui** はエンジンを React の Context（`EngineProvider` / `useEngine`）で受け取り、状態は `useUi(selector)` で購読します。
 
@@ -24,7 +24,8 @@ core/    純粋な計算とデータ (three.js の数学ライブラリは使っ
 | 描画 | `SceneGraph` | シーン・カメラ・光・地面のグリッド | なし |
 | | `Viewport` | WebGL の描画先・描画ループ (`System` を順に update)・描く前後のフック | SceneGraph |
 | | `Effects` | MME 風の後処理の設定と描画 | Viewport, UiChannel |
-| 物 | `World` | 置いた物の一覧・作成・削除・積み重ね・落下 (`System`) | SceneGraph, Viewport, UiChannel |
+| マテリアル | `MaterialLibrary` | マテリアル (名前・ノードツリー・設定・輪郭線) と画像。使う物ごとに three.js の材質を作り、ノードから組み立てた GLSL を差し込み、変更を反映する | なし (イベントで知らせる) |
+| 物 | `World` | 置いた物の一覧・作成・削除・積み重ね・落下 (`System`)・マテリアルスロット | SceneGraph, Viewport, UiChannel, MaterialLibrary |
 | | `Selection` | 選択・選択中の輪郭線 | World, UiChannel |
 | | `ColorPicker` | スマホの色のパレット | World, Viewport, UiChannel |
 | 視点と入力 | `CameraController` | オービットカメラ・レイ・決まった向き・カメラを外から動かすもの (`CameraOverride`) | SceneGraph, Viewport, UiChannel, World |
@@ -34,10 +35,9 @@ core/    純粋な計算とデータ (three.js の数学ライブラリは使っ
 | | `Music` | 曲。`TimeSource` として Clock に再生位置を渡す | UiChannel |
 | MMD | `MmdLoader` | .pmx をメッシュにする | UiChannel |
 | | `Physics` | 物理演算 (`System`)・髪の錘を外して垂らす。MMDPhysics は必ず等倍・親なしのモデルの座標で呼ぶ | World, Viewport, UiChannel |
-| | `Stage` | ステージ | SceneGraph, Viewport |
+| | `Stage` | ステージ | SceneGraph, Viewport, MaterialLibrary |
 | | `Motion` | VMD のダンスとカメラ (`System`、カメラは `CameraOverride`) | World, Physics, Stage, CameraController, UiChannel |
 | | `Posing` | 表情とボーン・IK と付与 (`System`) | World, Physics, Motion, Viewport, UiChannel |
-| | `Materials` | 材質の表示・色・不透明度・反射・輪郭線と、元に戻す | Viewport, UiChannel |
 | | `VpdIO` | ポーズファイルの保存・読み込み | Posing, Viewport, UiChannel |
 | 組み立て | `Engine` | 上のすべてを作ってイベントでつなぎ、画面に操作を出す | すべて |
 

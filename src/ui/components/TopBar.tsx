@@ -27,6 +27,7 @@ export function TopBar({ onOpenFiles, onLoadPose }: { onOpenFiles: () => void; o
           ['前 / 次のキーフレーム', '↓ ↑'], ['前 / 次のフレーム', '← →'], ['最初 / 最後のフレーム', 'Shift ← →'],
           ['選んだ物 (タイムライン上ではキー) を削除', 'X'], ['選択を解除', 'Alt A'], ['追加メニュー', 'Shift A'],
           ['前・右・上から見る', 'テンキー 1 3 7'], ['視点を戻す (タイムライン上では全体を表示)', 'Home'], ['サイドバー', 'N'],
+          ['シェーダーエディター: ノードを追加 / 消す / 全体を表示', 'Shift A / X / Home'],
         ].map(([label, kbd]) => <MenuItem key={label} label={label} kbd={kbd} disabled />)}
       </Menu>
       <span className="title">webgl-grid</span>

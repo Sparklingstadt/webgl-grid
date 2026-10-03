@@ -9,7 +9,7 @@ import { Sidebar, type SideTab } from './sidebar/Sidebar';
 // 右上のナビゲーションギズモ、右のサイドバー
 export function ViewportArea(props: {
   sideOpen: boolean; toggleSide: () => void; tlOpen: boolean; toggleTl: () => void;
-  sideTab: SideTab; setSideTab: (t: SideTab) => void; onOpenFiles: () => void; onLoadPose: () => void;
+  sideTab: SideTab; setSideTab: (t: SideTab) => void; onOpenFiles: () => void; onLoadPose: () => void; onOpenShaderEditor: () => void;
   onViewportPointerDown: () => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -73,7 +73,7 @@ export function ViewportArea(props: {
             </button>
           </div>
         </div>
-        {props.sideOpen && <Sidebar tab={props.sideTab} setTab={props.setSideTab} onLoadPose={props.onLoadPose} />}
+        {props.sideOpen && <Sidebar tab={props.sideTab} setTab={props.setSideTab} onLoadPose={props.onLoadPose} onOpenShaderEditor={props.onOpenShaderEditor} />}
       </div>
     </section>
   );

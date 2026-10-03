@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { Engine } from '../../engine';
 
-export type Area = 'view' | 'timeline' | null;
+export type Area = 'view' | 'timeline' | 'shader' | null;
 
 // Blender 風のキーボードショートカット。X と Home は、マウスが乗っている領域 (ビューポート / タイムライン) で働きが変わる
 export function useShortcuts(engine: Engine, actions: {
@@ -25,6 +25,8 @@ export function useShortcuts(engine: Engine, actions: {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') { e.preventDefault(); a.openFiles(); return; }
       if (e.ctrlKey || e.metaKey) return;
       const hoverTl = a.hoverArea.current === 'timeline';
+      // シェーダーエディターの上では、X (ノードを消す)・Shift+A (ノードを追加)・Home はエディターが受け持つ
+      if (a.hoverArea.current === 'shader' && ['KeyX', 'Delete', 'KeyA', 'Home'].includes(e.code)) return;
       // 文字のキーは、配列や Alt で変わる e.key ではなく、キーの位置 (e.code) で見る
       switch (e.code) {
         case 'Numpad1': engine.camera.snapView('front'); break;

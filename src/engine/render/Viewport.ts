@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OutlineEffect } from 'three/examples/jsm/effects/OutlineEffect.js';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import type { SceneGraph } from './SceneGraph';
 
 // 毎フレーム計算するもの (再生・モーション・物理演算・落下など)。active のあいだだけ update される
@@ -51,6 +52,11 @@ export class Viewport {
     // MMD モデルの輪郭線。太さ・色・表示の有無は、MMDLoader が .pmx の材質から読んで
     // material.userData.outlineParameters に入れてくれる
     this.outline = new OutlineEffect(renderer);
+    // 物理ベースのマテリアル (プリンシプル BSDF) の映り込み・環境の光。部屋の中のような柔らかい光にする
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    this.graph.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    this.graph.scene.environmentIntensity = 0.3;
+    pmrem.dispose();
     // 窓の大きさ・サイドバー・タイムラインの開け閉めで大きさが変わる
     this.observer = new ResizeObserver(() => this.resize(container));
     this.observer.observe(container);

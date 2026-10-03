@@ -3,4 +3,4 @@ export { Engine, type TlRow } from './Engine';
 export type { SelInfo, UiState } from './UiChannel';
 export { BONE_MOVE, BONE_ROTATE, type BoneGroup, type MorphItem } from './mmd/Posing';
 export type { FxKey, FxLevel } from './render/postfx';
-export type { MaterialItem, MaterialProps } from './mmd/Materials';
+export type { MaterialData, MaterialListItem, MaterialOutline, MaterialSettings } from './materials/MaterialLibrary';

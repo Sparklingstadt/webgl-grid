@@ -7,7 +7,7 @@ import type { World } from './World';
 export class ColorPicker {
   target: Obj | null = null; // パレットで色を変えている形
 
-  constructor(world: World, private viewport: Viewport, private ui: UiChannel) {
+  constructor(private world: World, private viewport: Viewport, private ui: UiChannel) {
     world.events.on('removed', obj => { if (this.target === obj) this.close(); });
   }
 
@@ -23,7 +23,7 @@ export class ColorPicker {
     this.viewport.requestDraw();
   }
   pick(c: number) {
-    if (this.target) this.target.c = c;
+    if (this.target) this.world.setShapeColor(this.target, c);
     this.close();
   }
 }

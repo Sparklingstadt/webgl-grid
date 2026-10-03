@@ -39,22 +39,20 @@ export class Selection {
     this.ui.set({ sel: { id: o.id, kind: o.s === 3 ? 'model' : 'shape', name, c: o.c, x: o.x, y: o.y, z: o.z, r: o.r, animated: !!o.animated } });
   }
 
-  // 描く前: 選んでいる物にだけ、オレンジの輪郭線 (OutlineEffect) を付ける。MMD モデルは輪郭線のない材質にも付ける
+  // 描く前: 輪郭線 (OutlineEffect) の設定を、マテリアルの輪郭線 (outlineBase) から作る。
+  // 選んでいる物だけはオレンジにする (MMD モデルは輪郭線のない材質にも付ける)。材質は物ごとに別なので、ほかの物には付かない
   syncOutlines(objects: Obj[]) {
     for (const obj of objects) {
       const on = obj === this.current;
-      if (!!obj.outlined === on) continue;
-      obj.outlined = on;
       obj.node.traverse(o => {
         const mesh = o as THREE.Mesh;
         if (!mesh.isMesh || !mesh.visible) return;
         for (const m of [mesh.material].flat()) {
-          const ud = m.userData;
-          ud.baseOutline ??= { ...(ud.outlineParameters ?? { visible: false }) };
-          ud.outlineParameters = on
-            ? { ...ud.baseOutline, visible: true, color: SELECT_COLOR, alpha: 1,
-                thickness: obj.s === 3 ? Math.max(ud.baseOutline.thickness ?? 0, 0.004) : 0.008 }
-            : { ...ud.baseOutline };
+          const base = m.userData.outlineBase ?? { visible: false };
+          m.userData.outlineParameters = on
+            ? { ...base, visible: true, color: SELECT_COLOR, alpha: 1,
+                thickness: obj.s === 3 ? Math.max(base.thickness ?? 0, 0.004) : 0.008 }
+            : base;
         }
       });
     }
