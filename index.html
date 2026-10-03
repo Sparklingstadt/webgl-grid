@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Grid Shader</title>
 <style>
-  html, body { margin: 0; height: 100%; background: #0b0d12; overflow: hidden; }
+  /* 背景は、以前シェーダーで描いていた縦のグラデーションと同じ色 */
+  html, body { margin: 0; height: 100%; overflow: hidden; background: linear-gradient(to top, #3b414c, #5a6172); }
   canvas { display: block; width: 100vw; height: 100vh; cursor: grab; touch-action: none;
            -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
   canvas.dragging { cursor: grabbing; }
@@ -25,8 +26,8 @@
   .modes button:hover, .shapes button:hover { color: #dce3ee; }
   .shapes { bottom: 66px; }
   .modes button[aria-pressed="true"], .shapes button[aria-pressed="true"] { background: #3a4558; color: #fff; }
-  .modes .sep { width: 1px; margin: 4px 3px; background: #2c3340; }
-  .modes button:disabled { opacity: 0.4; cursor: default; }
+  .modes .sep, .shapes .sep { width: 1px; margin: 4px 3px; background: #2c3340; }
+  .modes button:disabled, .shapes button:disabled { opacity: 0.4; cursor: default; }
   .palette {
     position: fixed; display: grid; grid-template-columns: repeat(4, 40px); gap: 8px; padding: 10px;
     background: rgba(20, 24, 32, 0.92); border: 1px solid #2c3340; border-radius: 12px;
@@ -38,16 +39,36 @@
     border: 2px solid rgba(255, 255, 255, 0.15);
   }
   .palette button[aria-pressed="true"] { border-color: #fff; box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35); }
+  .toast {
+    position: fixed; left: 50%; top: 16px; transform: translateX(-50%);
+    max-width: calc(100vw - 32px); box-sizing: border-box; padding: 10px 14px;
+    font: 13px/1.5 system-ui, sans-serif; color: #dce3ee; overflow-wrap: anywhere;
+    background: rgba(20, 24, 32, 0.92); border: 1px solid #2c3340; border-radius: 10px;
+  }
+  .toast[hidden] { display: none; }
 </style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.171.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.171.0/examples/jsm/"
+  }
+}
+</script>
 </head>
 <body>
 <canvas id="c"></canvas>
+<div class="toast" id="toast" role="status" hidden></div>
 <div class="palette" id="palette" role="group" aria-label="色" hidden></div>
 <div class="shapes" role="group" aria-label="追加する形">
   <button type="button" data-shape="0" aria-pressed="true">立方体</button>
   <button type="button" data-shape="1" aria-pressed="false">トーラス</button>
   <button type="button" data-shape="2" aria-pressed="false">三角錐</button>
+  <span class="sep"></span>
+  <button type="button" id="load-pmx" aria-label="PMX モデルを読み込む">PMX…</button>
 </div>
+<input type="file" id="pmx-input" multiple hidden
+       accept=".pmx,.png,.jpg,.jpeg,.bmp,.tga,.gif,.spa,.sph,image/*">
 <div class="modes" role="group" aria-label="操作モード">
   <button type="button" data-mode="orbit" aria-pressed="true">回転</button>
   <button type="button" data-mode="pan" aria-pressed="false">移動</button>
@@ -55,217 +76,83 @@
   <button type="button" id="add">追加</button>
   <button type="button" id="reset">リセット</button>
 </div>
-<script>
+<script type="module">
+import * as THREE from 'three';
+
 const canvas = document.getElementById('c');
-const gl = canvas.getContext('webgl2');
-if (!gl) document.body.textContent = 'WebGL2 に対応していません';
-
-const vs = `#version 300 es
-in vec2 pos;
-void main() { gl_Position = vec4(pos, 0.0, 1.0); }`;
-
-const fs = `#version 300 es
-precision highp float;
-uniform vec2 uRes;
-uniform vec3 uCam;
-uniform vec3 uTarget;
-#define MAX_BOXES 32
-uniform vec3 uBoxes[MAX_BOXES];
-uniform int uCount;
-uniform vec3 uColors[MAX_BOXES];
-uniform float uRots[MAX_BOXES];
-uniform int uShapes[MAX_BOXES]; // 0: 立方体, 1: トーラス, 2: 三角錐
-uniform int uSel; // 掴んでいる立方体の番号 (なければ -1)
-out vec4 outColor;
-
-// 線幅(ピクセル単位)を一定に保つアンチエイリアス付きグリッド
-float grid(vec2 p, float lineWidth) {
-  vec2 d = fwidth(p);
-  vec2 g = abs(fract(p - 0.5) - 0.5) / d;
-  float line = min(g.x, g.y);
-  return 1.0 - clamp(line - lineWidth + 1.0, 0.0, 1.0);
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+} catch {
+  document.body.textContent = 'WebGL2 に対応していません';
+  throw new Error('WebGL2 unavailable');
 }
+renderer.setClearColor(0x000000, 0); // 背景は CSS のグラデーションを見せる
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-// 形はどれも底面中心が原点のローカル座標で定義し、uBoxes[i] (底面中心) と uRots[i] で置く。
-// 足場は 1x1。高さは 立方体 1、トーラス 0.3、三角錐 0.8
-const vec3 LIGHT = normalize(vec3(0.6, 1.0, 0.35));
-const float TORUS_R = 0.35, TORUS_r = 0.15; // 中心円の半径と管の半径 (寝かせて置く)
-const float PYR_H = 0.8;                    // 三角錐の高さ (底面は外接円の半径 0.5 の正三角形)
+const scene = new THREE.Scene();
+// 以前のシェーダーと同じ画角 (画面の高さに対して焦点距離 1.6)
+const camera = new THREE.PerspectiveCamera(2 * Math.atan(0.5 / 1.6) * 180 / Math.PI, 1, 0.05, 1000);
 
-// 縦軸 (y) まわりの回転
-vec3 rotY(vec3 v, float a) {
-  float c = cos(a), s = sin(a);
-  return vec3(v.x * c + v.z * s, v.y, -v.x * s + v.z * c);
-}
+// --- 光 ---
+const LIGHT = new THREE.Vector3(0.6, 1.0, 0.35).normalize();
+scene.add(new THREE.AmbientLight(0xffffff, 0.18 * Math.PI));
+const sun = new THREE.DirectionalLight(0xffffff, 0.82 * Math.PI);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.bias = -0.0004;
+sun.shadow.normalBias = 0.02;
+scene.add(sun, sun.target);
 
-// レイと箱 [mn, mx] の交差区間 [tn, tf]。当たらなければ false。n は入る面の法線
-bool slab(vec3 ro, vec3 rd, vec3 mn, vec3 mx, out float tn, out float tf, out vec3 n) {
-  vec3 inv = 1.0 / rd;
-  vec3 t0 = (mn - ro) * inv, t1 = (mx - ro) * inv;
-  vec3 tmin = min(t0, t1), tmax = max(t0, t1);
-  tn = max(max(tmin.x, tmin.y), tmin.z);
-  tf = min(min(tmax.x, tmax.y), tmax.z);
-  n = -sign(rd) * step(tmin.yzx, tmin.xyz) * step(tmin.zxy, tmin.xyz);
-  return tn <= tf && tf >= 0.0;
-}
+// --- 地面のグリッド (以前のシェーダーと同じ線・軸・フェード) ---
+const grid = new THREE.Mesh(
+  new THREE.PlaneGeometry(2000, 2000).rotateX(-Math.PI / 2),
+  new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    vertexShader: `
+      varying vec3 vWorld;
+      void main() {
+        vWorld = (modelMatrix * vec4(position, 1.0)).xyz;
+        gl_Position = projectionMatrix * viewMatrix * vec4(vWorld, 1.0);
+      }`,
+    fragmentShader: `
+      varying vec3 vWorld;
+      // 線幅(ピクセル単位)を一定に保つアンチエイリアス付きグリッド
+      float grid(vec2 p, float lineWidth) {
+        vec2 d = fwidth(p);
+        vec2 g = abs(fract(p - 0.5) - 0.5) / d;
+        float line = min(g.x, g.y);
+        return 1.0 - clamp(line - lineWidth + 1.0, 0.0, 1.0);
+      }
+      void main() {
+        vec2 p = vWorld.xz;
+        vec3 c = vec3(0.07, 0.08, 0.10);
+        c = mix(c, vec3(0.30, 0.34, 0.42), grid(p, 1.0));
+        c = mix(c, vec3(0.55, 0.62, 0.75), grid(p / 5.0, 1.5));
+        // 原点の軸 (X: 赤, Z: 青)
+        vec2 ad = abs(p) / fwidth(p);
+        c = mix(c, vec3(0.90, 0.30, 0.30), 1.0 - clamp(ad.y - 1.0, 0.0, 1.0));
+        c = mix(c, vec3(0.30, 0.50, 0.95), 1.0 - clamp(ad.x - 1.0, 0.0, 1.0));
+        // 遠くほど透明にして背景に溶かす
+        float fade = exp(-distance(cameraPosition, vWorld) * 0.035);
+        gl_FragColor = vec4(pow(c, vec3(1.0 / 2.2)), fade);
+      }`,
+  }),
+);
+// 地面に落ちる影 (グリッドの上に重ねる)
+const shadowPlane = new THREE.Mesh(
+  new THREE.PlaneGeometry(2000, 2000).rotateX(-Math.PI / 2),
+  new THREE.ShadowMaterial({ opacity: 0.55, depthWrite: false }),
+);
+shadowPlane.receiveShadow = true;
+shadowPlane.position.y = 0.0005;
+shadowPlane.renderOrder = 1;
+scene.add(grid, shadowPlane);
 
-// トーラス: 囲む箱の中だけを距離関数でレイマーチする
-float torusHit(vec3 ro, vec3 rd, out vec3 n) {
-  float tn, tf;
-  vec3 nb;
-  if (!slab(ro, rd, vec3(-0.5, 0.0, -0.5), vec3(0.5, 2.0 * TORUS_r, 0.5), tn, tf, nb)) return -1.0;
-  float t = max(tn, 0.0);
-  for (int k = 0; k < 64; k++) {
-    vec3 p = ro + rd * t - vec3(0.0, TORUS_r, 0.0);
-    float d = length(vec2(length(p.xz) - TORUS_R, p.y)) - TORUS_r;
-    if (d < 0.0005) {
-      n = normalize(p - TORUS_R * normalize(vec3(p.x, 0.0, p.z)));
-      return t;
-    }
-    t += d;
-    if (t > tf) break;
-  }
-  return -1.0;
-}
-
-// 三角錐: 底面と3つの側面の半空間の共通部分として判定する
-float pyramidHit(vec3 ro, vec3 rd, out vec3 n) {
-  float tn = -1e9, tf = 1e9;
-  for (int k = 0; k < 4; k++) {
-    vec3 N; float D;
-    if (k == 0) { N = vec3(0.0, -1.0, 0.0); D = 0.0; }
-    else {
-      // 側面の外向き法線。底辺の中点の向き φ = 30°, 150°, 270°、底辺までの距離 0.25
-      float phi = radians(30.0 + 120.0 * float(k - 1));
-      N = normalize(vec3(PYR_H * cos(phi), 0.25, PYR_H * sin(phi)));
-      D = dot(N, vec3(0.25 * cos(phi), 0.0, 0.25 * sin(phi)));
-    }
-    float den = dot(N, rd), dist = D - dot(N, ro);
-    if (abs(den) < 1e-7) { if (dist < 0.0) return -1.0; continue; }
-    float t = dist / den;
-    if (den < 0.0) { if (t > tn) { tn = t; n = N; } }
-    else tf = min(tf, t);
-  }
-  return (tn <= tf && tf >= 0.0) ? tn : -1.0;
-}
-
-// o は底面中心、r は縦軸まわりの回転角。レイを形のローカル座標に直して判定する
-float shapeHit(vec3 ro, vec3 rd, vec3 o, float r, int shape, out vec3 n) {
-  ro = rotY(ro - o, -r);
-  rd = rotY(rd, -r);
-  vec3 ln = vec3(0.0, 1.0, 0.0);
-  float t;
-  if (shape == 1) t = torusHit(ro, rd, ln);
-  else if (shape == 2) t = pyramidHit(ro, rd, ln);
-  else {
-    float tf;
-    t = slab(ro, rd, vec3(-0.5, 0.0, -0.5), vec3(0.5, 1.0, 0.5), t, tf, ln) ? t : -1.0;
-  }
-  n = rotY(ln, r);
-  return t;
-}
-
-// すべての立方体のうち一番手前の交差 (当たらなければ -1)。法線と番号も返す
-float sceneHit(vec3 ro, vec3 rd, out vec3 n, out int id) {
-  float best = -1.0;
-  for (int i = 0; i < MAX_BOXES; i++) {
-    if (i >= uCount) break;
-    vec3 ni;
-    float t = shapeHit(ro, rd, uBoxes[i], uRots[i], uShapes[i], ni);
-    if (t > 0.0 && (best < 0.0 || t < best)) { best = t; n = ni; id = i; }
-  }
-  return best;
-}
-
-void main() {
-  vec2 uv = (gl_FragCoord.xy - 0.5 * uRes) / uRes.y;
-
-  // 斜め上から見下ろすカメラ
-  vec3 ro = uCam;
-  vec3 target = uTarget;
-  vec3 fw = normalize(target - ro);
-  vec3 rt = normalize(cross(fw, vec3(0.0, 1.0, 0.0)));
-  vec3 up = cross(rt, fw);
-  vec3 rd = normalize(fw * 1.6 + uv.x * rt + uv.y * up);
-
-  vec3 bg = mix(vec3(0.04, 0.05, 0.07), vec3(0.10, 0.12, 0.17), uv.y + 0.5);
-  vec3 col = bg;
-
-  // 地面 y = 0 との交差
-  if (rd.y < 0.0) {
-    float t = -ro.y / rd.y;
-    vec2 p = (ro + rd * t).xz;
-
-    float minor = grid(p, 1.0);
-    float major = grid(p / 5.0, 1.5);
-
-    vec3 c = vec3(0.07, 0.08, 0.10);
-    c = mix(c, vec3(0.30, 0.34, 0.42), minor);
-    c = mix(c, vec3(0.55, 0.62, 0.75), major);
-
-    // 原点の軸 (X: 赤, Z: 青)
-    vec2 ad = abs(p) / fwidth(p);
-    c = mix(c, vec3(0.90, 0.30, 0.30), 1.0 - clamp(ad.y - 1.0, 0.0, 1.0));
-    c = mix(c, vec3(0.30, 0.50, 0.95), 1.0 - clamp(ad.x - 1.0, 0.0, 1.0));
-
-    // 立方体の影
-    vec3 sn;
-    int sid;
-    if (sceneHit(vec3(p.x, 0.001, p.y), LIGHT, sn, sid) > 0.0) c *= 0.45;
-
-    // 遠くほど背景に溶かす
-    float fade = exp(-t * 0.035);
-    col = mix(bg, c, fade);
-  }
-
-  // 立方体 (地面より手前にあれば上書き)
-  vec3 n;
-  int id;
-  float tb = sceneHit(ro, rd, n, id);
-  if (tb > 0.0) {
-    float diff = max(dot(n, LIGHT), 0.0);
-    // ほかの立方体の影
-    vec3 sn;
-    int sid;
-    if (diff > 0.0 && sceneHit(ro + rd * tb + n * 0.001, LIGHT, sn, sid) > 0.0) diff = 0.0;
-    vec3 base = uColors[id];
-    if (id == uSel) base = mix(base, vec3(1.0), 0.35); // 掴んでいる立方体は明るくする
-    col = base * (0.18 + 0.82 * diff);
-  }
-
-  outColor = vec4(pow(col, vec3(1.0 / 2.2)), 1.0);
-}`;
-
-function compile(type, src) {
-  const s = gl.createShader(type);
-  gl.shaderSource(s, src);
-  gl.compileShader(s);
-  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw gl.getShaderInfoLog(s);
-  return s;
-}
-const prog = gl.createProgram();
-gl.attachShader(prog, compile(gl.VERTEX_SHADER, vs));
-gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, fs));
-gl.linkProgram(prog);
-gl.useProgram(prog);
-
-const buf = gl.createBuffer();
-gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
-const loc = gl.getAttribLocation(prog, 'pos');
-gl.enableVertexAttribArray(loc);
-gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
-const uRes = gl.getUniformLocation(prog, 'uRes');
-const uCam = gl.getUniformLocation(prog, 'uCam');
-const uTarget = gl.getUniformLocation(prog, 'uTarget');
-const uBoxes = gl.getUniformLocation(prog, 'uBoxes');
-const uCount = gl.getUniformLocation(prog, 'uCount');
-const uColors = gl.getUniformLocation(prog, 'uColors');
-const uRots = gl.getUniformLocation(prog, 'uRots');
-const uSel = gl.getUniformLocation(prog, 'uSel');
-const uShapes = gl.getUniformLocation(prog, 'uShapes');
-
-// 立方体の色 (リニア値。シェーダーでガンマ補正される)
+// --- 色 ---
+// 色はリニア値
 const PALETTE = [
   [0.85, 0.62, 0.32], // 黄土
   [0.85, 0.22, 0.18], // 赤
@@ -278,14 +165,24 @@ const PALETTE = [
 ];
 const PALETTE_NAMES = ['黄土', '赤', '青緑', '青', '紫', '緑', 'ピンク', '灰'];
 
-// --- 色選び (スマホで立方体をタップしたときに出すパレット) ---
+// --- お知らせ (読み込み中・エラーなど) ---
+const toastEl = document.getElementById('toast');
+let toastTimer = 0;
+function toast(text, ms = 4000) {
+  toastEl.textContent = text;
+  toastEl.hidden = false;
+  clearTimeout(toastTimer);
+  if (ms) toastTimer = setTimeout(() => { toastEl.hidden = true; }, ms);
+}
+
+// --- 色選び (スマホで形をタップしたときに出すパレット) ---
 const paletteEl = document.getElementById('palette');
-let pickerBox = null; // パレットで色を変えている立方体
+let pickerBox = null; // パレットで色を変えている形
 const swatches = PALETTE.map((c, i) => {
   const b = document.createElement('button');
   b.type = 'button';
   b.setAttribute('aria-label', PALETTE_NAMES[i]);
-  b.style.background = `rgb(${c.map(v => Math.round(Math.pow(v, 1 / 2.2) * 255)).join(',')})`; // 画面と同じガンマ補正
+  b.style.background = `rgb(${c.map(v => Math.round(Math.pow(v, 1 / 2.2) * 255)).join(',')})`;
   b.addEventListener('click', () => {
     if (pickerBox) pickerBox.c = i;
     closePicker();
@@ -323,7 +220,7 @@ const cam = { ...CAM_DEFAULT };
 document.getElementById('reset').addEventListener('click', () => {
   closePicker();
   Object.assign(cam, CAM_DEFAULT);
-  boxes.length = 0;
+  while (boxes.length) removeObject(boxes[0]);
   boxes.push(makeBox(0, 0, 0));
   updateAddButton();
   requestDraw();
@@ -338,18 +235,60 @@ function setMode(m) {
 }
 modeButtons.forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
 
-// 立方体の位置 (底面中心の xz)
-// y は積み重ねで決まる高さ、py は画面に表示している高さ (落下中は y より上)、vy は落下速度
-// r は縦軸まわりの回転角 (ラジアン)
-// s は形 (0: 立方体, 1: トーラス, 2: 三角錐)
+// --- 置いた物 (形と PMX モデル) ---
+// x, z は底面中心、y は積み重ねで決まる高さ、py は画面に表示している高さ (落下中は y より上)、vy は落下速度
+// r は縦軸まわりの回転角 (ラジアン)、c は色 (モデルは -1)
+// s は種類 (0: 立方体, 1: トーラス, 2: 三角錐, 3: PMX モデル)
+// h は高さ、hx / hz は上から見た足場の半分の幅 (回転前)
+// node は three.js の表示用オブジェクト
+const SHAPE_GEOMETRY = [
+  new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0),
+  // 寝かせたトーラス: 中心円の半径 0.35、管の半径 0.15 (高さ 0.3)
+  new THREE.TorusGeometry(0.35, 0.15, 24, 64).rotateX(Math.PI / 2).translate(0, 0.15, 0),
+  // 三角錐: 底面は外接円の半径 0.5 の正三角形、高さ 0.8
+  new THREE.ConeGeometry(0.5, 0.8, 3, 1).translate(0, 0.4, 0),
+];
 const SHAPE_HEIGHT = [1, 0.3, 0.8];
-const TORUS_R = 0.35, TORUS_r = 0.15, PYR_H = 0.8; // シェーダーと同じ値
-const makeBox = (x, z, c, s = 0) => ({ x, y: 0, z, c, s, r: 0, py: 0, vy: 0 });
-const topOf = b => b.y + SHAPE_HEIGHT[b.s]; // 上に載せられる高さ
+function makeNode(obj, object3d) {
+  const node = new THREE.Group();
+  node.add(object3d);
+  node.userData.obj = obj;
+  object3d.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  scene.add(node);
+  obj.node = node;
+  return obj;
+}
+function makeBox(x, z, c, s = 0) {
+  const obj = { x, y: 0, z, c, s, r: 0, py: 0, vy: 0, h: SHAPE_HEIGHT[s], hx: 0.5, hz: 0.5 };
+  const mesh = new THREE.Mesh(SHAPE_GEOMETRY[s], new THREE.MeshLambertMaterial({ flatShading: s === 2 }));
+  obj.mesh = mesh;
+  return makeNode(obj, mesh);
+}
+function removeObject(obj) {
+  scene.remove(obj.node);
+  if (obj.s === 3) {
+    // モデルは形状・材質・テクスチャを片付ける
+    obj.node.traverse(o => {
+      if (!o.isMesh) return;
+      o.geometry.dispose();
+      for (const m of [o.material].flat()) {
+        // MMD の材質はテクスチャを uniforms の中に持っている
+        for (const v of [...Object.values(m), ...Object.values(m.uniforms ?? {}).map(u => u.value)]) {
+          if (v?.isTexture) v.dispose();
+        }
+        m.dispose();
+      }
+    });
+  } else {
+    obj.mesh.material.dispose();
+  }
+  boxes.splice(boxes.indexOf(obj), 1);
+}
+const topOf = b => b.y + b.h; // 上に載せられる高さ
 
 // 追加する形の選択
 let currentShape = 0;
-const shapeButtons = document.querySelectorAll('.shapes button');
+const shapeButtons = document.querySelectorAll('.shapes button[data-shape]');
 shapeButtons.forEach(b => b.addEventListener('click', () => {
   currentShape = +b.dataset.shape;
   shapeButtons.forEach(o => o.setAttribute('aria-pressed', o === b));
@@ -357,22 +296,21 @@ shapeButtons.forEach(b => b.addEventListener('click', () => {
 const boxes = [makeBox(0, 0, 0)];
 
 // --- 積み重ね ---
-// 上から見て足場が重なっているか
-// (回転した正方形どうしを分離軸判定で調べる)
+// 上から見て足場が重なっているか (回転した長方形どうしを分離軸判定で調べる)
 function overlaps(a, b) {
-  const h = 0.4995; // 辺がちょうど接しているだけなら重なりとしない
+  const e = 0.0005; // 辺がちょうど接しているだけなら重なりとしない
   const axes = r => [[Math.cos(r), -Math.sin(r)], [Math.sin(r), Math.cos(r)]];
   const aa = axes(a.r), ba = axes(b.r);
   const d = [b.x - a.x, b.z - a.z];
   const dot = (u, v) => u[0] * v[0] + u[1] * v[1];
   for (const u of [...aa, ...ba]) {
-    const ra = h * (Math.abs(dot(u, aa[0])) + Math.abs(dot(u, aa[1])));
-    const rb = h * (Math.abs(dot(u, ba[0])) + Math.abs(dot(u, ba[1])));
+    const ra = (a.hx - e) * Math.abs(dot(u, aa[0])) + (a.hz - e) * Math.abs(dot(u, aa[1]));
+    const rb = (b.hx - e) * Math.abs(dot(u, ba[0])) + (b.hz - e) * Math.abs(dot(u, ba[1]));
     if (Math.abs(dot(d, u)) >= ra + rb) return false;
   }
   return true;
 }
-// b の上に (直接または間接的に) 載っている立方体と b 自身
+// b の上に (直接または間接的に) 載っている物と b 自身
 function stackFrom(b) {
   const group = [b];
   for (let i = 0; i < group.length; i++) {
@@ -429,32 +367,34 @@ function fallStep(now) {
   else falling = false;
 }
 
-// 画面中央 (注視点) に近い、ほかの立方体と重ならないマス目に追加する
-const addButton = document.getElementById('add');
-function updateAddButton() { addButton.disabled = boxes.length >= MAX_BOXES; }
-addButton.addEventListener('click', () => {
-  if (boxes.length >= MAX_BOXES) return;
+// 画面中央 (注視点) に近い、ほかの物と重ならないマス目を探す (半径 rad の物を置く)
+const radiusOf = b => Math.hypot(b.hx, b.hz);
+function findFreeSpot(rad) {
   const cx = Math.round(cam.tx), cz = Math.round(cam.tz);
-  const free = (x, z) => boxes.every(b => Math.max(Math.abs(b.x - x), Math.abs(b.z - z)) >= 1.5);
-  for (let r = 0; r < 20; r++) {
+  const free = (x, z) => boxes.every(b => Math.max(Math.abs(b.x - x), Math.abs(b.z - z)) >= radiusOf(b) + rad + 0.1);
+  for (let r = 0; r < 40; r++) {
     for (let i = -r; i <= r; i++) {
       for (const [x, z] of [[cx + i, cz - r], [cx + i, cz + r], [cx - r, cz + i], [cx + r, cz + i]]) {
-        if (free(x, z)) {
-          boxes.push(makeBox(x, z, nextColor(), currentShape));
-          updateAddButton();
-          requestDraw();
-          return;
-        }
+        if (free(x, z)) return [x, z];
       }
     }
   }
+  return [cx, cz];
+}
+const addButton = document.getElementById('add');
+const loadButton = document.getElementById('load-pmx');
+function updateAddButton() {
+  addButton.disabled = loadButton.disabled = boxes.length >= MAX_BOXES;
+}
+addButton.addEventListener('click', () => {
+  if (boxes.length >= MAX_BOXES) return;
+  const [x, z] = findFreeSpot(Math.SQRT1_2);
+  boxes.push(makeBox(x, z, nextColor(), currentShape));
+  updateAddButton();
+  requestDraw();
 });
 
-// --- シェーダーと同じカメラで、画面上の点からレイを作る ---
-const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-const cross3 = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-const norm = a => { const l = Math.hypot(...a); return [a[0] / l, a[1] / l, a[2] / l]; };
-
+// --- カメラと、画面上の点からのレイ ---
 function camPos() {
   const cp = Math.cos(cam.pitch);
   return [
@@ -462,81 +402,28 @@ function camPos() {
     cam.dist * Math.sin(cam.pitch),
     cam.tz + cam.dist * cp * Math.sin(cam.yaw)];
 }
+function updateCamera() {
+  camera.position.set(...camPos());
+  camera.lookAt(cam.tx, 0, cam.tz);
+  camera.updateMatrixWorld();
+}
+const raycaster = new THREE.Raycaster();
+const ndc = new THREE.Vector2();
 function screenRay(cx, cy) {
-  const ro = camPos();
-  const fw = norm(sub([cam.tx, 0, cam.tz], ro));
-  const rt = norm(cross3(fw, [0, 1, 0]));
-  const up = cross3(rt, fw);
-  const h = innerHeight;
-  const ux = (cx - innerWidth / 2) / h, uy = (h / 2 - cy) / h;
-  const rd = norm([0, 1, 2].map(i => fw[i] * 1.6 + ux * rt[i] + uy * up[i]));
-  return { ro, rd };
+  updateCamera();
+  ndc.set(cx / innerWidth * 2 - 1, -(cy / innerHeight) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  return { ro: raycaster.ray.origin.toArray(), rd: raycaster.ray.direction.toArray() };
 }
-// レイと立方体の交差距離 (当たらなければ -1)
-const rotY = (v, a) => {
-  const c = Math.cos(a), s = Math.sin(a);
-  return [v[0] * c + v[2] * s, v[1], -v[0] * s + v[2] * c];
-};
-// レイと箱 [mn, mx] の交差区間 [tn, tf] (当たらなければ null)
-function slab(ro, rd, mn, mx) {
-  let tn = -Infinity, tf = Infinity;
-  for (let i = 0; i < 3; i++) {
-    const a = (mn[i] - ro[i]) / rd[i], b = (mx[i] - ro[i]) / rd[i];
-    tn = Math.max(tn, Math.min(a, b));
-    tf = Math.min(tf, Math.max(a, b));
-  }
-  return tn <= tf && tf >= 0 ? [tn, tf] : null;
-}
-const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-// 形ごとの交差判定 (シェーダーと同じ。ro, rd はローカル座標)
-function localHit(s, ro, rd) {
-  if (s === 1) {
-    const iv = slab(ro, rd, [-0.5, 0, -0.5], [0.5, 2 * TORUS_r, 0.5]);
-    if (!iv) return -1;
-    let t = Math.max(iv[0], 0);
-    for (let k = 0; k < 64 && t <= iv[1]; k++) {
-      const p = [ro[0] + rd[0] * t, ro[1] + rd[1] * t - TORUS_r, ro[2] + rd[2] * t];
-      const d = Math.hypot(Math.hypot(p[0], p[2]) - TORUS_R, p[1]) - TORUS_r;
-      if (d < 0.0005) return t;
-      t += d;
-    }
-    return -1;
-  }
-  if (s === 2) {
-    let tn = -Infinity, tf = Infinity;
-    for (let k = 0; k < 4; k++) {
-      let N, D;
-      if (k === 0) { N = [0, -1, 0]; D = 0; }
-      else {
-        const phi = (30 + 120 * (k - 1)) * Math.PI / 180;
-        N = norm([PYR_H * Math.cos(phi), 0.25, PYR_H * Math.sin(phi)]);
-        D = dot3(N, [0.25 * Math.cos(phi), 0, 0.25 * Math.sin(phi)]);
-      }
-      const den = dot3(N, rd), dist = D - dot3(N, ro);
-      if (Math.abs(den) < 1e-7) { if (dist < 0) return -1; continue; }
-      const t = dist / den;
-      if (den < 0) tn = Math.max(tn, t); else tf = Math.min(tf, t);
-    }
-    return tn <= tf && tf >= 0 ? tn : -1;
-  }
-  const iv = slab(ro, rd, [-0.5, 0, -0.5], [0.5, 1, 0.5]);
-  return iv ? iv[0] : -1;
-}
-function rayBox(ray, box) {
-  // シェーダーと同じく、レイを形のローカル座標に直して判定する
-  const ro = rotY(sub(ray.ro, [box.x, box.py, box.z]), -box.r);
-  const rd = rotY(ray.rd, -box.r);
-  const t = localHit(box.s, ro, rd);
-  return t > 0 ? t : -1;
-}
-// 一番手前で当たる立方体 { box, t } (なければ null)
-function pickBox(ray) {
-  let best = null;
-  for (const box of boxes) {
-    const t = rayBox(ray, box);
-    if (t > 0 && (!best || t < best.t)) best = { box, t };
-  }
-  return best;
+// 一番手前で当たる物 { box, t } (なければ null)。three.js のレイキャストで、見た目の形どおりに判定する
+function pickBox({ ro, rd }) {
+  raycaster.ray.origin.fromArray(ro);
+  raycaster.ray.direction.fromArray(rd);
+  const hit = raycaster.intersectObjects(boxes.map(b => b.node), true)[0];
+  if (!hit) return null;
+  let o = hit.object;
+  while (o && !o.userData.obj) o = o.parent;
+  return o ? { box: o.userData.obj, t: hit.distance } : null;
 }
 // レイと水平面 y = h の交点 (xz)。面と平行なら null
 function rayPlane({ ro, rd }, h) {
@@ -546,24 +433,28 @@ function rayPlane({ ro, rd }, h) {
 }
 
 let drag = null;
-const LONG_PRESS_MS = 400; // スマホで立方体を掴む・置くまでの長押し時間
+const LONG_PRESS_MS = 400; // スマホで形を掴む・置くまでの長押し時間
 // 長押しが成立したことを振動で知らせる (ブラウザは、まだ一度も操作されていないページからの振動を拒否する)
 const buzz = () => { if (navigator.userActivation?.hasBeenActive ?? true) navigator.vibrate?.(15); };
-// 指定した地面の位置に立方体を置く。ほかの立方体と重なればその上に積む。少し上から落として置く
-function placeBox(x, z) {
-  if (boxes.length >= MAX_BOXES) return false;
-  const b = makeBox(x, z, nextColor(), currentShape);
-  boxes.push(b);
+// 置いた物を、少し上から落として着地させる
+function dropIn(b) {
   settle();
   b.py = b.y + 1.5;
   b.vy = 0;
   startFall();
   updateAddButton();
+}
+// 指定した地面の位置に形を置く。ほかの物と重なればその上に積む
+function placeBox(x, z) {
+  if (boxes.length >= MAX_BOXES) return false;
+  const b = makeBox(x, z, nextColor(), currentShape);
+  boxes.push(b);
+  dropIn(b);
   return true;
 }
 const pointers = new Map(); // 画面に触れている指 (マウス) の位置
 
-// b とその上に載っている立方体を、b を軸にまとめて回すための情報
+// b とその上に載っている物を、b を軸にまとめて回すための情報
 const rotationGroup = b =>
   ({ box: b, group: stackFrom(b).map(o => ({ o, dx: o.x - b.x, dz: o.z - b.z, r: o.r })) });
 // 回し始めからの角度 a (ラジアン) だけ回す
@@ -590,7 +481,7 @@ canvas.addEventListener('pointerdown', e => {
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   try { canvas.setPointerCapture(e.pointerId); } catch {} // 捕捉できなくても操作は続ける
   if (drag) {
-    // 立方体を押さえたままもう1本の指を置いたら、2本指をひねって回す (スマホ用)
+    // 形を押さえたままもう1本の指を置いたら、2本指をひねって回す (スマホ用)
     const held = drag.box?.box ?? drag.rot?.box ?? drag.pending?.box;
     if (drag.twist || drag.pinch || pointers.size !== 2) return;
     const ids = [drag.id, e.pointerId];
@@ -599,20 +490,20 @@ canvas.addEventListener('pointerdown', e => {
       drag.twist = { ...rotationGroup(held), ids, last: pointerAngle(ids), total: 0 };
       drag.box = drag.rot = null;
     } else {
-      // 立方体以外に置いた2本の指は、ピンチでズーム
+      // 形以外に置いた2本の指は、ピンチでズーム
       drag.pinch = { ids, last: pointerDistance(ids) };
     }
     return;
   }
   drag = { id: e.pointerId, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY };
-  // 立方体を掴んだら、掴んだ点の高さの水平面に沿って動かす
+  // 形を掴んだら、掴んだ点の高さの水平面に沿って動かす
   const ray = screenRay(e.clientX, e.clientY);
   const picked = pickBox(ray);
   if (picked) {
     const { box, t } = picked;
     const hy = ray.ro[1] + ray.rd[1] * t;
     const hit = [ray.ro[0] + ray.rd[0] * t, ray.ro[2] + ray.rd[2] * t];
-    // 上に載っている立方体も一緒に運ぶ。運んでいる間は持ち上げた高さを保ち、離したときに落とす
+    // 上に載っている物も一緒に運ぶ。運んでいる間は持ち上げた高さを保ち、離したときに落とす
     const grab = () => {
       const group = stackFrom(box).map(o => ({ o, dx: o.x - box.x, dy: o.y - box.y, dz: o.z - box.z }));
       drag.box = { box, group, held: box.py, h: hy, ox: box.x - hit[0], oz: box.z - hit[1] };
@@ -637,7 +528,7 @@ canvas.addEventListener('pointerdown', e => {
       grab();
     }
   } else if (e.pointerType === 'touch' && !e.shiftKey) {
-    // スマホで何もない地面を長押ししたら、そこに立方体を置く
+    // スマホで何もない地面を長押ししたら、そこに形を置く
     const ground = rayPlane(ray, 0);
     if (ground) {
       const d = drag;
@@ -653,10 +544,18 @@ canvas.addEventListener('pointerdown', e => {
   }
   canvas.classList.add('dragging');
 });
+// マウスを乗せたときのカーソル変更。当たり判定は 1 フレームに 1 回まで
+let hoverAt = null;
+function updateHover() {
+  const { x, y } = hoverAt;
+  hoverAt = null;
+  if (!drag) canvas.classList.toggle('over-box', !!pickBox(screenRay(x, y)));
+}
 canvas.addEventListener('pointermove', e => {
   if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (!drag) {
-    canvas.classList.toggle('over-box', !!pickBox(screenRay(e.clientX, e.clientY)));
+    if (!hoverAt) requestAnimationFrame(updateHover);
+    hoverAt = { x: e.clientX, y: e.clientY };
     return;
   }
   if (drag.twist) {
@@ -680,7 +579,7 @@ canvas.addEventListener('pointermove', e => {
   }
   if (e.pointerId !== drag.id || drag.placed) return; // 2本目の指の動きは、ひねり・ピンチ以外では使わない
   if (drag.pending) {
-    // 長押しになる前に指が動いたら、立方体は掴まずにカメラの操作にする
+    // 長押しになる前に指が動いたら、形は掴まずにカメラの操作にする
     if (Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) <= 10) return;
     clearTimeout(drag.pending.timer);
     drag.pending = null;
@@ -698,7 +597,7 @@ canvas.addEventListener('pointermove', e => {
       box.x = hit[0] + drag.box.ox;
       box.z = hit[1] + drag.box.oz;
       for (const g of group) { g.o.x = box.x + g.dx; g.o.z = box.z + g.dz; }
-      // 運んでいない立方体を落とし、運んでいる山はその上に載せる
+      // 運んでいない物を落とし、運んでいる山はその上に載せる
       settle(members);
       const others = boxes.filter(o => !members.includes(o));
       const base = Math.max(drag.box.held, ...group.map(g =>
@@ -730,7 +629,7 @@ canvas.addEventListener('pointermove', e => {
   drag.y = e.clientY;
   requestDraw();
 });
-// クリックした立方体の色を次の色に変える。
+// クリックした形の色を次の色に変える (モデルは色を変えない)。
 // ダブルクリック・ダブルタップ (削除) と区別するため、少し待ってから変える
 const DOUBLE_TAP_MS = 300;
 let wasDragged = false;
@@ -739,7 +638,7 @@ let ignoreClicksUntil = 0; // ダブルタップで削除した直後のクリ�
 canvas.addEventListener('click', e => {
   if (wasDragged || e.detail > 1 || performance.now() < ignoreClicksUntil) return;
   const picked = pickBox(screenRay(e.clientX, e.clientY));
-  if (!picked) return;
+  if (!picked || picked.box.s === 3) return;
   clearTimeout(colorTimer);
   const { clientX: x, clientY: y } = e;
   colorTimer = setTimeout(() => {
@@ -756,20 +655,20 @@ canvas.addEventListener('click', e => {
 function deleteBox(box, x, y) {
   if (pickerBox === box) closePicker();
   clearTimeout(colorTimer);
-  boxes.splice(boxes.indexOf(box), 1);
+  removeObject(box);
   settle();
   canvas.classList.toggle('over-box', !!pickBox(screenRay(x, y)));
   updateAddButton();
   requestDraw();
 }
-// ダブルクリックした立方体を削除 (タッチはブラウザによって dblclick が来ないので、下のダブルタップで扱う)
+// ダブルクリックした物を削除 (タッチはブラウザによって dblclick が来ないので、下のダブルタップで扱う)
 let lastPointerType = 'mouse';
 canvas.addEventListener('dblclick', e => {
   if (lastPointerType === 'touch') return;
   const picked = pickBox(screenRay(e.clientX, e.clientY));
   if (picked) deleteBox(picked.box, e.clientX, e.clientY);
 });
-// 同じ立方体を素早く2回タップしたら削除
+// 同じ物を素早く2回タップしたら削除
 let lastTap = null;
 function handleTap(e) {
   const picked = pickBox(screenRay(e.clientX, e.clientY));
@@ -819,38 +718,139 @@ canvas.addEventListener('wheel', e => {
   zoomBy(Math.exp(e.deltaY * 0.001));
 }, { passive: false });
 
+// --- PMX モデルの読み込み ---
+// .pmx とテクスチャ画像をまとめて選んでもらい、ブラウザの中だけで読む (どこにも送らない)
+const MODEL_HEIGHT = 2; // 読み込んだモデルは高さ 2 (立方体2個分) にそろえる
+const pmxInput = document.getElementById('pmx-input');
+loadButton.addEventListener('click', () => pmxInput.click());
+pmxInput.addEventListener('change', () => {
+  const files = [...pmxInput.files];
+  pmxInput.value = ''; // 同じファイルをもう一度選べるようにする
+  if (files.length) loadPmx(files);
+});
+// ファイル名の比較用: パスの区切りをそろえ、最後の名前だけを小文字・NFC で取り出す
+const fileKey = path => decodeURIComponent(path).replace(/\\/g, '/').split('/').pop().normalize('NFC').toLowerCase();
+let mmdLoaderModule = null;
+async function loadPmx(files) {
+  if (boxes.length >= MAX_BOXES) return;
+  const pmx = files.find(f => /\.pmx$/i.test(f.name));
+  if (!pmx) { toast('.pmx ファイルが選ばれていません。モデルの .pmx とテクスチャ画像をまとめて選んでください。'); return; }
+  toast(`${pmx.name} を読み込み中…`, 0);
+  const MODEL_URL = '__model__.pmx';
+  const urls = new Map(files.map(f => [fileKey(f.name), URL.createObjectURL(f)]));
+  urls.set(MODEL_URL, URL.createObjectURL(pmx));
+  const missing = new Set();
+  const manager = new THREE.LoadingManager();
+  // ローダーが求めるファイル (モデル本体・テクスチャ) を、選ばれたファイルに置き換える
+  manager.setURLModifier(url => {
+    if (/^(data|blob):/.test(url)) return url;
+    const found = urls.get(fileKey(url));
+    if (found) return found;
+    missing.add(decodeURIComponent(url).replace(/^\.\//, ''));
+    return 'data:,'; // 見つからないテクスチャは読まずに飛ばす
+  });
+  manager.onProgress = () => requestDraw();
+  manager.onLoad = () => {
+    for (const u of urls.values()) URL.revokeObjectURL(u);
+    requestDraw();
+    if (missing.size) toast(`見つからないテクスチャがあります: ${[...missing].join('、')}`, 8000);
+  };
+  try {
+    mmdLoaderModule ??= await import('three/addons/loaders/MMDLoader.js');
+    const loader = new mmdLoaderModule.MMDLoader(manager);
+    const mesh = await new Promise((resolve, reject) => loader.load(MODEL_URL, resolve, undefined, reject));
+    addModel(mesh);
+    toast(`${pmx.name} を置きました`);
+  } catch (err) {
+    console.error(err);
+    toast(`${pmx.name} を読み込めませんでした: ${err?.message ?? err}`, 8000);
+  }
+}
+function addModel(mesh) {
+  // モーフ (表情など) が1つもないモデルでも、MMDLoader は空のモーフ情報を付ける。
+  // three.js はそれを「モーフあり」として扱い、シェーダーの組み立てに失敗するので取り除く
+  mesh.traverse(o => {
+    if (!o.geometry) return;
+    const ma = o.geometry.morphAttributes;
+    for (const k of Object.keys(ma)) if (!ma[k].length) delete ma[k];
+    if (o.morphTargetInfluences?.length === 0) { o.morphTargetInfluences = undefined; o.morphTargetDictionary = undefined; }
+  });
+  // 大きさを高さ MODEL_HEIGHT にそろえ、足元の中心が原点に来るようにずらす
+  const bbox = new THREE.Box3().setFromObject(mesh);
+  const size = bbox.getSize(new THREE.Vector3()), center = bbox.getCenter(new THREE.Vector3());
+  const k = MODEL_HEIGHT / (size.y || 1);
+  mesh.scale.setScalar(k);
+  mesh.position.set(-center.x * k, -bbox.min.y * k, -center.z * k);
+  const obj = { x: 0, y: 0, z: 0, c: -1, s: 3, r: 0, py: 0, vy: 0,
+                h: size.y * k, hx: Math.max(size.x * k / 2, 0.05), hz: Math.max(size.z * k / 2, 0.05) };
+  [obj.x, obj.z] = findFreeSpot(radiusOf(obj));
+  makeNode(obj, mesh);
+  // 当たり判定用の複製。置いたモデルはポーズを変えないので、骨やモーフの計算をしない普通のメッシュで判定する
+  // (骨で変形するメッシュのまま判定すると、頂点ごとに骨を計算するので 9 万ポリゴンで 1 回 50ms ほどかかる)
+  const proxy = new THREE.Mesh(mesh.geometry, new THREE.MeshBasicMaterial());
+  proxy.morphTargetInfluences = undefined;
+  proxy.position.copy(mesh.position);
+  proxy.scale.copy(mesh.scale);
+  proxy.visible = false;
+  proxy.castShadow = false;
+  obj.node.add(proxy);
+  mesh.traverse(o => { if (o.isMesh) o.raycast = () => {}; });
+  boxes.push(obj);
+  dropIn(obj);
+}
+
+// --- 描画 ---
 let pending = false;
 function requestDraw() {
   if (pending) return;
   pending = true;
   requestAnimationFrame(() => { pending = false; render(); });
 }
-
+// 掴んでいる物 (とパレットで色を変えている形) を明るくする
+function setHighlight(obj, on) {
+  obj.node.traverse(o => {
+    if (!o.isMesh) return;
+    for (const m of [o.material].flat()) {
+      if (!m.emissive) continue;
+      m.userData.baseEmissive ??= m.emissive.clone();
+      m.emissive.copy(m.userData.baseEmissive);
+      if (on) m.emissive.addScalar(0.3);
+    }
+  });
+}
 function render() {
-  gl.uniform3f(uTarget, cam.tx, 0, cam.tz);
-  gl.uniform3f(uCam, ...camPos());
-  if (boxes.length) {
-    gl.uniform3fv(uBoxes, boxes.flatMap(b => [b.x, b.py, b.z]));
-    gl.uniform3fv(uColors, boxes.flatMap(b => PALETTE[b.c]));
-    gl.uniform1fv(uRots, boxes.map(b => b.r));
-    gl.uniform1iv(uShapes, boxes.map(b => b.s));
-    const held = drag?.box?.box ?? drag?.rot?.box ?? drag?.twist?.box ?? pickerBox;
-    gl.uniform1i(uSel, held ? boxes.indexOf(held) : -1);
+  updateCamera();
+  const held = drag?.box?.box ?? drag?.rot?.box ?? drag?.twist?.box ?? pickerBox;
+  for (const b of boxes) {
+    b.node.position.set(b.x, b.py, b.z);
+    b.node.rotation.y = b.r;
+    if (b.mesh) b.mesh.material.color.setRGB(...PALETTE[b.c], THREE.LinearSRGBColorSpace);
+    setHighlight(b, b === held);
   }
-  gl.uniform1i(uCount, boxes.length);
-  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  // 影は注視点のまわりだけ計算する
+  const span = Math.max(12, cam.dist * 1.2);
+  sun.target.position.set(cam.tx, 0, cam.tz);
+  sun.position.copy(sun.target.position).addScaledVector(LIGHT, 40);
+  Object.assign(sun.shadow.camera, { left: -span, right: span, top: span, bottom: -span, near: 1, far: 100 });
+  sun.shadow.camera.updateProjectionMatrix();
+  renderer.render(scene, camera);
 }
 
-function draw() {
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  canvas.width = Math.floor(innerWidth * dpr);
-  canvas.height = Math.floor(innerHeight * dpr);
-  gl.viewport(0, 0, canvas.width, canvas.height);
-  gl.uniform2f(uRes, canvas.width, canvas.height);
+function resize() {
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setSize(innerWidth, innerHeight, false);
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
   render();
 }
-addEventListener('resize', draw);
-draw();
+addEventListener('resize', resize);
+resize();
+
+// 動作確認用: ?debug を付けて開いたときだけ、中の状態をコンソールから触れるようにする
+if (new URLSearchParams(location.search).has('debug')) {
+  Object.assign(window, { THREE, renderer, scene, camera, boxes, cam, makeBox, settle, pickBox, screenRay, rayPlane,
+    loadPmx, getDrag: () => drag, paletteEl, swatches, pointers });
+}
 </script>
 </body>
 </html>
