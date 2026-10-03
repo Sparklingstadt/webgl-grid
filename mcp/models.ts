@@ -3,7 +3,7 @@ import { readdir, stat } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { MODEL_TEXTURE_FILE, MODELS_FILE_PATH, MODELS_PATH, type ModelFolderEntry, type ModelsListing, type MotionFolderEntry } from '../src/core/models.ts';
+import { MODEL_TEXTURE_FILE, MODELS_FILE_PATH, MODELS_PATH, type ModelFolderEntry, type ModelsListing, type FolderFileEntry } from '../src/core/models.ts';
 
 // --- models/ フォルダ (ユーザーの PMX モデル置き場) の一覧とファイルを、アプリに渡す ---
 // Vite の開発サーバー・プレビュー (vite.config.ts) と、MCP サーバーがアプリを配るとき (appServer.ts) に使う。
@@ -25,9 +25,13 @@ async function walk(dir: string, rel: string, out: { rel: string; size: number }
 }
 
 // モデルとモーションの一覧: models/ の直下のフォルダごとに、中の .pmx をモデルにする (テクスチャはそのフォルダの画像)。
-// モーション (.vmd) は、どこにあっても並べる
+// モーション (.vmd) とポーズ・表情 (.vpd) は、どこにあっても並べる
 export async function listModels(dir = modelsDir()): Promise<ModelsListing> {
-  const out: ModelFolderEntry[] = [], motions: MotionFolderEntry[] = [];
+  const out: ModelFolderEntry[] = [], motions: FolderFileEntry[] = [], poses: FolderFileEntry[] = [];
+  const entry = (f: { rel: string; size: number }): FolderFileEntry => {
+    const folder = path.posix.dirname(f.rel);
+    return { name: path.basename(f.rel, path.extname(f.rel)), folder: folder === '.' ? '' : folder, path: f.rel, size: f.size };
+  };
   const top = await readdir(dir, { withFileTypes: true }).catch(() => []);
   const groups: [string, { rel: string; size: number }[]][] = [];
   const loose: { rel: string; size: number }[] = [];
@@ -43,13 +47,16 @@ export async function listModels(dir = modelsDir()): Promise<ModelsListing> {
     for (const pmx of files.filter(f => /\.pmx$/i.test(f.rel))) {
       out.push({ name: path.basename(pmx.rel, path.extname(pmx.rel)), folder, pmx: pmx.rel, files: tex.map(f => f.rel), size: pmx.size + texSize });
     }
-    for (const v of files.filter(f => /\.vmd$/i.test(f.rel))) {
-      motions.push({ name: path.basename(v.rel, path.extname(v.rel)), folder: path.posix.dirname(v.rel) === '.' ? '' : path.posix.dirname(v.rel), path: v.rel, size: v.size });
+    for (const f of files) {
+      if (/\.vmd$/i.test(f.rel)) motions.push(entry(f));
+      else if (/\.vpd$/i.test(f.rel)) poses.push(entry(f));
     }
   }
+  const byPlace = (a: FolderFileEntry, b: FolderFileEntry) => a.folder.localeCompare(b.folder) || a.path.localeCompare(b.path);
   return {
     models: out.sort((a, b) => a.folder.localeCompare(b.folder) || a.pmx.localeCompare(b.pmx)),
-    motions: motions.sort((a, b) => a.folder.localeCompare(b.folder) || a.path.localeCompare(b.path)),
+    motions: motions.sort(byPlace),
+    poses: poses.sort(byPlace),
   };
 }
 

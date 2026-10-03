@@ -856,5 +856,8 @@ const dict: Dictionary = {
   "モーションの一覧": "Motion List",
   "置いてあるモデル全員に付けます (モデルを選ぶと、そのモデルだけに)": "Applies to every placed model (select a model to apply it to that one only)",
   "選んでいる {name} に付けます": "Applies to the selected {name}",
+  "ポーズ・表情": "Poses & Expressions",
+  "ポーズの一覧": "Pose List",
+  "モデルを置いてから選ぶと、モデルにポーズと表情を当てます": "Place a model first and the pose and expressions are applied to it",
 };
 export default dict;

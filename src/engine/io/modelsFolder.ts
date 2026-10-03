@@ -1,14 +1,15 @@
-import { MODELS_FILE_PATH, MODELS_PATH, type ModelFolderEntry, type ModelsListing, type MotionFolderEntry } from '../../core/models';
+import { MODELS_FILE_PATH, MODELS_PATH, type ModelFolderEntry, type ModelsListing, type FolderFileEntry } from '../../core/models';
 
 // --- models/ フォルダのモデル: アプリを配るサーバーに一覧を聞き、選んだモデルのファイルをもらう ---
 // (静的に配っているとき・サーバーが答えないときは、一覧は空)
-const EMPTY: ModelsListing = { models: [], motions: [] };
+const EMPTY: ModelsListing = { models: [], motions: [], poses: [] };
 export async function listModelFolder(): Promise<ModelsListing> {
   try {
     const res = await fetch(MODELS_PATH, { cache: 'no-store' });
     if (!res.ok || !(res.headers.get('content-type') ?? '').includes('json')) return EMPTY;
     const data = await res.json();
-    return { models: Array.isArray(data?.models) ? data.models : [], motions: Array.isArray(data?.motions) ? data.motions : [] };
+    const list = (v: unknown) => (Array.isArray(v) ? v : []);
+    return { models: list(data?.models), motions: list(data?.motions), poses: list(data?.poses) };
   } catch {
     return EMPTY;
   }
@@ -22,7 +23,8 @@ async function fetchFile(rel: string) {
   Object.defineProperty(f, 'sourcePath', { value: `models/${rel}` });
   return f;
 }
-export const fetchMotionFile = (m: MotionFolderEntry) => fetchFile(m.path);
+// モーション (.vmd)・ポーズ (.vpd) のファイル
+export const fetchFolderFile = (m: FolderFileEntry) => fetchFile(m.path);
 
 // モデルの .pmx (最初) とテクスチャを File にする (元の場所は sourcePath に)
 export async function fetchModelFiles(m: ModelFolderEntry, onProgress?: (done: number, total: number) => void): Promise<File[]> {
