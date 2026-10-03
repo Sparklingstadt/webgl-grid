@@ -3,6 +3,7 @@ import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
 import path from 'node:path';
+import { answerModels } from './models.ts';
 import { answerStatus } from './status.ts';
 
 // --- ビルドしたアプリ (dist/) を 127.0.0.1 で配る ---
@@ -15,7 +16,7 @@ const TYPES: Record<string, string> = {
 export async function serveApp(dist: string, port: number): Promise<Server | null> {
   if (!(await stat(path.join(dist, 'index.html')).catch(() => null))) return null;
   const server = createServer(async (req, res) => {
-    if (await answerStatus(req, res)) return;
+    if (await answerStatus(req, res) || await answerModels(req, res)) return;
     const url = new URL(req.url ?? '/', 'http://127.0.0.1');
     const rel = decodeURIComponent(url.pathname).replace(/^\/+/, '') || 'index.html';
     const file = path.resolve(dist, rel);

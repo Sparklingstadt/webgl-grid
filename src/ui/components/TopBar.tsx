@@ -31,6 +31,7 @@ export function TopBar({ onOpenFiles, onOpenFolder, onLoadPose, onOpenProject, o
         <MenuSep />
         <MenuItem label={t('MMD を読み込む…')} kbd="Ctrl O" onSelect={onOpenFiles} />
         <MenuItem label={t('MMD をフォルダごと読み込む…')} onSelect={onOpenFolder} />
+        <MenuItem label={t('models フォルダから読み込む…')} onSelect={() => engine.ui.set({ modelPicker: true })} />
         <div className="note" style={{ padding: '0 8px 4px' }}>{t('.pmx とテクスチャ・.vmd・.vpd・曲')}</div>
         <MenuSep />
         <MenuItem label={t('ポーズを保存 (.vpd)')} onSelect={() => engine.savePose()} />

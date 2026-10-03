@@ -9,6 +9,7 @@ import { Gizmo } from './Gizmo';
 import { Menu, MenuItem, MenuLabel, MenuSep } from './Menu';
 import { Sidebar, type SideTab } from './sidebar/Sidebar';
 import { OutputFrame, useShowFrame } from './OutputFrame';
+import { ModelPicker } from './ModelPicker';
 import { RecoverBanner } from './Overlays';
 
 // 3D ビューポート: 見出し (ビュー・追加・オブジェクトのメニュー)、左のツールバー、左上の文字、
@@ -96,6 +97,7 @@ export function ViewportArea(props: {
           )}
           <div className="view-info" aria-live="off">{viewInfo}</div>
           <RecoverBanner />
+          <ModelPicker />
           <div className="nav">
             <Gizmo />
             <button type="button" title={t('視点を戻す (Home)')} aria-label={t('視点を戻す')} onClick={() => camera.resetView()}>

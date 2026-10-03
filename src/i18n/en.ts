@@ -846,5 +846,11 @@ const dict: Dictionary = {
   "ビューポートで動かすには、ポーズモード (Tab) にします。": "To pose in the viewport, switch to Pose Mode (Tab).",
   "剛体と関節を表示": "Show Rigid Bodies and Joints",
   "物理演算の剛体 (赤: ボーン追従・緑: 物理・青: 物理 + 位置合わせ) と関節 (黄) を重ねて表示します (レンダリングには写りません)": "Overlays the physics rigid bodies (red: follow bone, green: physics, blue: physics + bone alignment) and joints (yellow). Not rendered.",
+  "models フォルダから読み込む…": "Import from Models Folder…",
+  "models フォルダにモデルがありません。モデルのフォルダ (.pmx とテクスチャ) を models/ に置くと、ここから選べます": "No models in the models folder. Put a model folder (.pmx and textures) in models/ to choose it here",
+  "models フォルダのモデル": "Models Folder",
+  "{name} を読み込み中… ({done} / {total})": "Loading {name}… ({done} / {total})",
+  "テクスチャ {n} 枚": "{n} textures",
+  "モデルの一覧": "Model List",
 };
 export default dict;

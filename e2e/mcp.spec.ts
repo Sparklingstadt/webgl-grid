@@ -37,7 +37,7 @@ test('MCP のツールで、形を置き・モデルを読み込み・キーフ�
 
     const errors: string[] = [];
     page.on('pageerror', e => errors.push(String(e)));
-    await page.goto(`/?debug&mcp=${wsPort}`);
+    await page.goto(`/?debug&nomodels&mcp=${wsPort}`);
     await expect(page.getByLabel('MCP の接続')).toHaveText('MCP 接続中');
     expect((await json('app_status')).connected).toBe(true);
 
@@ -118,7 +118,7 @@ test('MCP サーバーを待っているあいだはエラーを出さず、あ�
   const messages: string[] = [];
   page.on('console', m => { if (m.type() === 'error' || m.type() === 'warning') messages.push(m.text()); });
   page.on('pageerror', e => messages.push(String(e)));
-  await page.goto(`/?debug&mcp=${wsPort}`);
+  await page.goto(`/?debug&nomodels&mcp=${wsPort}`);
   await expect(page.getByLabel('MCP の接続')).toHaveText('MCP 待機中');
   await page.waitForTimeout(1500); // 1 回つなぎ直すあいだ
   expect(messages).toEqual([]);

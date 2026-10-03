@@ -45,6 +45,7 @@ export interface UiState {
   poseMode: boolean;        // ポーズモード (MMD モデルのボーンをビューポートで動かす)
   poseTool: 'rotate' | 'translate';
   rigShown: boolean;        // 物理演算の剛体と関節を表示している (選んでいるモデル)
+  modelPicker: boolean;     // models フォルダのモデルの一覧を出している
   addonsVersion: number;       // アドオンのメニュー・パネル・値が変わった
 }
 type Version = 'modelVersion' | 'values' | 'keysVersion' | 'materialsVersion' | 'addonsVersion';
@@ -56,7 +57,7 @@ export class UiChannel {
     fxState: { ao: false, dof: false, bloom: false, diffusion: false, color: false }, fxLevel: { ...FX_LEVEL_DEFAULT },
     toast: null, palette: null, viewInfo: '', hairHang: null, materialsVersion: 0, projectName: null,
     output: { ...OUTPUT_DEFAULT }, rendering: null, renderResult: null, remote: 'off', missingFiles: null, missingTextures: null, history: { labels: [msg('最初')], index: 0 }, recovery: null, scene: normalizeScene(undefined),
-    addons: [], addonsVersion: 0, lang: getLang(), poseMode: false, poseTool: 'rotate', rigShown: false,
+    addons: [], addonsVersion: 0, lang: getLang(), poseMode: false, poseTool: 'rotate', rigShown: false, modelPicker: false,
   });
   constructor() {
     langEvents.on('changed', lang => this.set({ lang }));
