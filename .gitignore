@@ -1,3 +1,7 @@
 .claude/
 *.pmx
 げのげ式初音ミク/
+node_modules/
+dist/
+test-results/
+playwright-report/
