@@ -173,3 +173,33 @@ test('MoGraph エフェクタ: ターゲットで向きを変え、フォーミ�
   await expect.poll(async () => (await clones()).every(([, ry]) => Math.abs(ry) > 0.5)).toBe(true);
   expect(errors).toEqual([]);
 });
+
+test('MoGraph フィールド: エフェクタに球のフィールドを足すと、範囲の中だけ効き、ビューポートに枠を出す (レンダリングには写らない)', async ({ page }) => {
+  const errors = await open(page);
+  const p = await screenPosOf(page, 0);
+  await page.mouse.click(p.x, p.y);
+  await page.getByRole('checkbox', { name: 'クローナーにする' }).click();
+  await choose(page, 'クローナーの並べ方', '直線');
+  await page.getByRole('button', { name: '+ プレーン' }).click();
+  await page.getByRole('spinbutton', { name: 'プレーンの位置 Y' }).fill('1');
+  await page.keyboard.press('Enter');
+  const ys = () => page.evaluate(() => (window as Win).engine.world.objects[0].node.getObjectByName('__clones').children.map((g: Win) => +g.position.y.toFixed(2)));
+  await expect.poll(ys).toEqual([1, 1, 1, 1, 1]);
+  await page.getByText('フィールド (全体に効く)').click();
+  await page.getByRole('button', { name: 'プレーンに球のフィールドを足す' }).click();
+  // 球 (中心 0, 1, 0・半径 2・内側 0.5) の中のクローン (x = 0, 1.5) だけ持ち上がる (端に近いほど弱い)
+  await expect.poll(ys).toEqual([1, 0.1, 0, 0, 0]);
+  const wires = () => page.evaluate(() => { let n = 0; (window as Win).engine.graph.scene.traverse((o: Win) => { if (o.userData.editorOnly && o.isLine && o.visible) n++; }); return n; });
+  await expect.poll(wires).toBeGreaterThan(0);
+  const during = await page.evaluate(() => {
+    const { engine } = window as Win;
+    let seen = -1;
+    const off = engine.viewport.onRender(() => { if (engine.output.active) { seen = 0; engine.graph.scene.traverse((o: Win) => { if (o.userData.editorOnly && o.isLine && o.visible) seen++; }); } });
+    return engine.output.renderPng().then(() => { off(); return seen; });
+  });
+  expect(during).toBe(0);
+  // 反転すると逆に
+  await page.getByRole('checkbox', { name: 'プレーンのフィールド 1 球を反転' }).click();
+  await expect.poll(ys).toEqual([0, 0.9, 1, 1, 1]);
+  expect(errors).toEqual([]);
+});

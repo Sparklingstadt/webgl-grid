@@ -76,7 +76,7 @@ const mograph: AddonModule = {
   name: 'MoGraph エフェクタ',
   version: '1.0.0',
   author: 'webgl-grid',
-  category: 'モデリング',
+  category: 'MoGraph',
   description: 'Cinema 4D のエフェクタ: プレーン・ステップ・ランダム・フォーミュラ・タイム・ターゲット・ディレイ。クローナーのパネルの「エフェクタ」から足します。',
   enabledByDefault: true,
   requires: ['cinema4d'],

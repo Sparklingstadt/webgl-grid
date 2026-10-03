@@ -2,7 +2,7 @@ import { MAX_BOXES } from '../../core/constants';
 import type { AddonApi, ObjectData } from '../../engine/addons/Addons';
 import { Registry } from '../../engine/addons/registry';
 import { isModel, type Obj } from '../../engine/types';
-import { MAX_CLONES, clonerLayout, normalizeCloner, placeAround, type ClonerSettings } from './cloner';
+import { MAX_CLONES, clonerLayout, normalizeCloner, placeAround, type ClonerSettings, type Effector } from './cloner';
 import { Cloners } from './Cloners';
 import { normalizeDeformers, type Deformer } from './deform';
 import { Deformers } from './Deformers';
@@ -50,6 +50,12 @@ export class Cinema4d {
   addEffector(def: EffectorDef) { return this.effectors.add(def); }
   addField(def: FieldDef) { return this.fields.add(def); }
   addClonerMode(def: ClonerModeDef) { return this.modes.add(def); }
+  // 物が持っているエフェクタの並び (クローナーのものと、ほかの MoGraph の物 (分割など) が addEffectorSource で足すもの)
+  private sources = new Set<(o: Obj) => Effector[] | null>();
+  addEffectorSource(fn: (o: Obj) => Effector[] | null) { this.sources.add(fn); return () => { this.sources.delete(fn); }; }
+  effectorsOf(o: Obj): Effector[] {
+    return [...(this.cloner(o)?.effectors ?? []), ...[...this.sources].flatMap(fn => fn(o) ?? [])];
+  }
   // 物 o の MoGraph を並べるときに使うもの (登録された種類・いまの時刻・物の位置)
   env(o: Obj): LayoutEnv {
     const e = this.api.engine;

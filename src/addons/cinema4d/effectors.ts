@@ -57,7 +57,10 @@ export interface FieldDef {
   params?: EffectorParam[];
   live?: boolean; // 時刻で変わる
   value(pos: Point3, ctx: FieldContext): number;
+  // ビューポートに出す枠 (場所を持つフィールド)。size: 球は [半径]、円柱は [半径, 高さ]、ボックスは [幅, 高さ, 奥行き]
+  gizmo?(params: Record<string, EffectorValue>): FieldGizmo | null;
 }
+export interface FieldGizmo { shape: 'sphere' | 'box' | 'cylinder' | 'plane'; center: [number, number, number]; size: number[]; inner?: number; axis?: 'x' | 'y' | 'z' }
 // フィールドの重ね方 (Cinema 4D のブレンドモード)
 export const FIELD_BLENDS: { value: FieldLayer['blend']; label: string }[] = [
   { value: 'normal', label: '標準' }, { value: 'max', label: '最大' }, { value: 'min', label: '最小' },
