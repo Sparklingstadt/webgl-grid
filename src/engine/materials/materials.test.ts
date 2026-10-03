@@ -131,6 +131,18 @@ describe('MMD の材質の変換と .pmx への書き戻し', () => {
     expect(lib.images.size).toBe(1);
   });
 
+  it('見つからなかったテクスチャは使わず、色だけにする (読めない画像で黒く写らないように)', () => {
+    const lib = new MaterialLibrary();
+    const m = toon({ map: true, diffuse: 'pink' });
+    m.userData.MMD = { mapFileName: 'tex\\Body.PNG' };
+    const data = convertMmdMaterial(m, lib, 'x', new Set(['body.png']));
+    expect(data.tree.nodes.map(n => n.type)).toEqual(['principled', 'output']);
+    expect(surfaceShader(data.tree)!.values.baseColor).toEqual([1, new THREE.Color().setRGB(1, 0.5, 0.8, THREE.SRGBColorSpace).g, new THREE.Color().setRGB(1, 0.5, 0.8, THREE.SRGBColorSpace).b]);
+    expect(lib.images.size).toBe(0);
+    // ほかのテクスチャが見つからなくても、このテクスチャがあれば使う
+    expect(convertMmdMaterial(m, lib, 'x', new Set(['face.png'])).tree.nodes.some(n => n.type === 'image')).toBe(true);
+  });
+
   it('テクスチャも色もなければ、色をベースカラーに入れるだけ', () => {
     const lib = new MaterialLibrary();
     const data = convertMmdMaterial(toon(), lib, 'x');

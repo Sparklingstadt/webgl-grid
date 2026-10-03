@@ -65,6 +65,8 @@ export class MmdLoader {
       // 組み立てたメッシュには残らないので、組み立てる前の解析結果から拾っておく
       const data: Any = await new Promise((resolve, reject) => loader.loadPMX(MODEL_URL, resolve, undefined, reject));
       const mesh = loader.meshBuilder.build(data, './', undefined, (err: unknown) => console.error(err));
+      // 見つからなかったテクスチャ (組み立てるあいだに、すぐ分かる)。マテリアルにするとき、画像なしにする (黒く写らないように)
+      mesh.userData.missingTextures = new Set([...missing].map(fileKey));
       mesh.userData.morphPanels = new Map(data.morphs.map((m: Any) => [m.name, m.panel]));
       // ボーンを手で動かすための情報: 表示枠 (MMD でボーンを選ぶときのグループ)、フラグ、最初の姿勢
       mesh.userData.boneFrames = (data.frames ?? []).map((f: Any) => ({
