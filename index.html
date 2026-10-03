@@ -6,7 +6,8 @@
 <title>Grid Shader</title>
 <style>
   html, body { margin: 0; height: 100%; background: #0b0d12; overflow: hidden; }
-  canvas { display: block; width: 100vw; height: 100vh; cursor: grab; touch-action: none; }
+  canvas { display: block; width: 100vw; height: 100vh; cursor: grab; touch-action: none;
+           -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
   canvas.dragging { cursor: grabbing; }
   canvas.pan { cursor: move; }
   canvas.over-box { cursor: pointer; }
@@ -55,6 +56,7 @@ uniform vec3 uBoxes[MAX_BOXES];
 uniform int uCount;
 uniform vec3 uColors[MAX_BOXES];
 uniform float uRots[MAX_BOXES];
+uniform int uSel; // 掴んでいる立方体の番号 (なければ -1)
 out vec4 outColor;
 
 // 線幅(ピクセル単位)を一定に保つアンチエイリアス付きグリッド
@@ -156,6 +158,7 @@ void main() {
     int sid;
     if (diff > 0.0 && sceneHit(ro + rd * tb + n * 0.001, LIGHT, sn, sid) > 0.0) diff = 0.0;
     vec3 base = uColors[id];
+    if (id == uSel) base = mix(base, vec3(1.0), 0.35); // 掴んでいる立方体は明るくする
     col = base * (0.18 + 0.82 * diff);
   }
 
@@ -188,6 +191,7 @@ const uBoxes = gl.getUniformLocation(prog, 'uBoxes');
 const uCount = gl.getUniformLocation(prog, 'uCount');
 const uColors = gl.getUniformLocation(prog, 'uColors');
 const uRots = gl.getUniformLocation(prog, 'uRots');
+const uSel = gl.getUniformLocation(prog, 'uSel');
 
 // 立方体の色 (リニア値。シェーダーでガンマ補正される)
 const PALETTE = [
@@ -384,6 +388,7 @@ function rayPlane({ ro, rd }, h) {
 }
 
 let drag = null;
+const LONG_PRESS_MS = 400; // スマホで立方体を掴むまでの長押し時間
 const pointers = new Map(); // 画面に触れている指 (マウス) の位置
 
 // b とその上に載っている立方体を、b を軸にまとめて回すための情報
@@ -413,9 +418,10 @@ canvas.addEventListener('pointerdown', e => {
   try { canvas.setPointerCapture(e.pointerId); } catch {} // 捕捉できなくても操作は続ける
   if (drag) {
     // 立方体を押さえたままもう1本の指を置いたら、2本指をひねって回す (スマホ用)
-    const held = drag.box?.box ?? drag.rot?.box;
+    const held = drag.box?.box ?? drag.rot?.box ?? drag.pending?.box;
     if (drag.twist || drag.pinch || pointers.size !== 2) return;
     const ids = [drag.id, e.pointerId];
+    if (drag.pending) { clearTimeout(drag.pending.timer); drag.pending = null; }
     if (held) {
       drag.twist = { ...rotationGroup(held), ids, last: pointerAngle(ids), total: 0 };
       drag.box = drag.rot = null;
@@ -433,13 +439,29 @@ canvas.addEventListener('pointerdown', e => {
     const { box, t } = picked;
     const hy = ray.ro[1] + ray.rd[1] * t;
     const hit = [ray.ro[0] + ray.rd[0] * t, ray.ro[2] + ray.rd[2] * t];
+    // 上に載っている立方体も一緒に運ぶ。運んでいる間は持ち上げた高さを保ち、離したときに落とす
+    const grab = () => {
+      const group = stackFrom(box).map(o => ({ o, dx: o.x - box.x, dy: o.y - box.y, dz: o.z - box.z }));
+      drag.box = { box, group, held: box.py, h: hy, ox: box.x - hit[0], oz: box.z - hit[1] };
+      requestDraw();
+    };
     if (e.shiftKey) {
       // Shift+ドラッグ: 縦軸まわりに回す
       drag.rot = rotationGroup(box);
+    } else if (e.pointerType === 'touch') {
+      // スマホは長押しで掴む。その前に指を動かしたら、ふつうにカメラを動かす
+      const d = drag;
+      d.pending = {
+        box,
+        timer: setTimeout(() => {
+          d.pending = null;
+          d.grabbed = true;
+          grab();
+          navigator.vibrate?.(15);
+        }, LONG_PRESS_MS),
+      };
     } else {
-      // 上に載っている立方体も一緒に運ぶ。運んでいる間は持ち上げた高さを保ち、離したときに落とす
-      const group = stackFrom(box).map(o => ({ o, dx: o.x - box.x, dy: o.y - box.y, dz: o.z - box.z }));
-      drag.box = { box, group, held: box.py, h: hy, ox: box.x - hit[0], oz: box.z - hit[1] };
+      grab();
     }
   }
   canvas.classList.add('dragging');
@@ -470,6 +492,12 @@ canvas.addEventListener('pointermove', e => {
     return;
   }
   if (e.pointerId !== drag.id) return; // 2本目の指の動きは、ひねり・ピンチ以外では使わない
+  if (drag.pending) {
+    // 長押しになる前に指が動いたら、立方体は掴まずにカメラの操作にする
+    if (Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) <= 10) return;
+    clearTimeout(drag.pending.timer);
+    drag.pending = null;
+  }
   if (drag.rot) {
     // 右へドラッグすると手前の面が右へ動く向きに回す
     rotateGroup(drag.rot, (e.clientX - drag.sx) * 0.01);
@@ -572,16 +600,20 @@ const endDrag = e => {
   } else {
     if (e.pointerId !== drag.id) return;
     // 少し以上動いたらドラッグ扱いにして、クリックで色を変えない (指はぶれやすいので広めに)
+    // 長押しで掴んだあとは、動かさずに離してもタップ扱いにしない
     const slop = e.pointerType === 'touch' ? 10 : 4;
-    wasDragged = Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > slop;
+    wasDragged = drag.grabbed || Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > slop;
     if (!wasDragged && e.type === 'pointerup' && e.pointerType === 'touch') handleTap(e);
   }
-  if (drag.box || drag.rot || drag.twist) { settle(); requestDraw(); }
+  if (drag.pending) clearTimeout(drag.pending.timer);
+  if (drag.box || drag.rot || drag.twist) settle();
   drag = null;
+  requestDraw();
   canvas.classList.remove('dragging');
 };
 canvas.addEventListener('pointerup', endDrag);
 canvas.addEventListener('pointercancel', endDrag);
+canvas.addEventListener('contextmenu', e => e.preventDefault()); // 長押しでメニューを出さない
 // カメラの距離を factor 倍にする (ホイールとピンチで共通)
 function zoomBy(factor) {
   cam.dist = Math.min(Math.max(cam.dist * factor, 2), 60);
@@ -606,6 +638,8 @@ function render() {
     gl.uniform3fv(uBoxes, boxes.flatMap(b => [b.x, b.py, b.z]));
     gl.uniform3fv(uColors, boxes.flatMap(b => PALETTE[b.c]));
     gl.uniform1fv(uRots, boxes.map(b => b.r));
+    const held = drag?.box?.box ?? drag?.rot?.box ?? drag?.twist?.box;
+    gl.uniform1i(uSel, held ? boxes.indexOf(held) : -1);
   }
   gl.uniform1i(uCount, boxes.length);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
