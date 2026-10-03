@@ -97,15 +97,19 @@ forward('set_cloner', 'クローナー (Cinema 4D のクローナー): 物を直
   })).optional().describe('エフェクタ (上から順にかける。渡すと並びごと入れ替える)。plain: 全部に同じだけ / step: 最初の 0 から最後の値まで / delay: MMD モデルのクローンを 1 つごとに frames フレーム遅らせる'),
 });
 const hexColor = z.string().regex(/^#?[0-9a-fA-F]{6}$/).describe('"#rrggbb"');
+const lightType = z.enum(['point', 'sun', 'spot', 'area']).describe('Blender のライトの種類: ポイント・サン・スポット・エリア');
 const lightSettings = {
-  color: hexColor.optional(), intensity: z.number().min(0).optional().describe('明るさ (点・スポットはカンデラ。点 30・スポット 80 くらい。エリアはニト 6 くらい)'),
-  height: z.number().positive().optional().describe('床からの高さ'), range: z.number().min(0).optional().describe('届く距離 (0 で果てしなく)'),
-  angleDeg: z.number().min(1).max(89).optional().describe('スポット: 広がり (度)'), softness: z.number().min(0).max(1).optional().describe('スポット: 縁のぼけ'),
-  tiltDeg: z.number().optional().describe('スポット・エリア: 真下からの傾き (物の向きの前へ)'), width: z.number().positive().optional(), depth: z.number().positive().optional(),
-  shadows: z.boolean().optional(),
+  color: hexColor.optional(),
+  power: z.number().min(0).optional().describe('ポイント・スポット・エリア: パワー (W。Blender と同じ。ポイント 400・スポット 1000・エリア 20 くらい)'),
+  strength: z.number().min(0).optional().describe('サン: 強さ (W/m²。3 くらい)'),
+  radius: z.number().min(0).optional().describe('ポイント・スポット: 半径 (m。影のぼけ)'), angleDeg: z.number().min(0).max(180).optional().describe('サン: 角度 (度。影のぼけ)'),
+  spotSizeDeg: z.number().min(1).max(180).optional().describe('スポット: スポットサイズ (円すい全体の角度)'), blend: z.number().min(0).max(1).optional().describe('スポット: ブレンド (縁のぼけ)'),
+  shape: z.enum(['square', 'rectangle']).optional().describe('エリア: 形状'), size: z.number().positive().optional().describe('エリア: サイズ (長方形では X)'), sizeY: z.number().positive().optional().describe('エリア: サイズ Y (長方形)'),
+  height: z.number().positive().optional().describe('床からの高さ'), tiltDeg: z.number().optional().describe('サン・スポット・エリア: 真下からの傾き (物の向きの前へ)'),
+  range: z.number().min(0).optional().describe('ポイント・スポット: カスタム距離 (0 で果てしなく)'), shadows: z.boolean().optional().describe('影 (エリアは落とせない)'),
 };
-forward('add_light', 'ライト (Cinema 4D のライト) を置いて選ぶ。向きは set_object の rotationDeg', { type: z.enum(['point', 'spot', 'area']).optional(), x: z.number().optional(), z: z.number().optional(), ...lightSettings });
-forward('set_light', 'ライトの設定を変える (渡したところだけ)', { id, type: z.enum(['point', 'spot', 'area']).optional(), ...lightSettings });
+forward('add_light', 'ライト (Blender のライト) を置いて選ぶ。向きは set_object の rotationDeg', { type: lightType.optional(), x: z.number().optional(), z: z.number().optional(), ...lightSettings });
+forward('set_light', 'ライトの設定を変える (渡したところだけ)', { id, type: lightType.optional(), ...lightSettings });
 forward('set_deformers', 'デフォーマ (Cinema 4D のデフォーマ): 物を曲げる・ねじる・細くする・ふくらませる。上から順にかける。並びごと入れ替える (空でやめる)。MMD モデルはボーンで動かす前の形にかける', {
   id, deformers: z.array(z.object({
     kind: z.enum(['bend', 'twist', 'taper', 'bulge']), enabled: z.boolean().optional(), axis: z.enum(['x', 'y', 'z']).optional(),

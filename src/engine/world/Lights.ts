@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { lightAim, normalizeLight, type LightSettings } from '../../core/light';
+import { areaSize, lightAim, lightIntensity, normalizeLight, type LightSettings } from '../../core/light';
 import type { Viewport } from '../render/Viewport';
 import type { Obj } from '../types';
 import type { World } from './World';
@@ -8,9 +8,9 @@ const DOWN = new THREE.Vector3(0, -1, 0), FORWARD = new THREE.Vector3(0, 0, -1);
 let areaReady: Promise<void> | null = null; // エリアライトの計算に使う表 (初めて使うときに読む)
 let areaLoaded = false;
 
-// --- ライトのオブジェクト (Cinema 4D のライト): 点光源・スポットライト・エリアライト ---
+// --- ライトのオブジェクト (Blender のライト): ポイント・サン・スポット・エリア ---
 // 物の node の中に、three.js の光と、ビューポートの目印 (選んで運べる。レンダリングでは描かない) を作る。
-// スポットとエリアは、真下から傾けた向き (物の向きで回る) を照らす
+// サン・スポット・エリアは、真下から傾けた向き (物の向きで回る) を照らす。サンは置いた場所によらず、場面全体を同じ向きから照らす
 export class Lights {
   constructor(private world: World, private viewport: Viewport) {}
 
@@ -37,13 +37,28 @@ export class Lights {
     const aim = new THREE.Vector3(...lightAim(s.tiltDeg));
     const gizmoMat = new THREE.MeshBasicMaterial({ color, userData: { outlineBase: { visible: false } } });
     const gizmo = (g: THREE.BufferGeometry) => Object.assign(new THREE.Mesh(g, gizmoMat), { userData: { editorOnly: true } });
+    const power = lightIntensity(s);
     if (s.type === 'point') {
-      const l = new THREE.PointLight(color, s.intensity, s.range, 2);
-      shadow(l, s.shadows);
-      holder.add(l, gizmo(new THREE.SphereGeometry(0.12, 16, 8)));
+      const l = new THREE.PointLight(color, power, s.range, 2);
+      shadow(l, s.shadows, s.radius);
+      holder.add(l, gizmo(new THREE.SphereGeometry(Math.max(0.12, Math.min(s.radius, 1)), 16, 8)));
+    } else if (s.type === 'sun') {
+      // 光は向きだけが効く。影は、ライトのまわり (横 ±12) を、照らす向きから計算する
+      const l = new THREE.DirectionalLight(color, power);
+      l.position.copy(aim).multiplyScalar(-30);
+      shadow(l, s.shadows, s.angleDeg * 4);
+      Object.assign(l.shadow.camera, { left: -12, right: 12, top: 12, bottom: -12, near: 1, far: 30 + s.height * 3 });
+      l.shadow.mapSize.set(2048, 2048);
+      // 目印: 小さな玉と、照らす向きへの線
+      const ray = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), aim.clone().multiplyScalar(1.2)]),
+        new THREE.LineBasicMaterial({ color }));
+      ray.userData.editorOnly = true;
+      ray.raycast = () => {};
+      holder.add(l, l.target, gizmo(new THREE.SphereGeometry(0.16, 16, 8)), ray);
     } else if (s.type === 'spot') {
-      const l = new THREE.SpotLight(color, s.intensity, s.range, s.angleDeg * Math.PI / 180, s.softness, 2);
-      shadow(l, s.shadows);
+      // スポットサイズは円すい全体の角度、ブレンドは縁のぼけ (Blender と同じ)
+      const l = new THREE.SpotLight(color, power, s.range, Math.min(s.spotSizeDeg, 179) / 2 * Math.PI / 180, s.blend, 2);
+      shadow(l, s.shadows, s.radius);
       l.target.position.copy(aim);
       // 目印: 開いた口を照らす向きへ向けた円すい
       const cone = gizmo(new THREE.ConeGeometry(0.14, 0.28, 16, 1, true).translate(0, -0.14, 0).rotateX(Math.PI));
@@ -51,9 +66,10 @@ export class Lights {
       (cone.material as THREE.MeshBasicMaterial).side = THREE.DoubleSide;
       holder.add(l, l.target, cone);
     } else {
-      const l = new THREE.RectAreaLight(color, s.intensity, s.width, s.depth);
+      const [w, h] = areaSize(s);
+      const l = new THREE.RectAreaLight(color, power, w, h);
       l.quaternion.setFromUnitVectors(FORWARD, aim);
-      const panel = gizmo(new THREE.PlaneGeometry(s.width, s.depth));
+      const panel = gizmo(new THREE.PlaneGeometry(w, h));
       panel.quaternion.copy(l.quaternion);
       (panel.material as THREE.MeshBasicMaterial).side = THREE.DoubleSide;
       (panel.material as THREE.MeshBasicMaterial).transparent = true;
@@ -75,8 +91,10 @@ export class Lights {
   }
 }
 
-function shadow(l: THREE.PointLight | THREE.SpotLight, on: boolean) {
+// 影。soft (半径・角度) が大きいほど、影の縁をぼかす
+function shadow(l: THREE.PointLight | THREE.SpotLight | THREE.DirectionalLight, on: boolean, soft: number) {
   l.castShadow = on;
+  l.shadow.radius = 1 + Math.min(soft, 1) * 8;
   l.shadow.mapSize.set(1024, 1024);
   l.shadow.bias = -0.0005;
   l.shadow.normalBias = 0.02;
