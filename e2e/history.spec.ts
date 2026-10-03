@@ -1,6 +1,6 @@
 import { expect, test, type Page } from './fixtures/test';
 import { makeVmd } from './fixtures/vmd';
-import { loadTestModel, open, screenPosOf, type Win } from './helpers';
+import { keyFramesOf, loadTestModel, open, screenPosOf, type Win } from './helpers';
 
 // 元に戻す・やり直し (Ctrl+Z / Ctrl+Shift+Z)
 const history = (page: Page) => page.evaluate(() => (window as Win).engine.ui.state.history);
@@ -47,12 +47,12 @@ test('MMD モデル: キーフレームと削除を戻すと、物理演算と�
   await page.keyboard.press(`${mod}+z`);
   await expect.poll(() => page.evaluate(() => {
     const { engine } = window as Win, m = engine.world.models[0];
-    return m && { keys: [...m.keys.keys()], animated: !!m.animated, physics: engine.physics.entries.length };
+    return m && { keys: [...(m.anim?.bones.values().next().value?.keys() ?? [])], animated: !!m.animated, physics: engine.physics.entries.length };
   }), { timeout: 30_000 }).toEqual({ keys: [0], animated: true, physics: 1 });
   await page.keyboard.press(`${mod}+z`);
-  await expect.poll(() => page.evaluate(() => (window as Win).engine.world.models[0].keys?.size ?? 0)).toBe(0);
+  await expect.poll(() => keyFramesOf(page, 0)).toEqual([]);
   await page.keyboard.press(`${mod}+Shift+z`);
-  await expect.poll(() => page.evaluate(() => (window as Win).engine.world.models[0].keys?.size ?? 0)).toBe(1);
+  await expect.poll(() => keyFramesOf(page, 0)).toEqual([0]);
   // 最初まで戻すとモデルは消え、やり直すと読み直さずに戻る
   await page.keyboard.press(`${mod}+z`);
   await page.keyboard.press(`${mod}+z`);

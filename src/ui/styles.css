@@ -318,3 +318,14 @@ canvas#c.over-box { cursor: pointer; }
 .output-frame { position: absolute; pointer-events: none; box-sizing: border-box; border: 1px dashed rgba(255, 255, 255, 0.45);
                 box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.28); }
 .output-frame-size { position: absolute; right: 4px; bottom: 2px; font-size: 10px; color: rgba(255, 255, 255, 0.6); }
+
+/* 補間曲線 */
+.curve-editor { display: flex; flex-direction: column; gap: 6px; }
+.curve-editor svg { width: 100%; max-width: 220px; align-self: center; touch-action: none; user-select: none; }
+.curve-bg { fill: var(--field); }
+.curve-diag { stroke: #444; stroke-dasharray: 3 3; }
+.curve-arm { stroke: #8a8a8a; stroke-width: 1; }
+.curve-line { fill: none; stroke: var(--select); stroke-width: 2; }
+.curve-handle { fill: #fff; stroke: #222; cursor: grab; }
+.curve-handle:focus-visible { outline: none; stroke: var(--accent); stroke-width: 3; }
+.curve-editor .prop .row { display: flex; gap: 3px; }

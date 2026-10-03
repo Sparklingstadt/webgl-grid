@@ -4,6 +4,7 @@ import { NODE_TYPES } from '../../core/materials/nodes';
 import { surfaceShader } from '../../core/materials/tree';
 import type { OutputSettings } from '../../core/output';
 import { fromBase64, toBase64, type RemoteFile } from '../../core/remote';
+import { keyFrames } from '../../core/animation';
 import type { BoneValue } from '../../core/types';
 import type { Engine } from '../Engine';
 import { projectBaseName } from '../project/ProjectIO';
@@ -60,7 +61,7 @@ export function sceneState(e: Engine) {
       position: [r3(o.x), r3(o.y), r3(o.z)],
       rotationDeg: r3(o.r * DEG),
       ...(isModel(o)
-        ? { motion: o.motionFile?.name ?? null, keyframes: o.keys ? [...o.keys.keys()].sort((a, b) => a - b) : [], hairHang: e.physics.hairHang(o) }
+        ? { motion: o.motionFile?.name ?? null, keyframes: keyFrames(o.anim), hairHang: e.physics.hairHang(o) }
         : { color: PALETTE_NAMES[o.c] }),
       materials: o.slots.map(id => (id ? lib.materials.get(id)?.name ?? null : null)),
     })),
@@ -148,15 +149,18 @@ export const COMMANDS: Record<string, Command> = {
     const obj = modelOf(e, p?.id);
     if (p?.frame !== undefined) e.clock.seekFrame(Number(p.frame));
     e.select(obj);
-    e.insertKey();
-    return { frame: e.clock.frame, keyframes: [...(obj.keys?.keys() ?? [])].sort((a, b) => a - b) };
+    if (p?.bones?.length) {
+      const bones = (p.bones as unknown[]).map(b => boneIndex(obj, b));
+      e.keyframes.insert(obj, e.clock.frame, bones);
+    } else e.insertKey();
+    return { frame: e.clock.frame, keyframes: keyFrames(obj.anim) };
   },
   delete_keyframe: (e, p) => {
     const obj = modelOf(e, p?.id);
     if (p?.frame !== undefined) e.clock.seekFrame(Number(p.frame));
     e.select(obj);
     e.deleteKeyHere();
-    return { keyframes: [...(obj.keys?.keys() ?? [])].sort((a, b) => a - b) };
+    return { keyframes: keyFrames(obj.anim) };
   },
 
   // --- ポーズ・表情 ---

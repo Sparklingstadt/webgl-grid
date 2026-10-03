@@ -4,6 +4,7 @@ import { BONE_MOVE, BONE_ROTATE } from '../../../engine';
 import { useEngine, useUi } from '../../EngineContext';
 import { BSlider } from '../BSlider';
 import { BSelect } from '../controls/BSelect';
+import { CurveEditor } from '../CurveEditor';
 import { Empty, NeedModel, Panel } from './Panel';
 
 // --- ボーン ---
@@ -21,6 +22,8 @@ function BoneEditor({ onLoadPose }: { onLoadPose: () => void }) {
   const sel = engine.boneSel();
   const flags = sel === undefined ? 0 : engine.boneFlags(sel);
   const v = sel === undefined ? null : engine.boneValue(sel);
+  const frame = useUi(s => s.frame);
+  const curve = sel === undefined ? null : engine.keyCurve({ kind: 'bone', index: sel });
   return (
     <>
       <Panel title="ボーン">
@@ -37,8 +40,24 @@ function BoneEditor({ onLoadPose }: { onLoadPose: () => void }) {
             ))}
           </>
         )}
-        <button type="button" className="bbtn" onClick={() => engine.resetPose()}>ポーズを戻す</button>
+        <div className="row">
+          {sel !== undefined && (
+            <button type="button" className="bbtn" onClick={() => engine.insertBoneKey(sel)} title="このボーンだけに、いまのフレームのキーを打つ" aria-label="◆ このボーンにキー">◆ このボーン</button>
+          )}
+          <button type="button" className="bbtn" onClick={() => engine.resetPose()}>ポーズを戻す</button>
+        </div>
       </Panel>
+      {sel !== undefined && (
+        <Panel title="補間曲線">
+          {curve ? (
+            <>
+              <div className="note">フレーム {frame} のキーへの、前のキーからの進み方 (回転と位置)</div>
+              <CurveEditor label="補間曲線" curve={curve} onChange={c => engine.setKeyCurve({ kind: 'bone', index: sel }, c)} />
+              <button type="button" className="bbtn" onClick={() => engine.deleteKeyHere({ kind: 'bone', index: sel })}>このキーを消す</button>
+            </>
+          ) : <Empty>このボーンには、フレーム {frame} のキーがありません。タイムラインの「チャンネル」で ◆ を押すと、そのキーへ移ります</Empty>}
+        </Panel>
+      )}
       <Panel title="ポーズファイル (.vpd)">
         <div className="row">
           <button type="button" className="bbtn" onClick={() => engine.savePose()}>保存</button>

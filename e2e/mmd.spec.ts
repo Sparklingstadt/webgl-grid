@@ -1,6 +1,6 @@
 import { expect, test } from './fixtures/test';
 import { readFile } from 'node:fs/promises';
-import { choose, loadTestModel, open, uiState, type Win } from './helpers';
+import { choose, keyFramesOf, loadTestModel, open, uiState, type Win } from './helpers';
 
 // MMD モデル: 読み込み・表情・ボーン・キーフレーム・ポーズファイル (テスト用に組み立てた小さな PMX を使う)
 const rightArmRz = (page: import('@playwright/test').Page) => page.evaluate(() => {
@@ -64,7 +64,7 @@ test.describe('MMD モデル', () => {
     for (let i = 0; i < 6; i++) await page.keyboard.press('Shift+ArrowRight');
     await page.locator('canvas#c').hover();
     await page.keyboard.press('i');
-    expect(await page.evaluate(() => [...(window as Win).engine.selection.current.keys.keys()])).toEqual([0, 30]);
+    expect(await keyFramesOf(page)).toEqual([0, 30]);
     // フレーム 15 では 30°
     await frameField.fill('15');
     await page.keyboard.press('Enter');
@@ -75,7 +75,47 @@ test.describe('MMD モデル', () => {
     await page.keyboard.press('ArrowUp');
     expect((await uiState(page)).frame).toBe(30);
     await page.keyboard.press('Alt+i');
-    expect(await page.evaluate(() => [...(window as Win).engine.selection.current.keys.keys()])).toEqual([0]);
+    expect(await keyFramesOf(page)).toEqual([0]);
+  });
+
+  test('ボーンごとにキーを打ち、チャンネルの行と補間曲線で進み方を変える', async ({ page }) => {
+    const errors = await open(page);
+    await loadTestModel(page);
+    await page.getByRole('tab', { name: 'ボーン' }).click();
+    await choose(page, '動かすボーン', '右腕');
+    const rz = page.getByRole('slider', { name: '回転 Z' });
+    const frameField = page.getByRole('spinbutton', { name: 'いまのフレーム' });
+    // 右腕だけに 0 と 30 のキー (30 では 60°)
+    await page.getByRole('button', { name: '◆ このボーンにキー' }).click();
+    await frameField.fill('30');
+    await page.keyboard.press('Enter');
+    await rz.focus();
+    for (let i = 0; i < 6; i++) await page.keyboard.press('Shift+ArrowRight');
+    await page.getByRole('button', { name: '◆ このボーンにキー' }).click();
+    expect(await page.evaluate(() => [...(window as Win).engine.selection.current.anim.bones.keys()].length)).toBe(1);
+    // チャンネルの行を出す
+    await page.getByRole('button', { name: /チャンネル/ }).click();
+    expect(await page.evaluate(() => (window as Win).engine.timelineRows().map((r: { label: string }) => r.label))).toEqual(['テスト人形', '右腕']);
+    // フレーム 30 のキーの補間曲線: 直線 → ゆっくり始まる。フレーム 15 の角度が小さくなる
+    const panel = page.getByRole('group', { name: '補間曲線' });
+    await expect(page.getByRole('combobox', { name: '補間曲線の形' })).toHaveText('直線');
+    await frameField.fill('15');
+    await page.keyboard.press('Enter');
+    expect(await rightArmRz(page)).toBeCloseTo(30, 1);
+    await frameField.fill('30');
+    await page.keyboard.press('Enter');
+    await choose(page, '補間曲線の形', 'ゆっくり始まる');
+    await expect(panel).toBeVisible();
+    await frameField.fill('15');
+    await page.keyboard.press('Enter');
+    expect(await rightArmRz(page)).toBeLessThan(20);
+    // 曲線の点は矢印キーでも動く
+    await frameField.fill('30');
+    await page.keyboard.press('Enter');
+    await page.getByRole('slider', { name: '補間曲線の点 1' }).focus();
+    await page.keyboard.press('ArrowUp');
+    expect(await page.evaluate(() => (window as Win).engine.selection.current.anim.bones.values().next().value.get(30).curve)).toEqual([0.42, 0.01, 1, 1]);
+    expect(errors).toEqual([]);
   });
 
   test('ポーズを .vpd に保存し、読み込むと元に戻る', async ({ page }) => {

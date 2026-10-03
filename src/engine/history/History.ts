@@ -1,4 +1,5 @@
 import { Emitter } from '../../core/events';
+import { animationFromJson, animationToJson, isEmpty } from '../../core/animation';
 import { describeChange, type ObjState, type SceneState } from '../../core/history';
 import type { Clock } from '../anim/Clock';
 import type { Keyframes } from '../anim/Keyframes';
@@ -123,11 +124,12 @@ export class History {
     const objects: ObjState[] = this.world.objects.map(o => {
       const st: ObjState = { id: o.id, s: o.s, x: o.x, y: o.y, z: o.z, r: o.r, c: o.c, slots: [...o.slots] };
       if (!isModel(o)) return st;
-      const keyed = !!o.keys?.size;
-      if (!keyed) st.pose = [...(o.pose ?? [])].map(([i, v]) => [i, { ...v }]);
+      // キーのあるボーン・表情の値は、いまのフレームで決まるので入れない
+      const anim = o.anim;
+      st.pose = [...(o.pose ?? [])].filter(([i]) => !anim?.bones.has(i)).map(([i, v]) => [i, { ...v }]);
       const inf: number[] | undefined = o.model.morphTargetInfluences;
-      if (!keyed && !o.animated && inf) st.morphs = Array.from(inf);
-      st.keys = [...(o.keys ?? [])].map(([f, k]) => [f, { pose: [...k.pose].map(([i, v]) => [i, { ...v }]), morphs: k.morphs ? Array.from(k.morphs) : null }]);
+      if (!o.animated && inf) st.morphs = Array.from(inf).map((v, m) => (anim?.morphs.has(m) ? 0 : v));
+      st.anim = isEmpty(anim) ? null : animationToJson(anim!);
       st.hairHang = this.physics.hairHang(o);
       st.motion = o.motionFile?.name ?? null;
       if (o.motionFile) motionFiles.set(o.id, o.motionFile);
@@ -162,10 +164,10 @@ export class History {
         Object.assign(obj, { x: st.x, y: st.y, py: st.y, vy: 0, z: st.z, r: st.r, c: st.c });
         st.slots.forEach((id, k) => { if (obj.slots[k] !== id) world.setSlot(obj, k, id); });
         if (!isModel(obj)) continue;
-        obj.keys = st.keys?.length ? new Map(st.keys.map(([f, k]) => [f, { pose: new Map(k.pose), morphs: k.morphs ? Float32Array.from(k.morphs) : null }])) : null;
+        obj.anim = st.anim ? animationFromJson(st.anim) : null;
         if (st.pose) obj.pose = new Map(st.pose.map(([b, v]) => [b, { ...v }]));
         const inf: number[] | undefined = obj.model.morphTargetInfluences;
-        if (st.morphs && inf) st.morphs.forEach((v, k) => { inf[k] = v; });
+        if (st.morphs && inf) st.morphs.forEach((v, k) => { if (!obj.anim?.morphs.has(k)) inf[k] = v; });
       }
       library.prune(new Set(state.materials.map(m => (m as MaterialData).id)));
       this.clock.setRange(state.range[0], state.range[1]);

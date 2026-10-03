@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
+import { keyFrames } from '../core/animation';
 import { Engine } from './Engine';
 import type { ModelObj } from './types';
 
@@ -88,7 +89,7 @@ describe('キーフレーム', () => {
     obj.pose = new Map([[0, { rx: 0, ry: 0, rz: 90, px: 2, py: 0, pz: 0 }]]);
     obj.model.morphTargetInfluences = [1, 0];
     e.insertKey();
-    expect([...obj.keys!.keys()]).toEqual([0, 300]);
+    expect(keyFrames(obj.anim)).toEqual([0, 300]);
     expect(e.clock.end).toBe(300);
     e.clock.seekFrame(150);
     expect(obj.pose.get(0)!.rz).toBeCloseTo(45);
@@ -100,20 +101,21 @@ describe('キーフレーム', () => {
   it('選んだキーフレームをずらす・消す。いまのフレームのキーを消す', () => {
     const e = new Engine();
     const obj = fakeModel(e);
+    obj.pose = new Map([[0, { rx: 0, ry: 0, rz: 0, px: 0, py: 0, pz: 0 }]]);
     for (const f of [0, 10, 20]) { e.clock.seekFrame(f); e.insertKey(); }
     e.selectKeys([10], false);
     e.moveSelectedKeys(5);
-    expect([...obj.keys!.keys()].sort((a, b) => a - b)).toEqual([0, 15, 20]);
+    expect(keyFrames(obj.anim)).toEqual([0, 15, 20]);
     expect(e.deleteSelectedKeys()).toBe(true);
-    expect([...obj.keys!.keys()].sort((a, b) => a - b)).toEqual([0, 20]);
+    expect(keyFrames(obj.anim)).toEqual([0, 20]);
     e.clock.seekFrame(20);
     e.deleteKeyHere();
-    expect([...obj.keys!.keys()]).toEqual([0]);
+    expect(keyFrames(obj.anim)).toEqual([0]);
   });
 
   it('↑↓ で前後のキーフレームへ飛ぶ', () => {
     const e = new Engine();
-    fakeModel(e);
+    fakeModel(e).pose = new Map([[0, { rx: 0, ry: 0, rz: 0, px: 0, py: 0, pz: 0 }]]);
     for (const f of [5, 40]) { e.clock.seekFrame(f); e.insertKey(); }
     e.clock.seekFrame(0);
     e.jumpKey(1);

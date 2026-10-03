@@ -37,6 +37,15 @@ export async function emptySpot(page: Page) {
   return { x: r.x + 80, y: r.y + r.height * 0.25 };
 }
 
+// モデル (なければ選んでいる物) のキーのあるフレーム (全チャンネルをまとめて)
+export const keyFramesOf = (page: Page, model?: number) => page.evaluate(m => {
+  const { engine } = window as Win;
+  const o = m === undefined ? engine.selection.current : engine.world.models[m];
+  const all = new Set<number>();
+  for (const map of [o?.anim?.bones, o?.anim?.morphs]) for (const keys of map?.values() ?? []) for (const f of keys.keys()) all.add(f);
+  return [...all].sort((a, b) => a - b);
+}, model);
+
 // 選択肢 (アプリ独自のドロップダウン) を開いて選ぶ
 export async function choose(page: Page, name: string, option: string) {
   await page.getByRole('combobox', { name, exact: true }).click();

@@ -32,7 +32,7 @@ core/    純粋な計算とデータ (three.js の数学ライブラリは使っ
 | 視点と入力 | `CameraController` | オービットカメラ・レイ・決まった向き・カメラを外から動かすもの (`CameraOverride`) | SceneGraph, Viewport, UiChannel, World |
 | | `InputController` | ビューポートのマウス・タッチ操作 | 上のものと、`InputActions` (Engine が渡す) |
 | アニメーション | `Clock` | タイムライン (時刻・再生・範囲)。three.js にも画面にも依存しない (`System`) | なし (曲は `TimeSource` として受け取る) |
-| | `Keyframes` | キーフレームの挿入・選択・移動・削除と、モデルへの反映 | World, Posing, Viewport, UiChannel |
+| | `Keyframes` | チャンネル (ボーン・表情) ごとのキーフレームの挿入・選択・移動・削除・補間曲線と、モデルへの反映 (計算は `core/animation.ts`) | World, Posing, Viewport, UiChannel |
 | | `Music` | 曲。`TimeSource` として Clock に再生位置を渡す | UiChannel |
 | MMD | `MmdLoader` | .pmx をメッシュにし、材質をプリンシプル BSDF のマテリアルに変換する (ステージかも見分ける) | UiChannel, MaterialLibrary |
 | | `Physics` | 物理演算 (`System`)・髪の錘を外して垂らす。MMDPhysics は必ず等倍・親なしのモデルの座標で呼ぶ | World, Viewport, UiChannel |

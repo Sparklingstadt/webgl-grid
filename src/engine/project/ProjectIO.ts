@@ -1,4 +1,5 @@
 import { strFromU8 } from 'fflate';
+import { animationFromJson, animationFromPoseKeys, animationToJson, isEmpty } from '../../core/animation';
 import { matchAssets } from '../../core/assetMatch';
 import { FPS } from '../../core/constants';
 import { errorText } from '../../core/errors';
@@ -112,7 +113,7 @@ export class ProjectIO {
         files: filesOf(o.model),
         pose: [...(o.pose ?? [])],
         morphs: inf ? Array.from(inf) : null,
-        keys: [...(o.keys ?? [])].map(([f, k]) => [f, { pose: [...k.pose], morphs: k.morphs ? Array.from(k.morphs) : null }]),
+        anim: isEmpty(o.anim) ? null : animationToJson(o.anim!),
         hairHang: e.physics.hairHang(o) ?? false,
         motion: o.motionFile ? asset(o.motionFile) : null,
         boneSel: o.boneSel,
@@ -238,7 +239,7 @@ export class ProjectIO {
       m.pose = new Map(so.pose);
       const inf: number[] | undefined = m.model.morphTargetInfluences;
       if (inf && so.morphs) so.morphs.forEach((v, k) => { inf[k] = v; });
-      m.keys = so.keys?.length ? new Map(so.keys.map(([f, k]) => [f, { pose: new Map(k.pose), morphs: k.morphs ? Float32Array.from(k.morphs) : null }])) : null;
+      m.anim = so.anim ? animationFromJson(so.anim) : so.keys?.length ? animationFromPoseKeys(so.keys) : null; // (版 1 は変換する)
       m.boneSel = so.boneSel;
       if (so.hairHang) e.physics.setHairHang(m, true);
       e.posing.solve(m);

@@ -1,5 +1,6 @@
 import type * as THREE from 'three';
-import type { BoneValue, PoseKey } from '../core/types';
+import type { Animation } from '../core/animation';
+import type { BoneValue } from '../core/types';
 
 // MMDLoader などの three.js の付属品は、型の付いていない内部の値も使うので any で扱う
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -25,7 +26,7 @@ export interface Obj {
   motion?: MotionInfo | null;
   motionFile?: File;                  // 付けた .vmd (プロジェクトに入れる)
   pose?: Map<number, BoneValue>;      // 手で動かしたボーン
-  keys?: Map<number, PoseKey> | null; // キーフレーム (フレーム番号 → ポーズと表情)
+  anim?: Animation | null;            // キーフレーム (ボーン・表情のチャンネルごと)
   solvers?: { ik: Any; grant: Any };  // IK と付与の計算
   boneSel?: number;                   // サイドバーで選んでいるボーン
   slots: (string | null)[];           // マテリアルスロット (マテリアルの id。なしは null)

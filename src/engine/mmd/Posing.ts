@@ -71,7 +71,7 @@ export class Posing implements System {
   boneFlags(obj: ModelObj, i: number): number { return obj.model.userData.boneFlags?.[i] ?? 0; }
   boneValue(obj: ModelObj, i: number): BoneValue { return obj.pose?.get(i) ?? ZERO_BONE; }
   boneNote(obj: ModelObj, i: number) {
-    if (obj.keys?.size) return 'キーフレームがあるので、フレームを動かすとキーフレームの値に戻ります (「◆ キー挿入」で残せます)';
+    if (obj.anim?.bones.has(i)) return 'このボーンにはキーがあるので、フレームを動かすとキーの値に戻ります (「◆」でキーを打つと残せます)';
     if (obj.animated) return 'モーション再生中は、ここで動かしたボーンがモーションより優先されます';
     return (this.boneFlags(obj, i) & BONE_MOVE) && /ＩＫ|IK/.test(obj.model.skeleton.bones[i].name) ? 'IK を動かすと、つながった骨がついてきます' : '';
   }

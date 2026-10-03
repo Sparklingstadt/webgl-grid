@@ -1,6 +1,7 @@
+import {
+  channelKeys, createAnimation, deleteKeys, evaluate, insertKeys, isEmpty, keyFrames, moveKeys, type Channel, type Curve,
+} from '../../core/animation';
 import { FPS } from '../../core/constants';
-import { interpolateKeys } from '../../core/keyframeMath';
-import type { BoneValue } from '../../core/types';
 import type { Posing } from '../mmd/Posing';
 import type { Viewport } from '../render/Viewport';
 import type { ModelObj } from '../types';
@@ -8,24 +9,25 @@ import type { UiChannel } from '../UiChannel';
 import type { World } from '../world/World';
 
 // --- キーフレーム (Blender の I キー) ---
-// モデルの、いまのポーズ (手で動かしたボーン) と表情を、フレームに記録する。
-// キーフレームのあいだは、回転は球面線形補間、位置と表情は線形補間でつなぐ (core/keyframeMath.ts)
+// モデルのボーンと表情に、チャンネル (ボーン 1 本・表情 1 つ) ごとにキーを打つ (core/animation.ts)。
+// キーのあいだは、補間曲線にそって、回転は球面線形補間・位置と表情は線形補間でつなぐ。
+// タイムラインでは、キーはフレームごとにまとめて選び・ずらし・消す
 export class Keyframes {
-  readonly selected = new Set<number>(); // タイムラインで選んだキーフレーム (選んでいるモデルの)
+  readonly selected = new Set<number>(); // タイムラインで選んだフレーム (選んでいるモデルの)
+  expanded = false; // タイムラインに、チャンネルごとの行を出す
 
   constructor(private world: World, private posing: Posing, private viewport: Viewport, private ui: UiChannel) {}
 
-  insert(obj: ModelObj, frame: number) {
-    const pose = new Map<number, BoneValue>();
-    for (const [i, v] of obj.pose ?? []) pose.set(i, { ...v });
+  // いまのポーズ (手で動かしたボーン) と表情を、フレームに打つ。only を渡すと、そのボーンだけ
+  insert(obj: ModelObj, frame: number, only?: number[]) {
+    obj.anim ??= createAnimation();
     const inf: number[] | undefined = obj.model.morphTargetInfluences;
-    obj.keys ??= new Map();
-    obj.keys.set(frame, { pose, morphs: inf ? Float32Array.from(inf) : null });
+    const n = insertKeys(obj.anim, frame, obj.pose ?? new Map(), inf ?? null, only);
     this.selected.clear();
     this.selected.add(frame);
-    this.ui.bump('keysVersion');
-    this.ui.bump('values');
-    this.ui.toast(`フレーム ${frame} にキーフレームを挿入しました (ボーン ${pose.size} 本と表情)`, 2500);
+    this.changed();
+    const names = only?.map(i => obj.model.skeleton.bones[i]?.name).join('、');
+    this.ui.toast(only ? `フレーム ${frame} に ${names} のキーを打ちました` : `フレーム ${frame} にキーを打ちました (${n} チャンネル)`, 2500);
   }
 
   // frames を選ぶ。add なら今の選択に足す (選んであるものは外す)
@@ -37,64 +39,85 @@ export class Keyframes {
     this.ui.bump('keysVersion');
   }
   clearSelection() { this.selected.clear(); }
+  setExpanded(on: boolean) { this.expanded = on; this.ui.bump('keysVersion'); }
 
-  // 選んだキーフレームを delta フレームずらす (重なった先のキーフレームは上書き)
+  // 選んだフレームのキーを delta フレームずらす (重なった先のキーは上書き)
   moveSelected(obj: ModelObj, delta: number, t: number) {
-    const keys = obj.keys;
-    if (!keys || !delta) return;
-    const moving = [...this.selected].filter(f => keys.has(f)).map(f => [f, keys.get(f)!] as const);
-    for (const [f] of moving) keys.delete(f);
+    if (!obj.anim || !delta) return;
+    const moved = moveKeys(obj.anim, this.selected, delta);
     this.selected.clear();
-    for (const [f, k] of moving) {
-      const nf = Math.max(0, f + delta);
-      keys.set(nf, k);
-      this.selected.add(nf);
-    }
+    for (const f of moved) this.selected.add(f);
     this.applyAll(t, true);
-    this.ui.bump('keysVersion');
+    this.changed();
   }
-  // 選んだキーフレームを削除する。消したら true
+  // 選んだフレームのキーを削除する。消したら true
   deleteSelected(obj: ModelObj, t: number) {
-    const keys = obj.keys;
-    if (!keys || !this.selected.size) return false;
-    const n = [...this.selected].filter(f => keys.delete(f)).length;
+    if (!obj.anim || !this.selected.size) return false;
+    const n = deleteKeys(obj.anim, this.selected);
     this.selected.clear();
-    if (!keys.size) obj.keys = null;
+    if (isEmpty(obj.anim)) obj.anim = null;
     this.applyAll(t, true);
-    this.ui.bump('keysVersion');
-    if (n) this.ui.toast(`キーフレームを ${n} 個削除しました`, 2500);
+    this.changed();
+    if (n) this.ui.toast(`キーを ${n} 個削除しました`, 2500);
     return n > 0;
   }
-  // フレーム frame にあるキーフレームを削除 (Alt+I)
-  deleteAt(obj: ModelObj, frame: number, t: number) {
-    if (!obj.keys?.has(frame)) { this.ui.toast(`フレーム ${frame} にはキーフレームがありません`, 2500); return; }
+  // フレーム frame にあるキーを削除 (Alt+I)。channel を渡すと、そのチャンネルのキーだけ
+  deleteAt(obj: ModelObj, frame: number, t: number, channel?: Channel) {
+    if (!keyFrames(obj.anim).includes(frame)) { this.ui.toast(`フレーム ${frame} にはキーがありません`, 2500); return; }
+    if (channel) {
+      deleteKeys(obj.anim!, [frame], channel);
+      if (isEmpty(obj.anim)) obj.anim = null;
+      this.applyAll(t, true);
+      this.changed();
+      return;
+    }
     this.selected.clear();
     this.selected.add(frame);
     this.deleteSelected(obj, t);
   }
 
-  // 一番後ろのキーフレーム (終了フレームを合わせるため)
+  // チャンネルの、フレーム frame のキーの補間曲線 (キーがなければ null)
+  curve(obj: ModelObj, channel: Channel, frame: number): Curve | null {
+    const k = obj.anim && channelKeys(obj.anim, channel)?.get(frame);
+    return k ? k.curve : null;
+  }
+  setCurve(obj: ModelObj, channel: Channel, frame: number, curve: Curve, t: number) {
+    const k = obj.anim && channelKeys(obj.anim, channel)?.get(frame);
+    if (!k) return;
+    k.curve = [...curve] as Curve;
+    this.applyAll(t, true);
+    this.changed();
+  }
+
+  // 一番後ろのキー (終了フレームを合わせるため)
   lastFrame() {
     let last = 0;
-    for (const o of this.world.models) if (o.keys) last = Math.max(last, ...o.keys.keys());
+    for (const o of this.world.models) last = Math.max(last, ...keyFrames(o.anim));
     return last;
   }
 
-  // キーフレームのあるモデルを、時刻 t (秒) の姿勢にする。
+  // キーのあるモデルを、時刻 t (秒) の姿勢にする。チャンネルのないボーン・表情はそのまま。
   // force でなければ、サイドバーの描き直しは間引く (再生中は毎フレーム呼ばれるので)
   applyAll(t: number, force = false) {
     let any = false;
     for (const obj of this.world.models) {
-      if (!obj.keys?.size) continue;
-      const { pose, morphs } = interpolateKeys(obj.keys, t * FPS);
+      if (isEmpty(obj.anim)) continue;
+      const { pose, morphs } = evaluate(obj.anim!, t * FPS);
+      // 手で動かしたが、まだキーのないボーンは残す (キーを打つまで)
+      for (const [b, v] of obj.pose ?? []) if (!obj.anim!.bones.has(b)) pose.set(b, v);
       obj.pose = pose;
       const inf: number[] | undefined = obj.model.morphTargetInfluences;
-      if (inf && morphs) for (let m = 0; m < inf.length; m++) inf[m] = morphs[m];
+      if (inf) for (const [m, v] of morphs) inf[m] = v;
       any = true;
       if (!obj.animated) this.posing.solve(obj); // モーションのあるモデルは、毎フレームのモーションのあとに当てる
     }
     if (!any) return;
     if (force) this.ui.bump('values'); else this.ui.bumpValuesThrottled();
     this.viewport.requestDraw();
+  }
+
+  private changed() {
+    this.ui.bump('keysVersion');
+    this.ui.bump('values');
   }
 }

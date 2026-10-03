@@ -4,8 +4,9 @@ import { useEngine, useUi } from '../EngineContext';
 import { NumField } from './NumField';
 
 // Blender のタイムライン: 上の目盛りで再生位置 (青い再生ヘッド) を動かし、下にキーフレームの ◆ を並べる。
-// ◆ はクリックで選び (Shift で追加)、左右にドラッグでずらす。ホイールで拡大縮小、Shift+ホイールで左右に動かす
-const RULER = 24, ROW_Y = RULER + 6, ROW_H = 22, KEY_R = 6;
+// ◆ はクリックで選び (Shift で追加)、左右にドラッグでずらす。ホイールで拡大縮小、Shift+ホイールで左右に動かす。
+// 「チャンネル」を押すと、モデルの行の下にボーン・表情ごとの行を出す (左端の名前の上でホイールすると上下に動く)
+const RULER = 24, ROW_Y = RULER + 6, ROW_H = 22, KEY_R = 6, LABEL_W = 140;
 
 export function Timeline({ open, typeSelect }: { open: boolean; typeSelect: React.ReactNode }) {
   const engine = useEngine();
@@ -20,6 +21,8 @@ export function Timeline({ open, typeSelect }: { open: boolean; typeSelect: Reac
   // 見えている範囲 (フレーム)。自分で拡大・移動するまでは、開始〜終了がちょうど入るように合わせる
   const view = useRef({ f0: -10, f1: 260, user: false });
   const keyDrag = useRef<{ x: number; delta: number } | null>(null);
+  const scrollRows = useRef(0); // 上に隠れている行の数
+  const expanded = engine.keyframes.expanded; // (切り替えると keysVersion が進むので、描き直される)
   const scrub = useRef<number | null>(null);
   const state = useRef({ frame, start, end });
   state.current = { frame, start, end };
@@ -65,8 +68,11 @@ export function Timeline({ open, typeSelect }: { open: boolean; typeSelect: Reac
       ctx.fillStyle = '#a8a8a8';
       ctx.fillText(String(f), px, RULER / 2);
     }
-    // 行: 選んでいる物 (キーフレームとモーション) とカメラ
-    const rows = engine.timelineRows();
+    // 行: 選んでいる物 (キーフレームとモーション)・チャンネルとカメラ (はみ出す分は上下に動かして見る)
+    const all = engine.timelineRows();
+    const fit = Math.max(Math.floor((H - ROW_Y) / ROW_H), 1);
+    scrollRows.current = Math.min(Math.max(scrollRows.current, 0), Math.max(all.length - fit, 0));
+    const rows = all.slice(scrollRows.current);
     const selKeys = engine.keyframes.selected;
     const kd = keyDrag.current;
     const diamond = (cx: number, cy: number, r: number) => {
@@ -79,7 +85,7 @@ export function Timeline({ open, typeSelect }: { open: boolean; typeSelect: Reac
     };
     rows.forEach((row, i) => {
       const y = ROW_Y + i * ROW_H, cy = y + ROW_H / 2;
-      ctx.fillStyle = i % 2 ? 'rgba(255, 255, 255, 0.025)' : 'rgba(255, 255, 255, 0.045)';
+      ctx.fillStyle = row.channel ? 'rgba(0, 0, 0, 0.12)' : i % 2 ? 'rgba(255, 255, 255, 0.025)' : 'rgba(255, 255, 255, 0.045)';
       ctx.fillRect(0, y, W, ROW_H);
       // モーション (VMD) のキーフレームは小さな灰色の ◆ (編集はできない)
       if (row.motion) {
@@ -97,18 +103,24 @@ export function Timeline({ open, typeSelect }: { open: boolean; typeSelect: Reac
         const sel = selKeys.has(f);
         const px = x(f + (sel && kd ? kd.delta : 0));
         if (px < -KEY_R || px > W + KEY_R) continue;
-        diamond(px, cy, KEY_R);
+        diamond(px, cy, row.channel ? KEY_R - 1.5 : KEY_R);
         ctx.fillStyle = sel ? '#ffbe33' : '#e8e8e8';
         ctx.fill();
         ctx.strokeStyle = '#111';
         ctx.lineWidth = 1;
         ctx.stroke();
       }
-      ctx.fillStyle = 'rgba(230, 230, 230, 0.55)';
+      ctx.fillStyle = row.channel ? 'rgba(200, 200, 200, 0.5)' : 'rgba(230, 230, 230, 0.55)';
       ctx.textAlign = 'left';
-      ctx.fillText(row.label, 6, cy);
+      ctx.fillText(row.label, row.channel ? 18 : 6, cy);
       ctx.textAlign = 'center';
     });
+    if (all.length > fit) {
+      // 上下に動かせることを、右端の細いつまみで見せる
+      const trackH = H - ROW_Y, h = Math.max(trackH * fit / all.length, 12);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
+      ctx.fillRect(W - 4, ROW_Y + (trackH - h) * scrollRows.current / (all.length - fit), 3, h);
+    }
     if (!rows.length) {
       ctx.fillStyle = 'rgba(230, 230, 230, 0.4)';
       ctx.textAlign = 'left';
@@ -129,7 +141,7 @@ export function Timeline({ open, typeSelect }: { open: boolean; typeSelect: Reac
 
   // 開始・終了が変わったら合わせ直す (自分で拡大・移動していなければ)
   useEffect(() => { if (!view.current.user) fit(); draw(); }, [start, end, fit, draw]);
-  useEffect(() => { draw(); }, [frame, keysVersion, isModel, open, draw]);
+  useEffect(() => { draw(); }, [frame, keysVersion, isModel, open, expanded, draw]);
   useEffect(() => {
     const canvas = canvasRef.current!;
     const ro = new ResizeObserver(draw);
@@ -138,6 +150,12 @@ export function Timeline({ open, typeSelect }: { open: boolean; typeSelect: Reac
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       const v = view.current, W = canvas.clientWidth, span = v.f1 - v.f0;
+      // 左端の名前の上: 行を上下に動かす
+      if (e.clientX - canvas.getBoundingClientRect().left < LABEL_W && Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+        scrollRows.current += Math.sign(e.deltaY);
+        draw();
+        return;
+      }
       if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
         const d = (e.shiftKey ? e.deltaY : e.deltaX) / W * span;
         v.f0 += d; v.f1 += d;
@@ -167,7 +185,7 @@ export function Timeline({ open, typeSelect }: { open: boolean; typeSelect: Reac
     // ◆ を押したら選んでドラッグ。それ以外は再生位置を動かす
     if (y > ROW_Y) {
       const rows = engine.timelineRows();
-      const i = Math.floor((y - ROW_Y) / ROW_H);
+      const i = Math.floor((y - ROW_Y) / ROW_H) + scrollRows.current;
       const row = rows[i];
       if (row?.editable) {
         const ppf = W / (view.current.f1 - view.current.f0);
@@ -178,6 +196,11 @@ export function Timeline({ open, typeSelect }: { open: boolean; typeSelect: Reac
         }
         if (hit !== null) {
           if (e.shiftKey || !engine.keyframes.selected.has(hit)) engine.selectKeys([hit], e.shiftKey);
+          // チャンネルの ◆: そのボーンを選んで、そのフレームへ (サイドバーで補間曲線を変えられる)
+          if (row.channel) {
+            if (row.channel.kind === 'bone') engine.setBoneSel(row.channel.index);
+            clock.seekFrame(hit, 5);
+          }
           keyDrag.current = { x, delta: 0 };
           draw();
           return;
@@ -219,6 +242,8 @@ export function Timeline({ open, typeSelect }: { open: boolean; typeSelect: Reac
                   title="選んだモデルのいまのポーズと表情を、このフレームのキーフレームにする (I)">◆ キー挿入</button>
           <button type="button" className="hbtn" disabled={!isModel} onClick={() => engine.deleteSelectedKeys()}
                   title="選んだキーフレームを削除 (タイムライン上で X)">キー削除</button>
+          <button type="button" className="hbtn" disabled={!isModel} aria-pressed={expanded} onClick={() => engine.keyframes.setExpanded(!expanded)}
+                  title="ボーン・表情ごとのキーの行を出す">{expanded ? '▾' : '▸'} チャンネル</button>
         </div>
         <div className="transport" role="group" aria-label="再生">
           <button type="button" onClick={() => clock.jumpToStart()} title="最初のフレームへ (Shift ←)" aria-label="最初のフレームへ">

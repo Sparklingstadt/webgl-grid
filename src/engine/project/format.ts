@@ -1,4 +1,5 @@
 import { strFromU8, strToU8, unzip, zip, type AsyncZippable } from 'fflate';
+import type { AnimationJson } from '../../core/animation';
 import type { NodeTree } from '../../core/materials/tree';
 import type { OutputSettings } from '../../core/output';
 import type { BoneValue } from '../../core/types';
@@ -10,7 +11,7 @@ import type { MaterialOutline, MaterialSettings, MmdSource } from '../materials/
 //   .wgpj … JSON だけ。ファイルは名前・大きさ (と分かれば元のパス) で参照するだけなので小さい。
 //            開くときに、参照しているファイルを探す (同じページで読んだもの → 選んでもらう)
 export const PROJECT_FORMAT = 'webgl-grid-project';
-export const PROJECT_VERSION = 1;
+export const PROJECT_VERSION = 2; // 2: キーフレームをチャンネルごとに
 export type ProjectStorage = 'embedded' | 'reference';
 export const PROJECT_EXT: Record<ProjectStorage, string> = { embedded: 'wgp', reference: 'wgpj' };
 
@@ -31,7 +32,8 @@ export interface SavedObject {
   files?: string[];
   pose?: Pose;
   morphs?: number[] | null;
-  keys?: [number, { pose: Pose; morphs: number[] | null }][];
+  anim?: AnimationJson | null; // キーフレーム (チャンネルごと。版 2 から)
+  keys?: [number, { pose: Pose; morphs: number[] | null }][]; // 版 1 のキーフレーム (フレームごとのポーズ全体。開くときに変換する)
   hairHang?: boolean;
   motion?: string | null;
   boneSel?: number;

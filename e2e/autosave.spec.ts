@@ -3,7 +3,7 @@ import { loadTestModel, open, type Win } from './helpers';
 
 // 自動保存: 編集すると少しあとにブラウザの中へ保存され、開き直すと「前回の続き」から開ける
 const scene = (page: Page) => page.evaluate(() => (window as Win).engine.world.objects.map((o: Win) => ({
-  s: o.s, x: o.x, z: o.z, keys: o.keys ? [...o.keys.keys()] : null, name: o.model?.name ?? null,
+  s: o.s, x: o.x, z: o.z, keys: o.anim ? [...o.anim.bones.keys()] : null, name: o.model?.name ?? null,
 })));
 
 test('編集して開き直すと、前回の続き (モデル・キーフレームも) を開ける', async ({ page }) => {

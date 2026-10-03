@@ -1,3 +1,4 @@
+import { channelKeys, keyFrames, type Channel, type Curve } from '../core/animation';
 import { FPS, SHAPE_NAMES } from '../core/constants';
 import { errorText } from '../core/errors';
 import { patchPmxMaterials } from '../core/pmxMaterials';
@@ -31,8 +32,8 @@ import { ColorPicker } from './world/ColorPicker';
 import { Selection } from './world/Selection';
 import { World } from './world/World';
 
-// タイムラインに並べる行: 選んでいる物 (モデルならキーフレームとモーション) と、カメラモーション
-export interface TlRow { label: string; keys: number[]; motion: Int32Array | null; editable: boolean }
+// タイムラインに並べる行: 選んでいる物 (モデルならキーフレームとモーション)・そのチャンネル (広げたとき) と、カメラモーション
+export interface TlRow { label: string; keys: number[]; motion: Int32Array | null; editable: boolean; channel?: Channel }
 
 const isAudio = (f: File) => f.type.startsWith('audio/') || /\.(mp3|wav|ogg|oga|m4a|aac|flac|opus)$/i.test(f.name);
 
@@ -310,10 +311,28 @@ export class Engine {
     const obj = this.model;
     if (!obj) { this.ui.toast('キーフレームを打つ MMD モデルをクリックして選んでください。'); return; }
     const f = this.clock.frame;
-    this.keyframes.insert(obj, f);
+    // まだ何も動かしていない (キーもない) ときは、サイドバーで選んでいるボーンに打つ
+    const inf: number[] | undefined = obj.model.morphTargetInfluences;
+    const nothing = !obj.pose?.size && !keyFrames(obj.anim).length && !inf?.some(v => v !== 0);
+    if (nothing) {
+      const sel = this.posing.boneSel(obj);
+      if (sel === undefined) { this.ui.toast('キーを打つボーンがありません。ボーンか表情を動かしてから打ってください'); return; }
+      this.keyframes.insert(obj, f, [sel]);
+    } else this.keyframes.insert(obj, f);
     if (f > this.clock.end) this.clock.setRange(this.clock.start, f);
   }
-  deleteKeyHere() { if (this.model) this.keyframes.deleteAt(this.model, this.clock.frame, this.clock.t); }
+  // 選んでいるボーンだけに、いまのフレームのキーを打つ
+  insertBoneKey(bone: number) {
+    const obj = this.model;
+    if (!obj) return;
+    const f = this.clock.frame;
+    this.keyframes.insert(obj, f, [bone]);
+    if (f > this.clock.end) this.clock.setRange(this.clock.start, f);
+  }
+  deleteKeyHere(channel?: Channel) { if (this.model) this.keyframes.deleteAt(this.model, this.clock.frame, this.clock.t, channel); }
+  // 選んでいるモデルの、チャンネルのいまのフレームのキーの補間曲線 (キーがなければ null)
+  keyCurve(channel: Channel) { return this.model ? this.keyframes.curve(this.model, channel, this.clock.frame) : null; }
+  setKeyCurve(channel: Channel, curve: Curve) { if (this.model) this.keyframes.setCurve(this.model, channel, this.clock.frame, curve, this.clock.t); }
   deleteSelectedKeys() { return this.model ? this.keyframes.deleteSelected(this.model, this.clock.t) : false; }
   moveSelectedKeys(delta: number) { if (this.model) this.keyframes.moveSelected(this.model, delta, this.clock.t); }
   selectKeys(frames: number[], add: boolean) { this.keyframes.select(frames, add); }
@@ -323,8 +342,20 @@ export class Engine {
     const rows: TlRow[] = [];
     const obj = this.selection.current;
     if (this.model) {
-      const m = this.model;
-      rows.push({ label: m.model.name || 'モデル', keys: [...(m.keys?.keys() ?? [])].sort((a, b) => a - b), motion: m.motion?.frames ?? null, editable: true });
+      const m = this.model, anim = m.anim;
+      rows.push({ label: m.model.name || 'モデル', keys: keyFrames(anim), motion: m.motion?.frames ?? null, editable: true });
+      if (anim && this.keyframes.expanded) {
+        const sorted = (ch: Channel) => [...channelKeys(anim, ch)!.keys()].sort((a, b) => a - b);
+        const morphName = new Map(this.posing.morphs(m).map(x => [x.index, x.name]));
+        for (const b of [...anim.bones.keys()].sort((a, b) => a - b)) {
+          const ch: Channel = { kind: 'bone', index: b };
+          rows.push({ label: m.model.skeleton.bones[b]?.name ?? `ボーン ${b}`, keys: sorted(ch), motion: null, editable: true, channel: ch });
+        }
+        for (const i of [...anim.morphs.keys()].sort((a, b) => a - b)) {
+          const ch: Channel = { kind: 'morph', index: i };
+          rows.push({ label: `表情: ${morphName.get(i) ?? i}`, keys: sorted(ch), motion: null, editable: true, channel: ch });
+        }
+      }
     } else if (obj) {
       rows.push({ label: SHAPE_NAMES[obj.s], keys: [], motion: null, editable: false });
     }
