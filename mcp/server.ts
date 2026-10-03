@@ -82,6 +82,17 @@ forward('set_object', '物の位置・向き・色を変える (重なる位置�
   color: z.union([z.number().int().min(0).max(7), z.string()]).optional(),
 });
 forward('delete_object', '物を消す', { id });
+const vec3 = z.array(z.number()).length(3);
+forward('set_cloner', 'クローナー (Cinema 4D のクローナー): 物を直線・放射・グリッドに並べる。元の物の位置と向きが中心。MMD モデルは全部が同じ動きで踊る。省いた設定は今のまま。off: true でやめる', {
+  id, off: z.boolean().optional(),
+  mode: z.enum(['linear', 'radial', 'grid']).optional(),
+  count: z.number().int().min(1).optional().describe('直線・放射の数'),
+  step: vec3.optional().describe('直線: 1 つごとのずれ [x, y, z]'), stepRotDeg: z.number().optional().describe('直線: 1 つごとの回転 (度)'),
+  radius: z.number().min(0).optional(), startDeg: z.number().optional(), endDeg: z.number().optional(), align: z.boolean().optional().describe('放射: 外を向く'),
+  grid: vec3.optional().describe('グリッドの数 [x, y, z]'), spacing: vec3.optional().describe('グリッドの間隔 [x, y, z]'),
+  random: z.object({ position: z.number().min(0).optional(), rotationDeg: z.number().min(0).optional(), seed: z.number().int().optional() }).optional().describe('ばらつき'),
+});
+forward('bake_cloner', '形のクローナーのクローンを、1 つずつの物にする (Cinema 4D の「現在の状態をオブジェクト化」)', { id });
 forward('reset_scene', '最初の状態 (立方体 1 個) に戻す', {});
 
 // ファイル

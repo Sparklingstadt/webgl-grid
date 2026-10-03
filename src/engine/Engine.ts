@@ -1,5 +1,6 @@
 import { channelKeys, keyFrames, type Channel, type Curve } from '../core/animation';
-import { FPS, SHAPE_NAMES } from '../core/constants';
+import { MAX_CLONES, clonerLayout, normalizeCloner, type ClonerSettings } from '../core/cloner';
+import { FPS, MAX_BOXES, SHAPE_NAMES } from '../core/constants';
 import { errorText } from '../core/errors';
 import { patchPmxMaterials } from '../core/pmxMaterials';
 import type { BoneValue } from '../core/types';
@@ -28,6 +29,7 @@ import type { ModelObj, Obj } from './types';
 import { UiChannel } from './UiChannel';
 import { CameraController } from './view/CameraController';
 import { InputController } from './view/InputController';
+import { Cloners } from './world/Cloners';
 import { ColorPicker } from './world/ColorPicker';
 import { Selection } from './world/Selection';
 import { World } from './world/World';
@@ -48,6 +50,7 @@ export class Engine {
   readonly library = new MaterialLibrary();
   readonly world = new World(this.graph, this.viewport, this.ui, this.library);
   readonly selection = new Selection(this.world, this.ui);
+  readonly cloners = new Cloners(this.world, this.viewport);
   readonly materials = new MaterialEditor(this.library, this.world, this.selection, this.ui);
   readonly picker = new ColorPicker(this.world, this.viewport, this.ui);
   readonly camera = new CameraController(this.graph, this.viewport, this.ui, this.world);
@@ -64,7 +67,7 @@ export class Engine {
   readonly effects = new Effects(this.viewport, this.ui, () => this.camera.focusPoint());
   readonly loader = new MmdLoader(this.ui, this.library, () => this.viewport.requestDraw());
   readonly vpd = new VpdIO(this.posing, this.viewport, this.ui);
-  readonly history = new History(this.world, this.library, this.physics, this.motion, this.posing, this.keyframes, this.clock, this.selection, this.viewport, this.ui);
+  readonly history = new History(this.world, this.library, this.physics, this.motion, this.posing, this.keyframes, this.clock, this.selection, this.viewport, this.ui, this.cloners);
   readonly project = new ProjectIO(this);
   readonly autosave = new Autosave(this.project, this.history, this.ui);
   readonly remote = new RemoteLink(this);
@@ -172,6 +175,39 @@ export class Engine {
     this.world.settle();
     this.viewport.requestDraw();
   }
+  // --- クローナー (Cinema 4D のクローナー) ---
+  // 選んでいる物をクローナーにする・設定を変える (patch は今の設定に重ねる。null でやめる)
+  setCloner(patch: Partial<ClonerSettings> | null) {
+    const o = this.selection.current;
+    if (!o) return;
+    const next = patch === null ? null : normalizeCloner({ ...o.cloner, ...patch, random: { ...o.cloner?.random, ...patch.random } as ClonerSettings['random'] });
+    this.cloners.set(o, next);
+    this.selection.publish();
+  }
+  // クローンを、1 つずつの物にする (Cinema 4D の「現在の状態をオブジェクト化」)。形だけ。マテリアルは元の物と共有する
+  bakeCloner() {
+    const o = this.selection.current;
+    if (!o?.cloner) return;
+    if (o.s === 3) { this.ui.toast('MMD モデルのクローンは、1 つずつの物にはできません'); return; }
+    const layout = clonerLayout(o.cloner, MAX_CLONES.shape).sort((a, b) => a.y - b.y); // 下の段から置く (上の段は積み重なる)
+    const room = MAX_BOXES - this.world.objects.length + 1;
+    if (layout.length > room) { this.ui.toast(`置ける物は ${MAX_BOXES} 個までなので、クローン ${layout.length} 個を 1 つずつの物にはできません (あと ${room} 個まで)`, 6000); return; }
+    const { x, z, r } = o, cos = Math.cos(r), sin = Math.sin(r), slot = o.slots[0];
+    // 元の物の向きで回してから、元の物の位置へ。最初のクローンには元の物を使う (マテリアルを手放さないように)
+    const at = (p: { x: number; z: number }) => [x + p.x * cos + p.z * sin, z - p.x * sin + p.z * cos];
+    this.cloners.set(o, null);
+    layout.forEach((p, i) => {
+      const obj = i === 0 ? o : this.world.addShape(o.s, 0, 0, o.c);
+      if (i > 0) this.world.setSlot(obj, 0, slot);
+      [obj.x, obj.z] = at(p);
+      obj.r = r + p.ry;
+    });
+    this.world.settle();
+    this.selection.select(o);
+    this.ui.toast(`クローン ${layout.length} 個を、1 つずつの物にしました`);
+    this.viewport.requestDraw();
+  }
+
   setObjColor(c: number) {
     const o = this.selection.current;
     if (!o || o.s === 3) return;

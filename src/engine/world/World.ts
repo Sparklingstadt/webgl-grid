@@ -104,6 +104,7 @@ export class World implements System {
     proxy.scale.copy(mesh.scale);
     proxy.visible = false;
     proxy.castShadow = false;
+    proxy.userData.pickProxy = true;
     obj.node.add(proxy);
     mesh.traverse((o: Any) => { if (o.isMesh) o.raycast = () => {}; });
     this.dropIn(obj);

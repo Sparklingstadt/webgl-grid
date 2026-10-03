@@ -329,3 +329,9 @@ canvas#c.over-box { cursor: pointer; }
 .curve-handle { fill: #fff; stroke: #222; cursor: grab; }
 .curve-handle:focus-visible { outline: none; stroke: var(--accent); stroke-width: 3; }
 .curve-editor .prop .row { display: flex; gap: 3px; }
+
+/* クローナー */
+.prop.cloner .row { display: flex; gap: 3px; min-width: 0; }
+.prop.cloner .row .bnum { flex: 1; }
+details.sub { margin-top: 4px; }
+details.sub > summary { cursor: pointer; color: var(--dim); font-size: 11px; padding: 2px 0; }

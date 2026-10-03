@@ -1,10 +1,12 @@
 import type { AnimationJson } from './animation';
+import type { ClonerSettings } from './cloner';
 import type { BoneValue } from './types';
 
 // --- 元に戻す・やり直し: 場面の写し (three.js にも画面にも依存しない形) と、何が変わったかの名前 ---
 export interface ObjState {
   id: number; s: number; x: number; y: number; z: number; r: number; c: number;
   slots: (string | null)[];
+  cloner?: ClonerSettings | null;
   // MMD モデルだけ。pose・morphs は、キーやモーションから決まるもの (再生で変わる) を除く
   pose?: [number, BoneValue][];
   morphs?: number[];
@@ -23,6 +25,7 @@ export function describeChange(prev: SceneState, next: SceneState): string {
   const pairs = next.objects.map(o => [before.get(o.id)!, o] as const);
   const changed = (k: keyof ObjState) => pairs.some(([a, b]) => JSON.stringify(a[k]) !== JSON.stringify(b[k]));
   if (changed('anim')) return 'キーフレーム';
+  if (changed('cloner')) return 'クローナー';
   if (changed('x') || changed('z')) return '移動';
   if (changed('r')) return '回転';
   if (changed('c')) return '色';

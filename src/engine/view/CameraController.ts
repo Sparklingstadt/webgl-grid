@@ -165,7 +165,10 @@ export class CameraController {
     const { raycaster } = this;
     raycaster.ray.origin.fromArray(ro);
     raycaster.ray.direction.fromArray(rd);
-    const hit = raycaster.intersectObjects(this.world.objects.map(b => b.node), true)[0];
+    const nodes = this.world.objects.map(b => b.node);
+    // 置き直した直後 (まだ描いていない) でも当たるよう、位置を最新にしてから調べる (描くときにも同じ計算をする)
+    for (const n of nodes) n.updateMatrixWorld();
+    const hit = raycaster.intersectObjects(nodes, true)[0];
     if (!hit) return null;
     let o: THREE.Object3D | null = hit.object;
     while (o && !o.userData.obj) o = o.parent;

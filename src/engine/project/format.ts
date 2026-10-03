@@ -1,5 +1,6 @@
 import { strFromU8, strToU8, unzip, zip, type AsyncZippable } from 'fflate';
 import type { AnimationJson } from '../../core/animation';
+import type { ClonerSettings } from '../../core/cloner';
 import type { NodeTree } from '../../core/materials/tree';
 import type { OutputSettings } from '../../core/output';
 import type { BoneValue } from '../../core/types';
@@ -28,6 +29,7 @@ export interface SavedObject {
   s: number; x: number; y: number; z: number; r: number; c: number;
   slots: (string | null)[];
   activeSlot?: number;
+  cloner?: ClonerSettings | null; // クローナー
   // MMD モデルだけ
   files?: string[];
   pose?: Pose;

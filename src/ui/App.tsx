@@ -86,7 +86,8 @@ export default function App() {
           <ViewportArea sideOpen={sideOpen} toggleSide={toggleSide} tlOpen={tlOpen} toggleTl={() => setTlOpen(o => !o)}
                         sideTab={sideTab} setSideTab={setSideTab} onOpenFiles={openFiles} onLoadPose={openPose}
                         onOpenShaderEditor={() => showEditor('shader')}
-                        onViewportPointerDown={() => { if (isNarrow()) setSideOpen(false); }} />
+                        onViewportPointerDown={() => { if (isNarrow()) setSideOpen(false); }}
+                        showObjectTab={() => { setSideTab('object'); setSideOpen(true); }} />
         </div>
         <div className="area-resizer" role="separator" aria-orientation="horizontal" aria-label="下の領域の高さ"
              onPointerDown={e => {

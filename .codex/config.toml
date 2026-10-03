@@ -1,0 +1,3 @@
+[mcp_servers.webgl-grid]
+command = "node"
+args = ["mcp/server.ts"]

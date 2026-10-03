@@ -1,6 +1,7 @@
 import { strFromU8 } from 'fflate';
 import { animationFromJson, animationFromPoseKeys, animationToJson, isEmpty } from '../../core/animation';
 import { matchAssets } from '../../core/assetMatch';
+import { normalizeCloner } from '../../core/cloner';
 import { FPS } from '../../core/constants';
 import { errorText } from '../../core/errors';
 import { normalizeOutput } from '../../core/output';
@@ -105,7 +106,7 @@ export class ProjectIO {
     };
     const filesOf = (mesh: Any): string[] => [...(mesh.userData.usedFiles ?? [mesh.userData.sourceFile])].map(asset);
     const objects: SavedObject[] = e.world.objects.map(o => {
-      const base: SavedObject = { kind: o.s === 3 ? 'model' : 'shape', s: o.s, x: o.x, y: o.y, z: o.z, r: o.r, c: o.c, slots: [...o.slots], activeSlot: o.activeSlot };
+      const base: SavedObject = { kind: o.s === 3 ? 'model' : 'shape', s: o.s, x: o.x, y: o.y, z: o.z, r: o.r, c: o.c, slots: [...o.slots], activeSlot: o.activeSlot, cloner: o.cloner ?? null };
       if (o.s !== 3) return base;
       const inf: number[] | undefined = o.model.morphTargetInfluences;
       return {
@@ -226,6 +227,7 @@ export class ProjectIO {
     data.objects.forEach((so, i) => {
       const obj = objs[i];
       if (obj) so.slots.forEach((id, k) => e.world.setSlot(obj, k, id ? matId.get(id) ?? null : null));
+      if (obj && so.cloner) e.cloners.set(obj, normalizeCloner(so.cloner)); // クローナー
     });
     // 作り直すときに変換したマテリアル (もう使っていない) を片付けてから、保存した名前に戻す
     for (const id of [...lib.materials.keys()]) if (![...matId.values()].includes(id)) lib.remove(id);

@@ -12,7 +12,7 @@ import { RecoverBanner } from './Overlays';
 export function ViewportArea(props: {
   sideOpen: boolean; toggleSide: () => void; tlOpen: boolean; toggleTl: () => void;
   sideTab: SideTab; setSideTab: (t: SideTab) => void; onOpenFiles: () => void; onLoadPose: () => void; onOpenShaderEditor: () => void;
-  onViewportPointerDown: () => void;
+  onViewportPointerDown: () => void; showObjectTab: () => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -53,6 +53,9 @@ export function ViewportArea(props: {
         <Menu id="object" label="オブジェクト">
           <MenuItem label="削除" kbd="X" disabled={!sel} onSelect={() => engine.deleteSelected()} />
           <MenuItem label="選択を解除" kbd="Alt A" disabled={!sel} onSelect={() => engine.select(null)} />
+          <MenuSep />
+          <MenuItem label={sel?.cloner ? 'クローナーをやめる' : 'クローナーにする'} disabled={!sel}
+                    onSelect={() => { engine.setCloner(sel?.cloner ? null : {}); props.showObjectTab(); }} />
           <MenuSep />
           <MenuItem label="キーフレームを挿入" kbd="I" disabled={sel?.kind !== 'model'} onSelect={() => engine.insertKey()} />
         </Menu>

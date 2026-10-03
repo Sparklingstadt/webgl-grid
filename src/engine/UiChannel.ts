@@ -1,3 +1,4 @@
+import type { ClonerSettings } from '../core/cloner';
 import { TL_DEFAULT_END } from '../core/constants';
 import { OUTPUT_DEFAULT, type OutputSettings } from '../core/output';
 import { createStore, type Store } from '../core/store';
@@ -8,6 +9,7 @@ import { FX_LEVEL_DEFAULT, type FxLevel, type FxState } from './render/postfx';
 export interface SelInfo {
   id: number; kind: 'shape' | 'model'; name: string; c: number;
   x: number; y: number; z: number; r: number; animated: boolean;
+  cloner: ClonerSettings | null; // クローナーの設定 (なければ普通の物)
 }
 export interface UiState {
   mode: 'orbit' | 'pan';

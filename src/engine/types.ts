@@ -1,5 +1,6 @@
 import type * as THREE from 'three';
 import type { Animation } from '../core/animation';
+import type { ClonerSettings } from '../core/cloner';
 import type { BoneValue } from '../core/types';
 
 // MMDLoader などの three.js の付属品は、型の付いていない内部の値も使うので any で扱う
@@ -31,6 +32,7 @@ export interface Obj {
   boneSel?: number;                   // サイドバーで選んでいるボーン
   slots: (string | null)[];           // マテリアルスロット (マテリアルの id。なしは null)
   activeSlot?: number;                // サイドバーで選んでいるスロット
+  cloner?: ClonerSettings | null;     // クローナー (並べ方。なければ普通の物)
   highlighted?: boolean;              // 掴んでいるので明るくしている
 }
 export type ModelObj = Obj & { model: Any };
