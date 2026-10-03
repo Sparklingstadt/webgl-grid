@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { OUTPUT_DEFAULT, clampOutputSize, frameSpan, normalizeOutput, outputFileName, presetIndex } from './output';
+import { OUTPUT_DEFAULT, clampOutputSize, frameSpan, normalizeOutput, outputFileName, outputFrame, presetIndex, scaleFov } from './output';
 
 describe('出力の設定', () => {
   it('大きさは偶数にそろえ、16〜4096 に収める', () => {
@@ -27,5 +27,13 @@ describe('出力の設定', () => {
     expect(normalizeOutput(undefined)).toEqual(OUTPUT_DEFAULT);
     expect(normalizeOutput({ width: 1281, format: 'avi' as never, quality: 'high', audio: false }))
       .toEqual({ ...OUTPUT_DEFAULT, width: 1282, quality: 'high', audio: false });
+  });
+  it('ビューポートの中の出力の枠: 横長の出力は上下を、縦長の出力は左右を空けて真ん中に置く', () => {
+    expect(outputFrame(1000, 800, 1920, 1080)).toEqual({ x: 0, y: 118.75, w: 1000, h: 562.5, fovScale: 562.5 / 800 });
+    expect(outputFrame(1000, 800, 1080, 1920)).toEqual({ x: 275, y: 0, w: 450, h: 800, fovScale: 1 });
+  });
+  it('画角を tan で何倍かにする', () => {
+    expect(scaleFov(60, 1)).toBeCloseTo(60);
+    expect(Math.tan(scaleFov(60, 0.5) * Math.PI / 360)).toBeCloseTo(Math.tan(Math.PI / 6) * 0.5);
   });
 });

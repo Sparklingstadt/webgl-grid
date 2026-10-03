@@ -58,3 +58,15 @@ export function normalizeOutput(o: Partial<OutputSettings> | undefined): OutputS
     audio: !!s.audio,
   };
 }
+
+// ビューポート (viewW × viewH) の中で、出力 (outW × outH) として描かれる範囲 (Blender のカメラの枠)。
+// 枠はビューポートに収まる一番大きな同じ縦横比の四角で、真ん中に置く。
+// fovScale: 書き出すときの縦の画角の tan を何倍にするか (枠の高さ ÷ ビューポートの高さ)。
+// これで、枠の中に見えているものがそのまま書き出される
+export function outputFrame(viewW: number, viewH: number, outW: number, outH: number) {
+  const a = outW / outH;
+  const w = Math.min(viewW, viewH * a), h = w / a;
+  return { x: (viewW - w) / 2, y: (viewH - h) / 2, w, h, fovScale: h / viewH };
+}
+// 縦の画角 fov (度) を、tan で k 倍にした画角
+export const scaleFov = (fov: number, k: number) => (2 * Math.atan(Math.tan((fov * Math.PI) / 360) * k) * 180) / Math.PI;

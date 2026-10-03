@@ -313,3 +313,8 @@ canvas#c.over-box { cursor: pointer; }
 .recover { position: absolute; left: 8px; bottom: 8px; z-index: 5; display: flex; align-items: center; gap: 6px; max-width: calc(100% - 16px);
            padding: 5px 6px 5px 10px; background: var(--menu); border: 1px solid #2c2c2c; border-radius: 6px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4); }
 .recover > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 出力の枠 (レンダリングで書き出される範囲)。外側を少し暗くする */
+.output-frame { position: absolute; pointer-events: none; box-sizing: border-box; border: 1px dashed rgba(255, 255, 255, 0.45);
+                box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.28); }
+.output-frame-size { position: absolute; right: 4px; bottom: 2px; font-size: 10px; color: rgba(255, 255, 255, 0.6); }

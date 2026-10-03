@@ -40,7 +40,7 @@ core/    純粋な計算とデータ (three.js の数学ライブラリは使っ
 | | `Motion` | VMD のダンスとカメラ (`System`、カメラは `CameraOverride`) | World, Physics, Stage, CameraController, UiChannel |
 | | `Posing` | 表情とボーン・IK と付与 (`System`) | World, Physics, Motion, Viewport, UiChannel |
 | | `VpdIO` | ポーズファイルの保存・読み込み | Posing, Viewport, UiChannel |
-| 出力 | `RenderOutput` | レンダリング: 描画先を出力の大きさにして (`Viewport.beginOutput`)、編集用の表示を隠して描く。動画はタイムラインを 1 フレームずつ進め (`Clock.advanceTo` と `Viewport.stepSystems`)、WebCodecs で圧縮する (mediabunny)。`renderPng` / `renderVideo` はデータを返すだけ (MCP も使う)、`renderImage` / `renderAnimation` は画面の操作 (レンダー結果・保存) | Viewport, SceneGraph, Clock, Music, UiChannel |
+| 出力 | `RenderOutput` | レンダリング: 描画先を出力の大きさにして (`Viewport.beginOutput`。ビューポートの出力の枠 `outputFrame` の中がそのまま描かれるよう、画角を合わせる)、編集用の表示を隠して描く。動画はタイムラインを 1 フレームずつ進め (`Clock.advanceTo` と `Viewport.stepSystems`)、WebCodecs で圧縮する (mediabunny)。`renderPng` / `renderVideo` はデータを返すだけ (MCP も使う)、`renderImage` / `renderAnimation` は画面の操作 (レンダー結果・保存) | Viewport, SceneGraph, Clock, Music, UiChannel |
 | 元に戻す | `History` | 編集のひと区切り (マウスやキーを離した・読み込みが終わった) ごとに、場面の編集できる部分の写しを取って積む。戻すときは写しとの違いだけを直し、消した物は捨てずに持っておいて置き直す (`World.keepRemoved` / `World.restore`、`MaterialLibrary.snapshot` / `restore`) | World, MaterialLibrary, Physics, Motion, Posing, Keyframes, Clock, Selection, Viewport, UiChannel |
 | 自動保存 | `Autosave` | `History` の手が増えたら少し待って、参照だけのプロジェクトと参照するファイルを `AutosaveStore` (IndexedDB。テストではメモリ) にしまう。前の回があれば「前回の続き」として開ける | ProjectIO, History, UiChannel |
 | 外部からの操作 | `RemoteLink` | MCP サーバー (`mcp/`) の WebSocket につなぎ、届いた命令を 1 つずつ `commands.ts` で実行して返す。つなぐ前に、MCP サーバーが動いているかをページの配り元に問い合わせ (`REMOTE_STATUS_PATH`。コンソールにエラーを出さない)、だめなら 3 回までつなぎ直す。命令は画面と同じ `Engine` の操作を呼ぶ | Engine |

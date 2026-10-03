@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OutlineEffect } from 'three/examples/jsm/effects/OutlineEffect.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { outputFrame, scaleFov } from '../../core/output';
 import type { SceneGraph } from './SceneGraph';
 
 // 毎フレーム計算するもの (再生・モーション・物理演算・落下など)。active のあいだだけ update される
@@ -27,7 +28,7 @@ export class Viewport {
   private observer: ResizeObserver | null = null;
   private container: HTMLElement | null = null;
   // レンダリング (画像・動画の書き出し) 中は、その大きさで描き、描画ループを止めておく
-  private output: { width: number; height: number } | null = null;
+  private output: { width: number; height: number; fovScale: number } | null = null;
   private ticking = false;
   private tickLast = 0;
   private scheduled = false; // 次のフレームの呼び出しを頼んである
@@ -117,17 +118,23 @@ export class Viewport {
     if (!this.renderer || !this.outline) return;
     this.dirty = false;
     for (const cb of this.before) cb();
+    if (this.output && this.output.fovScale !== 1) {
+      // (カメラは毎回、描く前に自分の画角へ戻すので、ここで狭めても次の描画には残らない)
+      const { camera } = this.graph;
+      camera.fov = scaleFov(camera.fov, this.output.fovScale);
+      camera.updateProjectionMatrix();
+    }
     if (!this.drawOverride?.()) this.outline.render(this.graph.scene, this.graph.camera);
     for (const cb of this.after) cb();
   }
 
   // --- レンダリング (書き出し) ---
   // 描画先を width × height (等倍) にして、背景を塗り、描画ループを止める。描くのは呼ぶ側 (render() のあと、すぐ canvas を読む)。
-  // 縦の見える範囲 (fov) はそのままで、縦横比だけを合わせる
+  // ビューポートに出している出力の枠 (outputFrame) の中が、そのまま描かれるように画角を合わせる
   beginOutput(width: number, height: number, background: THREE.ColorRepresentation) {
     const { renderer } = this;
     if (!renderer) throw new Error('描画先がありません');
-    this.output = { width, height };
+    this.output = { width, height, fovScale: outputFrame(this.width, this.height, width, height).fovScale };
     renderer.setClearColor(background, 1);
     this.applySize(width, height, 1);
   }

@@ -1,9 +1,10 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { SHAPE_NAMES } from '../../core/constants';
 import { useEngine, useUi } from '../EngineContext';
 import { Gizmo } from './Gizmo';
 import { Menu, MenuItem, MenuLabel, MenuSep } from './Menu';
 import { Sidebar, type SideTab } from './sidebar/Sidebar';
+import { OutputFrame, useShowFrame } from './OutputFrame';
 import { RecoverBanner } from './Overlays';
 
 // 3D ビューポート: 見出し (ビュー・追加・オブジェクトのメニュー)、左のツールバー、左上の文字、
@@ -21,6 +22,8 @@ export function ViewportArea(props: {
   const canAdd = useUi(s => s.canAdd);
   const sel = useUi(s => s.sel);
   const viewInfo = useUi(s => s.viewInfo);
+  const [showFrame, setShowFrame] = useShowFrame();
+  const [viewportEl, setViewportEl] = useState<HTMLDivElement | null>(null);
   // canvas ができたら描き始め、なくなるときに片付ける
   useEffect(() => {
     engine.mount(canvasRef.current!, viewportRef.current!);
@@ -39,6 +42,7 @@ export function ViewportArea(props: {
           <MenuSep />
           <MenuItem label={props.sideOpen ? 'サイドバーを隠す' : 'サイドバーを出す'} kbd="N" onSelect={props.toggleSide} />
           <MenuItem label={props.tlOpen ? 'タイムラインをたたむ' : 'タイムラインを広げる'} onSelect={props.toggleTl} />
+          <MenuItem label={showFrame ? '出力の範囲を隠す' : '出力の範囲を表示'} onSelect={() => setShowFrame(!showFrame)} />
         </Menu>
         <Menu id="add" label="追加">
           <MenuLabel>メッシュ</MenuLabel>
@@ -56,8 +60,9 @@ export function ViewportArea(props: {
         <button type="button" className="hbtn" aria-pressed={props.sideOpen} aria-controls="sidebar" title="サイドバー (N)" onClick={props.toggleSide}>サイドバー</button>
       </div>
       <div className="view-body">
-        <div className="viewport" ref={viewportRef} onPointerDown={props.onViewportPointerDown}>
+        <div className="viewport" ref={el => { viewportRef.current = el; setViewportEl(el); }} onPointerDown={props.onViewportPointerDown}>
           <canvas id="c" ref={canvasRef} />
+          {showFrame && <OutputFrame container={viewportEl} />}
           <div className="tools" role="group" aria-label="カメラの操作">
             <button type="button" aria-pressed={mode === 'orbit'} title="回転: ドラッグで注視点のまわりを回る" aria-label="回転" onClick={() => camera.setMode('orbit')}>
               <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16.5 10a6.5 6.5 0 1 1-2-4.7" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /><path d="M15.5 2.5v3.6h-3.6" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>

@@ -75,3 +75,43 @@ test('レンダー > アニメーションをレンダリング で、開始〜�
   await expect(page.getByRole('status')).toContainText('15 フレーム');
   expect(errors).toEqual([]);
 });
+
+test('ビューポートに出力の枠を出し、枠の中に見えているものがそのまま書き出される', async ({ page }) => {
+  const errors = await open(page);
+  // 横に長い出力 (ビューポートより横長): 枠は横いっぱいで、上下が空く
+  await page.evaluate(() => (window as Win).engine.output.set({ width: 1600, height: 400 }));
+  const frame = page.getByRole('img', { name: '出力の範囲 1600 × 400' });
+  const fb = (await frame.boundingBox())!, vb = (await page.locator('.viewport').boundingBox())!;
+  expect(fb.width).toBeCloseTo(vb.width, 0);
+  expect(fb.height).toBeCloseTo(vb.width / 4, 0);
+  // 立方体の色の画素の範囲 (枠に対する割合) を、ビューポートと書き出した画像で比べる
+  const boxes = await page.evaluate(async ({ fx, fy, fw, fh }) => {
+    const { engine } = window as Win;
+    const cubeBox = (src: CanvasImageSource, sx: number, sy: number, sw: number, sh: number) => {
+      const c = Object.assign(document.createElement('canvas'), { width: 400, height: 100 });
+      const g = c.getContext('2d')!;
+      g.drawImage(src, sx, sy, sw, sh, 0, 0, 400, 100);
+      const d = g.getImageData(0, 0, 400, 100).data;
+      let x0 = 1e9, y0 = 1e9, x1 = -1, y1 = -1;
+      for (let y = 0; y < 100; y++) for (let x = 0; x < 400; x++) {
+        const i = (y * 400 + x) * 4;
+        if (d[i] > 120 && d[i] - d[i + 2] > 50 && d[i + 3] > 200) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+      }
+      return [x0 / 400, y0 / 100, x1 / 400, y1 / 100];
+    };
+    const canvas = engine.viewport.canvas as HTMLCanvasElement, k = canvas.width / canvas.clientWidth;
+    engine.viewport.render();
+    const view = cubeBox(canvas, fx * k, fy * k, fw * k, fh * k); // (描いた直後に読む)
+    const img = new Image();
+    img.src = URL.createObjectURL(await engine.output.renderPng());
+    await img.decode();
+    return { view, render: cubeBox(img, 0, 0, img.naturalWidth, img.naturalHeight) };
+  }, { fx: fb.x - vb.x, fy: fb.y - vb.y, fw: fb.width, fh: fb.height });
+  expect(boxes.view[2]).toBeGreaterThan(boxes.view[0]); // 立方体が写っている
+  boxes.render.forEach((v, i) => expect(v).toBeCloseTo(boxes.view[i], 1));
+  // ビュー メニューで隠せる
+  await page.getByRole('button', { name: 'ビュー' }).click();
+  await page.getByRole('menuitem', { name: '出力の範囲を隠す' }).click();
+  await expect(frame).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
