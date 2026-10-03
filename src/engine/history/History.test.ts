@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { surfaceShader } from '../../core/materials/tree';
 import { Engine } from '../Engine';
+import { engineWithCube } from '../testEngine';
 
 // 元に戻す・やり直し (描画先なしのエンジンで)
 const base = (e: Engine, i = 0) => surfaceShader(e.library.materials.get(e.world.objects[i].slots[0]!)!.tree)!.values.baseColor;
@@ -8,7 +9,7 @@ const step = (e: Engine) => e.history.checkpoint();
 
 describe('History', () => {
   it('形を置く → 元に戻すと消え、やり直すと同じ物 (同じ id・マテリアル) が戻る', async () => {
-    const e = new Engine();
+    const e = engineWithCube();
     e.addShape(1);
     step(e);
     const torus = e.world.objects[1];
@@ -22,7 +23,7 @@ describe('History', () => {
   });
 
   it('移動・色・回転をそれぞれ 1 手にし、順に戻す', async () => {
-    const e = new Engine();
+    const e = engineWithCube();
     const cube = e.world.objects[0];
     e.select(cube);
     e.setObjProp('x', 3); step(e);
@@ -43,7 +44,7 @@ describe('History', () => {
   });
 
   it('名前・ビューポートで隠す・レンダリングに写さないを、それぞれ 1 手にして戻す。隠すと選択が外れ、クリックで選べない', async () => {
-    const e = new Engine();
+    const e = engineWithCube();
     const cube = e.world.objects[0];
     e.select(cube);
     e.renameObj(cube, '  箱  '); step(e);
@@ -67,7 +68,7 @@ describe('History', () => {
   });
 
   it('並べ替え (アウトライナー) を 1 手にして戻す', async () => {
-    const e = new Engine();
+    const e = engineWithCube();
     e.addShape(1); e.addShape(2); step(e);
     const [a, b, c] = e.world.objects;
     e.moveObject(c, a, 'before'); step(e);
@@ -80,7 +81,7 @@ describe('History', () => {
   });
 
   it('消した物を戻すと、元の並び順と積み重ねに戻る', async () => {
-    const e = new Engine();
+    const e = engineWithCube();
     e.addShape(0);
     const [a, b] = e.world.objects;
     e.select(b);
@@ -98,7 +99,7 @@ describe('History', () => {
   });
 
   it('マテリアルの変更 (名前・値・新規) を戻す', async () => {
-    const e = new Engine();
+    const e = engineWithCube();
     e.select(e.world.objects[0]);
     const id = e.world.objects[0].slots[0]!;
     e.materials.rename('木');
@@ -118,7 +119,7 @@ describe('History', () => {
   it('押しているあいだの変化は、離したときに 1 手にまとめる', () => {
     vi.useFakeTimers();
     try {
-      const e = new Engine();
+      const e = engineWithCube();
       e.select(e.world.objects[0]);
       e.history.setPressed(true);
       for (let i = 1; i <= 10; i++) { e.setObjProp('x', i); vi.advanceTimersByTime(100); }
@@ -132,7 +133,7 @@ describe('History', () => {
   });
 
   it('戻したあとに別の変更をすると、やり直しの先は消え、もう使わない消した物は片付ける', async () => {
-    const e = new Engine();
+    const e = engineWithCube();
     const dispose = vi.spyOn(e.world, 'dispose');
     e.addShape(1); step(e);
     const torus = e.world.objects[1];
@@ -144,14 +145,14 @@ describe('History', () => {
   });
 
   it('最初の状態に戻すと、履歴も消える', () => {
-    const e = new Engine();
+    const e = engineWithCube();
     e.addShape(1); step(e);
     e.resetAll();
     expect(e.ui.state.history).toEqual({ labels: ['最初'], index: 0 });
   });
 
   it('フレーム範囲も戻す。いまのフレームは手に数えない', async () => {
-    const e = new Engine();
+    const e = engineWithCube();
     e.clock.seekFrame(30); step(e);
     expect(e.ui.state.history.labels).toEqual(['最初']);
     e.clock.setRange(10, 100); step(e);

@@ -30,6 +30,8 @@ export function ViewportArea(props: {
   const canAdd = useUi(s => s.canAdd);
   const sel = useUi(s => s.sel);
   const viewInfo = useUi(s => s.viewInfo);
+  useUi(s => s.sceneVersion);
+  const empty = !engine.world.objects.length && !engine.stage.model; // 何も置いていない (始めたとき・最初の状態に戻したとき)
   const [showFrame, setShowFrame] = useShowFrame();
   const [viewportEl, setViewportEl] = useState<HTMLDivElement | null>(null);
   // canvas ができたら描き始め、なくなるときに片付ける
@@ -102,6 +104,7 @@ export function ViewportArea(props: {
             </div>
           )}
           <div className="view-info" aria-live="off">{viewInfo}</div>
+          {empty && <div className="view-hint">{t('Shift+A (追加) で形やライトを置く・ファイル > MMD を読み込む… でモデルを置く')}</div>}
           <RecoverBanner />
           <ModelPicker />
           <div className="nav">

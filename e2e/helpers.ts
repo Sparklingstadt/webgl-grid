@@ -5,13 +5,22 @@ import { makePmx } from './fixtures/pmx';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type Win = any;
 
-// ページを開き、エンジンが動き出すまで待つ。コンソールのエラーを集めておく
-export async function open(page: Page) {
+// ページを開き、エンジンが動き出すまで待つ。コンソールのエラーを集めておく。
+// アプリは何も置かずに始まるので、物を使うテストのために、原点に立方体を 1 つ置いておく (cube: false で置かない)
+export async function open(page: Page, { cube = true }: { cube?: boolean } = {}) {
   const errors: string[] = [];
   page.on('pageerror', e => errors.push(String(e)));
   page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
   await page.goto('/?debug&nomodels'); // (models フォルダのモデルの一覧は、起動したときに出さない)
-  await page.waitForFunction(() => (window as Win).engine?.world.objects.length === 1 && (window as Win).engine.viewport.mounted && (window as Win).engine.addons.started);
+  await page.waitForFunction(() => (window as Win).engine?.viewport.mounted && (window as Win).engine.addons.started);
+  if (cube) {
+    await page.evaluate(() => {
+      const { engine } = window as Win;
+      engine.world.addShape(0, 0, 0, 0);
+      engine.history.reset(); // (置いたのを、元に戻す手に数えない)
+      engine.viewport.requestDraw();
+    });
+  }
   return errors;
 }
 

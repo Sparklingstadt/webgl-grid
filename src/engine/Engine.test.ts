@@ -3,18 +3,20 @@ import { describe, expect, it } from 'vitest';
 import { keyFrames } from '../core/animation';
 import { Engine } from './Engine';
 import type { ModelObj } from './types';
+import { engineWithCube } from './testEngine';
 
 // 描画先 (WebGL) なしでエンジンを組み立てて、操作の組み合わせを確かめる
 describe('Engine (描画なし)', () => {
-  it('最初は原点の立方体 1 個で、何も選んでいない', () => {
+  it('最初は何も置いておらず、何も選んでいない。元に戻す履歴もない', () => {
     const e = new Engine();
-    expect(e.world.objects.map(o => [o.s, o.x, o.z])).toEqual([[0, 0, 0]]);
+    expect(e.world.objects).toEqual([]);
     expect(e.ui.state.sel).toBeNull();
+    expect(e.history.canUndo).toBe(false);
     expect(e.ui.state.end).toBe(250);
   });
 
   it('形を追加すると、空いている場所に置いて選ぶ。32 個までしか置けない', () => {
-    const e = new Engine();
+    const e = engineWithCube();
     e.addShape(1);
     const torus = e.world.objects[1];
     expect(torus.s).toBe(1);
@@ -26,7 +28,7 @@ describe('Engine (描画なし)', () => {
   });
 
   it('重なる場所に動かすと上に積まれ、下の物を消すと落ちる', () => {
-    const e = new Engine();
+    const e = engineWithCube();
     e.addShape(0);
     const [a, b] = e.world.objects;
     e.select(b);
@@ -40,27 +42,27 @@ describe('Engine (描画なし)', () => {
   });
 
   it('選択を変えると、選んでいたキーフレームの選択は外れる', () => {
-    const e = new Engine();
+    const e = engineWithCube();
     e.selectKeys([3, 5], false);
     expect([...e.keyframes.selected]).toEqual([3, 5]);
     e.addShape(0);
     expect(e.keyframes.selected.size).toBe(0);
   });
 
-  it('最初の状態に戻すと、立方体 1 個・0 フレーム目・止まった状態になる', () => {
-    const e = new Engine();
+  it('最初の状態に戻すと、何もない場面・0 フレーム目・止まった状態になる', () => {
+    const e = engineWithCube();
     e.addShape(2);
     e.clock.setRange(0, 99);
     e.clock.seekFrame(40);
     e.clock.setPlaying(true);
     e.resetAll();
-    expect(e.world.objects.length).toBe(1);
+    expect(e.world.objects.length).toBe(0);
     expect([e.clock.frame, e.clock.end, e.clock.playing]).toEqual([0, 250, false]);
     expect(e.ui.state).toMatchObject({ frame: 0, end: 250, playing: false, sel: null });
   });
 
   it('上から見る・視点を戻す', () => {
-    const e = new Engine();
+    const e = engineWithCube();
     e.camera.snapView('top');
     expect(e.camera.viewName).toBe('上');
     expect(e.camera.cam.pitch).toBeCloseTo(1.5);
@@ -81,7 +83,7 @@ function fakeModel(e: Engine): ModelObj {
 
 describe('キーフレーム', () => {
   it('2 つ打つと、あいだのフレームでは補間した姿勢と表情になり、終了フレームも延びる', () => {
-    const e = new Engine();
+    const e = engineWithCube();
     const obj = fakeModel(e);
     obj.pose = new Map([[0, { rx: 0, ry: 0, rz: 0, px: 0, py: 0, pz: 0 }]]);
     e.insertKey();
@@ -99,7 +101,7 @@ describe('キーフレーム', () => {
   });
 
   it('選んだキーフレームをずらす・消す。いまのフレームのキーを消す', () => {
-    const e = new Engine();
+    const e = engineWithCube();
     const obj = fakeModel(e);
     obj.pose = new Map([[0, { rx: 0, ry: 0, rz: 0, px: 0, py: 0, pz: 0 }]]);
     for (const f of [0, 10, 20]) { e.clock.seekFrame(f); e.insertKey(); }
@@ -114,7 +116,7 @@ describe('キーフレーム', () => {
   });
 
   it('↑↓ で前後のキーフレームへ飛ぶ', () => {
-    const e = new Engine();
+    const e = engineWithCube();
     fakeModel(e).pose = new Map([[0, { rx: 0, ry: 0, rz: 0, px: 0, py: 0, pz: 0 }]]);
     for (const f of [5, 40]) { e.clock.seekFrame(f); e.insertKey(); }
     e.clock.seekFrame(0);
@@ -127,7 +129,7 @@ describe('キーフレーム', () => {
   });
 
   it('モデルを選んでいなければ打たずに知らせる', () => {
-    const e = new Engine();
+    const e = engineWithCube();
     e.insertKey();
     expect(e.ui.state.toast?.text).toContain('モデルをクリックして選んで');
   });

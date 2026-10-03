@@ -68,6 +68,8 @@ canvas#c.over-box { cursor: pointer; }
 .tools button:hover { background: #474747; }
 .tools button[aria-pressed="true"] { background: var(--accent); }
 .tools svg { width: 20px; height: 20px; }
+.view-hint { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); max-width: calc(100% - 32px); pointer-events: none;
+             color: var(--dim); text-align: center; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6); }
 .view-info { position: absolute; left: 52px; top: 8px; pointer-events: none; white-space: pre; color: #ececec;
              text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8); user-select: none; }
 .nav { position: absolute; right: 6px; top: 6px; display: flex; flex-direction: column; align-items: center; gap: 6px; user-select: none; }

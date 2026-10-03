@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { BUILTIN_ADDONS } from '../../addons';
-import { Engine } from '../Engine';
 import { runCommand } from '../remote/commands';
 import { memoryAddonStorage, type AddonModule } from './Addons';
+import { engineWithCube } from '../testEngine';
 
-const start = async (e = new Engine(), storage = memoryAddonStorage()) => { await e.addons.start(BUILTIN_ADDONS, storage); return e; };
+const start = async (e = engineWithCube(), storage = memoryAddonStorage()) => { await e.addons.start(BUILTIN_ADDONS, storage); return e; };
 
 describe('アドオン', () => {
   it('組み込みのアドオンは Cinema 4D と MoGraph だけ最初から有効で、有効にするとメニュー・パネル・命令が足され、切ると外れる', async () => {
@@ -23,10 +23,10 @@ describe('アドオン', () => {
 
   it('有効にしたアドオンを覚えておき、次に始めたときも有効にする。最初から有効のものも、切ったら切ったまま', async () => {
     const storage = memoryAddonStorage();
-    const e = await start(new Engine(), storage);
+    const e = await start(engineWithCube(), storage);
     await e.addons.enable('turntable');
     e.addons.disable('cinema4d');
-    const f = await start(new Engine(), storage);
+    const f = await start(engineWithCube(), storage);
     expect(f.addons.isEnabled('turntable')).toBe(true);
     expect(f.addons.isEnabled('float')).toBe(false);
     expect(f.addons.isEnabled('cinema4d')).toBe(false);

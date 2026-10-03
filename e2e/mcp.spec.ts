@@ -41,7 +41,9 @@ test('MCP のツールで、形を置き・モデルを読み込み・キーフ�
     await expect(page.getByLabel('MCP の接続')).toHaveText('MCP 接続中');
     expect((await json('app_status')).connected).toBe(true);
 
-    // 形
+    // 形 (何もない場面に、原点の立方体と、トーラス)
+    expect((await json('get_state')).objects).toEqual([]);
+    await json('add_shape', { shape: 'cube', x: 0, z: 0 });
     const { id } = await json('add_shape', { shape: 'torus', x: 3, z: -1, color: '赤' });
     let state = await json('get_state');
     expect(state.objects.find((o: { id: number }) => o.id === id)).toMatchObject({ name: 'トーラス', position: [3, 0, -1], color: '赤' });
@@ -85,7 +87,7 @@ test('MCP のツールで、形を置き・モデルを読み込み・キーフ�
     const wgp = path.join(dir, 'シーン.wgp');
     expect((await json('save_project', { path: wgp })).bytes).toBeGreaterThan(1000);
     await json('reset_scene');
-    expect((await json('get_state')).objects).toHaveLength(1);
+    expect((await json('get_state')).objects).toEqual([]); // (何もない場面に戻る)
     const reopened = await json('open_project', { path: wgp });
     expect(reopened.project).toBe('シーン');
     expect(reopened.objects.map((o: { kind: string }) => o.kind)).toEqual(['shape', 'shape', 'model']);

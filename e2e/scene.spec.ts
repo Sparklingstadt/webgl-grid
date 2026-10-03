@@ -3,8 +3,11 @@ import { emptySpot, open, screenPosOf, uiState, type Win } from './helpers';
 
 // 3D ビューポートとメニュー・サイドバーの基本操作
 test.describe('ビューポート', () => {
-  test('最初の画面: 原点の立方体、Blender 風の 3 つの領域、何も選んでいない', async ({ page }) => {
-    const errors = await open(page);
+  test('最初の画面: 何も置いていない (置き方の案内が出る)、Blender 風の 3 つの領域、何も選んでいない', async ({ page }) => {
+    const errors = await open(page, { cube: false });
+    expect(await page.evaluate(() => (window as Win).engine.world.objects.length)).toBe(0);
+    await expect(page.locator('.view-hint')).toContainText('Shift+A');
+    await expect(page.getByRole('tree', { name: 'シーンの物' })).toContainText('何も置いていません');
     await expect(page.getByRole('button', { name: 'ファイル' })).toBeVisible();
     await expect(page.getByRole('region', { name: '3D ビューポート' })).toBeVisible();
     await expect(page.getByRole('region', { name: 'タイムライン' })).toBeVisible();
@@ -91,13 +94,18 @@ test.describe('ビューポート', () => {
     await expect(page.locator('#sidebar')).toBeVisible();
   });
 
-  test('ファイル > 最初の状態に戻す で、立方体 1 個に戻る', async ({ page }) => {
+  test('ファイル > 最初の状態に戻す で、何も置いていない場面に戻る', async ({ page }) => {
     await open(page);
     await page.getByRole('button', { name: '追加' }).click();
     await page.getByRole('menuitem', { name: '三角錐' }).click();
     await page.getByRole('button', { name: 'ファイル' }).click();
     await page.getByRole('menuitem', { name: '最初の状態に戻す' }).click();
-    expect(await page.evaluate(() => (window as Win).engine.world.objects.map((b: { s: number }) => b.s))).toEqual([0]);
+    expect(await page.evaluate(() => (window as Win).engine.world.objects.length)).toBe(0);
+    await expect(page.locator('.view-hint')).toBeVisible();
+    // 置くと案内は消える
+    await page.keyboard.press('Shift+A');
+    await page.getByRole('menuitem', { name: '立方体' }).click();
+    await expect(page.locator('.view-hint')).toHaveCount(0);
   });
 });
 

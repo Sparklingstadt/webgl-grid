@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Engine } from '../Engine';
 import { AUTOSAVE_DELAY } from './Autosave';
 import { memoryStore } from './autosaveStore';
+import { engineWithCube } from '../testEngine';
 
 // 自動保存と復元 (2 つのエンジン = ページを開き直した、として確かめる)
 describe('Autosave', () => {
@@ -11,7 +12,7 @@ describe('Autosave', () => {
 
   it('編集して少し待つと保存し、次に開いたときに前回の続きとして開ける', async () => {
     const store = memoryStore();
-    const a = new Engine();
+    const a = engineWithCube();
     await a.autosave.start(store);
     expect(a.ui.state.recovery).toBeNull();
     a.addShape(1);
@@ -22,7 +23,7 @@ describe('Autosave', () => {
     await a.autosave.saveNow();
     expect(await store.sessions()).toHaveLength(1);
 
-    const b = new Engine(); // 開き直したページ
+    const b = engineWithCube(); // 開き直したページ
     await b.autosave.start(store);
     expect(b.ui.state.recovery).toMatchObject({ banner: true, name: null });
     await b.autosave.recover();
@@ -33,7 +34,7 @@ describe('Autosave', () => {
 
   it('編集していなければ保存しない', async () => {
     const store = memoryStore();
-    const a = new Engine();
+    const a = engineWithCube();
     await a.autosave.start(store);
     a.clock.seekFrame(20); // いまのフレームは編集ではない
     a.history.checkpoint();
@@ -47,7 +48,7 @@ describe('Autosave', () => {
     const put = vi.spyOn(store, 'putFile');
     const file = new File(['pmx'], 'a.pmx', { lastModified: 1 });
     for (let i = 0; i < 5; i++) {
-      const e = new Engine();
+      const e = engineWithCube();
       await e.autosave.start(store);
       // 参照するファイルがある場面のかわりに、保存の中身を差し替える
       vi.spyOn(e.project, 'saveReference').mockReturnValue({ bytes: new TextEncoder().encode('{}'), files: new Map([['a1', i < 4 ? file : new File(['x'], 'b.pmx', { lastModified: 2 })]]) });

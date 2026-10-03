@@ -879,5 +879,6 @@ const dict: Dictionary = {
   "隠す / ほかを隠す / すべて表示": "Hide / Hide Unselected / Reveal All",
   "選択物を隠す": "Hide Selected",
   "並べ替え": "Reorder",
+  "Shift+A (追加) で形やライトを置く・ファイル > MMD を読み込む… でモデルを置く": "Press Shift+A (Add) to place shapes or lights, or use File > Import MMD… to place a model",
 };
 export default dict;

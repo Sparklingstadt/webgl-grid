@@ -1,10 +1,10 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { addNode, connect, surfaceShader } from '../../core/materials/tree';
-import { Engine } from '../Engine';
 import { convertMmdMaterial } from './fromMmd';
 import { MaterialLibrary } from './MaterialLibrary';
 import { toPmxValues } from './toPmx';
+import { engineWithCube } from '../testEngine';
 
 describe('MaterialLibrary', () => {
   it('Blender と同じく、同じ名前には .001 などを付ける', () => {
@@ -64,7 +64,7 @@ describe('MaterialLibrary', () => {
 
 describe('物のマテリアルスロット (Engine)', () => {
   it('形にはその色のマテリアルが 1 つ入り、パレットの色はベースカラーを変える', () => {
-    const e = new Engine();
+    const e = engineWithCube();
     const cube = e.world.objects[0];
     e.select(cube);
     expect(e.materials.slots()).toMatchObject([{ index: 0, name: 'マテリアル' }]);
@@ -73,7 +73,7 @@ describe('物のマテリアルスロット (Engine)', () => {
   });
 
   it('新規・複製・外す・ほかのマテリアルを入れる (共有)', () => {
-    const e = new Engine();
+    const e = engineWithCube();
     e.addShape(0);
     const [a, b] = e.world.objects;
     e.select(a);
@@ -93,7 +93,7 @@ describe('物のマテリアルスロット (Engine)', () => {
   });
 
   it('物を消すと材質を返し、選択中はオレンジの輪郭線を付ける', () => {
-    const e = new Engine();
+    const e = engineWithCube();
     const cube = e.world.objects[0];
     e.select(cube);
     e.materials.rename('残す'); // 手を入れたので、使う物がなくなっても残る

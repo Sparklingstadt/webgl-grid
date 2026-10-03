@@ -156,7 +156,7 @@ forwardAddon('set_deformers', 'cinema4d.set_deformers', 'デフォーマ (Cinema
   })),
 });
 forwardAddon('bake_cloner', 'cinema4d.bake_cloner', '形のクローナーのクローンを、1 つずつの物にする (Cinema 4D の「現在の状態をオブジェクト化」)', { id });
-forward('reset_scene', '最初の状態 (立方体 1 個) に戻す', {});
+forward('reset_scene', '最初の状態 (何も置いていない場面) に戻す', {});
 
 // ファイル
 tool('load_files', 'MMD のファイルを読み込む: .pmx (同じフォルダのテクスチャ画像も自動で送る)・.vmd (ダンス・カメラ)・.vpd (ポーズ)・曲 (.wav/.mp3 など)。フォルダを渡すと中のファイルをすべて送る', {

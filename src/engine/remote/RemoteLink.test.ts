@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Engine } from '../Engine';
 import { REMOTE_MAX_RETRIES, RemoteLink } from './RemoteLink';
+import { engineWithCube } from '../testEngine';
 
 // MCP サーバーとのつながり: 動いているかを問い合わせてからつなぎ、だめなら 3 回までつなぎ直す
 class FakeSocket {
@@ -33,7 +33,7 @@ describe('RemoteLink', () => {
   const settle = async (ms = 0) => { await vi.advanceTimersByTimeAsync(ms); };
 
   it('サーバーが動いていなければ WebSocket を作らず、3 回つなぎ直してからやめる', async () => {
-    const e = new Engine(), link = new RemoteLink(e);
+    const e = engineWithCube(), link = new RemoteLink(e);
     link.connect(7457);
     await settle();
     expect(e.ui.state.remote).toBe('waiting');
@@ -49,7 +49,7 @@ describe('RemoteLink', () => {
   });
 
   it('待っているあいだにサーバーが動き出したらつなぎ、名乗る', async () => {
-    const e = new Engine(), link = new RemoteLink(e);
+    const e = engineWithCube(), link = new RemoteLink(e);
     link.connect(7457);
     await settle();
     up = true;
@@ -61,7 +61,7 @@ describe('RemoteLink', () => {
   });
 
   it('切れたら、また 3 回までつなぎ直す (つながったら数え直す)', async () => {
-    const e = new Engine(), link = new RemoteLink(e);
+    const e = engineWithCube(), link = new RemoteLink(e);
     up = true;
     link.connect(7457);
     await settle();
@@ -78,7 +78,7 @@ describe('RemoteLink', () => {
   });
 
   it('やめると、待つのもやめる', async () => {
-    const e = new Engine(), link = new RemoteLink(e);
+    const e = engineWithCube(), link = new RemoteLink(e);
     link.connect(7457);
     await settle();
     link.disconnect();

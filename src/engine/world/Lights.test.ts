@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { Engine } from '../Engine';
+import { engineWithCube } from '../testEngine';
 
 // ライト (描画先なしのエンジンで)
 const lightOf = (e: Engine, i: number) => {
@@ -11,7 +12,7 @@ const lightOf = (e: Engine, i: number) => {
 
 describe('ライト', () => {
   it('置くと決めた高さに浮かび、積み重ねには加わらない (下に物を運んでも、上に物が載らない)', () => {
-    const e = new Engine();
+    const e = engineWithCube();
     const light = e.addLight('point')!;
     expect(e.ui.state.sel).toMatchObject({ kind: 'light', name: 'ポイント' });
     expect(light.y).toBe(4);
@@ -25,7 +26,7 @@ describe('ライト', () => {
   });
 
   it('種類・高さ・スポットサイズと傾きを変えられ、元に戻せる', async () => {
-    const e = new Engine();
+    const e = engineWithCube();
     e.addLight('point');
     e.history.checkpoint();
     e.setLight({ type: 'spot', height: 5, spotSizeDeg: 40, tiltDeg: 30 });
@@ -43,7 +44,7 @@ describe('ライト', () => {
   });
 
   it('サンは、傾けた向きから照らす平行光になる', () => {
-    const e = new Engine();
+    const e = engineWithCube();
     e.addLight('sun', { strength: 2, tiltDeg: 30 });
     const sun = lightOf(e, 1) as THREE.DirectionalLight;
     expect(sun).toBeInstanceOf(THREE.DirectionalLight);
@@ -53,10 +54,10 @@ describe('ライト', () => {
   });
 
   it('プロジェクトに保存して開くと、ライトも戻る', async () => {
-    const e = new Engine();
+    const e = engineWithCube();
     e.addLight('spot', { color: '#ff8800', power: 1500 });
     const bytes = await e.project.save('reference');
-    const f = new Engine();
+    const f = engineWithCube();
     await f.project.open(bytes);
     expect(f.world.objects[1].light).toEqual(e.world.objects[1].light);
     expect((lightOf(f, 1) as THREE.SpotLight).color.getHexString()).toBe(new THREE.Color('#ff8800').getHexString());

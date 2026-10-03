@@ -146,8 +146,7 @@ export class Engine {
       });
     });
 
-    world.addShape(0, 0, 0, 0); // 原点に立方体を 1 つ
-    clock.reset();
+    clock.reset(); // (最初は何も置かない)
     this.history.reset();
   }
 
@@ -305,6 +304,7 @@ export class Engine {
       const { mesh, slots } = loaded;
       if (loaded.isStage) {
         this.stage.set(mesh);
+        ui.bump('sceneVersion');
         ui.toast(t('{name} をステージとして置きました', { name: pmx.name }));
         targets = world.models; // ステージを読んだときは、モーションは置いてある人物全員に付ける
       } else {
@@ -353,7 +353,7 @@ export class Engine {
     this.clock.fitEnd(Math.max(this.motion.duration * FPS, this.keyframes.lastFrame(), (this.music.duration ?? 0) * FPS));
   }
 
-  // ファイル > 最初の状態に戻す: 読み込んだモデル・モーション・曲を消し、原点の立方体 1 個と最初の視点に戻す
+  // ファイル > 最初の状態に戻す: 置いた物・読み込んだモデル・モーション・曲を消し、何もない場面と最初の視点に戻す
   resetAll() {
     this.music.stop();
     this.selection.select(null);
@@ -361,7 +361,7 @@ export class Engine {
     this.camera.resetView();
     this.world.clear();
     this.stage.clear();
-    this.world.addShape(0, 0, 0, 0);
+    this.ui.bump('sceneVersion');
     this.clock.reset();
     for (const p of this.addons.sceneData.list()) p.reset?.();
     this.history.reset(); // 新しく始めるので、元に戻す履歴も消す
