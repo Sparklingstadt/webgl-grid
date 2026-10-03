@@ -11,6 +11,8 @@ export function useShortcuts(engine: Engine, actions: {
   toggleSide: () => void;
   openFiles: () => void;
   openProject: () => void;
+  closeDialog: () => boolean; // 開いていた窓 (プリファレンス) を閉じたら true
+  dialogOpen: () => boolean;
 }) {
   const ref = useRef(actions);
   useLayoutEffect(() => { ref.current = actions; }); // (キーの処理は、いちばん新しい actions を使う)
@@ -21,6 +23,7 @@ export function useShortcuts(engine: Engine, actions: {
       if (engine.ui.state.rendering) { if (e.key === 'Escape') engine.output.cancel(); e.preventDefault(); return; }
       if (engine.ui.state.renderResult) { if (e.key === 'Escape') engine.output.closeResult(); return; }
       if (engine.ui.state.missingFiles) { if (e.key === 'Escape') engine.project.answerMissing('cancel'); return; }
+      if (a.dialogOpen()) { if (e.key === 'Escape') a.closeDialog(); return; } // (プリファレンスの窓のあいだは、場面のショートカットを使わない)
       if (e.key === 'Escape') { if (!a.closeMenus()) engine.picker.close(); return; }
       // F12: 画像をレンダリング、Ctrl+F12: アニメーションをレンダリング (Blender と同じ)
       if (e.key === 'F12') { e.preventDefault(); if (e.ctrlKey || e.metaKey) engine.output.renderAnimation(); else engine.output.renderImage(); return; }

@@ -1,5 +1,6 @@
 import { Emitter } from '../../core/events';
 import type { Engine } from '../Engine';
+import type { SelInfo } from '../UiChannel';
 import type { Any, Obj } from '../types';
 
 // --- 拡張の登録先: 物の設定・場面の設定・外から使える操作 ---
@@ -32,6 +33,35 @@ export interface CommandDef {
   source?: string; // 登録したアドオンの id (組み込みはなし)
 }
 
+// メニューの項目 (メニューの最後に足す)
+export type MenuId = 'file' | 'edit' | 'render' | 'view' | 'add' | 'object';
+export interface MenuDef {
+  key: string;
+  menu: MenuId;
+  label: string;
+  run(): void;
+  enabled?(): boolean;
+  source?: string;
+}
+// サイドバーのパネル。tab は組み込みのタブ (object・material・morph・bone・scene・fx・output) か、新しいタブの名前。
+// 中身は、設定の一覧 (props: アプリの部品で描く) か、自分で描く (draw: 要素を渡す。片付ける関数を返してよい)
+export type PropDef =
+  | { type: 'number'; label: string; get(): number; set(v: number): void; min?: number; max?: number; step?: number; digits?: number; unit?: string }
+  | { type: 'boolean'; label: string; get(): boolean; set(v: boolean): void }
+  | { type: 'select'; label: string; options: { value: string; label: string }[]; get(): string; set(v: string): void }
+  | { type: 'color'; label: string; get(): string; set(v: string): void } // "#rrggbb"
+  | { type: 'button'; label: string; run(): void }
+  | { type: 'text'; text: string };
+export interface PanelDef {
+  key: string;
+  title: string;
+  tab: string;
+  poll?(sel: SelInfo | null): boolean; // 出すかどうか (選んでいる物で)
+  props?(): PropDef[];
+  draw?(el: HTMLElement): void | (() => void);
+  source?: string;
+}
+
 // 名前 (key) で引ける、登録した順の一覧。add は、外すための関数を返す
 export class Registry<T extends { key: string }> {
   private items = new Map<string, T>();
@@ -56,6 +86,8 @@ export class Extensions {
   readonly traits = new Registry<ObjectTrait>();
   readonly parts = new Registry<StatePart>();
   readonly commands = new Registry<CommandDef>();
+  readonly menus = new Registry<MenuDef>();
+  readonly panels = new Registry<PanelDef>();
 }
 
 // 値が違うときだけ当てる (同じ値で作り直さない)

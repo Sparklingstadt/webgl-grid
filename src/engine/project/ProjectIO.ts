@@ -45,7 +45,7 @@ export class ProjectIO {
     let skipped = 0;
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
-      await this.engine.history.batch(() => this.open(bytes, {
+      const { missingAddons } = await this.engine.history.batch(() => this.open(bytes, {
         pick: async missing => {
           ui.hideToast();
           const r = await this.askMissing(file.name, missing);
@@ -55,7 +55,11 @@ export class ProjectIO {
         },
       }));
       ui.set({ projectName: projectBaseName(file.name) });
-      ui.toast(skipped ? `${file.name} を開きました (見つからないファイルが ${skipped} 個あります)` : `${file.name} を開きました`, skipped ? 8000 : 4000);
+      const notes = [
+        ...(skipped ? [`見つからないファイルが ${skipped} 個あります`] : []),
+        ...(missingAddons.length ? [`アドオン ${missingAddons.join('・')} のデータがあります。有効にしてから開き直すと戻ります`] : []),
+      ];
+      ui.toast(notes.length ? `${file.name} を開きました (${notes.join('。')})` : `${file.name} を開きました`, notes.length ? 8000 : 4000);
     } catch (err) {
       if (err instanceof ProjectCancelled) { ui.toast('プロジェクトを開くのをやめました'); return; }
       console.error(err);
@@ -276,5 +280,11 @@ export class ProjectIO {
     e.select(data.selected !== null ? objs[data.selected] ?? null : null);
     e.world.settle();
     e.viewport.requestDraw();
+    // 有効でないアドオンのデータ (名前が "アドオンの id.名前" で、登録されていないもの)
+    const missing = new Set<string>();
+    const look = (keys: string[], known: (k: string) => boolean) => { for (const k of keys) if (k.includes('.') && !known(k)) missing.add(k.split('.')[0]); };
+    look(Object.keys(data), k => e.ext.parts.has(k));
+    for (const so of data.objects) look(Object.keys(so), k => e.ext.traits.has(k));
+    return { missingAddons: [...missing] };
   }
 }

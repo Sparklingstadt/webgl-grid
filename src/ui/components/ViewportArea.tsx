@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { LIGHT_TYPES } from '../../core/light';
 import { SHAPES } from '../../core/shapes';
 import { useEngine, useUi } from '../EngineContext';
+import { AddonMenuItems } from './addons/AddonMenuItems';
 import { Gizmo } from './Gizmo';
 import { Menu, MenuItem, MenuLabel, MenuSep } from './Menu';
 import { Sidebar, type SideTab } from './sidebar/Sidebar';
@@ -44,6 +45,7 @@ export function ViewportArea(props: {
           <MenuItem label={props.sideOpen ? 'サイドバーを隠す' : 'サイドバーを出す'} kbd="N" onSelect={props.toggleSide} />
           <MenuItem label={props.tlOpen ? 'タイムラインをたたむ' : 'タイムラインを広げる'} onSelect={props.toggleTl} />
           <MenuItem label={showFrame ? '出力の範囲を隠す' : '出力の範囲を表示'} onSelect={() => setShowFrame(!showFrame)} />
+          <AddonMenuItems menu="view" />
         </Menu>
         <Menu id="add" label="追加">
           <MenuLabel>メッシュ</MenuLabel>
@@ -53,6 +55,7 @@ export function ViewportArea(props: {
           {LIGHT_TYPES.map(t => <MenuItem key={t.key} label={t.name} disabled={!canAdd} onSelect={() => { engine.addLight(t.key); props.showObjectTab(); }} />)}
           <MenuSep />
           <MenuItem label="MMD モデル…" disabled={!canAdd} onSelect={props.onOpenFiles} />
+          <AddonMenuItems menu="add" />
         </Menu>
         <Menu id="object" label="オブジェクト">
           <MenuItem label="削除" kbd="X" disabled={!sel} onSelect={() => engine.deleteSelected()} />
@@ -62,6 +65,7 @@ export function ViewportArea(props: {
                     onSelect={() => { engine.setCloner(sel?.cloner ? null : {}); props.showObjectTab(); }} />
           <MenuSep />
           <MenuItem label="キーフレームを挿入" kbd="I" disabled={sel?.kind !== 'model'} onSelect={() => engine.insertKey()} />
+          <AddonMenuItems menu="object" />
         </Menu>
         <span className="spacer" />
         <button type="button" className="hbtn" aria-pressed={props.sideOpen} aria-controls="sidebar" title="サイドバー (N)" onClick={props.toggleSide}>サイドバー</button>

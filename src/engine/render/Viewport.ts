@@ -40,7 +40,10 @@ export class Viewport {
   constructor(readonly graph: SceneGraph) {}
 
   // 毎フレームの計算は、登録した順に行う
-  addSystem(s: System) { this.systems.push(s); }
+  addSystem(s: System) {
+    this.systems.push(s);
+    return () => { const i = this.systems.indexOf(s); if (i >= 0) this.systems.splice(i, 1); };
+  }
   onBeforeRender(cb: () => void) { this.before.add(cb); return () => { this.before.delete(cb); }; }
   onRender(cb: () => void) { this.after.add(cb); return () => { this.after.delete(cb); }; }
   onResize(cb: () => void) { this.resizeHooks.add(cb); return () => { this.resizeHooks.delete(cb); }; }

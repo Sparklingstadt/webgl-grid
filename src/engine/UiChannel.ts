@@ -5,6 +5,7 @@ import { TL_DEFAULT_END } from '../core/constants';
 import { OUTPUT_DEFAULT, type OutputSettings } from '../core/output';
 import { normalizeScene, type SceneSettings } from '../core/scene';
 import { createStore, type Store } from '../core/store';
+import type { AddonInfo } from './extend/Addons';
 import { FX_LEVEL_DEFAULT, type FxLevel, type FxState } from './render/postfx';
 
 // --- エンジンから画面 (React) へ知らせる状態と、お知らせ ---
@@ -40,8 +41,10 @@ export interface UiState {
   recovery: { time: number; name: string | null; banner: boolean } | null; // 自動保存した前回の続き (banner: 知らせを出す)
   // 参照だけのプロジェクトを開くときに見つからないファイル (探してもらう)
   missingFiles: { project: string; files: { name: string; size?: number; source?: string }[] } | null;
+  addons: AddonInfo[];      // アドオンの一覧 (プリファレンス)
+  extVersion: number;       // アドオンのメニュー・パネル・値が変わった
 }
-type Version = 'modelVersion' | 'values' | 'keysVersion' | 'materialsVersion';
+type Version = 'modelVersion' | 'values' | 'keysVersion' | 'materialsVersion' | 'extVersion';
 
 export class UiChannel {
   readonly store: Store<UiState> = createStore<UiState>({
@@ -50,6 +53,7 @@ export class UiChannel {
     fxState: { ao: false, dof: false, bloom: false, diffusion: false, color: false }, fxLevel: { ...FX_LEVEL_DEFAULT },
     toast: null, palette: null, viewInfo: '', hairHang: null, materialsVersion: 0, projectName: null,
     output: { ...OUTPUT_DEFAULT }, rendering: null, renderResult: null, remote: 'off', missingFiles: null, history: { labels: ['最初'], index: 0 }, recovery: null, scene: normalizeScene(undefined),
+    addons: [], extVersion: 0,
   });
   private valuesAt = 0;
   private toastTimer: ReturnType<typeof setTimeout> | undefined;

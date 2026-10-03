@@ -343,3 +343,11 @@ details.sub > summary { cursor: pointer; color: var(--dim); font-size: 11px; pad
 .effectors > .row .bbtn { flex: 1 1 auto; }
 .deformer-add { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
 .deformer-add .bbtn { flex: 1 1 auto; }
+/* プリファレンス > アドオン */
+.addon-prefs { width: min(560px, 100%); }
+.addon-list { list-style: none; margin: 0; padding: 0; overflow: auto; display: flex; flex-direction: column; gap: 6px; }
+.addon-list li { background: var(--panel); border-radius: 4px; padding: 6px 8px; display: flex; flex-direction: column; gap: 3px; align-items: flex-start; }
+.addon-head { display: flex; align-items: center; gap: 8px; width: 100%; }
+.addon-head .note { margin-left: auto; }
+.addon-error { color: #e88; }
+.addon-draw { min-width: 0; }

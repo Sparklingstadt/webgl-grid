@@ -110,6 +110,13 @@ const lightSettings = {
 };
 forward('add_light', 'ライト (Blender のライト) を置いて選ぶ。向きは set_object の rotationDeg', { type: lightType.optional(), x: z.number().optional(), z: z.number().optional(), ...lightSettings });
 forward('set_light', 'ライトの設定を変える (渡したところだけ)', { id, type: lightType.optional(), ...lightSettings });
+forward('list_addons', 'アドオン (Blender のアドオン) の一覧と、有効かどうか', {});
+forward('set_addon', 'アドオンを有効にする・切る (有効にしたものは、次に開いたときも有効)', { id: z.string().describe('アドオンの id (list_addons)'), enabled: z.boolean() });
+forward('list_commands', '有効なアドオンが足した命令の一覧 (名前・説明・引数)。run_command で使う', {});
+forward('run_command', 'アドオンが足した命令を実行する', {
+  name: z.string().describe('命令の名前 ("アドオンの id.命令"。list_commands で確かめる)'),
+  params: z.record(z.string(), z.unknown()).optional().describe('引数 (list_commands の params)'),
+});
 forward('set_deformers', 'デフォーマ (Cinema 4D のデフォーマ): 物を曲げる・ねじる・細くする・ふくらませる。上から順にかける。並びごと入れ替える (空でやめる)。MMD モデルはボーンで動かす前の形にかける', {
   id, deformers: z.array(z.object({
     kind: z.enum(['bend', 'twist', 'taper', 'bulge']), enabled: z.boolean().optional(), axis: z.enum(['x', 'y', 'z']).optional(),

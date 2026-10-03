@@ -1,9 +1,12 @@
 import { REMOTE_DEFAULT_PORT } from '../../core/remote';
 import { useEngine, useUi } from '../EngineContext';
+import { AddonMenuItems } from './addons/AddonMenuItems';
 import { Menu, MenuItem, MenuLabel, MenuSep } from './Menu';
 
 // 上のバー: ファイル・レンダー・ヘルプのメニュー
-export function TopBar({ onOpenFiles, onLoadPose, onOpenProject, onOpenOutput }: { onOpenFiles: () => void; onLoadPose: () => void; onOpenProject: () => void; onOpenOutput: () => void }) {
+export function TopBar({ onOpenFiles, onLoadPose, onOpenProject, onOpenOutput, onOpenPrefs }: {
+  onOpenFiles: () => void; onLoadPose: () => void; onOpenProject: () => void; onOpenOutput: () => void; onOpenPrefs: () => void;
+}) {
   const engine = useEngine();
   const projectName = useUi(s => s.projectName);
   const remote = useUi(s => s.remote);
@@ -33,12 +36,16 @@ export function TopBar({ onOpenFiles, onLoadPose, onOpenProject, onOpenOutput }:
                   onSelect={() => (remote === 'off' ? engine.remote.connect(REMOTE_DEFAULT_PORT) : engine.remote.disconnect())} />
         <MenuSep />
         <MenuItem label="最初の状態に戻す" onSelect={() => engine.resetAll()} />
+        <AddonMenuItems menu="file" />
       </Menu>
       <Menu id="edit" label="編集">
         <MenuItem label={history.index > 0 ? `元に戻す: ${history.labels[history.index]}` : '元に戻す'} kbd="Ctrl Z"
                   disabled={history.index <= 0} onSelect={() => void engine.history.undo()} />
         <MenuItem label={history.index < history.labels.length - 1 ? `やり直す: ${history.labels[history.index + 1]}` : 'やり直す'} kbd="Ctrl Shift Z"
                   disabled={history.index >= history.labels.length - 1} onSelect={() => void engine.history.redo()} />
+        <MenuSep />
+        <MenuItem label="プリファレンス… (アドオン)" onSelect={onOpenPrefs} />
+        <AddonMenuItems menu="edit" />
         <MenuSep />
         <MenuLabel>履歴</MenuLabel>
         {history.labels.map((label, i) => ({ label, i })).slice(-12).reverse().map(({ label, i }) => (
@@ -50,6 +57,7 @@ export function TopBar({ onOpenFiles, onLoadPose, onOpenProject, onOpenOutput }:
         <MenuItem label="アニメーションをレンダリング" kbd="Ctrl F12" onSelect={() => engine.output.renderAnimation()} />
         <MenuSep />
         <MenuItem label="出力の設定…" onSelect={onOpenOutput} />
+        <AddonMenuItems menu="render" />
       </Menu>
       <Menu id="help" label="ヘルプ">
         <MenuLabel>ショートカット</MenuLabel>

@@ -309,6 +309,23 @@ export const COMMANDS: Record<string, Command> = {
     return { data: toBase64(r.bytes), ext: r.ext, mime: r.mime, codec: r.codec, frames: r.frames };
   },
 
+  // --- アドオン ---
+  list_addons: e => e.addons.list(),
+  set_addon: async (e, p) => {
+    const id = String(p?.id ?? '');
+    if (p?.enabled === false) e.addons.disable(id); else await e.addons.enable(id);
+    const a = e.addons.list().find(x => x.id === id);
+    if (a?.error) throw new Error(`有効にできませんでした: ${a.error}`);
+    return a;
+  },
+  // 有効なアドオンが足した命令 (名前は "アドオンの id.命令")
+  list_commands: e => e.ext.commands.list().filter(c => c.source).map(c => ({ name: c.key, addon: c.source, description: c.description ?? '', params: c.params ?? {} })),
+  run_command: (e, p) => {
+    const name = String(p?.name ?? '');
+    if (!e.ext.commands.get(name)?.source) throw new Error(`アドオンの命令 ${name} はありません (list_commands で確かめてください。アドオンが切ってあれば set_addon で有効にします)`);
+    return runCommand(e, name, p?.params ?? {});
+  },
+
   // --- プロジェクト ---
   // reference: ファイルは参照だけ (.wgpj の JSON)
   save_project: async (e, p) => ({ data: toBase64(await e.project.save(p?.reference ? 'reference' : 'embedded')) }),

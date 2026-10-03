@@ -24,6 +24,7 @@ import { RenderOutput } from './output/RenderOutput';
 import { Autosave } from './project/Autosave';
 import { ProjectIO } from './project/ProjectIO';
 import { RemoteLink } from './remote/RemoteLink';
+import { Addons } from './extend/Addons';
 import { registerBuiltins } from './extend/builtins';
 import { Extensions } from './extend/Registry';
 import { Effects } from './render/Effects';
@@ -83,6 +84,7 @@ export class Engine {
   readonly project = new ProjectIO(this);
   readonly autosave = new Autosave(this.project, this.history, this.ui);
   readonly remote = new RemoteLink(this);
+  readonly addons = new Addons(this); // アドオン (始めるのは main.tsx の addons.start)
   input: InputController | null = null;
 
   constructor() {

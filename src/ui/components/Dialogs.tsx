@@ -4,7 +4,7 @@ import { BProgress } from './controls/BProgress';
 
 // --- 画面全体を覆う窓 (そのあいだは、場面を触れないようにする) ---
 // onBackdrop: 窓の外を押したとき (なければ何もしない)
-function Modal({ label, title, className, onBackdrop, children }: {
+export function Modal({ label, title, className, onBackdrop, children }: {
   label: string; title: ReactNode; className?: string; onBackdrop?: () => void; children: ReactNode;
 }) {
   return (

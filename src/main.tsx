@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import * as THREE from 'three';
 import { remotePortFromSearch } from './core/remote';
 import { Engine } from './engine';
+import { BUILTIN_ADDONS } from './addons';
 import { indexedDbStore } from './engine/project/autosaveStore';
 import App from './ui/App';
 import { EngineProvider } from './ui/EngineContext';
@@ -14,6 +15,8 @@ if (new URLSearchParams(location.search).has('debug')) Object.assign(window, { e
 // ?mcp (=ポート番号) を付けて開いたときは、MCP サーバーにつないで外から操作できるようにする
 const mcpPort = remotePortFromSearch(location.search);
 if (mcpPort) engine.remote.connect(mcpPort);
+// アドオン (組み込みとインストールしたもの。前に有効にしていたものを有効にする)
+void engine.addons.start(BUILTIN_ADDONS);
 // 自動保存 (ブラウザの中に場面をしまう)。ページを隠すときは待たずに保存する
 void indexedDbStore().then(store => engine.autosave.start(store));
 addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') void engine.autosave.saveNow(); });
