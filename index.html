@@ -67,6 +67,27 @@
   .fx input[type="range"] { width: 100%; margin: 0; accent-color: #8fa2c4; }
   .fx input[type="range"].off { opacity: 0.45; }
   .modes button[aria-expanded="true"] { color: #fff; }
+  .morphs {
+    position: fixed; right: 16px; bottom: 116px; width: min(320px, calc(100vw - 32px));
+    max-height: min(60vh, 460px); display: flex; flex-direction: column;
+    background: rgba(20, 24, 32, 0.92); border: 1px solid #2c3340; border-radius: 10px;
+    backdrop-filter: blur(6px); user-select: none; font: 13px/1.3 system-ui, sans-serif; color: #dce3ee;
+  }
+  .morphs[hidden] { display: none; }
+  .morphs-head { display: flex; align-items: center; gap: 6px; padding: 8px 8px 4px 12px; }
+  .morphs-head span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+  .morphs button {
+    font: inherit; color: #9aa4b5; background: transparent; border: 0; border-radius: 7px;
+    padding: 7px 10px; cursor: pointer;
+  }
+  .morphs button:hover { color: #dce3ee; }
+  .morphs-tabs { display: flex; gap: 2px; padding: 0 6px 6px; border-bottom: 1px solid #2c3340; }
+  .morphs-tabs button[aria-selected="true"] { background: #3a4558; color: #fff; }
+  .morphs-tabs button:disabled { opacity: 0.35; cursor: default; }
+  .morphs-list { overflow-y: auto; padding: 6px 12px 10px; display: grid; grid-template-columns: minmax(0, 1fr) 120px; gap: 4px 10px; align-items: center; }
+  .morphs-list label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .morphs-list input[type="range"] { width: 100%; margin: 0; accent-color: #8fa2c4; }
+  .morphs-empty { grid-column: 1 / -1; color: #9aa4b5; padding: 8px 0; }
 </style>
 <script type="importmap">
 {
@@ -91,6 +112,20 @@
 </div>
 <input type="file" id="pmx-input" multiple hidden
        accept=".pmx,.vmd,.png,.jpg,.jpeg,.bmp,.tga,.gif,.spa,.sph,image/*,.mp3,.wav,.ogg,.oga,.m4a,.aac,.flac,.opus,audio/*">
+<div class="morphs" id="morph-panel" role="dialog" aria-labelledby="morph-title" hidden>
+  <div class="morphs-head">
+    <span id="morph-title">表情</span>
+    <button type="button" id="morph-zero">すべて0に戻す</button>
+    <button type="button" id="morph-close" aria-label="表情のパネルを閉じる">×</button>
+  </div>
+  <div class="morphs-tabs" role="tablist" aria-label="表情の分類">
+    <button type="button" role="tab" data-panel="1">眉</button>
+    <button type="button" role="tab" data-panel="2">目</button>
+    <button type="button" role="tab" data-panel="3">口</button>
+    <button type="button" role="tab" data-panel="4">その他</button>
+  </div>
+  <div class="morphs-list" id="morph-list" role="tabpanel"></div>
+</div>
 <div class="fx" id="fx-panel" role="group" aria-label="効果 (MME 風)" hidden>
   <button type="button" data-fx="bloom" aria-pressed="false">光る</button>
   <input type="range" data-fx-level="bloom" min="0" max="2" step="0.05" aria-label="光るの強さ">
@@ -264,6 +299,7 @@ const cam = { ...CAM_DEFAULT };
 document.getElementById('reset').addEventListener('click', () => {
   stopMusic();
   stopCameraMotion(false);
+  closeMorphPanel();
   closePicker();
   Object.assign(cam, CAM_DEFAULT);
   while (boxes.length) removeObject(boxes[0]);
@@ -534,6 +570,7 @@ canvas.addEventListener('pointerdown', e => {
   if (musicWaiting) playMusic(); // 自動再生を止められていた曲は、画面を触ったときに再生する
   closePicker(); // パレットの外を触ったら閉じる
   closeFxPanel();
+  closeMorphPanel();
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   try { canvas.setPointerCapture(e.pointerId); } catch {} // 捕捉できなくても操作は続ける
   if (drag) {
@@ -698,11 +735,14 @@ let ignoreClicksUntil = 0; // ダブルタップで削除した直後のクリ�
 canvas.addEventListener('click', e => {
   if (wasDragged || e.detail > 1 || performance.now() < ignoreClicksUntil) return;
   const picked = pickBox(screenRay(e.clientX, e.clientY));
-  if (!picked || picked.box.s === 3) return;
+  if (!picked) return;
   clearTimeout(colorTimer);
   const { clientX: x, clientY: y } = e;
   colorTimer = setTimeout(() => {
-    if (lastPointerType === 'touch') {
+    if (picked.box.s === 3) {
+      // MMD モデル: 表情のパネルを開く
+      openMorphPanel(picked.box);
+    } else if (lastPointerType === 'touch') {
       // スマホ: パレットを出して色を選ぶ
       openPicker(picked.box, x, y);
     } else {
@@ -714,6 +754,7 @@ canvas.addEventListener('click', e => {
 });
 function deleteBox(box, x, y) {
   if (pickerBox === box) closePicker();
+  if (morphObj === box) closeMorphPanel();
   clearTimeout(colorTimer);
   removeObject(box);
   settle();
@@ -844,7 +885,12 @@ async function loadPmx(files) {
   try {
     mmdLoaderModule ??= await import('three/addons/loaders/MMDLoader.js');
     const loader = new mmdLoaderModule.MMDLoader(manager);
-    const mesh = await new Promise((resolve, reject) => loader.load(MODEL_URL, resolve, undefined, reject));
+    // MMDLoader.load() と同じことを 2 段に分けてする。表情 (モーフ) の分類 (眉・目・口・その他) は
+    // 組み立てたメッシュには残らないので、組み立てる前の解析結果から拾っておく
+    const data = await new Promise((resolve, reject) => loader.loadPMX(MODEL_URL, resolve, undefined, reject));
+    const mesh = loader.meshBuilder.build(data, './', undefined, err => console.error(err));
+    mesh.userData.morphPanels = new Map(data.morphs.map(m => [m.name, m.panel]));
+    mesh.name ||= data.metadata.modelName || pmx.name.replace(/\.pmx$/i, '');
     fixEmptyMorphs(mesh);
     if (isStageModel(mesh, pmx.name)) {
       addStage(mesh);
@@ -1054,6 +1100,72 @@ function stageMatrix() {
   // モデルがないときは、原点に身長 20 (MMD のモデルのよくある大きさ) のモデルが立っているとみなす
   return _stage.makeScale(MMD_SCALE, MMD_SCALE, MMD_SCALE);
 }
+
+// --- 表情 (モーフ) を手で動かす ---
+// モデルをクリック (タップ) すると開く。VMD で動かしている表情は、モーション側が優先される
+const morphPanel = document.getElementById('morph-panel');
+const morphList = document.getElementById('morph-list');
+const morphTabs = morphPanel.querySelectorAll('[data-panel]');
+let morphObj = null, morphTab = 2;
+function morphsOf(obj) {
+  const mesh = obj.model, panels = mesh.userData.morphPanels;
+  return Object.entries(mesh.morphTargetDictionary ?? {}).map(([name, index]) => ({
+    name, index, panel: panels?.get(name) || 4, // 分類が分からないものは「その他」に
+  }));
+}
+function openMorphPanel(obj) {
+  closeFxPanel();
+  closePicker();
+  morphObj = obj;
+  document.getElementById('morph-title').textContent = `${obj.model.name || 'モデル'} の表情`;
+  const counts = [0, 0, 0, 0, 0];
+  for (const m of morphsOf(obj)) counts[m.panel]++;
+  morphTabs.forEach(t => { t.disabled = !counts[+t.dataset.panel]; });
+  // 前に開いていた分類に表情がなければ、表情のある最初の分類にする
+  if (!counts[morphTab]) morphTab = [2, 3, 1, 4].find(i => counts[i]) ?? 2;
+  showMorphTab(morphTab);
+  morphPanel.hidden = false;
+}
+function showMorphTab(panel) {
+  morphTab = panel;
+  morphTabs.forEach(t => t.setAttribute('aria-selected', String(+t.dataset.panel === panel)));
+  morphList.replaceChildren();
+  const list = morphsOf(morphObj).filter(m => m.panel === panel);
+  if (!list.length) {
+    const p = document.createElement('div');
+    p.className = 'morphs-empty';
+    p.textContent = morphsOf(morphObj).length ? 'この分類の表情はありません' : 'このモデルには表情がありません';
+    morphList.append(p);
+    return;
+  }
+  const influences = morphObj.model.morphTargetInfluences;
+  for (const m of list) {
+    const id = `morph-${m.index}`;
+    const label = document.createElement('label');
+    label.htmlFor = id;
+    label.textContent = m.name;
+    label.title = m.name;
+    const range = document.createElement('input');
+    Object.assign(range, { type: 'range', id, min: 0, max: 1, step: 0.01, value: influences[m.index] });
+    range.addEventListener('input', () => {
+      influences[m.index] = +range.value;
+      requestDraw();
+    });
+    morphList.append(label, range);
+  }
+}
+function closeMorphPanel() {
+  morphPanel.hidden = true;
+  morphObj = null;
+}
+morphTabs.forEach(t => t.addEventListener('click', () => showMorphTab(+t.dataset.panel)));
+document.getElementById('morph-close').addEventListener('click', closeMorphPanel);
+document.getElementById('morph-zero').addEventListener('click', () => {
+  if (!morphObj) return;
+  morphObj.model.morphTargetInfluences?.fill(0);
+  morphList.querySelectorAll('input').forEach(r => { r.value = 0; });
+  requestDraw();
+});
 
 // --- MMD のステージ ---
 // 横幅か奥行きが 40 (MMD の単位) を超えるか、名前に「ステージ」などを含む .pmx はステージとして扱う。
@@ -1405,6 +1517,7 @@ function closeFxPanel() {
   fxToggle.setAttribute('aria-expanded', 'false');
 }
 fxToggle.addEventListener('click', () => {
+  closeMorphPanel();
   fxPanel.hidden = !fxPanel.hidden;
   fxToggle.setAttribute('aria-expanded', String(!fxPanel.hidden));
 });
@@ -1442,7 +1555,7 @@ resize();
 // 動作確認用: ?debug を付けて開いたときだけ、中の状態をコンソールから触れるようにする
 if (new URLSearchParams(location.search).has('debug')) {
   Object.assign(window, { THREE, renderer, scene, camera, boxes, cam, makeBox, settle, pickBox, screenRay, rayPlane,
-    loadPmx, loadFiles, getAnimHelper: () => animHelper, getCamMotion: () => camMotion, getStage: () => stageModel, getFx: () => fx, fxState, fxLevel, getMusic: () => music, camera, getDrag: () => drag, paletteEl, swatches, pointers, physicsList, outline });
+    loadPmx, loadFiles, getAnimHelper: () => animHelper, getCamMotion: () => camMotion, getStage: () => stageModel, getFx: () => fx, getMorphObj: () => morphObj, fxState, fxLevel, getMusic: () => music, camera, getDrag: () => drag, paletteEl, swatches, pointers, physicsList, outline });
 }
 </script>
 </body>
