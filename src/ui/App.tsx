@@ -36,6 +36,27 @@ export default function App() {
   const openPose = useCallback(() => poseInput.current?.click(), []);
   const toggleSide = useCallback(() => setSideOpen(o => !o), []);
 
+  // 元に戻す: マウスのボタン (指) を押しているあいだは 1 手にまとめ、離したとき・キーを離したときに区切る
+  useEffect(() => {
+    const down = new Set<number>();
+    const onDown = (e: PointerEvent) => { down.add(e.pointerId); engine.history.setPressed(true); };
+    const onUp = (e: PointerEvent) => { down.delete(e.pointerId); if (!down.size) engine.history.setPressed(false); };
+    const onBlur = () => { down.clear(); engine.history.setPressed(false); };
+    const onKey = () => engine.history.soon();
+    addEventListener('pointerdown', onDown, true);
+    addEventListener('pointerup', onUp, true);
+    addEventListener('pointercancel', onUp, true);
+    addEventListener('blur', onBlur);
+    addEventListener('keyup', onKey, true);
+    return () => {
+      removeEventListener('pointerdown', onDown, true);
+      removeEventListener('pointerup', onUp, true);
+      removeEventListener('pointercancel', onUp, true);
+      removeEventListener('blur', onBlur);
+      removeEventListener('keyup', onKey, true);
+    };
+  }, [engine]);
+
   // メニューの外を押したら閉じる
   useEffect(() => {
     if (!openMenu) return;

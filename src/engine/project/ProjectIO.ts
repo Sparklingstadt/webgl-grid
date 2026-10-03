@@ -42,7 +42,8 @@ export class ProjectIO {
     ui.toast(`${file.name} を開いています…`, 0);
     let skipped = 0;
     try {
-      await this.open(new Uint8Array(await file.arrayBuffer()), {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      await this.engine.history.batch(() => this.open(bytes, {
         pick: async missing => {
           ui.hideToast();
           const r = await this.askMissing(file.name, missing);
@@ -50,7 +51,7 @@ export class ProjectIO {
           ui.toast(`${file.name} を開いています…`, 0);
           return r;
         },
-      });
+      }));
       ui.set({ projectName: projectBaseName(file.name) });
       ui.toast(skipped ? `${file.name} を開きました (見つからないファイルが ${skipped} 個あります)` : `${file.name} を開きました`, skipped ? 8000 : 4000);
     } catch (err) {
@@ -254,6 +255,7 @@ export class ProjectIO {
     e.clock.setPlaying(false);
     e.clock.seek(data.timeline.frame / FPS);
     e.output.set(normalizeOutput(data.output));
+    e.history.reset(); // 開いた状態から、元に戻す履歴を始める
     e.select(data.selected !== null ? objs[data.selected] ?? null : null);
     e.world.settle();
     e.viewport.requestDraw();

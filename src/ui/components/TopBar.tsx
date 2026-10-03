@@ -7,6 +7,7 @@ export function TopBar({ onOpenFiles, onLoadPose, onOpenProject, onOpenOutput }:
   const engine = useEngine();
   const projectName = useUi(s => s.projectName);
   const remote = useUi(s => s.remote);
+  const history = useUi(s => s.history);
   return (
     <header className="topbar">
       <svg className="brand" viewBox="0 0 20 20" aria-hidden="true">
@@ -31,6 +32,17 @@ export function TopBar({ onOpenFiles, onLoadPose, onOpenProject, onOpenOutput }:
         <MenuSep />
         <MenuItem label="最初の状態に戻す" onSelect={() => engine.resetAll()} />
       </Menu>
+      <Menu id="edit" label="編集">
+        <MenuItem label={history.index > 0 ? `元に戻す: ${history.labels[history.index]}` : '元に戻す'} kbd="Ctrl Z"
+                  disabled={history.index <= 0} onSelect={() => void engine.history.undo()} />
+        <MenuItem label={history.index < history.labels.length - 1 ? `やり直す: ${history.labels[history.index + 1]}` : 'やり直す'} kbd="Ctrl Shift Z"
+                  disabled={history.index >= history.labels.length - 1} onSelect={() => void engine.history.redo()} />
+        <MenuSep />
+        <MenuLabel>履歴</MenuLabel>
+        {history.labels.map((label, i) => ({ label, i })).slice(-12).reverse().map(({ label, i }) => (
+          <MenuItem key={i} label={`${i === history.index ? '● ' : '　'}${label}`} onSelect={() => void engine.history.jump(i)} />
+        ))}
+      </Menu>
       <Menu id="render" label="レンダー">
         <MenuItem label="画像をレンダリング" kbd="F12" onSelect={() => engine.output.renderImage()} />
         <MenuItem label="アニメーションをレンダリング" kbd="Ctrl F12" onSelect={() => engine.output.renderAnimation()} />
@@ -42,7 +54,7 @@ export function TopBar({ onOpenFiles, onLoadPose, onOpenProject, onOpenOutput }:
         {[
           ['再生 / 停止', 'Space'], ['キーフレームを挿入', 'I'], ['いまのキーフレームを削除', 'Alt I'],
           ['前 / 次のキーフレーム', '↓ ↑'], ['前 / 次のフレーム', '← →'], ['最初 / 最後のフレーム', 'Shift ← →'],
-          ['選んだ物 (タイムライン上ではキー) を削除', 'X'], ['選択を解除', 'Alt A'], ['追加メニュー', 'Shift A'], ['画像 / アニメーションをレンダリング', 'F12 / Ctrl F12'],
+          ['選んだ物 (タイムライン上ではキー) を削除', 'X'], ['選択を解除', 'Alt A'], ['追加メニュー', 'Shift A'], ['元に戻す / やり直す', 'Ctrl Z / Ctrl Shift Z'], ['画像 / アニメーションをレンダリング', 'F12 / Ctrl F12'],
           ['前・右・上から見る', 'テンキー 1 3 7'], ['視点を戻す (タイムライン上では全体を表示)', 'Home'], ['サイドバー', 'N'],
           ['シェーダーエディター: ノードを追加 / 消す / 全体を表示', 'Shift A / X / Home'],
         ].map(([label, kbd]) => <MenuItem key={label} label={label} kbd={kbd} disabled />)}

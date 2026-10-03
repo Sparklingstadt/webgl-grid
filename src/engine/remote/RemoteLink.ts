@@ -93,7 +93,7 @@ export class RemoteLink {
   private async handle(ws: WebSocket, req: RemoteRequest) {
     let res: RemoteResponse;
     try {
-      res = { id: req.id, result: (await runCommand(this.engine, req.method, req.params)) ?? null };
+      res = { id: req.id, result: (await this.engine.history.batch(() => runCommand(this.engine, req.method, req.params))) ?? null };
     } catch (err) {
       res = { id: req.id, error: errorText(err) };
     }

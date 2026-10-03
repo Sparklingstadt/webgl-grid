@@ -5,6 +5,7 @@ import type { BoneValue } from '../core/types';
 import { Clock } from './anim/Clock';
 import { Keyframes } from './anim/Keyframes';
 import { Music } from './anim/Music';
+import { History } from './history/History';
 import { download } from './io/download';
 import { MaterialEditor } from './materials/MaterialEditor';
 import { MaterialLibrary } from './materials/MaterialLibrary';
@@ -61,6 +62,7 @@ export class Engine {
   readonly effects = new Effects(this.viewport, this.ui, () => this.camera.focusPoint());
   readonly loader = new MmdLoader(this.ui, this.library, () => this.viewport.requestDraw());
   readonly vpd = new VpdIO(this.posing, this.viewport, this.ui);
+  readonly history = new History(this.world, this.library, this.physics, this.motion, this.posing, this.keyframes, this.clock, this.selection, this.viewport, this.ui);
   readonly project = new ProjectIO(this);
   readonly remote = new RemoteLink(this);
   input: InputController | null = null;
@@ -117,6 +119,7 @@ export class Engine {
 
     world.addShape(0, 0, 0, 0); // 原点に立方体を 1 つ
     clock.reset();
+    this.history.reset();
   }
 
   // --- 描画先 (React の部品が canvas を用意したとき・片付けるとき) ---
@@ -176,7 +179,9 @@ export class Engine {
   // --- ファイルの読み込み ---
   // .pmx (とテクスチャ)・.vmd (いくつでも)・.vpd・曲をまとめて受け取る。
   // .vmd だけ・曲だけのときは、置いてあるモデル全員に付ける
-  async loadFiles(files: File[]) {
+  // (読み込み終わってから 1 手にする)
+  loadFiles(files: File[]) { return this.history.batch(() => this.loadFilesNow(files)); }
+  private async loadFilesNow(files: File[]) {
     const { world, ui } = this;
     this.project.remember(files); // 参照だけのプロジェクトを開くときに使う
     const vmds = files.filter(f => /\.vmd$/i.test(f.name));
@@ -248,6 +253,7 @@ export class Engine {
     this.stage.clear();
     this.world.addShape(0, 0, 0, 0);
     this.clock.reset();
+    this.history.reset(); // 新しく始めるので、元に戻す履歴も消す
     this.viewport.requestDraw();
   }
 
@@ -294,7 +300,7 @@ export class Engine {
     else this.ui.toast('ポーズを保存するモデルをクリックして選んでください。');
   }
   // 選んでいるモデルに当てる (選んでいなければ、置いてあるモデル全員に)
-  loadPoseFile(file: File) { return this.vpd.load(file, this.model ? [this.model] : this.world.models); }
+  loadPoseFile(file: File) { return this.history.batch(() => this.vpd.load(file, this.model ? [this.model] : this.world.models)); }
 
   // --- キーフレーム ---
   // 選んでいるモデルの、いまのポーズと表情を、いまのフレームに記録する (I)

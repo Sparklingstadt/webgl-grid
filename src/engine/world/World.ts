@@ -29,6 +29,8 @@ export class World implements System {
   readonly objects: Obj[] = [];
   readonly events = new Emitter<WorldEvents>();
   private nextId = 1;
+  // 消した物の形状を、すぐには捨てない (元に戻せるように History が持っておき、要らなくなったら dispose を呼ぶ)
+  keepRemoved = false;
 
   constructor(private graph: SceneGraph, private viewport: Viewport, private ui: UiChannel, private lib: MaterialLibrary) {}
 
@@ -113,10 +115,33 @@ export class World implements System {
     this.objects.splice(this.objects.indexOf(obj), 1);
     this.events.emit('removed', obj); // 物理演算・モーション・選択などが後片付けする
     this.lib.releaseAll(obj.node);
-    if (obj.s === 3) disposeModel(obj.node);
+    if (!this.keepRemoved) this.dispose(obj);
     this.settle();
     this.publishCanAdd();
     this.viewport.requestDraw();
+  }
+  // 消した物の形状を片付ける
+  dispose(obj: Obj) { if (obj.s === 3) disposeModel(obj.node); }
+  // 消した物を、objects の index 番目に置き直す (元に戻すとき)。材質はスロットのマテリアルから作り直す
+  restore(obj: Obj, index: number) {
+    if (this.has(obj)) return;
+    this.graph.scene.add(obj.node);
+    this.objects.splice(Math.min(Math.max(index, 0), this.objects.length), 0, obj);
+    const target: THREE.Mesh = obj.s === 3 ? obj.model : obj.mesh!;
+    const list = obj.slots.map(id => {
+      const m = this.lib.instance(id);
+      if (obj.s === 2) m.flatShading = true;
+      return m;
+    });
+    target.material = Array.isArray(target.material) ? list : list[0];
+    this.publishCanAdd();
+    this.events.emit('added', obj);
+    this.viewport.requestDraw();
+  }
+  // objects を ids の順に並べ替える (積み重ねは並び順に下から決まる)
+  reorder(ids: number[]) {
+    const rank = new Map(ids.map((id, i) => [id, i]));
+    this.objects.sort((a, b) => (rank.get(a.id) ?? 1e9) - (rank.get(b.id) ?? 1e9));
   }
   clear() {
     while (this.objects.length) this.remove(this.objects[0]);

@@ -33,6 +33,12 @@ export function useShortcuts(engine: Engine, actions: {
       if (t.closest('button, [role="slider"]') && (e.key === ' ' || e.key === 'Enter')) return;
       if (t.closest('.popover')) return; // 色選びなどの窓の中
       if ((e.ctrlKey || e.metaKey) && e.code === 'KeyO') { e.preventDefault(); if (e.shiftKey) a.openProject(); else a.openFiles(); return; }
+      // 元に戻す (Ctrl+Z)・やり直す (Ctrl+Shift+Z / Ctrl+Y)
+      if ((e.ctrlKey || e.metaKey) && (e.code === 'KeyZ' || e.code === 'KeyY')) {
+        e.preventDefault();
+        if (e.code === 'KeyY' || e.shiftKey) void engine.history.redo(); else void engine.history.undo();
+        return;
+      }
       if ((e.ctrlKey || e.metaKey) && e.code === 'KeyS') { e.preventDefault(); engine.project.saveFile(e.altKey ? 'reference' : 'embedded'); return; }
       if (e.ctrlKey || e.metaKey) return;
       const hoverTl = a.hoverArea.current === 'timeline';

@@ -93,6 +93,32 @@ export class MaterialLibrary {
     this.instances.clear();
     this.changed();
   }
+  // --- 元に戻す (History) ---
+  // すべてのマテリアルの写し (使っている材質の数は含まない)
+  snapshot(): MaterialData[] { return [...this.materials.values()].map(m => structuredClone(m)); }
+  // 写しのとおりにする: あるものは中身を入れ替え、ないものは同じ id で作り直す (余ったものは prune で消す)
+  restore(list: MaterialData[]) {
+    for (const src of list) {
+      const data = structuredClone(src);
+      const cur = this.materials.get(data.id);
+      if (cur) {
+        Object.assign(cur, data);
+        if (!('mmd' in data)) delete cur.mmd;
+        if (!('auto' in data)) delete cur.auto;
+        for (const m of this.instances.get(data.id) ?? []) this.apply(data.id, m, false);
+      } else {
+        this.materials.set(data.id, data);
+        this.instances.set(data.id, new Set());
+      }
+      const n = Number(data.id.slice(1));
+      if (Number.isFinite(n) && n >= this.nextId) this.nextId = n + 1;
+    }
+    this.changed();
+  }
+  // keep にない、使っている物のないマテリアルを消す
+  prune(keep: Set<string>) {
+    for (const id of [...this.materials.keys()]) if (!keep.has(id)) this.remove(id);
+  }
   list(): MaterialListItem[] { return [...this.materials.values()].map(m => ({ id: m.id, name: m.name, users: this.users(m.id) })); }
 
   // 画像 (同じテクスチャは 1 つにまとめる)
