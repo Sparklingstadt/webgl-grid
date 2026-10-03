@@ -27,7 +27,8 @@ export class Viewport {
   private observer: ResizeObserver | null = null;
   private ticking = false;
   private tickLast = 0;
-  private pending = false;
+  private scheduled = false; // 次のフレームの呼び出しを頼んである
+  private dirty = false;     // 次のフレームで描き直す
 
   constructor(readonly graph: SceneGraph) {}
 
@@ -72,28 +73,43 @@ export class Viewport {
   }
   get mounted() { return !!this.renderer; }
 
+  // 描き直しを頼む。何度頼まれても、次のフレームで 1 回だけ描く (再生中は、毎フレームの描画にまとめる)
   requestDraw() {
-    if (this.pending || !this.renderer) return;
-    this.pending = true;
-    requestAnimationFrame(() => { this.pending = false; this.render(); });
+    this.dirty = true;
+    this.schedule();
   }
   startTicking() {
     if (this.ticking || !this.renderer) return;
     this.ticking = true;
     this.tickLast = 0;
-    requestAnimationFrame(this.tick);
+    this.schedule();
   }
-  private tick = (now: number) => {
-    if (!this.renderer || !this.systems.some(s => s.active())) { this.ticking = false; return; }
-    const dt = this.tickLast ? Math.min(Math.max(now - this.tickLast, 0) / 1000, 1 / 20) : 1 / 60;
-    this.tickLast = now;
-    for (const s of this.systems) if (s.active()) s.update(dt);
-    this.render();
-    requestAnimationFrame(this.tick);
+  private schedule() {
+    if (this.scheduled || !this.renderer) return;
+    this.scheduled = true;
+    requestAnimationFrame(this.frame);
+  }
+  // 1 フレーム: 動いているもの (System) を進めてから、1 回だけ描く
+  private frame = (now: number) => {
+    this.scheduled = false;
+    if (!this.renderer) { this.ticking = false; return; }
+    if (this.ticking) {
+      if (this.systems.some(s => s.active())) {
+        const dt = this.tickLast ? Math.min(Math.max(now - this.tickLast, 0) / 1000, 1 / 20) : 1 / 60;
+        this.tickLast = now;
+        for (const s of this.systems) if (s.active()) s.update(dt);
+        this.dirty = true;
+      } else {
+        this.ticking = false;
+      }
+    }
+    if (this.dirty) this.render();
+    if (this.ticking) this.schedule();
   };
 
   render() {
     if (!this.renderer || !this.outline) return;
+    this.dirty = false;
     for (const cb of this.before) cb();
     if (!this.drawOverride?.()) this.outline.render(this.graph.scene, this.graph.camera);
     for (const cb of this.after) cb();

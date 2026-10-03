@@ -63,8 +63,13 @@ export async function createPostFx(renderer: THREE.WebGLRenderer, scene: THREE.S
   composer.setPixelRatio(renderer.getPixelRatio());
   composer.setSize(width, height);
   const size = new THREE.Vector2(width, height);
+  // 影の濃さは、縦横半分の解像度で計算する。ぼかしてから重ねるので見た目はほとんど変わらず、
+  // GPU の時間は 1/4 ほどになる (高解像度の画面では、効果の中でいちばん重い)
+  const ao = new GTAOPass(scene, camera, width, height);
+  const aoSetSize = ao.setSize.bind(ao);
+  ao.setSize = (w, h) => aoSetSize(Math.max(1, Math.round(w / 2)), Math.max(1, Math.round(h / 2)));
   const passes: PostFx['passes'] = {
-    ao: new GTAOPass(scene, camera, width, height),
+    ao,
     // ピントからの距離 × aperture だけぼかす (上限 maxblur は画面幅に対する割合)
     dof: new BokehPass(scene, camera, { focus: 10, aperture: 0.0025, maxblur: 0.02 }),
     // 引数は (大きさ, 強さ, 広がり, しきい値)。光るはごく明るい所だけ、ふんわりは全体に弱く
