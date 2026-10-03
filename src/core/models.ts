@@ -10,23 +10,28 @@ export interface ModelFolderEntry {
   files: string[];    // 一緒に読むファイル (テクスチャなど。.pmx は含まない)
   size: number;       // .pmx とファイルの大きさの合計 (バイト)
 }
-// モーション (.vmd。ダンス・カメラ) とポーズ・表情 (.vpd)。models/ の中ならどこにあってもよい
+// モーション (.vmd。ダンス・カメラ)・ポーズと表情 (.vpd)・曲。models/ の中ならどこにあってもよい
 export interface FolderFileEntry {
   name: string;   // ファイル名から
   folder: string; // models/ から見たフォルダ
   path: string;   // models/ から見た場所
   size: number;
 }
-export interface ModelsListing { models: ModelFolderEntry[]; motions: FolderFileEntry[]; poses: FolderFileEntry[] }
+export interface ModelsListing { models: ModelFolderEntry[]; motions: FolderFileEntry[]; poses: FolderFileEntry[]; songs: FolderFileEntry[] }
+// 曲 (models/ の中ならどこでも。一覧の「曲」に出す)
+export const SONG_FILE = /\.(mp3|wav|ogg|oga|m4a|aac|flac|opus)$/i;
 // 起動したときに、まず読み込んでみるモデル (models/ のどこかにある、このファイル名の .pmx)。
 // 読み込めなければ、いつもどおり一覧から選んでもらう
 export const DEFAULT_MODEL_FILE = 'げのげ式初音ミク.pmx';
 export const isDefaultModel = (m: ModelFolderEntry) => (m.pmx.split('/').pop() ?? '').normalize('NFC') === DEFAULT_MODEL_FILE.normalize('NFC');
-// 起動したときに決まったモデルに付けるモーション: モデルのフォルダ (の中のフォルダ) にある最初の .vmd、なければ models/ の最初の .vmd。
-// (一覧はフォルダ・場所の順。どれもなければ付けない)
-export function startMotion(motions: FolderFileEntry[], model: ModelFolderEntry): FolderFileEntry | null {
+// 起動したときに決まったモデルに付けるもの: モーションのあるフォルダの .vmd 全部 (体・表情・口・カメラ) と、そのフォルダの曲。
+// フォルダは、モデルのフォルダ (の中のフォルダ) で最初に .vmd があるもの、なければ models/ で最初のもの (一覧はフォルダ・場所の順)。
+// .vmd がどこにもなければ null
+export function startFiles(l: Pick<ModelsListing, 'motions' | 'songs'>, model: ModelFolderEntry): { motions: FolderFileEntry[]; song: FolderFileEntry | null } | null {
   const inside = (m: FolderFileEntry) => !!model.folder && (m.folder === model.folder || m.folder.startsWith(`${model.folder}/`));
-  return motions.find(inside) ?? motions[0] ?? null;
+  const first = l.motions.find(inside) ?? l.motions[0];
+  if (!first) return null;
+  return { motions: l.motions.filter(m => m.folder === first.folder), song: l.songs.find(s => s.folder === first.folder) ?? null };
 }
 // 一緒に読むファイル (テクスチャ)。モーション・曲は、勝手に付けないよう入れない
 export const MODEL_TEXTURE_FILE = /\.(png|jpe?g|bmp|tga|gif|webp|spa|sph|dds)$/i;

@@ -880,5 +880,8 @@ const dict: Dictionary = {
   "選択物を隠す": "Hide Selected",
   "並べ替え": "Reorder",
   "Shift+A (追加) で形やライトを置く・ファイル > MMD を読み込む… でモデルを置く": "Press Shift+A (Add) to place shapes or lights, or use File > Import MMD… to place a model",
+  "曲": "Music",
+  "曲の一覧": "Music List",
+  "選ぶと、最初から再生します (終了フレームを曲の長さに合わせます)": "Plays from the start when chosen (the end frame is matched to the song's length)",
 };
 export default dict;

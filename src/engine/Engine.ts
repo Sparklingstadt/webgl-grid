@@ -1,6 +1,7 @@
 import { channelKeys, keyFrames, type Channel, type Curve } from '../core/animation';
 import type { LightSettings, LightType } from '../core/light';
 import { FPS } from '../core/constants';
+import { SONG_FILE } from '../core/models';
 import { errorText } from '../core/errors';
 import { langEvents, t } from '../core/i18n';
 import { patchPmxMaterials } from '../core/pmxMaterials';
@@ -47,7 +48,7 @@ const MAX_NAME = 64;
 // ビューポート (rendering: レンダリング) に写すか
 const shownIn = (o: Obj, rendering: boolean) => !(rendering ? o.hideRender : o.hidden);
 
-const isAudio = (f: File) => f.type.startsWith('audio/') || /\.(mp3|wav|ogg|oga|m4a|aac|flac|opus)$/i.test(f.name);
+const isAudio = (f: File) => f.type.startsWith('audio/') || SONG_FILE.test(f.name);
 
 // --- エンジン: 各部を組み立ててつなぎ、画面 (React) に操作の窓口を出す ---
 // 各部は、使う相手をコンストラクタで受け取り、知らせたいことはイベントで出す。

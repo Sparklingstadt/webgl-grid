@@ -11,6 +11,14 @@ import { type Win } from './helpers';
 // (どのテストも同じ models フォルダを使うので、順に動かす)
 test.describe.configure({ mode: 'serial' });
 
+// 音のない WAV (16 bit・モノラル・8 kHz)
+function silentWav(seconds: number) {
+  const n = Math.round(8000 * seconds), b = Buffer.alloc(44 + n * 2);
+  b.write('RIFF', 0); b.writeUInt32LE(36 + n * 2, 4); b.write('WAVEfmt ', 8);
+  b.writeUInt32LE(16, 16); b.writeUInt16LE(1, 20); b.writeUInt16LE(1, 22); b.writeUInt32LE(8000, 24); b.writeUInt32LE(16000, 28); b.writeUInt16LE(2, 32); b.writeUInt16LE(16, 34);
+  b.write('data', 36); b.writeUInt32LE(n * 2, 40);
+  return b;
+}
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==', 'base64');
 
 test('起動したとき、models フォルダのモデル・モーション・ポーズを一覧から選ぶと、テクスチャ付きで読み込み、モーションとポーズを付ける', async ({ page }) => {
@@ -25,6 +33,7 @@ test('起動したとき、models フォルダのモデル・モーション・�
   await writeFile(path.join(dir, '踊り.vmd'), vmd);
   await mkdir(path.join(MODELS_DIR, 'モーション'), { recursive: true });
   await writeFile(path.join(MODELS_DIR, 'モーション', '歩く.vmd'), vmd);
+  await writeFile(path.join(MODELS_DIR, 'モーション', '曲.wav'), silentWav(0.5));
   // ポーズと表情 (.vpd。MMD と同じ Shift-JIS): 右腕を 30 度、まばたきを 1 に
   const zero = { px: 0, py: 0, pz: 0, rx: 0, ry: 0, rz: 0 };
   await mkdir(path.join(MODELS_DIR, 'ポーズ'), { recursive: true });
@@ -61,6 +70,9 @@ test('起動したとき、models フォルダのモデル・モーション・�
     await expect(picker).toContainText('選んでいる フォルダ人形 に付けます');
     await picker.getByRole('button', { name: /歩く/ }).click();
     await expect.poll(() => page.evaluate(() => (window as Win).engine.world.models[0].animated)).toBe(true);
+    // 曲を選ぶと再生する
+    await picker.getByRole('list', { name: '曲の一覧' }).getByRole('button', { name: /曲/ }).click();
+    await expect.poll(() => page.evaluate(() => (window as Win).engine.music.file?.name ?? null)).toBe('曲.wav');
     // 閉じて、ファイル > models フォルダから読み込む… でも開ける
     await picker.getByRole('button', { name: '閉じる' }).click();
     await expect(picker).toBeHidden();
@@ -82,17 +94,28 @@ test('起動したとき、げのげ式初音ミク.pmx があればまず読み
   await writeFile(path.join(dir, 'body.png'), PNG);
   await mkdir(path.join(MODELS_DIR, 'フォルダ人形'), { recursive: true });
   await writeFile(path.join(MODELS_DIR, 'フォルダ人形', 'フォルダ人形.pmx'), makePmx('フォルダ人形'));
-  // モーション: モデルのフォルダにはないので、models/ の最初のもの (フォルダの名前の順で、「モーション」)
-  const vmd = Buffer.from(makeVmd([{ bone: 'センター', frame: 0, pos: [0, 0, 0] }, { bone: 'センター', frame: 30, pos: [0, 0, 6] }]));
+  // モーション: モデルのフォルダにはないので、models/ で最初にあるフォルダ (名前の順で「ダンス」) の .vmd 全部 (体と表情) と曲。
+  // ほかのフォルダの .vmd は付けない
+  const body = Buffer.from(makeVmd([{ bone: 'センター', frame: 0, pos: [0, 0, 0] }, { bone: 'センター', frame: 30, pos: [0, 0, 6] }]));
+  const face = Buffer.from(makeVmd([], [{ name: 'まばたき', frame: 0, weight: 0 }, { name: 'まばたき', frame: 30, weight: 1 }]));
+  await mkdir(path.join(MODELS_DIR, 'ダンス'), { recursive: true });
+  await writeFile(path.join(MODELS_DIR, 'ダンス', '体.vmd'), body);
+  await writeFile(path.join(MODELS_DIR, 'ダンス', '表情.vmd'), face);
+  await writeFile(path.join(MODELS_DIR, 'ダンス', '曲.wav'), silentWav(0.5));
   await mkdir(path.join(MODELS_DIR, 'モーション'), { recursive: true });
-  await writeFile(path.join(MODELS_DIR, 'モーション', '歩く.vmd'), vmd);
+  await writeFile(path.join(MODELS_DIR, 'モーション', '歩く.vmd'), body);
   try {
     const errors: string[] = [];
     page.on('pageerror', e => errors.push(String(e)));
     await page.goto('/?debug');
     await expect.poll(() => page.evaluate(() => (window as Win).engine?.world.models.map((m: Win) => m.model.name) ?? [])).toEqual(['初音ミク']);
-    // モーションを付けて再生している。読み込んだ場面が最初の状態 (元に戻す手はない)
-    await expect.poll(() => page.evaluate(() => { const { engine } = window as Win; return [engine.world.models[0].animated, engine.clock.playing]; })).toEqual([true, true]);
+    // 体と表情を 1 つの動きにまとめて付け、曲と一緒に再生している。読み込んだ場面が最初の状態 (元に戻す手はない)
+    await expect.poll(() => page.evaluate(() => (window as Win).engine.music.file?.name ?? null)).toBe('曲.wav');
+    expect(await page.evaluate(() => {
+      const { engine } = window as Win, m = engine.world.models[0];
+      const tracks: string[] = m.motion.action.getClip().tracks.map((t: { name: string }) => t.name);
+      return [m.motionFiles.map((f: File) => f.name), tracks.some(n => n.includes('morphTargetInfluences')), tracks.some(n => n.includes('.position')), engine.clock.playing];
+    })).toEqual([['体.vmd', '表情.vmd'], true, true, true]);
     expect(await page.evaluate(() => (window as Win).engine.history.canUndo)).toBe(false);
     const picker = page.getByRole('region', { name: 'models フォルダのモデル' });
     await expect(picker).toHaveCount(0);

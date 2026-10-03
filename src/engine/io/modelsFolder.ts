@@ -2,14 +2,14 @@ import { MODELS_FILE_PATH, MODELS_PATH, type ModelFolderEntry, type ModelsListin
 
 // --- models/ フォルダのモデル: アプリを配るサーバーに一覧を聞き、選んだモデルのファイルをもらう ---
 // (静的に配っているとき・サーバーが答えないときは、一覧は空)
-const EMPTY: ModelsListing = { models: [], motions: [], poses: [] };
+const EMPTY: ModelsListing = { models: [], motions: [], poses: [], songs: [] };
 export async function listModelFolder(): Promise<ModelsListing> {
   try {
     const res = await fetch(MODELS_PATH, { cache: 'no-store' });
     if (!res.ok || !(res.headers.get('content-type') ?? '').includes('json')) return EMPTY;
     const data = await res.json();
     const list = (v: unknown) => (Array.isArray(v) ? v : []);
-    return { models: list(data?.models), motions: list(data?.motions), poses: list(data?.poses) };
+    return { models: list(data?.models), motions: list(data?.motions), poses: list(data?.poses), songs: list(data?.songs) };
   } catch {
     return EMPTY;
   }
@@ -23,7 +23,7 @@ async function fetchFile(rel: string) {
   Object.defineProperty(f, 'sourcePath', { value: `models/${rel}` });
   return f;
 }
-// モーション (.vmd)・ポーズ (.vpd) のファイル
+// モーション (.vmd)・ポーズ (.vpd)・曲のファイル
 export const fetchFolderFile = (m: FolderFileEntry) => fetchFile(m.path);
 
 // モデルの .pmx (最初) とテクスチャを File にする (元の場所は sourcePath に)

@@ -16,7 +16,7 @@ import type { UiChannel } from '../UiChannel';
 import type { Selection } from '../world/Selection';
 import type { World } from '../world/World';
 
-interface Step { state: SceneState; sig: string; label: string; motionFiles: Map<number, File> }
+interface Step { state: SceneState; sig: string; label: string; motionFiles: Map<number, File[]> }
 const MAX_STEPS = 64;
 
 // --- 元に戻す・やり直し (Blender の Ctrl+Z / Ctrl+Shift+Z) ---
@@ -131,7 +131,7 @@ export class History {
 
   // --- 写し ---
   private capture(label: string): Step {
-    const motionFiles = new Map<number, File>();
+    const motionFiles = new Map<number, File[]>();
     const objects: ObjState[] = this.world.objects.map(o => {
       const data: Record<string, unknown> = {};
       for (const d of this.addons.objectData.list()) { const v = d.get(o); if (v !== undefined && v !== null) data[d.key] = structuredClone(v); }
@@ -144,8 +144,8 @@ export class History {
       if (!o.animated && inf) st.morphs = Array.from(inf).map((v, m) => (anim?.morphs.has(m) ? 0 : v));
       st.anim = isEmpty(anim) ? null : animationToJson(anim!);
       st.hairHang = this.physics.hairHang(o);
-      st.motion = o.motionFile?.name ?? null;
-      if (o.motionFile) motionFiles.set(o.id, o.motionFile);
+      st.motion = o.motionFiles?.map(f => f.name).join('\0') || null;
+      if (o.motionFiles?.length) motionFiles.set(o.id, o.motionFiles);
       return st;
     });
     const data = Object.fromEntries(this.historySceneData.map(d => [d.key, structuredClone(d.save())]));
@@ -190,8 +190,8 @@ export class History {
       // 置き直したモデルは、物理演算とモーションを付け直す
       for (const obj of back) {
         await this.physics.start(obj);
-        const file = step.motionFiles.get(obj.id);
-        if (file && !obj.animated) await this.motion.load([file], [obj]);
+        const files = step.motionFiles.get(obj.id);
+        if (files && !obj.animated) await this.motion.load(files, [obj]);
       }
       for (const st of state.objects) {
         const obj = world.find(st.id);

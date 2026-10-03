@@ -3,7 +3,7 @@ import { readdir, stat } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { MODEL_TEXTURE_FILE, MODELS_FILE_PATH, MODELS_PATH, type ModelFolderEntry, type ModelsListing, type FolderFileEntry } from '../src/core/models.ts';
+import { SONG_FILE, MODEL_TEXTURE_FILE, MODELS_FILE_PATH, MODELS_PATH, type ModelFolderEntry, type ModelsListing, type FolderFileEntry } from '../src/core/models.ts';
 
 // --- models/ フォルダ (ユーザーの PMX モデル置き場) の一覧とファイルを、アプリに渡す ---
 // Vite の開発サーバー・プレビュー (vite.config.ts) と、MCP サーバーがアプリを配るとき (appServer.ts) に使う。
@@ -25,9 +25,9 @@ async function walk(dir: string, rel: string, out: { rel: string; size: number }
 }
 
 // モデルとモーションの一覧: models/ の直下のフォルダごとに、中の .pmx をモデルにする (テクスチャはそのフォルダの画像)。
-// モーション (.vmd) とポーズ・表情 (.vpd) は、どこにあっても並べる
+// モーション (.vmd)・ポーズと表情 (.vpd)・曲は、どこにあっても並べる
 export async function listModels(dir = modelsDir()): Promise<ModelsListing> {
-  const out: ModelFolderEntry[] = [], motions: FolderFileEntry[] = [], poses: FolderFileEntry[] = [];
+  const out: ModelFolderEntry[] = [], motions: FolderFileEntry[] = [], poses: FolderFileEntry[] = [], songs: FolderFileEntry[] = [];
   const entry = (f: { rel: string; size: number }): FolderFileEntry => {
     const folder = path.posix.dirname(f.rel);
     return { name: path.basename(f.rel, path.extname(f.rel)), folder: folder === '.' ? '' : folder, path: f.rel, size: f.size };
@@ -50,6 +50,7 @@ export async function listModels(dir = modelsDir()): Promise<ModelsListing> {
     for (const f of files) {
       if (/\.vmd$/i.test(f.rel)) motions.push(entry(f));
       else if (/\.vpd$/i.test(f.rel)) poses.push(entry(f));
+      else if (SONG_FILE.test(f.rel)) songs.push(entry(f));
     }
   }
   const byPlace = (a: FolderFileEntry, b: FolderFileEntry) => a.folder.localeCompare(b.folder) || a.path.localeCompare(b.path);
@@ -57,6 +58,7 @@ export async function listModels(dir = modelsDir()): Promise<ModelsListing> {
     models: out.sort((a, b) => a.folder.localeCompare(b.folder) || a.pmx.localeCompare(b.pmx)),
     motions: motions.sort(byPlace),
     poses: poses.sort(byPlace),
+    songs: songs.sort(byPlace),
   };
 }
 

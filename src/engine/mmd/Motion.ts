@@ -47,7 +47,8 @@ export class Motion implements System {
     try {
       const [{ MMDLoader }, helper] = await Promise.all([loadMMDLoader(), this.ensureHelper()]);
       const loader: Any = new MMDLoader();
-      let used = false, hasModelMotion = false;
+      let used = false;
+      const forModel: { file: File; vmd: Any }[] = [];
       for (const file of vmds) {
         const url = URL.createObjectURL(file);
         let vmd: Any;
@@ -62,22 +63,25 @@ export class Motion implements System {
           this.cameraFile = file;
           used = true;
         }
-        // モデルの動き (骨と表情)
-        if (vmd.metadata.motionCount + vmd.metadata.morphCount > 0) {
-          hasModelMotion = true;
-          for (const obj of objs) {
-            if (!this.world.has(obj)) continue; // 読み込み中に消された
-            const mesh = obj.model;
-            const clip = loader.animationBuilder.build(vmd, mesh);
-            if (!clip.tracks.length) continue; // 骨や表情の名前が1つも合わない
-            if (helper.objects.has(mesh)) helper.remove(mesh);
-            mesh.pose(); // 前のモーションの姿勢を元に戻してから付ける
-            helper.add(mesh, { animation: clip, physics: false });
-            obj.motion = this.info(mesh, clip);
-            obj.motionFile = file;
-            obj.animated = true;
-            used = true;
-          }
+        // モデルの動き (骨と表情) は、あとでまとめる
+        if (vmd.metadata.motionCount + vmd.metadata.morphCount > 0) forModel.push({ file, vmd });
+      }
+      // モデルの動き: いくつかあれば (体・表情・口など、分けて配られているもの) 1 つの動きにまとめて付ける
+      const hasModelMotion = forModel.length > 0;
+      if (hasModelMotion) {
+        const vmd = forModel.length > 1 ? loader._getParser().mergeVmds(forModel.map(m => m.vmd)) : forModel[0].vmd;
+        for (const obj of objs) {
+          if (!this.world.has(obj)) continue; // 読み込み中に消された
+          const mesh = obj.model;
+          const clip = loader.animationBuilder.build(vmd, mesh);
+          if (!clip.tracks.length) continue; // 骨や表情の名前が1つも合わない
+          if (helper.objects.has(mesh)) helper.remove(mesh);
+          mesh.pose(); // 前のモーションの姿勢を元に戻してから付ける
+          helper.add(mesh, { animation: clip, physics: false });
+          obj.motion = this.info(mesh, clip);
+          obj.motionFiles = forModel.map(m => m.file);
+          obj.animated = true;
+          used = true;
         }
       }
       if (!used) {
@@ -135,7 +139,7 @@ export class Motion implements System {
     this.helper.remove(obj.model);
     obj.animated = false;
     obj.motion = null;
-    obj.motionFile = undefined;
+    obj.motionFiles = undefined;
   }
 
   // --- カメラモーション ---

@@ -1,8 +1,8 @@
 import { encodeShiftJis } from '../../src/core/sjis';
 
 // e2e テスト用の小さな VMD モーションを組み立てる。
-// keys は、ボーン名・フレーム・位置 (MMD の座標)。回転はなし、補間は直線
-export function makeVmd(keys: { bone: string; frame: number; pos: [number, number, number] }[]): Uint8Array {
+// keys は、ボーン名・フレーム・位置 (MMD の座標)。回転はなし、補間は直線。morphs は表情の名前・フレーム・重み
+export function makeVmd(keys: { bone: string; frame: number; pos: [number, number, number] }[], morphs: { name: string; frame: number; weight: number }[] = []): Uint8Array {
   const bytes: number[] = [];
   const view = new DataView(new ArrayBuffer(4));
   const u32 = (v: number) => { view.setUint32(0, v, true); bytes.push(...new Uint8Array(view.buffer)); };
@@ -20,7 +20,12 @@ export function makeVmd(keys: { bone: string; frame: number; pos: [number, numbe
     f32(0, 0, 0, 1);
     bytes.push(...linear);
   }
-  u32(0); // 表情
+  u32(morphs.length); // 表情
+  for (const m of morphs) {
+    fixed(encodeShiftJis(m.name), 15);
+    u32(m.frame);
+    f32(m.weight);
+  }
   u32(0); // カメラ
   u32(0); // 照明
   u32(0); // セルフ影

@@ -65,7 +65,7 @@ export function sceneState(e: Engine) {
       position: [r3(o.x), r3(o.y), r3(o.z)],
       rotationDeg: r3(o.r * DEG),
       ...(isModel(o)
-        ? { motion: o.motionFile?.name ?? null, keyframes: keyFrames(o.anim), hairHang: e.physics.hairHang(o) }
+        ? { motion: o.motionFiles?.map(f => f.name).join(', ') || null, keyframes: keyFrames(o.anim), hairHang: e.physics.hairHang(o) }
         : { color: PALETTE_NAMES[o.c] }),
       materials: o.slots.map(id => (id ? lib.materials.get(id)?.name ?? null : null)),
       ...(o.addonData && Object.keys(o.addonData).length ? { addons: o.addonData } : {}), // アドオンの、物ごとの値

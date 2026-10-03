@@ -26,7 +26,7 @@ export interface Obj {
   model?: Any;                        // THREE.SkinnedMesh (MMD)
   animated?: boolean;
   motion?: MotionInfo | null;
-  motionFile?: File;                  // 付けた .vmd (プロジェクトに入れる)
+  motionFiles?: File[];               // 付けた .vmd (いくつかなら、まとめて 1 つの動きにしたもの。プロジェクトに入れる)
   pose?: Map<number, BoneValue>;      // 手で動かしたボーン
   anim?: Animation | null;            // キーフレーム (ボーン・表情のチャンネルごと)
   solvers?: { ik: Any; grant: Any };  // IK と付与の計算

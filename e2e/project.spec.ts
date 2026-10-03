@@ -18,7 +18,7 @@ const snapshot = (page: Page) => page.evaluate(() => {
       slots: o.slots.map((id: string | null) => (id ? lib.materials.get(id).name : null)),
       name: o.s === 3 ? o.model.name : null,
       anim: o.anim ? { bones: [...o.anim.bones].map(([b, k]: O) => [b, [...k]]), morphs: [...o.anim.morphs].map(([m, k]: O) => [m, [...k]]) } : null,
-      motion: o.motionFile?.name ?? null,
+      motion: o.motionFiles?.map((f: File) => f.name).join(', ') || null,
       hairHang: o.s === 3 ? engine.physics.hairHang(o) : null,
     })),
     materials: [...lib.materials.values()].filter((m: O) => lib.users(m.id) > 0).map((m: O) => ({
@@ -93,6 +93,31 @@ test('保存したプロジェクトを開き直すと、同じ場面に戻る',
   expect(await snapshot(page)).toEqual(before);
   await expect(page.locator('.title')).toHaveText('プロジェクト — webgl-grid');
   expect(errors).toEqual([]);
+});
+
+test('体と表情に分かれた .vmd をまとめて付けたモデルも、開き直すと同じようにまとめて付ける', async ({ page }) => {
+  test.setTimeout(60_000);
+  await open(page, { cube: false });
+  const face = Buffer.from(makeVmd([], [{ name: 'まばたき', frame: 0, weight: 0 }, { name: 'まばたき', frame: 30, weight: 1 }]));
+  await loadTestModel(page, [
+    { name: 'テスト.vmd', mimeType: 'application/octet-stream', buffer: VMD },
+    { name: '表情.vmd', mimeType: 'application/octet-stream', buffer: face },
+  ]);
+  // 1 つの動き (骨と表情のトラック) にまとめて付ける
+  const motionOf = () => page.evaluate(() => {
+    const m = (window as Win).engine.world.models[0];
+    const tracks: string[] = m?.motion?.action.getClip().tracks.map((t: { name: string }) => t.name) ?? [];
+    return [m?.motionFiles?.map((f: File) => f.name) ?? null, tracks.some(n => n.includes('morphTargetInfluences')), tracks.some(n => n.includes('.position'))];
+  });
+  await expect.poll(motionOf).toEqual([['テスト.vmd', '表情.vmd'], true, true]);
+  await page.getByRole('button', { name: 'ファイル' }).click();
+  const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('menuitem', { name: 'プロジェクトを保存' }).click()]);
+  const bytes = await readFile((await download.path())!);
+  const data = JSON.parse(strFromU8(unzipSync(new Uint8Array(bytes))['project.json']));
+  expect(data.objects[0].motion).toHaveLength(2); // (.vmd の並び)
+  await open(page, { cube: false });
+  await page.locator('input[type=file][accept=".wgp,.wgpj"]').setInputFiles({ name: download.suggestedFilename(), mimeType: 'application/zip', buffer: bytes });
+  await expect.poll(motionOf, { timeout: 30_000 }).toEqual([['テスト.vmd', '表情.vmd'], true, true]);
 });
 
 test('プロジェクトでないファイルは開かず、今の場面はそのまま', async ({ page }) => {

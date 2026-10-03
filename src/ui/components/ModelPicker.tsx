@@ -1,19 +1,19 @@
 import { useEffect, useState } from 'react';
 import { errorText } from '../../core/errors';
 import { t } from '../../core/i18n';
-import { isDefaultModel, startMotion, type ModelFolderEntry, type ModelsListing, type FolderFileEntry } from '../../core/models';
+import { isDefaultModel, startFiles, type ModelFolderEntry, type ModelsListing, type FolderFileEntry } from '../../core/models';
 import { fetchFolderFile, fetchModelFiles, listModelFolder } from '../../engine/io/modelsFolder';
 import type { Engine } from '../../engine';
 import { useEngine, useUi } from '../EngineContext';
 
 const mb = (n: number) => (n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
-const isEmpty = (l: ModelsListing) => !l.models.length && !l.motions.length && !l.poses.length;
+const isEmpty = (l: ModelsListing) => !l.models.length && !l.motions.length && !l.poses.length && !l.songs.length;
 
 // --- models/ フォルダのモデル・モーション・ポーズを、一覧から選んで読み込む (起動したときと、ファイル > models フォルダから読み込む…) ---
 // 一覧は、アプリを配っているサーバー (開発サーバー・プレビュー・MCP サーバー) が教えてくれる。なければ出さない。
 // モーション (.vmd)・ポーズと表情 (.vpd) は、選んでいるモデルに付ける (選んでいなければ、置いてあるモデル全員に)。
 // 続けて選べるよう、読み込んでも閉じない。
-// 起動したときは、まず決まったモデル (げのげ式初音ミク.pmx。core/models.ts) を読み込んでみて (モーションがあれば付けて再生する)、
+// 起動したときは、まず決まったモデル (げのげ式初音ミク.pmx。core/models.ts) を読み込んでみて (モーションのフォルダの .vmd 全部と曲を付けて再生する)、
 // なければ・読み込めなければ一覧を出す (?nomodels を付けて開くと、どちらもしない)
 export function ModelPicker() {
   const engine = useEngine();
@@ -30,7 +30,7 @@ export function ModelPicker() {
       setList(l);
       if (new URLSearchParams(location.search).has('nomodels')) return;
       const def = l.models.find(isDefaultModel);
-      if (def && await loadDefault(engine, def, startMotion(l.motions, def))) return;
+      if (def && await loadDefault(engine, def, startFiles(l, def))) return;
       if (alive && !isEmpty(l)) engine.ui.set({ modelPicker: true });
     });
     return () => { alive = false; };
@@ -96,13 +96,14 @@ export function ModelPicker() {
       {section(t('モーション'), t('モーションの一覧'), list.motions,
         hasModel ? where : t('モデルを置いてから選ぶと、モデルに付けます (カメラのモーションは、いつでもカメラに)'))}
       {section(t('ポーズ・表情'), t('ポーズの一覧'), list.poses, hasModel ? where : t('モデルを置いてから選ぶと、モデルにポーズと表情を当てます'))}
+      {section(t('曲'), t('曲の一覧'), list.songs, t('選ぶと、最初から再生します (終了フレームを曲の長さに合わせます)'))}
     </div>
   );
 }
 
-// 起動したときの決まったモデルを読み込み (テクスチャが足りなくても聞かない)、モーションがあれば付ける。置けたら true。
+// 起動したときの決まったモデルを読み込み (テクスチャが足りなくても聞かない)、モーション (.vmd 全部) と曲があれば付ける。置けたら true。
 // 読み込んだ場面を最初の状態にする (元に戻す手に数えず、触るまで自動保存しない)
-async function loadDefault(engine: Engine, m: ModelFolderEntry, motion: FolderFileEntry | null) {
+async function loadDefault(engine: Engine, m: ModelFolderEntry, extra: ReturnType<typeof startFiles>) {
   const before = engine.world.models.length;
   try {
     const files = await fetchModelFiles(m, (done, total) => engine.ui.toast(t('{name} を読み込み中… ({done} / {total})', { name: m.name, done, total }), 0));
@@ -112,10 +113,11 @@ async function loadDefault(engine: Engine, m: ModelFolderEntry, motion: FolderFi
     return false;
   }
   if (engine.world.models.length <= before) return false;
-  // (モーションを読み込めなくても、モデルは置いたまま)
-  if (motion) {
-    try { await engine.loadFiles([await fetchFolderFile(motion)], { toSelected: true }); } catch (err) {
-      engine.ui.toast(t('{name} を読み込めませんでした: {error}', { name: motion.name, error: errorText(err) }), 8000);
+  // (モーション・曲を読み込めなくても、モデルは置いたまま)
+  if (extra) {
+    const list = [...extra.motions, ...(extra.song ? [extra.song] : [])];
+    try { await engine.loadFiles(await Promise.all(list.map(fetchFolderFile)), { toSelected: true }); } catch (err) {
+      engine.ui.toast(t('{name} を読み込めませんでした: {error}', { name: list.map(f => f.name).join('、'), error: errorText(err) }), 8000);
     }
   }
   engine.history.reset();

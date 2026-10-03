@@ -123,7 +123,7 @@ export class ProjectIO {
         morphs: inf ? Array.from(inf) : null,
         anim: isEmpty(o.anim) ? null : animationToJson(o.anim!),
         hairHang: e.physics.hairHang(o) ?? false,
-        motion: o.motionFile ? asset(o.motionFile) : null,
+        motion: !o.motionFiles?.length ? null : o.motionFiles.length === 1 ? asset(o.motionFiles[0]) : o.motionFiles.map(asset),
         boneSel: o.boneSel,
       };
     });
@@ -258,12 +258,14 @@ export class ProjectIO {
     });
 
     // モーション (同じ .vmd を付けたモデルはまとめて)・カメラモーション・曲
-    const byMotion = new Map<string, ModelObj[]>();
+    const byMotion = new Map<string, { ids: string[]; targets: ModelObj[] }>();
     data.objects.forEach((so, i) => {
-      const obj = objs[i];
-      if (isModel(obj) && so.motion) byMotion.set(so.motion, [...(byMotion.get(so.motion) ?? []), obj]);
+      const obj = objs[i], ids = [so.motion ?? []].flat();
+      if (!isModel(obj) || !ids.length) return;
+      const key = ids.join('\0');
+      byMotion.set(key, { ids, targets: [...(byMotion.get(key)?.targets ?? []), obj] });
     });
-    for (const [id, targets] of byMotion) { const f = fileOf(id); if (f) await e.motion.load([f], targets); }
+    for (const { ids, targets } of byMotion.values()) { const fs = filesOf(ids); if (fs.length) await e.motion.load(fs, targets); }
     const camFile = fileOf(data.cameraMotion);
     if (camFile) await e.motion.load([camFile], []);
     const song = fileOf(data.music);
