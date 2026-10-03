@@ -263,3 +263,16 @@ test('MoText: 追加メニューからテキストを置き、文字を変える
   await expect.poll(async () => (await ys()).map((y, k) => +(y - before[k]).toFixed(2))).toEqual([0, 0.5, 1]);
   expect(errors).toEqual([]);
 });
+
+test('MoGraph キャッシュ: クローナーの置き場所を焼き付け、消せる', async ({ page }) => {
+  await open(page);
+  await page.getByRole('tree', { name: 'シーンの物' }).getByRole('treeitem', { name: '立方体' }).locator(':scope > .ol-row').click();
+  await page.getByRole('tab', { name: 'モディファイアー' }).click();
+  await expect(page.getByText('MoGraph キャッシュ')).toHaveCount(0); // (クローナーにするまでは出さない)
+  await page.getByRole('checkbox', { name: 'クローナーにする' }).click();
+  await page.evaluate(() => (window as Win).engine.clock.setRange(0, 20));
+  await page.getByRole('button', { name: '焼き付ける' }).click();
+  await expect(page.getByText('フレーム 0〜20 (21 フレーム) を焼き付けてあります')).toBeVisible();
+  await page.getByRole('button', { name: 'キャッシュを消す' }).click();
+  await expect(page.getByRole('button', { name: '焼き付ける' })).toBeVisible();
+});

@@ -20,6 +20,8 @@ interface PoseSnap { pos: Float32Array; quat: Float32Array; morphs: Float32Array
 // (再生していくと覚えるので、飛んだ直後はまだ遅れない)
 export class Cloners {
   private history = new WeakMap<Obj, Map<number, PoseSnap>>();
+  // 焼き付けた置き場所 (MoGraph キャッシュのアドオン)。あれば、エフェクタで計算する代わりに使う
+  cacheOf: ((obj: Obj, frame: number) => Placement[] | null) | null = null;
 
   // settingsOf: 物のクローナーの設定 (アドオンの物ごとの値。なければ普通の物)
   // envOf: 並べるときに使うもの (登録されたエフェクタ・時刻・物の位置)
@@ -65,7 +67,9 @@ export class Cloners {
     obj.node.add(group);
   }
 
-  private layout(obj: Obj, cloner: ClonerSettings) { return clonerLayout(cloner, isModel(obj) ? MAX_CLONES.model : MAX_CLONES.shape, this.envOf(obj)); }
+  private layout(obj: Obj, cloner: ClonerSettings) { return this.cacheOf?.(obj, this.frameNow()) ?? this.compute(obj, cloner); }
+  // エフェクタで計算した置き場所 (キャッシュを使わない。焼き付けるときに使う)
+  compute(obj: Obj, cloner: ClonerSettings) { return clonerLayout(cloner, isModel(obj) ? MAX_CLONES.model : MAX_CLONES.shape, this.envOf(obj)); }
 
   private remember(obj: Obj, bones: THREE.Bone[], inf: number[] | undefined) {
     let map = this.history.get(obj);
@@ -86,7 +90,7 @@ export class Cloners {
       // 時刻・物の位置で変わるエフェクタがあれば、置き場所を並べ直す (クローンは作り直さない)
       const cloner = this.settingsOf(obj)!;
       const env = this.envOf(obj);
-      if (hasLive(cloner.effectors, env) || env.mode?.(cloner.mode)?.live) this.layout(obj, cloner).forEach((p, i) => { const g = group.children[i]; if (g) place(g, p); });
+      if (hasLive(cloner.effectors, env) || env.mode?.(cloner.mode)?.live || this.cacheOf?.(obj, this.frameNow())) this.layout(obj, cloner).forEach((p, i) => { const g = group.children[i]; if (g) place(g, p); });
       if (!isModel(obj)) {
         for (const g of group.children) {
           const m = g.children[0] as THREE.Mesh;

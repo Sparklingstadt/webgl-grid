@@ -984,5 +984,14 @@ const dict: Dictionary = {
   "面 {n} 個。エフェクタの大きさで長さが変わり、位置で先がずれます": "{n} faces. Effector scale changes the length; position shifts the end",
   "MoGraph MoExtrude": "MoGraph MoExtrude",
   "形の面を、法線の向きへ押し出す。エフェクタ (とフィールド) で面ごとの長さとずれを変え、段の数とふたの大きさも決められます。プロパティの「モディファイアー」の「MoExtrude」で使います。": "Extrudes a shape's faces along their normals. Effectors (and fields) change each face's length and offset, and you can set the steps and cap scale. Use it from MoExtrude in the Modifiers tab of Properties.",
+  "MoGraph キャッシュ": "MoGraph Cache",
+  "クローナーにしている物を選んでください": "Select an object used as a cloner",
+  "焼き付けると、開始〜終了の各フレームのクローンの置き場所を覚え、再生・レンダリングで計算せずに使います (重いエフェクタでも軽く、いつも同じ結果)。": "Baking records the clone placements for every frame from start to end and uses them during playback and rendering instead of recalculating (light even with heavy effectors, always the same result).",
+  "クローンの数が変わったので、キャッシュは使っていません。焼き付け直してください。": "The clone count changed, so the cache is not used. Bake again.",
+  "フレーム {start}〜{end} ({n} フレーム) を焼き付けてあります。設定を変えても、消すまではキャッシュを使います。": "Frames {start}–{end} ({n} frames) are baked. The cache is used until cleared, even if settings change.",
+  "焼き付け直す": "Re-bake",
+  "焼き付ける": "Bake",
+  "キャッシュを消す": "Clear Cache",
+  "クローナーの置き場所を、開始〜終了の各フレームで焼き付けます。再生・レンダリングでは計算せずに使うので、重いエフェクタでも軽く、いつも同じ結果になります。プロパティの「モディファイアー」の「MoGraph キャッシュ」で使います。": "Bakes cloner placements for every frame from start to end. Playback and rendering use them without recalculating, so even heavy effectors stay light and results are always the same. Use it from MoGraph Cache in the Modifiers tab of Properties.",
 };
 export default dict;
