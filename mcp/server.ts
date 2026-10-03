@@ -112,6 +112,13 @@ forwardAddon('set_cloner', 'cinema4d.set_cloner', 'クローナー (Cinema 4D �
   random: z.object({ position: z.number().min(0).optional(), rotationDeg: z.number().min(0).optional(), seed: z.number().int().optional() }).optional().describe('ばらつき'),
   effectors: effectorList,
 });
+forwardAddon('set_motext', 'mograph-text.set', 'MoText (Cinema 4D の MoText): 厚みのある文字を立てて置き、文字・単語・行ごとにエフェクタで動かす。id を省くと新しく置く。省いた設定は今のまま。off: true でやめる', {
+  id, off: z.boolean().optional(), text: z.string().optional().describe('文字 (\\n で改行。日本語も)'),
+  font: z.string().optional().describe('sans-serif (ゴシック)・serif (明朝)・monospace・cursive か、フォントの名前'), weight: z.enum(['normal', 'bold']).optional(),
+  size: z.number().positive().optional(), depth: z.number().positive().optional().describe('厚み'), bevel: z.number().min(0).max(0.5).optional().describe('面取り'),
+  spacing: z.number().optional().describe('字間'), lineSpacing: z.number().positive().optional(), align: z.enum(['left', 'center', 'right']).optional(),
+  unit: z.enum(['letters', 'words', 'lines', 'all']).optional().describe('エフェクタをかける単位'), effectors: effectorList,
+});
 forwardAddon('set_fracture', 'mograph-fracture.set', '分割 (Cinema 4D のボロノイ分割・PolyFX): 形を破片に分け、エフェクタで動かす。省いた設定は今のまま。off: true でやめる', {
   id, off: z.boolean().optional(), mode: z.enum(['voronoi', 'polyfx']).optional(), count: z.number().int().min(1).optional().describe('破片の数'),
   seed: z.number().int().optional(), spread: z.enum(['uniform', 'center', 'edge']).optional(), gap: z.number().min(0).max(0.9).optional(), effectors: effectorList,

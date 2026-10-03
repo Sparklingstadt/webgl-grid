@@ -223,3 +223,34 @@ test('MoGraph 分割: 形をボロノイで破片に分け、エフェクタで�
   await expect.poll(() => page.evaluate(() => !(window as Win).engine.world.objects[0].node.getObjectByName('__fracture') && (window as Win).engine.world.objects[0].mesh.visible)).toBe(true);
   expect(errors).toEqual([]);
 });
+
+test('MoText: 追加メニューからテキストを置き、文字を変えると厚みのある文字になる (日本語も)。文字ごとにエフェクタがかかる', async ({ page }) => {
+  const errors = await open(page);
+  await page.getByRole('button', { name: '追加' }).click();
+  await page.getByRole('menuitem', { name: 'テキスト (MoText)' }).click();
+  const box = page.getByRole('textbox', { name: 'テキスト' });
+  await box.fill('AO\nあ');
+  await box.press('Control+Enter');
+  const info = () => page.evaluate(() => {
+    const { engine } = window as Win;
+    const o = engine.selection.current, mt = engine.addons.exposed('mograph-text');
+    const root = o.node.getObjectByName('__motext');
+    const verts: number[] = [];
+    root.traverse((c: Win) => { if (c.isMesh) verts.push(c.geometry.getAttribute('position').count); });
+    return { units: mt.count(o), verts, hidden: !o.mesh.visible, h: +o.h.toFixed(2) };
+  });
+  await expect.poll(async () => (await info()).units).toBe(3);
+  const i = await info();
+  expect(i.hidden).toBe(true);
+  expect(i.verts).toHaveLength(3);
+  expect(i.verts.every(n => n > 30)).toBe(true); // 形がある (O は穴も)
+  expect(i.h).toBeGreaterThan(2); // 2 行ぶんの高さ
+  // 文字ごとのステップ: 後の文字ほど上へ
+  await page.getByRole('button', { name: '+ ステップ' }).last().click();
+  const ys = (): Promise<number[]> => page.evaluate(() => (window as Win).engine.selection.current.node.getObjectByName('__motext').children.map((g: Win) => +g.position.y.toFixed(2)));
+  const before = await ys();
+  await page.getByRole('spinbutton', { name: 'ステップの位置 Y' }).fill('1');
+  await page.keyboard.press('Enter');
+  await expect.poll(async () => (await ys()).map((y, k) => +(y - before[k]).toFixed(2))).toEqual([0, 0.5, 1]);
+  expect(errors).toEqual([]);
+});
