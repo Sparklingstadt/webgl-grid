@@ -21,8 +21,8 @@ export const EFFECTORS: EffectorDef[] = [
     params: [{ key: 'seed', label: 'シード', type: 'number', default: 1, min: 0, step: 1 }],
     // 軸ごとに -1〜1 の強さ (大きさは 0〜1)
     apply: (p, e, c) => {
-      const r = () => c.random() * 2 - 1;
-      const wp: [number, number, number] = [r(), r(), r()], wr = r(), ws = c.random();
+      const f = c.field, r = () => (c.random() * 2 - 1) * f;
+      const wp: [number, number, number] = [r(), r(), r()], wr = r(), ws = c.random() * f;
       p.x += e.position[0] * wp[0]; p.y += e.position[1] * wp[1]; p.z += e.position[2] * wp[2];
       p.ry += e.rotationDeg * Math.PI / 180 * wr;
       p.scale *= Math.max(1 + (e.scale - 1) * ws, 0);
@@ -57,7 +57,10 @@ export const EFFECTORS: EffectorDef[] = [
       const dx = Number(c.params.x) - c.origin.x, dz = Number(c.params.z) - c.origin.z;
       const cos = Math.cos(c.origin.r), sin = Math.sin(c.origin.r);
       const lx = dx * cos - dz * sin, lz = dx * sin + dz * cos;
-      p.ry = Math.atan2(lx - p.x, lz - p.z);
+      // フィールドの強さのぶんだけ、いまの向きからターゲットの向きへ回す (近い回りで)
+      const to = Math.atan2(lx - p.x, lz - p.z);
+      const d = Math.atan2(Math.sin(to - p.ry), Math.cos(to - p.ry));
+      p.ry += d * c.field;
     },
   },
   {
@@ -65,7 +68,7 @@ export const EFFECTORS: EffectorDef[] = [
     transform: false,
     params: [{ key: 'frames', label: '遅れ', type: 'number', default: 5, min: 0, max: MAX_DELAY_FRAMES, step: 1, unit: 'フレーム' }],
     note: isModel => (isModel ? 'ディレイは、再生すると効きます (元のモデルの動きを覚えて、遅れて写す)' : 'ディレイは MMD モデルのクローナーで効きます'),
-    apply: (p, _e, c) => { p.delay += Number(c.params.frames) * c.index; },
+    apply: (p, _e, c) => { p.delay += Number(c.params.frames) * c.index * c.field; },
   },
 ];
 const mograph: AddonModule = {

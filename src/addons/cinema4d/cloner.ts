@@ -1,10 +1,11 @@
-import { int, num, oneOf, vec3 as vec } from '../../core/normalize';
+import { int, num, vec3 as vec } from '../../core/normalize';
 import { seededRandom } from '../../core/random';
-import { applyEffectors, type EffectorValue, type LayoutEnv } from './effectors';
+import { applyEffectors, paramsOf, type EffectorValue, type LayoutEnv } from './effectors';
 
 // --- クローナー (Cinema 4D のクローナー): 物を直線・放射・グリッドに並べる ---
 // 並べる場所は、元の物 (クローナー) の位置と向きから見た座標。元の物を動かす・回すと、クローンも一緒に動く
-export type ClonerMode = 'linear' | 'radial' | 'grid';
+// 並べ方: 直線・放射・グリッドと、アドオンが足したもの (effectors.ts の ClonerModeDef)
+export type ClonerMode = string;
 export type Vec3 = [number, number, number];
 // エフェクタ (Cinema 4D の MoGraph エフェクタ)。上から順にかける。種類 (kind) は、アドオンが登録する (effectors.ts)
 export interface Effector {
@@ -14,6 +15,17 @@ export interface Effector {
   rotationDeg: number; // 縦軸まわりの回転 (度)
   scale: number;       // 大きさ (1 でそのまま)
   params: Record<string, EffectorValue>; // 種類ごとの設定 (ディレイの遅れ・ランダムのシードなど)
+  select: string;        // MoGraph 選択: 効くクローンの番号 ("0-4, 7"・"偶数"・"奇数"。空なら全部)
+  fields: FieldLayer[];  // フィールド (効く範囲。上から重ねる。なければ全体に効く)
+}
+// フィールドの層
+export interface FieldLayer {
+  kind: string;
+  enabled: boolean;
+  blend: 'normal' | 'max' | 'min' | 'add' | 'subtract' | 'multiply';
+  opacity: number;  // 0〜1
+  invert: boolean;
+  params: Record<string, EffectorValue>;
 }
 export const MAX_DELAY_FRAMES = 300; // ディレイで遅らせられる長さ (覚えておく姿勢の数)
 export interface ClonerSettings {
@@ -28,6 +40,7 @@ export interface ClonerSettings {
   grid: Vec3;             // グリッド: X・Y・Z の数
   spacing: Vec3;          // グリッド: 間隔
   random: { position: number; rotationDeg: number; seed: number }; // ばらつき (Cinema 4D のランダム・エフェクタ)
+  modeParams: Record<string, EffectorValue>; // アドオンが足した並べ方の設定
   effectors: Effector[];
 }
 // クローン 1 つの置き場所 (元の物から見た位置と、縦軸まわりの回転 (ラジアン))・大きさ・遅れ (フレーム)
@@ -41,6 +54,7 @@ export const CLONER_DEFAULT: ClonerSettings = {
   radius: 3, startDeg: 0, endDeg: 360, align: true,
   grid: [3, 1, 3], spacing: [1.5, 1.2, 1.5],
   random: { position: 0, rotationDeg: 0, seed: 1 },
+  modeParams: {},
   effectors: [],
 };
 // 数の上限 (MMD モデルは 1 つずつ骨を動かして描くので少なめ)
@@ -48,13 +62,31 @@ export const MAX_CLONES = { shape: 400, model: 25 };
 
 // エフェクタの設定をそろえる (知らない種類も残す。前の版のディレイの frames は params に)
 const KIND = /^[a-z][a-z0-9_.-]{0,40}$/;
-function normalizeEffector(e: Partial<Effector> & { frames?: unknown }): Effector {
+const isKind = (k: unknown): k is string => typeof k === 'string' && KIND.test(k);
+// 種類ごとの設定 (数・真偽・文字だけ。文字は 2000 字まで)
+function normalizeParams(o: unknown) {
   const params: Record<string, EffectorValue> = {};
-  for (const [k, v] of Object.entries(e.params ?? {})) if (['number', 'boolean', 'string'].includes(typeof v) && Object.keys(params).length < 32) params[k] = v as EffectorValue;
+  for (const [k, v] of Object.entries(o && typeof o === 'object' ? o : {})) {
+    if (Object.keys(params).length >= 32) break;
+    if (typeof v === 'number' && Number.isFinite(v) || typeof v === 'boolean') params[k] = v;
+    else if (typeof v === 'string') params[k] = v.slice(0, 2000);
+  }
+  return params;
+}
+const BLENDS = ['normal', 'max', 'min', 'add', 'subtract', 'multiply'] as const;
+function normalizeField(l: Partial<FieldLayer>): FieldLayer {
+  return {
+    kind: l.kind!, enabled: l.enabled !== false, blend: BLENDS.includes(l.blend!) ? l.blend! : 'normal',
+    opacity: num(l.opacity, 1, 0, 1), invert: l.invert === true, params: normalizeParams(l.params),
+  };
+}
+function normalizeEffector(e: Partial<Effector> & { frames?: unknown }): Effector {
+  const params = normalizeParams(e.params);
   if (typeof e.frames === 'number' && params.frames === undefined) params.frames = Math.min(Math.max(e.frames, 0), MAX_DELAY_FRAMES);
   return {
     kind: e.kind!, enabled: e.enabled !== false, position: vec(e.position, [0, 0, 0]), rotationDeg: num(e.rotationDeg, 0),
-    scale: num(e.scale, 1, 0.01, 100), params,
+    scale: num(e.scale, 1, 0.01, 100), params, select: typeof e.select === 'string' ? e.select.slice(0, 200) : '',
+    fields: (Array.isArray(e.fields) ? e.fields : []).filter(l => isKind(l?.kind)).slice(0, 16).map(normalizeField),
   };
 }
 
@@ -63,14 +95,15 @@ export function normalizeCloner(s: Partial<ClonerSettings> | undefined): ClonerS
   const d = CLONER_DEFAULT, o = s ?? {};
   const r: Partial<ClonerSettings['random']> = o.random ?? {};
   return {
-    mode: oneOf(o.mode, CLONER_MODES, d.mode),
+    mode: isKind(o.mode) ? o.mode : d.mode,
     count: int(o.count, d.count, 1, MAX_CLONES.shape),
     step: vec(o.step, d.step), stepRotDeg: num(o.stepRotDeg, d.stepRotDeg),
     radius: num(o.radius, d.radius, 0), startDeg: num(o.startDeg, d.startDeg), endDeg: num(o.endDeg, d.endDeg),
     align: typeof o.align === 'boolean' ? o.align : d.align,
     grid: vec(o.grid, d.grid).map(n => int(n, 1, 1, 50)) as Vec3, spacing: vec(o.spacing, d.spacing),
     random: { position: num(r.position, 0, 0), rotationDeg: num(r.rotationDeg, 0, 0), seed: int(r.seed, 1, 0, 1e9) },
-    effectors: (Array.isArray(o.effectors) ? o.effectors : []).filter(e => typeof e?.kind === 'string' && KIND.test(e.kind)).slice(0, 16).map(normalizeEffector),
+    modeParams: normalizeParams(o.modeParams),
+    effectors: (Array.isArray(o.effectors) ? o.effectors : []).filter(e => isKind(e?.kind)).slice(0, 16).map(normalizeEffector),
   };
 }
 
@@ -101,6 +134,10 @@ export function clonerLayout(s: ClonerSettings, max: number, env?: LayoutEnv): P
       const a = (s.startDeg + d * i) * D;
       out.push({ x: Math.sin(a) * s.radius, y: 0, z: Math.cos(a) * s.radius, ry: s.align ? a : 0, scale: 1, delay: 0 });
     }
+  } else if (s.mode !== 'grid') {
+    // アドオンが足した並べ方 (登録されていなければ並べない)
+    const def = env?.mode?.(s.mode);
+    if (def) out.push(...def.layout(paramsOf(def.params, s.modeParams), max, env!.origin).slice(0, max));
   } else {
     // グリッド: 横 (X・Z) は元の物を真ん中に、縦 (Y) は地面から上へ
     const [nx, ny, nz] = s.grid, [sx, sy, sz] = s.spacing;

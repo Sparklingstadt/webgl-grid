@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { CLONER_DEFAULT, clonerLayout, cloneCount, normalizeCloner, placeAround, type ClonerSettings } from './cloner';
+import { CLONER_DEFAULT, clonerLayout, cloneCount, normalizeCloner, placeAround, type ClonerSettings, type Effector, type FieldLayer } from './cloner';
+import { parseSelection, type LayoutEnv } from './effectors';
 
 const s = (p: Partial<ClonerSettings>): ClonerSettings => normalizeCloner({ ...CLONER_DEFAULT, ...p });
 const r2 = (p: { x: number; y: number; z: number; ry: number }) => [p.x, p.y, p.z, p.ry].map(v => Math.round(v * 100) / 100 + 0);
@@ -36,20 +37,22 @@ describe('クローナーの並べ方', () => {
       expect(p.y).toBe(0);
     }
   });
-  it('設定をそろえる (数は 1 以上・グリッドは 50 まで・知らない並べ方は既定)', () => {
-    const n = normalizeCloner({ mode: 'spiral' as never, count: 0, grid: [0, 99, 2.4] as never, radius: -1 });
+  it('設定をそろえる (数は 1 以上・グリッドは 50 まで・おかしな名前の並べ方は既定。アドオンの並べ方の名前は残す)', () => {
+    const n = normalizeCloner({ mode: 'Spiral!' as never, count: 0, grid: [0, 99, 2.4] as never, radius: -1 });
     expect(n).toMatchObject({ mode: 'grid', count: 1, grid: [1, 50, 2], radius: 0 });
+    expect(normalizeCloner({ mode: 'honeycomb', modeParams: { width: 4, bad: {} as never } })).toMatchObject({ mode: 'honeycomb', modeParams: { width: 4 } });
+    expect(clonerLayout(normalizeCloner({ mode: 'honeycomb' }), 100)).toEqual([]); // (登録されていなければ並べない)
     expect(normalizeCloner(undefined)).toEqual(CLONER_DEFAULT);
   });
   it('エフェクタの設定をそろえる (登録されていない種類も残す。おかしな名前は外す。前の版の遅れは params に)', () => {
     const n = normalizeCloner({ effectors: [{ kind: 'shader' } as never, { kind: 'Bad Kind' } as never, { kind: 'delay', frames: 9999, scale: -1 } as never] });
     expect(n.effectors).toEqual([
-      { kind: 'shader', enabled: true, position: [0, 0, 0], rotationDeg: 0, scale: 1, params: {} },
-      { kind: 'delay', enabled: true, position: [0, 0, 0], rotationDeg: 0, scale: 0.01, params: { frames: 300 } },
+      { kind: 'shader', enabled: true, position: [0, 0, 0], rotationDeg: 0, scale: 1, params: {}, select: '', fields: [] },
+      { kind: 'delay', enabled: true, position: [0, 0, 0], rotationDeg: 0, scale: 0.01, params: { frames: 300 }, select: '', fields: [] },
     ]);
   });
   it('エフェクタは、登録された種類 (env) がなければかけない', () => {
-    const l = clonerLayout(s({ mode: 'linear', count: 2, effectors: [{ kind: 'plain', enabled: true, position: [0, 1, 0], rotationDeg: 0, scale: 1, params: {} }] }), 100);
+    const l = clonerLayout(s({ mode: 'linear', count: 2, effectors: [{ kind: 'plain', enabled: true, position: [0, 1, 0], rotationDeg: 0, scale: 1, params: {}, select: '', fields: [] }] }), 100);
     expect(l.map(p => p.y)).toEqual([0, 0]);
   });
 });
@@ -60,5 +63,35 @@ describe('クローンの置き場所を外から見た位置にする', () => {
     expect(placeAround(p, 5, 3, 0)).toEqual({ x: 6, z: 3, r: 0.2 });
     const q = placeAround(p, 5, 3, Math.PI / 2); // 縦軸まわりに 90° (+X は -Z へ)
     expect([+q.x.toFixed(6), +q.z.toFixed(6), +q.r.toFixed(6)]).toEqual([5, 2, +(Math.PI / 2 + 0.2).toFixed(6)]);
+  });
+});
+
+describe('MoGraph 選択とフィールド', () => {
+  // 試しのエフェクタ (全部に y + 1) とフィールド (x が 0 以上なら 1)
+  const env = (fields = true): LayoutEnv => ({
+    effector: k => (k === 'up' ? { key: 'up', name: '上へ' } : undefined),
+    field: k => (fields && k === 'half' ? { key: 'half', name: '半分', value: p => (p.x >= 0 ? 1 : 0) } : undefined),
+    time: 0, origin: { x: 0, y: 0, z: 0, r: 0 },
+  });
+  const up = (patch: Partial<Effector> = {}): Effector => ({ kind: 'up', enabled: true, position: [0, 1, 0], rotationDeg: 0, scale: 1, params: {}, select: '', fields: [], ...patch });
+  const layer = (patch: Partial<FieldLayer> = {}): FieldLayer => ({ kind: 'half', enabled: true, blend: 'normal', opacity: 1, invert: false, params: {}, ...patch });
+  const ys = (e: Effector, en = env()) => clonerLayout(s({ mode: 'linear', count: 5, step: [1, 0, 0], effectors: [e] }), 100, en).map(p => p.y);
+  // (直線は 0, 1, 2, 3, 4 に並ぶので、真ん中を原点に寄せて試す)
+  const centered = (e: Effector, en = env()) => clonerLayout(s({ mode: 'grid', grid: [5, 1, 1], spacing: [1, 1, 1], effectors: [e] }), 100, en).map(p => p.y);
+
+  it('MoGraph 選択: 番号・範囲・偶数・奇数', () => {
+    expect(ys(up({ select: '0-1, 4' }))).toEqual([1, 1, 0, 0, 1]);
+    expect(ys(up({ select: '3-' }))).toEqual([0, 0, 0, 1, 1]);
+    expect(ys(up({ select: '偶数' }))).toEqual([1, 0, 1, 0, 1]);
+    expect(ys(up({ select: '奇数' }))).toEqual([0, 1, 0, 1, 0]);
+    expect(parseSelection('', 3)).toBeNull();
+  });
+  it('フィールド: 範囲の中だけ効き、反転・不透明度・重ね方が効く。登録されていなければ全体に効く', () => {
+    expect(centered(up({ fields: [layer()] }))).toEqual([0, 0, 1, 1, 1]);
+    expect(centered(up({ fields: [layer({ invert: true })] }))).toEqual([1, 1, 0, 0, 0]);
+    expect(centered(up({ fields: [layer({ opacity: 0.5 })] }))).toEqual([0, 0, 0.5, 0.5, 0.5]);
+    expect(centered(up({ fields: [layer(), layer({ invert: true, blend: 'max' })] }))).toEqual([1, 1, 1, 1, 1]);
+    expect(centered(up({ fields: [layer(), layer({ invert: true, blend: 'multiply' })] }))).toEqual([0, 0, 0, 0, 0]);
+    expect(centered(up({ fields: [layer()] }), env(false))).toEqual([1, 1, 1, 1, 1]);
   });
 });

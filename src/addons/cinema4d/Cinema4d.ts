@@ -6,15 +6,19 @@ import { MAX_CLONES, clonerLayout, normalizeCloner, placeAround, type ClonerSett
 import { Cloners } from './Cloners';
 import { normalizeDeformers, type Deformer } from './deform';
 import { Deformers } from './Deformers';
-import type { EffectorDef, LayoutEnv } from './effectors';
+import { Emitter } from '../../core/events';
+import { worldOf, type ClonerModeDef, type EffectorDef, type FieldDef, type LayoutEnv } from './effectors';
 
-// --- Cinema 4D アドオンの中身: クローナー (とエフェクタ)・デフォーマ ---
+// --- Cinema 4D アドオンの中身: クローナー・デフォーマと、MoGraph の登録口 (エフェクタ・フィールド・並べ方) ---
 // 設定は物ごとの値 (プロジェクトに入り、元に戻せる)。前の版のプロジェクトの cloner・deformers もそのまま読む。
 // engine.addons.exposed('cinema4d') で、ほか (テスト・ほかのアドオン) からも使える
 export class Cinema4d {
   readonly cloners: Cloners;
   readonly deformers: Deformers;
   readonly effectors = new Registry<EffectorDef>(); // エフェクタの種類 (MoGraph エフェクタのアドオンが登録する)
+  readonly fields = new Registry<FieldDef>();       // フィールドの種類 (MoGraph フィールドのアドオン)
+  readonly modes = new Registry<ClonerModeDef>();   // クローナーの並べ方 (MoGraph 配置のアドオン)
+  readonly events = new Emitter<{ registry: [] }>(); // 種類が増減した (ほかの MoGraph の物も作り直す)
   private readonly clonerData: ObjectData<ClonerSettings>;
   private readonly deformerData: ObjectData<Deformer[]>;
   private on = true; // 切ったら false (クローンと変形を外すとき、値はあっても「なし」として作り直す)
@@ -24,9 +28,10 @@ export class Cinema4d {
     // (値を読むのは、登録の途中 (有効にしたときに当て直す) でも使えるよう、物の値から直接)
     const value = <T>(key: string) => (o: Obj) => (this.on ? (o.addonData?.[`${api.id}.${key}`] as T | undefined) ?? null : null);
     this.cloners = new Cloners(e.world, e.viewport, () => e.clock.frame, value<ClonerSettings>('cloner'), o => this.env(o));
-    // エフェクタの種類が増減したら、クローナーを並べ直す
-    this.effectors.events.on('changed', () => {
+    // 種類が増減したら、クローナーを並べ直す
+    for (const r of [this.effectors, this.fields, this.modes]) r.events.on('changed', () => {
       for (const o of e.world.objects) if (this.cloner(o)) this.cloners.rebuild(o);
+      this.events.emit('registry');
       api.refresh();
     });
     this.deformers = new Deformers(this.cloners, e.viewport, value<Deformer[]>('deformers'));
@@ -41,11 +46,24 @@ export class Cinema4d {
     });
     api.onBeforeRender(() => this.cloners.sync());
   }
-  // エフェクタの種類を登録する (外す関数を返す)
+  // 種類を登録する (外す関数を返す)
   addEffector(def: EffectorDef) { return this.effectors.add(def); }
-  private env(o: Obj): LayoutEnv {
+  addField(def: FieldDef) { return this.fields.add(def); }
+  addClonerMode(def: ClonerModeDef) { return this.modes.add(def); }
+  // 物 o の MoGraph を並べるときに使うもの (登録された種類・いまの時刻・物の位置)
+  env(o: Obj): LayoutEnv {
     const e = this.api.engine;
-    return { effector: k => this.effectors.get(k), time: e.clock.t, origin: { x: o.x, z: o.z, r: o.r } };
+    return {
+      effector: k => this.effectors.get(k), field: k => this.fields.get(k), mode: k => this.modes.get(k),
+      time: e.clock.t, origin: { x: o.x, y: o.y, z: o.z, r: o.r },
+    };
+  }
+  // クローナーのクローンの、場面での位置・向き・大きさ (継承のエフェクタなどが使う)
+  worldLayout(o: Obj) {
+    const c = this.cloner(o);
+    if (!c) return [];
+    const env = this.env(o);
+    return clonerLayout(c, isModel(o) ? MAX_CLONES.model : MAX_CLONES.shape, env).map(p => ({ ...worldOf(p, env.origin), ry: o.r + p.ry, scale: p.scale }));
   }
 
   // 切るとき (クローンと変形を外す前に呼ぶ)

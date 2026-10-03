@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
-import { MAX_CLONES, MAX_DELAY_FRAMES, clonerLayout, cloneCount, type ClonerSettings, type Placement } from './cloner';
+import { MAX_CLONES, MAX_DELAY_FRAMES, clonerLayout, type ClonerSettings, type Placement } from './cloner';
 import { hasLive, type LayoutEnv } from './effectors';
 import type { Viewport } from '../../engine/render/Viewport';
 import { isModel, type Any, type Obj } from '../../engine/types';
@@ -75,7 +75,7 @@ export class Cloners {
   }
 
   // クローンの数 (サイドバーに出す)
-  count(obj: Obj) { const c = this.settingsOf(obj); return c ? cloneCount(c, isModel(obj) ? MAX_CLONES.model : MAX_CLONES.shape) : 0; }
+  count(obj: Obj) { return this.settingsOf(obj) ? obj.node.getObjectByName(GROUP)?.children.length ?? 0 : 0; }
 
   // 描く前: 材質 (スロットを替えた・作り直した) と、MMD モデルの骨・表情を元の物に合わせる
   sync() {
@@ -85,7 +85,8 @@ export class Cloners {
       if (!group) continue;
       // 時刻・物の位置で変わるエフェクタがあれば、置き場所を並べ直す (クローンは作り直さない)
       const cloner = this.settingsOf(obj)!;
-      if (hasLive(cloner.effectors, this.envOf(obj))) this.layout(obj, cloner).forEach((p, i) => { const g = group.children[i]; if (g) place(g, p); });
+      const env = this.envOf(obj);
+      if (hasLive(cloner.effectors, env) || env.mode?.(cloner.mode)?.live) this.layout(obj, cloner).forEach((p, i) => { const g = group.children[i]; if (g) place(g, p); });
       if (!isModel(obj)) {
         for (const g of group.children) {
           const m = g.children[0] as THREE.Mesh;

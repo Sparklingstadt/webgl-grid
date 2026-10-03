@@ -6,7 +6,7 @@ import { EFFECTORS } from '.';
 
 const def = (k: string) => EFFECTORS.find(d => d.key === k)!;
 const eff = (k: string, patch: object = {}) => ({ ...newEffector(def(k)), ...patch });
-const env = (time = 0, origin = { x: 0, z: 0, r: 0 }): LayoutEnv => ({ effector: k => EFFECTORS.find(d => d.key === k), time, origin });
+const env = (time = 0, origin = { x: 0, y: 0, z: 0, r: 0 }): LayoutEnv => ({ effector: k => EFFECTORS.find(d => d.key === k), time, origin });
 const r = (v: number) => Math.round(v * 100) / 100 + 0;
 const line = (effectors: ClonerSettings['effectors'], count = 3): ClonerSettings =>
   normalizeCloner({ ...CLONER_DEFAULT, mode: 'linear', count, step: [1, 0, 0], effectors });
@@ -39,7 +39,7 @@ describe('MoGraph エフェクタ', () => {
   });
 
   it('ターゲット: クローンを決めた場所へ向ける (クローナーの位置と向きも考える)', () => {
-    const toward = (origin: { x: number; z: number; r: number }) =>
+    const toward = (o: { x: number; z: number; r: number }, origin = { ...o, y: 0 }) =>
       clonerLayout(line([eff('target', { params: { x: 1, z: 5 } })], 2), 100, env(0, origin)).map(p => r(p.ry));
     expect(toward({ x: 0, z: 0, r: 0 })).toEqual([r(Math.atan2(1, 5)), 0]);
     // クローナーを (1, 5) から見て真後ろへ回すと、向きは逆に
