@@ -30,6 +30,7 @@
     "dist/**",
     "public/libs/**",
     "test-results/**",
-    "playwright-report/**"
+    "playwright-report/**",
+    "src/vendor/**"
   ]
 }

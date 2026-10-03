@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { MMDParser } from 'three/examples/jsm/libs/mmdparser.module.js';
+import { MMDParser } from '../src/vendor/three-mmd/mmdparser.module.js';
 import { expect, test, type Page } from './fixtures/test';
 import { choose, loadTestModel, open, screenPosOf, setColor, type Win } from './helpers';
 

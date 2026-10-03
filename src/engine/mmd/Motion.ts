@@ -28,7 +28,7 @@ export class Motion implements System {
   }
 
   async ensureHelper() {
-    const { MMDAnimationHelper } = await import('three/examples/jsm/animation/MMDAnimationHelper.js');
+    const { MMDAnimationHelper } = await import('../../vendor/three-mmd/MMDAnimationHelper.js');
     return this.helper ??= new MMDAnimationHelper();
   }
   get hasMotion() { return !!this.camera || this.world.objects.some(b => b.animated); }

@@ -1,0 +1,10 @@
+# three.js の MMD 用の部品 (r171)
+
+three.js は r172 で MMD 用の部品 (MMDLoader・MMDAnimationHelper・MMDPhysics・MMDToonShader・MMD のパーサー) を本体から外した。
+このアプリは .pmx・.vmd を読むのに使うので、外される前の最後の版 (three r171、npm の three@0.171.0) から、ここに取り込んでいる。
+MMDAnimationHelper が使う CCDIKSolver も、同じ版のものを一緒に置いている (本体の版が上がっても、IK の動きを変えないため)。
+
+- 元のファイル: `three/examples/jsm/{loaders/MMDLoader, animation/MMDAnimationHelper, animation/MMDPhysics, animation/CCDIKSolver, shaders/MMDToonShader, libs/mmdparser.module}.js`
+- 型定義: `@types/three@0.171` の同じ名前の `.d.ts` (mmdparser.module.d.ts だけは、使う分を自分で書いたもの)
+- 変えたところ: お互いを読み込む場所 (import のパス) だけ。TGALoader は three 本体のものを使う
+- ライセンス: three.js と同じ MIT (LICENSE)

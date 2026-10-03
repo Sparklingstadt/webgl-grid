@@ -1,4 +1,4 @@
-import { MMDParser } from 'three/examples/jsm/libs/mmdparser.module.js';
+import { MMDParser } from '../vendor/three-mmd/mmdparser.module.js';
 import { describe, expect, it } from 'vitest';
 import { makePmx } from '../../e2e/fixtures/pmx';
 import { patchPmxMaterials, readPmxMaterials, type PmxMaterialValues } from './pmxMaterials';

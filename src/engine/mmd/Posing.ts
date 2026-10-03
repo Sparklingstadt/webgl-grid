@@ -114,7 +114,7 @@ export class Posing implements System {
     });
     this.apply(obj);
     if (!obj.solvers) {
-      const [helper, { CCDIKSolver }] = await Promise.all([this.motion.ensureHelper(), import('three/examples/jsm/animation/CCDIKSolver.js')]);
+      const [helper, { CCDIKSolver }] = await Promise.all([this.motion.ensureHelper(), import('../../vendor/three-mmd/CCDIKSolver.js')]);
       obj.solvers = { ik: new CCDIKSolver(mesh, mesh.geometry.userData.MMD.iks), grant: helper.createGrantSolver(mesh) };
     }
     mesh.updateMatrixWorld(true);

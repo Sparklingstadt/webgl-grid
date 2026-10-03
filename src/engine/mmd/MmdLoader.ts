@@ -10,8 +10,8 @@ import { Stage } from './Stage';
 export interface LoadedModel { mesh: Any; slots: string[]; isStage: boolean }
 
 // MMDLoader は大きいので、初めて使うときに読み込む
-let mmdLoaderModule: Promise<typeof import('three/examples/jsm/loaders/MMDLoader.js')> | null = null;
-export const loadMMDLoader = () => (mmdLoaderModule ??= import('three/examples/jsm/loaders/MMDLoader.js'));
+let mmdLoaderModule: Promise<typeof import('../../vendor/three-mmd/MMDLoader.js')> | null = null;
+export const loadMMDLoader = () => (mmdLoaderModule ??= import('../../vendor/three-mmd/MMDLoader.js'));
 
 // ファイル名の比較用: パスの区切りをそろえ、最後の名前だけを小文字・NFC で取り出す
 const fileKey = (path: string) => decodeURIComponent(path).replace(/\\/g, '/').split('/').pop()!.normalize('NFC').toLowerCase();

@@ -92,7 +92,7 @@ export class Physics implements System {
     if (!mmd?.rigidBodies?.length) return; // 剛体のないモデルは動かさない
     try {
       const Ammo = await loadAmmo();
-      const { MMDPhysics } = await import('three/examples/jsm/animation/MMDPhysics.js');
+      const { MMDPhysics } = await import('../../vendor/three-mmd/MMDPhysics.js');
       if (!this.world.has(obj)) return; // 読み込み中に消された
       const physics = inModelFrame(obj, () => new MMDPhysics(mesh, mmd.rigidBodies, mmd.constraints));
       warmup(obj, physics, 60); // 最初の姿勢になじませる
