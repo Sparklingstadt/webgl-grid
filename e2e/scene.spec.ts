@@ -1,9 +1,9 @@
 import { expect, test } from './fixtures/test';
 import { emptySpot, open, screenPosOf, uiState, type Win } from './helpers';
 
-// 3D ビューポートとメニュー・サイドバーの基本操作
+// 3D ビューポート・メニュー・プロパティ・ビューポートのサイドバー (N パネル) の基本操作
 test.describe('ビューポート', () => {
-  test('最初の画面: 何も置いていない (置き方の案内が出る)、Blender 風の 3 つの領域、何も選んでいない', async ({ page }) => {
+  test('最初の画面: 何も置いていない (置き方の案内が出る)、Blender 風の領域 (ビューポート・アウトライナー・プロパティ・タイムライン・状態バー)、何も選んでいない', async ({ page }) => {
     const errors = await open(page, { cube: false });
     expect(await page.evaluate(() => (window as Win).engine.world.objects.length)).toBe(0);
     await expect(page.locator('.view-hint')).toContainText('Shift+A');
@@ -11,8 +11,14 @@ test.describe('ビューポート', () => {
     await expect(page.getByRole('button', { name: 'ファイル' })).toBeVisible();
     await expect(page.getByRole('region', { name: '3D ビューポート' })).toBeVisible();
     await expect(page.getByRole('region', { name: 'タイムライン' })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'アウトライナー' })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'プロパティ' })).toBeVisible();
+    await expect(page.getByRole('contentinfo', { name: '状態バー' })).toContainText('オブジェクト 0/0');
+    await expect(page.getByRole('tablist', { name: 'ワークスペース' }).getByRole('tab', { name: 'レイアウト' })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('group', { name: 'カメラの操作' })).toBeVisible(); // ツールバー
+    await expect(page.getByRole('complementary', { name: 'サイドバー' })).toHaveCount(0); // N パネルは最初は閉じている
     await expect(page.locator('.view-info')).toHaveText(/ユーザー・透視投影/);
-    await expect(page.getByText('何も選んでいません')).toBeVisible();
+    await expect(page.getByText('何も選んでいません。ビューポートで物をクリックすると選べます。')).toBeVisible();
     const s = await uiState(page);
     expect(s).toMatchObject({ frame: 0, start: 0, end: 250, playing: false, sel: null });
     // WebGL で描けている (エラーが出ていない)
@@ -20,7 +26,7 @@ test.describe('ビューポート', () => {
     expect(errors).toEqual([]);
   });
 
-  test('追加メニューで形を置くと、それが選ばれてサイドバーに出る', async ({ page }) => {
+  test('追加メニューで形を置くと、それが選ばれてプロパティに出る', async ({ page }) => {
     await open(page);
     await page.getByRole('button', { name: '追加' }).click();
     await page.getByRole('menuitem', { name: 'トーラス' }).click();
@@ -70,7 +76,7 @@ test.describe('ビューポート', () => {
     await expect.poll(async () => (await uiState(page)).sel).toBeNull();
   });
 
-  test('サイドバーで位置と色を変えられる', async ({ page }) => {
+  test('プロパティ (オブジェクトのタブ) で位置と色を変えられる', async ({ page }) => {
     await open(page);
     const p = await screenPosOf(page, 0);
     await page.mouse.click(p.x, p.y);

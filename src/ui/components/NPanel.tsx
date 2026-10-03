@@ -24,7 +24,7 @@ export function NPanel() {
         {tab === 'tool' && <ToolTab />}
         {tab === 'view' && <ViewTab />}
       </div>
-      <nav className="npanel-tabs" role="tablist" aria-label={t('サイドバーのタブ (N)')} aria-orientation="vertical">
+      <nav className="npanel-tabs" role="tablist" aria-label={t('サイドバーのタブ')} aria-orientation="vertical">
         {TABS.map(([k, label]) => <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => choose(k)}>{t(label)}</button>)}
       </nav>
     </aside>

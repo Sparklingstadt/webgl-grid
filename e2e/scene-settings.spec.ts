@@ -1,7 +1,7 @@
 import { expect, test, type Page } from './fixtures/test';
 import { choose, open, type Win } from './helpers';
 
-// シーン (空・床・太陽): サイドバーの「シーン」から変え、元に戻せ、書き出した画像にも写る
+// シーン (空・床・太陽): プロパティの「シーン」のタブから変え、元に戻せ、書き出した画像にも写る
 const topPixel = (page: Page) => page.evaluate(async () => {
   const { engine } = window as Win;
   engine.output.set({ width: 64, height: 64 });

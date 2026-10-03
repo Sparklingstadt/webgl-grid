@@ -77,7 +77,7 @@ export function Sidebar({ tab, setTab, onLoadPose, onOpenShaderEditor, onHover }
           </span>
         </div>
         <div className="props-body">
-          <nav className="side-tabs" role="tablist" aria-label={t('サイドバーのタブ')} aria-orientation="vertical">
+          <nav className="side-tabs" role="tablist" aria-label={t('プロパティのタブ')} aria-orientation="vertical">
             {tabs.map((d, i) => (
               <button key={d.key} type="button" role="tab" aria-selected={shown === d.key} aria-label={t(d.label)} title={t(d.label)}
                       className={i > 0 && tabs[i - 1].group !== d.group ? 'group-start' : undefined} onClick={() => setTab(d.key)}>

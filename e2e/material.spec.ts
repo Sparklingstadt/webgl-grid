@@ -68,7 +68,7 @@ test('シェーダーエディター: 開く・ノードを足す・マウスで
   await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 8 });
   await page.mouse.up();
   expect((await active(page))!.links).toContain('color->baseColor');
-  // サイドバーのサーフェスには、つながっている相手が出る
+  // プロパティ (マテリアルのタブ) のサーフェスには、つながっている相手が出る
   await expect(page.getByRole('button', { name: '← RGB' })).toBeVisible();
   // RGB を選んで X で消すと、つながりも消える
   await rgb.locator('.node-header').click();

@@ -910,7 +910,6 @@ const dict: Dictionary = {
   "アウトライナーとプロパティを出す": "Show Outliner & Properties",
   "アウトライナーとプロパティを隠す": "Hide Outliner & Properties",
   "アクティブツール": "Active Tool",
-  "サイドバーのタブ (N)": "Sidebar Tabs (N)",
   "ツール": "Tool",
   "トランスフォーム": "Transform",
   "ボーン: {name}": "Bone: {name}",
@@ -941,5 +940,6 @@ const dict: Dictionary = {
   "拡大縮小": "Scale",
   "数字で値。クリック・Enter で決定、Esc・右クリックでやめる": "Numbers: value. Click/Enter to confirm, Esc/right-click to cancel",
   "移動 / 回転 / 拡大縮小 (Alt で元に戻す)": "Move / Rotate / Scale (Alt to clear)",
+  "プロパティのタブ": "Properties Tabs",
 };
 export default dict;

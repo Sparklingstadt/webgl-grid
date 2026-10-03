@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { expect, test } from './fixtures/test';
 import { open, type Win } from './helpers';
 
-// アドオン: 編集 > アドオンマネージャー で有効にすると、メニューとサイドバーのパネルが足され、
+// アドオン: 編集 > アドオンマネージャー で有効にすると、メニューとプロパティのパネルが足され、
 // ファイルからインストールしたアドオンは、ページを開き直しても残る
 test('組み込みのアドオンを有効にして使い、切ると消える', async ({ page }) => {
   const errors = await open(page);

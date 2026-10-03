@@ -127,7 +127,7 @@ test('エフェクタ: ステップで 1 つずつ大きく、ディレイで MM
   expect(errors).toEqual([]);
 });
 
-test('デフォーマ: サイドバーで足すと形が変わり、外すと戻る', async ({ page }) => {
+test('デフォーマ: モディファイアーのタブで足すと形が変わり、外すと戻る', async ({ page }) => {
   const errors = await open(page);
   const p = await screenPosOf(page, 0);
   await page.mouse.click(p.x, p.y);

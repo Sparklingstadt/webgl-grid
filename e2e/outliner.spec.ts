@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures/test';
 import { loadTestModel, open, screenPosOf, uiState, type Win } from './helpers';
 
-// アウトライナー (Blender のアウトライナー): サイドバーの上の、置いた物の一覧
+// アウトライナー (Blender のアウトライナー): 右の列の上の、置いた物の一覧
 const tree = (page: Page) => page.getByRole('tree', { name: 'シーンの物' });
 const item = (page: Page, name: string) => tree(page).getByRole('treeitem', { name, exact: true });
 const row = (page: Page, name: string) => item(page, name).locator(':scope > .ol-row');
@@ -25,7 +25,7 @@ test('置いた物を一覧にし、選ぶ・名前を変える・隠す・レ�
   await page.keyboard.press('ArrowDown');
   await expect.poll(async () => (await uiState(page)).sel?.name).toBe('トーラス');
   await expect(item(page, 'トーラス')).toBeFocused();
-  // ダブルクリックで名前を変える (サイドバーの名前・ビューポート左上にも出る)
+  // ダブルクリックで名前を変える (プロパティの名前・ビューポート左上にも出る)
   await row(page, '立方体').dblclick();
   await page.getByRole('textbox', { name: '名前', exact: true }).first().fill('台座');
   await page.keyboard.press('Enter');
@@ -84,7 +84,7 @@ test('MMD モデルを広げるとボーンが並び、押すとボーンのタ�
   await page.getByRole('searchbox', { name: 'アウトライナーを絞り込む' }).fill('右');
   await expect(model.getByRole('treeitem')).toHaveText(['右腕']);
   await page.getByRole('searchbox', { name: 'アウトライナーを絞り込む' }).fill('');
-  // F2 (ビューポートの上で): 選んでいる物の名前を変える。サイドバーを閉じていても開く
+  // F2 (ビューポートの上で): 選んでいる物の名前を変える。アウトライナーとプロパティを閉じていても開く
   await page.getByRole('button', { name: 'プロパティ', exact: true }).click(); // (アウトライナーとプロパティを隠す)
   await expect(tree(page)).toHaveCount(0);
   await page.getByRole('region', { name: '3D ビューポート' }).hover();

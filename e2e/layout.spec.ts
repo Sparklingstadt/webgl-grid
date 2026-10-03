@@ -2,7 +2,7 @@ import { expect, test } from './fixtures/test';
 import { loadTestModel, open } from './helpers';
 
 // Blender 風の画面: 右の列 (アウトライナー・プロパティ)、プロパティのタブ (選んでいる物に合うものだけ)、ワークスペース、状態バー
-const tabs = (page: import('@playwright/test').Page) => page.getByRole('tablist', { name: 'サイドバーのタブ' }).getByRole('tab');
+const tabs = (page: import('@playwright/test').Page) => page.getByRole('tablist', { name: 'プロパティのタブ' }).getByRole('tab');
 
 test('プロパティのタブは、選んでいる物に使えるものだけ出し、使えないタブからはオブジェクトに戻る', async ({ page }) => {
   await open(page, { cube: false });
