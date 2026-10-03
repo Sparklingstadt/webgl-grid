@@ -917,6 +917,7 @@ let MMDPhysics = null;
 const physicsList = []; // { obj, physics, prev, vel, acc, gravity }
 const MMD_GRAVITY = 9.8 * 10; // MMD の重力 (モデルの単位で)
 const INERTIA = 0.3;          // 運ぶ・落ちるときの揺れの強さ
+const ROT_INERTIA = 0.5;      // 回すときの揺れの強さ
 async function startPhysics(obj, mesh) {
   const mmd = mesh.geometry.userData.MMD;
   if (!mmd?.rigidBodies?.length) return; // 剛体のないモデルは動かさない
@@ -939,10 +940,17 @@ async function startPhysics(obj, mesh) {
       obj.node.updateMatrixWorld(true);
     }
     physics.warmup(60); // 最初の姿勢になじませる
+    // 物理演算の座標 (拡大縮小を外したモデル自身の座標) での、置き場所の回転軸 (縦軸) の位置。
+    // メッシュは置き場所から mesh.position だけずらして k 倍しているので、置き場所の原点はここに来る
+    const k = mesh.scale.x;
     physicsList.push({
-      obj, physics, scale: 1 / mesh.scale.x,
+      obj, physics, scale: 1 / k,
       prev: null, vel: new THREE.Vector3(), acc: new THREE.Vector3(),
       gravity: new Ammo.btVector3(0, -MMD_GRAVITY, 0), // 毎フレーム作り直すと Ammo のメモリが増え続けるので使い回す
+      force: new Ammo.btVector3(0, 0, 0),
+      axisX: mesh.position.x * (1 - 1 / k), axisZ: mesh.position.z * (1 - 1 / k),
+      prevR: null, w: 0, alpha: 0,
+      dynamic: physics.bodies.filter(b => b.params.type !== 0), // 骨に付いていくだけの剛体は除く
     });
     startTicking();
   } catch (err) {
@@ -1189,6 +1197,35 @@ function startTicking() {
   requestAnimationFrame(tick);
 }
 const _p = new THREE.Vector3(), _v = new THREE.Vector3(), _a = new THREE.Vector3();
+// 縦軸まわりに回したときの揺れ。回転は剛体ごとに軸からの位置で力が変わるので、見かけの重力ではなく
+// 剛体 1 つずつに見かけの力をかける (Ammo は 1 回の計算のあとに力を消すので、毎フレームかけ直す)
+//   オイラー力 (回し始め・止めるときに取り残される) -α×r、遠心力 ω²r、コリオリ力 -2ω×v
+function applyRotationForces(p, dt) {
+  const r = p.obj.r;
+  if (p.prevR !== null && dt > 0) {
+    const w = (r - p.prevR) / dt;
+    p.alpha += ((w - p.w) / dt - p.alpha) * 0.25; // 急な変化はならす
+    p.w = w;
+  }
+  p.prevR = r;
+  const w = p.w, alpha = p.alpha;
+  if (Math.abs(w) < 1e-3 && Math.abs(alpha) < 1e-2) return;
+  const limit = MMD_GRAVITY * 2;
+  for (const rb of p.dynamic) {
+    const body = rb.body;
+    const o = body.getCenterOfMassTransform().getOrigin();
+    const x = o.x() - p.axisX, z = o.z() - p.axisZ;
+    const v = body.getLinearVelocity();
+    let ax = (w * w * x - alpha * z - 2 * w * v.z()) * ROT_INERTIA;
+    let az = (w * w * z + alpha * x + 2 * w * v.x()) * ROT_INERTIA;
+    const len = Math.hypot(ax, az);
+    if (len > limit) { ax *= limit / len; az *= limit / len; }
+    const m = rb.params.weight;
+    p.force.setValue(ax * m, 0, az * m);
+    body.activate(); // 止まって眠っている剛体も起こす
+    body.applyCentralForce(p.force);
+  }
+}
 function tick(now) {
   if (!physicsList.length && !hasMotion()) { ticking = false; return; }
   const dt = tickLast ? Math.min(Math.max(now - tickLast, 0) / 1000, 1 / 20) : 1 / 60;
@@ -1211,6 +1248,7 @@ function tick(now) {
     a.clampLength(0, MMD_GRAVITY * 2);
     p.gravity.setValue(-a.x, -MMD_GRAVITY - a.y, -a.z);
     p.physics.world.setGravity(p.gravity);
+    applyRotationForces(p, dt);
     p.physics.update(dt);
   }
   render();
