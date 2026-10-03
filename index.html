@@ -237,6 +237,7 @@ document.getElementById('reset').addEventListener('click', () => {
   closePicker();
   Object.assign(cam, CAM_DEFAULT);
   while (boxes.length) removeObject(boxes[0]);
+  removeStage();
   boxes.push(makeBox(0, 0, 0));
   updateAddButton();
   requestDraw();
@@ -285,22 +286,25 @@ function removeObject(obj) {
   stopPhysics(obj);
   stopMotion(obj);
   if (obj.s === 3) {
-    // モデルは形状・材質・テクスチャを片付ける
-    obj.node.traverse(o => {
-      if (!o.isMesh) return;
-      o.geometry.dispose();
-      for (const m of [o.material].flat()) {
-        // MMD の材質はテクスチャを uniforms の中に持っている
-        for (const v of [...Object.values(m), ...Object.values(m.uniforms ?? {}).map(u => u.value)]) {
-          if (v?.isTexture) v.dispose();
-        }
-        m.dispose();
-      }
-    });
+    disposeModel(obj.node);
   } else {
     obj.mesh.material.dispose();
   }
   boxes.splice(boxes.indexOf(obj), 1);
+}
+// MMD モデルの形状・材質・テクスチャを片付ける
+function disposeModel(root) {
+  root.traverse(o => {
+    if (!o.isMesh) return;
+    o.geometry.dispose();
+    for (const m of [o.material].flat()) {
+      // MMD の材質はテクスチャを uniforms の中に持っている
+      for (const v of [...Object.values(m), ...Object.values(m.uniforms ?? {}).map(u => u.value)]) {
+        if (v?.isTexture) v.dispose();
+      }
+      m.dispose();
+    }
+  });
 }
 const topOf = b => b.y + b.h; // 上に載せられる高さ
 
@@ -387,8 +391,7 @@ function fallStep(now) {
 
 // 画面中央 (注視点) に近い、ほかの物と重ならないマス目を探す (半径 rad の物を置く)
 const radiusOf = b => Math.hypot(b.hx, b.hz);
-function findFreeSpot(rad) {
-  const cx = Math.round(cam.tx), cz = Math.round(cam.tz);
+function findFreeSpot(rad, cx = Math.round(cam.tx), cz = Math.round(cam.tz)) {
   const free = (x, z) => boxes.every(b => Math.max(Math.abs(b.x - x), Math.abs(b.z - z)) >= radiusOf(b) + rad + 0.1);
   for (let r = 0; r < 40; r++) {
     for (let i = -r; i <= r; i++) {
@@ -748,7 +751,10 @@ canvas.addEventListener('wheel', e => {
 // --- MMD モデル (.pmx) とモーション (.vmd) の読み込み ---
 // .pmx とテクスチャ画像 (と、あれば .vmd) をまとめて選んでもらい、ブラウザの中だけで読む (どこにも送らない)。
 // .vmd だけを選んだときは、置いてあるモデル全員にそのモーションを付ける
-const MODEL_HEIGHT = 2; // 読み込んだモデルは高さ 2 (立方体2個分) にそろえる
+const MODEL_HEIGHT = 2;
+// MMD の 1 単位をこの大きさで置く。標準的な身長 20 のモデルが高さ 2 (立方体 2 個分) になる。
+// どのモデルも同じ倍率なので、人物とステージの大きさの関係や、カメラモーションの位置が MMD と同じになる
+const MMD_SCALE = MODEL_HEIGHT / 20;
 const pmxInput = document.getElementById('pmx-input');
 loadButton.addEventListener('click', () => pmxInput.click());
 pmxInput.addEventListener('change', () => {
@@ -765,7 +771,8 @@ async function loadFiles(files) {
   if (files.some(f => /\.pmx$/i.test(f.name))) {
     const obj = await loadPmx(files);
     if (!obj) return;
-    targets = [obj];
+    // ステージを読んだときは、モーションは置いてある人物全員に付ける
+    targets = obj === STAGE ? boxes.filter(b => b.s === 3) : [obj];
   } else if (vmds.length || song) {
     targets = boxes.filter(b => b.s === 3);
   } else {
@@ -807,6 +814,12 @@ async function loadPmx(files) {
     mmdLoaderModule ??= await import('three/addons/loaders/MMDLoader.js');
     const loader = new mmdLoaderModule.MMDLoader(manager);
     const mesh = await new Promise((resolve, reject) => loader.load(MODEL_URL, resolve, undefined, reject));
+    fixEmptyMorphs(mesh);
+    if (isStageModel(mesh, pmx.name)) {
+      addStage(mesh);
+      toast(`${pmx.name} をステージとして置きました`);
+      return STAGE;
+    }
     const obj = addModel(mesh);
     await startPhysics(obj, mesh);
     toast(`${pmx.name} を置きました`);
@@ -816,9 +829,9 @@ async function loadPmx(files) {
     toast(`${pmx.name} を読み込めませんでした: ${err?.message ?? err}`, 8000);
   }
 }
-function addModel(mesh) {
-  // モーフ (表情など) が1つもないモデルでも、MMDLoader は空のモーフ情報を付ける。
-  // three.js はそれを「モーフあり」として扱い、シェーダーの組み立てに失敗するので取り除く
+// モーフ (表情など) が1つもないモデルでも、MMDLoader は空のモーフ情報を付ける。
+// three.js はそれを「モーフあり」として扱い、シェーダーの組み立てに失敗するので取り除く
+function fixEmptyMorphs(mesh) {
   mesh.traverse(o => {
     if (!o.geometry) return;
     const ma = o.geometry.morphAttributes;
@@ -826,15 +839,18 @@ function addModel(mesh) {
     // (表情の対応表は空のまま残す。消すと、表情の動きを含む .vmd を読むときに MMDLoader が止まる)
     if (o.morphTargetInfluences?.length === 0) { o.morphTargetInfluences = undefined; o.morphTargetDictionary = {}; }
   });
-  // 大きさを高さ MODEL_HEIGHT にそろえ、足元の中心が原点に来るようにずらす
+}
+function addModel(mesh) {
+  // MMD_SCALE 倍にして、足元の中心が置き場所に来るようにずらす
   const bbox = new THREE.Box3().setFromObject(mesh);
   const size = bbox.getSize(new THREE.Vector3()), center = bbox.getCenter(new THREE.Vector3());
-  const k = MODEL_HEIGHT / (size.y || 1);
+  const k = MMD_SCALE;
   mesh.scale.setScalar(k);
   mesh.position.set(-center.x * k, -bbox.min.y * k, -center.z * k);
   const obj = { x: 0, y: 0, z: 0, c: -1, s: 3, r: 0, py: 0, vy: 0,
                 h: size.y * k, hx: Math.max(size.x * k / 2, 0.05), hz: Math.max(size.z * k / 2, 0.05) };
-  [obj.x, obj.z] = findFreeSpot(radiusOf(obj));
+  // ステージがあるときは、ステージの中心 (MMD で人物が立つ原点) の近くに置く
+  [obj.x, obj.z] = stageModel ? findFreeSpot(radiusOf(obj), 0, 0) : findFreeSpot(radiusOf(obj));
   makeNode(obj, mesh);
   obj.model = mesh;
   // 当たり判定用の複製。置いたモデルはポーズを変えないので、骨やモーフの計算をしない普通のメッシュで判定する
@@ -989,13 +1005,48 @@ function startCameraMotion(clip) {
 }
 const _stage = new THREE.Matrix4(), _target = new THREE.Vector3(), _up = new THREE.Vector3();
 function stageMatrix() {
+  // ステージがあるときは、ステージの原点を基準にする
+  if (stageModel) return _stage.copy(stageModel.matrixWorld);
   const model = boxes.find(b => b.s === 3);
   if (model) {
     model.node.updateMatrixWorld(true);
     return _stage.copy(model.model.matrixWorld);
   }
   // モデルがないときは、原点に身長 20 (MMD のモデルのよくある大きさ) のモデルが立っているとみなす
-  return _stage.makeScale(MODEL_HEIGHT / 20, MODEL_HEIGHT / 20, MODEL_HEIGHT / 20);
+  return _stage.makeScale(MMD_SCALE, MMD_SCALE, MMD_SCALE);
+}
+
+// --- MMD のステージ ---
+// 横幅か奥行きが 40 (MMD の単位) を超えるか、名前に「ステージ」などを含む .pmx はステージとして扱う。
+// ステージは原点に 1 つだけ置き、掴んだり積んだりはできない (触るとカメラの操作になる)
+const STAGE = Symbol('stage');
+let stageModel = null;
+function isStageModel(mesh, fileName) {
+  const size = new THREE.Box3().setFromObject(mesh).getSize(new THREE.Vector3());
+  return Math.max(size.x, size.z) > 40 || /ステージ|stage|舞台/i.test(`${mesh.name} ${fileName}`);
+}
+function addStage(mesh) {
+  removeStage();
+  mesh.scale.setScalar(MMD_SCALE);
+  mesh.traverse(o => {
+    if (!o.isMesh) return;
+    o.raycast = () => {};    // 掴めない
+    o.castShadow = false;     // 屋根や壁で全体が影にならないよう、影は受けるだけ
+    o.receiveShadow = true;
+  });
+  scene.add(mesh);
+  stageModel = mesh;
+  // ステージの床とちらつかないよう、地面のグリッドと影の板は隠す (影はステージの床が受ける)
+  grid.visible = shadowPlane.visible = false;
+  requestDraw();
+}
+function removeStage() {
+  if (!stageModel) return;
+  scene.remove(stageModel);
+  disposeModel(stageModel);
+  stageModel = null;
+  grid.visible = shadowPlane.visible = true;
+  requestDraw();
 }
 function applyCameraMotion() {
   const c = camMotion.cam, m = stageMatrix();
@@ -1185,7 +1236,7 @@ resize();
 // 動作確認用: ?debug を付けて開いたときだけ、中の状態をコンソールから触れるようにする
 if (new URLSearchParams(location.search).has('debug')) {
   Object.assign(window, { THREE, renderer, scene, camera, boxes, cam, makeBox, settle, pickBox, screenRay, rayPlane,
-    loadPmx, loadFiles, getAnimHelper: () => animHelper, getCamMotion: () => camMotion, getMusic: () => music, camera, getDrag: () => drag, paletteEl, swatches, pointers, physicsList, outline });
+    loadPmx, loadFiles, getAnimHelper: () => animHelper, getCamMotion: () => camMotion, getStage: () => stageModel, getMusic: () => music, camera, getDrag: () => drag, paletteEl, swatches, pointers, physicsList, outline });
 }
 </script>
 </body>
