@@ -26,10 +26,22 @@
   .modes button[aria-pressed="true"] { background: #3a4558; color: #fff; }
   .modes .sep { width: 1px; margin: 4px 3px; background: #2c3340; }
   .modes button:disabled { opacity: 0.4; cursor: default; }
+  .palette {
+    position: fixed; display: grid; grid-template-columns: repeat(4, 40px); gap: 8px; padding: 10px;
+    background: rgba(20, 24, 32, 0.92); border: 1px solid #2c3340; border-radius: 12px;
+    backdrop-filter: blur(6px); user-select: none;
+  }
+  .palette[hidden] { display: none; }
+  .palette button {
+    width: 40px; height: 40px; padding: 0; border-radius: 50%; cursor: pointer;
+    border: 2px solid rgba(255, 255, 255, 0.15);
+  }
+  .palette button[aria-pressed="true"] { border-color: #fff; box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35); }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
+<div class="palette" id="palette" role="group" aria-label="立方体の色" hidden></div>
 <div class="modes" role="group" aria-label="操作モード">
   <button type="button" data-mode="orbit" aria-pressed="true">回転</button>
   <button type="button" data-mode="pan" aria-pressed="false">移動</button>
@@ -204,6 +216,40 @@ const PALETTE = [
   [0.90, 0.32, 0.55], // ピンク
   [0.62, 0.66, 0.72], // 灰
 ];
+const PALETTE_NAMES = ['黄土', '赤', '青緑', '青', '紫', '緑', 'ピンク', '灰'];
+
+// --- 色選び (スマホで立方体をタップしたときに出すパレット) ---
+const paletteEl = document.getElementById('palette');
+let pickerBox = null; // パレットで色を変えている立方体
+const swatches = PALETTE.map((c, i) => {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.setAttribute('aria-label', PALETTE_NAMES[i]);
+  b.style.background = `rgb(${c.map(v => Math.round(Math.pow(v, 1 / 2.2) * 255)).join(',')})`; // 画面と同じガンマ補正
+  b.addEventListener('click', () => {
+    if (pickerBox) pickerBox.c = i;
+    closePicker();
+  });
+  paletteEl.append(b);
+  return b;
+});
+function openPicker(box, x, y) {
+  pickerBox = box;
+  swatches.forEach((b, i) => b.setAttribute('aria-pressed', i === box.c));
+  paletteEl.hidden = false;
+  // タップした位置の上に出す。画面からはみ出す場合は下に出し、左右は端から 16px 以上離す
+  const w = paletteEl.offsetWidth, h = paletteEl.offsetHeight;
+  paletteEl.style.left = `${Math.min(Math.max(x - w / 2, 16), innerWidth - w - 16)}px`;
+  paletteEl.style.top = `${y - h - 24 >= 16 ? y - h - 24 : Math.min(y + 24, innerHeight - h - 16)}px`;
+  requestDraw();
+}
+function closePicker() {
+  if (paletteEl.hidden) return;
+  paletteEl.hidden = true;
+  pickerBox = null;
+  requestDraw();
+}
+addEventListener('keydown', e => { if (e.key === 'Escape') closePicker(); });
 // まだ使われていない色を優先し、全色使用中なら一番使われていない色を選ぶ
 function nextColor() {
   const used = PALETTE.map((_, i) => boxes.filter(b => b.c === i).length);
@@ -215,6 +261,7 @@ const MAX_BOXES = 32;
 const CAM_DEFAULT = { yaw: Math.PI / 4, pitch: 0.6, dist: 9.8, tx: 0, tz: 0 };
 const cam = { ...CAM_DEFAULT };
 document.getElementById('reset').addEventListener('click', () => {
+  closePicker();
   Object.assign(cam, CAM_DEFAULT);
   boxes.length = 0;
   boxes.push(makeBox(0, 0, 0));
@@ -428,6 +475,7 @@ const pointerDistance = ([a, b]) => {
 };
 
 canvas.addEventListener('pointerdown', e => {
+  closePicker(); // パレットの外を触ったら閉じる
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   try { canvas.setPointerCapture(e.pointerId); } catch {} // 捕捉できなくても操作は続ける
   if (drag) {
@@ -582,12 +630,20 @@ canvas.addEventListener('click', e => {
   const picked = pickBox(screenRay(e.clientX, e.clientY));
   if (!picked) return;
   clearTimeout(colorTimer);
+  const { clientX: x, clientY: y } = e;
   colorTimer = setTimeout(() => {
-    picked.box.c = (picked.box.c + 1) % PALETTE.length;
-    requestDraw();
+    if (lastPointerType === 'touch') {
+      // スマホ: パレットを出して色を選ぶ
+      openPicker(picked.box, x, y);
+    } else {
+      // マウス: 次の色に変える
+      picked.box.c = (picked.box.c + 1) % PALETTE.length;
+      requestDraw();
+    }
   }, DOUBLE_TAP_MS);
 });
 function deleteBox(box, x, y) {
+  if (pickerBox === box) closePicker();
   clearTimeout(colorTimer);
   boxes.splice(boxes.indexOf(box), 1);
   settle();
@@ -666,7 +722,7 @@ function render() {
     gl.uniform3fv(uBoxes, boxes.flatMap(b => [b.x, b.py, b.z]));
     gl.uniform3fv(uColors, boxes.flatMap(b => PALETTE[b.c]));
     gl.uniform1fv(uRots, boxes.map(b => b.r));
-    const held = drag?.box?.box ?? drag?.rot?.box ?? drag?.twist?.box;
+    const held = drag?.box?.box ?? drag?.rot?.box ?? drag?.twist?.box ?? pickerBox;
     gl.uniform1i(uSel, held ? boxes.indexOf(held) : -1);
   }
   gl.uniform1i(uCount, boxes.length);
