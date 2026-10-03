@@ -4,6 +4,7 @@ import { useEngine, useUi } from '../EngineContext';
 import { Gizmo } from './Gizmo';
 import { Menu, MenuItem, MenuLabel, MenuSep } from './Menu';
 import { Sidebar, type SideTab } from './sidebar/Sidebar';
+import { RecoverBanner } from './Overlays';
 
 // 3D ビューポート: 見出し (ビュー・追加・オブジェクトのメニュー)、左のツールバー、左上の文字、
 // 右上のナビゲーションギズモ、右のサイドバー
@@ -66,6 +67,7 @@ export function ViewportArea(props: {
             </button>
           </div>
           <div className="view-info" aria-live="off">{viewInfo}</div>
+          <RecoverBanner />
           <div className="nav">
             <Gizmo />
             <button type="button" title="視点を戻す (Home)" aria-label="視点を戻す" onClick={() => camera.resetView()}>

@@ -308,3 +308,8 @@ canvas#c.over-box { cursor: pointer; }
 /* 進み具合 */
 .bprogress { height: 8px; border-radius: 4px; background: var(--field); overflow: hidden; }
 .bprogress-bar { height: 100%; background: var(--accent); transition: width 0.1s; }
+
+/* 前回の続き (自動保存) の知らせ */
+.recover { position: absolute; left: 8px; bottom: 8px; z-index: 5; display: flex; align-items: center; gap: 6px; max-width: calc(100% - 16px);
+           padding: 5px 6px 5px 10px; background: var(--menu); border: 1px solid #2c2c2c; border-radius: 6px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4); }
+.recover > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

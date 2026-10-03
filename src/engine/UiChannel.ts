@@ -29,6 +29,7 @@ export interface UiState {
   renderResult: { url: string; name: string; width: number; height: number } | null; // レンダリングした画像 (保存する前に見せる)
   remote: 'off' | 'waiting' | 'connected'; // 外部からの操作 (MCP サーバーとのつながり)
   history: { labels: string[]; index: number }; // 元に戻す・やり直しの履歴 (index がいまの状態)
+  recovery: { time: number; name: string | null; banner: boolean } | null; // 自動保存した前回の続き (banner: 知らせを出す)
   // 参照だけのプロジェクトを開くときに見つからないファイル (探してもらう)
   missingFiles: { project: string; files: { name: string; size?: number; source?: string }[] } | null;
 }
@@ -40,7 +41,7 @@ export class UiChannel {
     frame: 0, playing: false, start: 0, end: TL_DEFAULT_END, keysVersion: 0,
     fxState: { ao: false, dof: false, bloom: false, diffusion: false, color: false }, fxLevel: { ...FX_LEVEL_DEFAULT },
     toast: null, palette: null, viewInfo: '', hairHang: null, materialsVersion: 0, projectName: null,
-    output: { ...OUTPUT_DEFAULT }, rendering: null, renderResult: null, remote: 'off', missingFiles: null, history: { labels: ['最初'], index: 0 },
+    output: { ...OUTPUT_DEFAULT }, rendering: null, renderResult: null, remote: 'off', missingFiles: null, history: { labels: ['最初'], index: 0 }, recovery: null,
   });
   private valuesAt = 0;
   private toastTimer: ReturnType<typeof setTimeout> | undefined;

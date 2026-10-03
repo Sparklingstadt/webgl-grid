@@ -8,6 +8,7 @@ export function TopBar({ onOpenFiles, onLoadPose, onOpenProject, onOpenOutput }:
   const projectName = useUi(s => s.projectName);
   const remote = useUi(s => s.remote);
   const history = useUi(s => s.history);
+  const recovery = useUi(s => s.recovery);
   return (
     <header className="topbar">
       <svg className="brand" viewBox="0 0 20 20" aria-hidden="true">
@@ -19,6 +20,7 @@ export function TopBar({ onOpenFiles, onLoadPose, onOpenProject, onOpenOutput }:
         <MenuItem label="プロジェクトを開く… (.wgp / .wgpj)" kbd="Ctrl Shift O" onSelect={onOpenProject} />
         <MenuItem label="プロジェクトを保存 (.wgp)" kbd="Ctrl S" onSelect={() => engine.project.saveFile()} />
         <MenuItem label="ファイルは参照だけで保存 (.wgpj)" kbd="Ctrl Alt S" onSelect={() => engine.project.saveFile('reference')} />
+        <MenuItem label="前回の続きを開く (自動保存)" disabled={!recovery} onSelect={() => void engine.autosave.recover()} />
         <div className="note" style={{ padding: '0 8px 4px' }}>.wgpj はモデル・モーション・曲を入れない小さなファイル。開くときに元のファイルを選びます</div>
         <MenuSep />
         <MenuItem label="MMD を読み込む…" kbd="Ctrl O" onSelect={onOpenFiles} />

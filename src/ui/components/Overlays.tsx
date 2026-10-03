@@ -31,3 +31,18 @@ export function Palette() {
     </div>
   );
 }
+
+// 自動保存した前回の続きがあるときの知らせ (ビューポートの左下。操作のじゃまにならないよう小さく)
+export function RecoverBanner() {
+  const engine = useEngine();
+  const r = useUi(s => s.recovery);
+  if (!r?.banner) return null;
+  const when = new Date(r.time).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return (
+    <div className="recover" role="region" aria-label="前回の続き" onPointerDown={e => e.stopPropagation()}>
+      <span>前回の続きがあります <span className="note">({when}{r.name ? `・${r.name}` : ''})</span></span>
+      <button type="button" className="bbtn" onClick={() => void engine.autosave.recover()}>開く</button>
+      <button type="button" className="bbtn" aria-label="閉じる" onClick={() => engine.autosave.dismiss()}>×</button>
+    </div>
+  );
+}

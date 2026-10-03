@@ -80,6 +80,16 @@ export class ProjectIO {
 
   // いまの場面を .wgp (ZIP) か .wgpj (JSON) のバイト列にする
   async save(storage: ProjectStorage = 'embedded'): Promise<Uint8Array> {
+    const { data, assets } = this.build(storage);
+    return storage === 'reference' ? writeReference(data) : writeEmbedded(data, assets);
+  }
+  // 参照だけの形 (.wgpj の JSON) と、参照しているファイル (asset の id → File)。自動保存で使う
+  saveReference(): { bytes: Uint8Array; files: Map<string, File> } {
+    const { data, assets } = this.build('reference');
+    return { bytes: writeReference(data), files: new Map([...assets].map(([f, a]) => [a.id, f])) };
+  }
+  // いまの場面をプロジェクトのデータにする (読み込んだファイルは asset として並べる)
+  private build(storage: ProjectStorage): { data: ProjectData; assets: Map<File, SavedAsset> } {
     const e = this.engine, lib = e.library;
     const assets = new Map<File, SavedAsset>();
     const asset = (f: File) => {
@@ -138,7 +148,7 @@ export class ProjectIO {
       output: { ...e.output.settings },
     };
     data.assets = [...assets.values()];
-    return storage === 'reference' ? writeReference(data) : writeEmbedded(data, assets);
+    return { data, assets };
   }
 
   // .wgpj: 参照しているファイルを、渡されたもの → このページで読んだもの → 選んでもらったもの、の順に探す

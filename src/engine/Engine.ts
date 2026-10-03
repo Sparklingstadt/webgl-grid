@@ -17,6 +17,7 @@ import { Posing } from './mmd/Posing';
 import { Stage } from './mmd/Stage';
 import { VpdIO } from './mmd/VpdIO';
 import { RenderOutput } from './output/RenderOutput';
+import { Autosave } from './project/Autosave';
 import { ProjectIO } from './project/ProjectIO';
 import { RemoteLink } from './remote/RemoteLink';
 import { Effects } from './render/Effects';
@@ -64,6 +65,7 @@ export class Engine {
   readonly vpd = new VpdIO(this.posing, this.viewport, this.ui);
   readonly history = new History(this.world, this.library, this.physics, this.motion, this.posing, this.keyframes, this.clock, this.selection, this.viewport, this.ui);
   readonly project = new ProjectIO(this);
+  readonly autosave = new Autosave(this.project, this.history, this.ui);
   readonly remote = new RemoteLink(this);
   input: InputController | null = null;
 
