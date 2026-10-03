@@ -20,7 +20,9 @@ export class MmdLoader {
     if (!pmx) { this.ui.toast('.pmx ファイルが選ばれていません。モデルの .pmx とテクスチャ画像をまとめて選んでください。'); return null; }
     this.ui.toast(`${pmx.name} を読み込み中…`, 0);
     const MODEL_URL = '__model__.pmx';
+    const byKey = new Map(files.map(f => [fileKey(f.name), f]));
     const urls = new Map(files.map(f => [fileKey(f.name), URL.createObjectURL(f)]));
+    const used = new Set<File>([pmx]); // 実際に使ったファイル (プロジェクトに入れる)
     urls.set(MODEL_URL, URL.createObjectURL(pmx));
     const missing = new Set<string>();
     const manager = new THREE.LoadingManager();
@@ -28,7 +30,11 @@ export class MmdLoader {
     manager.setURLModifier(url => {
       if (/^(data|blob):/.test(url)) return url;
       const found = urls.get(fileKey(url));
-      if (found) return found;
+      if (found) {
+        const file = byKey.get(fileKey(url));
+        if (file) used.add(file);
+        return found;
+      }
       missing.add(decodeURIComponent(url).replace(/^\.\//, ''));
       return 'data:,'; // 見つからないテクスチャは読まずに飛ばす
     });
@@ -53,6 +59,8 @@ export class MmdLoader {
       mesh.userData.boneFlags = data.bones.map((b: Any) => b.flag);
       mesh.userData.rest = mesh.skeleton.bones.map((b: THREE.Bone) => ({ p: b.position.clone(), q: b.quaternion.clone() }));
       mesh.userData.fileName = pmx.name;
+      mesh.userData.sourceFile = pmx;    // .pmx に書き出すときの元のファイル
+      mesh.userData.usedFiles = used;    // プロジェクトに入れるファイル (テクスチャは読み終わると増える)
       mesh.name ||= data.metadata.modelName || pmx.name.replace(/\.pmx$/i, '');
       fixEmptyMorphs(mesh);
       return mesh;

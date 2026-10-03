@@ -39,6 +39,7 @@ core/    純粋な計算とデータ (three.js の数学ライブラリは使っ
 | | `Motion` | VMD のダンスとカメラ (`System`、カメラは `CameraOverride`) | World, Physics, Stage, CameraController, UiChannel |
 | | `Posing` | 表情とボーン・IK と付与 (`System`) | World, Physics, Motion, Viewport, UiChannel |
 | | `VpdIO` | ポーズファイルの保存・読み込み | Posing, Viewport, UiChannel |
+| プロジェクト | `ProjectIO` | 場面をまるごと .wgp (ZIP: `project.json` + 読み込んだファイル) に保存し、開くときは同じ順に作り直す。ほかのサービスをまたいで使うので、`Engine` を受け取る (`Engine` の操作だけを使い、画面には触らない) | Engine |
 | 組み立て | `Engine` | 上のすべてを作ってイベントでつなぎ、画面に操作を出す | すべて |
 
 ## 下から上へは「イベント」で知らせる

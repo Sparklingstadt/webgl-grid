@@ -67,7 +67,10 @@ export function convertMmdMaterial(toon: Any, lib: MaterialLibrary, label: strin
 // MMD のメッシュの材質をすべて変換し、変換したマテリアルの材質に差し替える。スロットのマテリアルの id を返す
 export function convertMmdMesh(mesh: Any, lib: MaterialLibrary): string[] {
   const toons: Any[] = [mesh.material].flat();
+  const before = new Set(lib.images.keys());
   const ids = toons.map((t, i) => convertMmdMaterial(t, lib, `${mesh.name || 'モデル'} ${i + 1}`).id);
+  // 変換で作った画像 (作った順)。プロジェクトを開くとき、同じ順に作り直した画像と対応づける
+  mesh.userData.convertedImages = [...lib.images.keys()].filter(id => !before.has(id));
   const instances = ids.map(id => lib.instance(id));
   mesh.material = Array.isArray(mesh.material) ? instances : instances[0];
   mesh.userData.slotSources = ids.map(id => lib.materials.get(id)!.mmd); // .pmx に書き出すときの元の値

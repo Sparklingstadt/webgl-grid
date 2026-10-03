@@ -10,6 +10,7 @@ export function useShortcuts(engine: Engine, actions: {
   closeMenus: () => boolean; // 開いていたメニューを閉じたら true
   toggleSide: () => void;
   openFiles: () => void;
+  openProject: () => void;
 }) {
   const ref = useRef(actions);
   ref.current = actions;
@@ -22,7 +23,8 @@ export function useShortcuts(engine: Engine, actions: {
       // スライダーは、自分で使う矢印キーと Enter だけを譲る (動かした直後に I でキーフレームを打てるように)
       if (t.closest('input, select, textarea, [contenteditable]')) return;
       if (t.closest('.bslider') && /^(Arrow|Enter$)/.test(e.key)) return;
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') { e.preventDefault(); a.openFiles(); return; }
+      if ((e.ctrlKey || e.metaKey) && e.code === 'KeyO') { e.preventDefault(); if (e.shiftKey) a.openProject(); else a.openFiles(); return; }
+      if ((e.ctrlKey || e.metaKey) && e.code === 'KeyS') { e.preventDefault(); engine.saveProject(); return; }
       if (e.ctrlKey || e.metaKey) return;
       const hoverTl = a.hoverArea.current === 'timeline';
       // シェーダーエディターの上では、X (ノードを消す)・Shift+A (ノードを追加)・Home はエディターが受け持つ

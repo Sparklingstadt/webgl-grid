@@ -9,6 +9,7 @@ import { addNode, connect, disconnect, findNode, removeNode, surfaceShader, whyN
 import { patchPmxMaterials } from '../core/pmxMaterials';
 import { convertMmdMesh } from './materials/fromMmd';
 import { MaterialLibrary, type MaterialData, type MaterialOutline, type MaterialSettings } from './materials/MaterialLibrary';
+import { ProjectIO } from './project/ProjectIO';
 import { toPmxValues } from './materials/toPmx';
 import { MmdLoader } from './mmd/MmdLoader';
 import { Motion } from './mmd/Motion';
@@ -55,6 +56,7 @@ export class Engine {
   readonly effects = new Effects(this.viewport, this.ui, () => this.camera.focusPoint());
   readonly loader = new MmdLoader(this.ui, () => this.viewport.requestDraw());
   readonly vpd = new VpdIO(this.posing, this.viewport, this.ui);
+  readonly project = new ProjectIO(this);
   input: InputController | null = null;
 
   constructor() {
@@ -177,7 +179,6 @@ export class Engine {
       if (world.full) return;
       const mesh = await this.loader.loadPmx(files);
       if (!mesh) return;
-      mesh.userData.sourceFile = pmx; // .pmx に書き出すときの元のファイル
       const slots = convertMmdMesh(mesh, this.library); // 材質はプリンシプル BSDF のマテリアルに変換する
       if (Stage.isStage(mesh, pmx.name)) {
         this.stage.set(mesh);
@@ -325,18 +326,45 @@ export class Engine {
   surfaceShader() { const cur = this.activeMaterial(); return cur ? surfaceShader(cur.tree) : null; }
   images() { return [...this.library.images.values()].map(i => ({ id: i.id, name: i.name })); }
   // 画像ファイルを読み込んで、画像として登録する (MMD のモデルに使うときは、MMD と同じく上下を反転しない)
-  async openImage(file: File): Promise<string> {
+  async openImage(file: File, flipY = !this.selection.model): Promise<string> {
     const url = URL.createObjectURL(file);
     try {
       const texture = await new THREE.TextureLoader().loadAsync(url);
       texture.colorSpace = THREE.SRGBColorSpace;
-      texture.flipY = !this.selection.model;
+      texture.flipY = flipY;
       texture.name = file.name;
-      return this.library.addImage(file.name, texture).id;
+      return this.library.addImage(file.name, texture, file).id;
     } finally {
       URL.revokeObjectURL(url);
     }
   }
+  // --- プロジェクト (.wgp) ---
+  // いまの場面 (モデル・配置・マテリアル・ポーズ・キーフレーム・モーション・曲・視点・タイムライン) を保存する
+  async saveProject() {
+    this.ui.toast('プロジェクトを保存中…', 0);
+    try {
+      const bytes = await this.project.save();
+      const name = `${this.ui.state.projectName ?? 'プロジェクト'}.wgp`;
+      download(bytes, name);
+      this.ui.set({ projectName: name.replace(/\.wgp$/i, '') });
+      this.ui.toast(`${name} を保存しました (${(bytes.length / 1024 / 1024).toFixed(1)} MB)`);
+    } catch (err) {
+      console.error(err);
+      this.ui.toast(`プロジェクトを保存できませんでした: ${(err as Error)?.message ?? err}`, 8000);
+    }
+  }
+  async openProject(file: File) {
+    this.ui.toast(`${file.name} を開いています…`, 0);
+    try {
+      await this.project.open(new Uint8Array(await file.arrayBuffer()));
+      this.ui.set({ projectName: file.name.replace(/\.wgp$/i, '') });
+      this.ui.toast(`${file.name} を開きました`);
+    } catch (err) {
+      console.error(err);
+      this.ui.toast(`${file.name} を開けませんでした: ${(err as Error)?.message ?? err}`, 8000);
+    }
+  }
+
   // マテリアルを変えた .pmx を書き出す (MMD で表せる範囲。ほかの部分は元の .pmx のまま)
   async exportPmx() {
     const o = this.model;
@@ -347,11 +375,7 @@ export class Engine {
       const patches = new Map(o.slots.map((id, i) => [i, toPmxValues(id ? this.library.materials.get(id) ?? null : null, sources[i])]));
       const bytes = patchPmxMaterials(await file.arrayBuffer(), patches);
       const name = `${file.name.replace(/\.pmx$/i, '')}_edited.pmx`;
-      const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([bytes as BlobPart])), download: name });
-      document.body.append(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      download(bytes, name);
       this.ui.toast(`${name} を書き出しました。テクスチャを読めるよう、元の .pmx と同じフォルダに置いてください`, 6000);
     } catch (err) {
       console.error(err);
@@ -407,4 +431,13 @@ export class Engine {
     const next = dir > 0 ? Math.min(...all.filter(k => k > f)) : Math.max(...all.filter(k => k < f));
     if (Number.isFinite(next)) this.clock.seekFrame(next, 10);
   }
+}
+
+// バイト列をファイルとしてダウンロードさせる
+function download(bytes: Uint8Array, name: string) {
+  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([bytes as BlobPart])), download: name });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }

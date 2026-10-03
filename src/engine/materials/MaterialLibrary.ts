@@ -27,7 +27,7 @@ export interface MaterialData {
   mmd?: MmdSource;
   auto?: boolean; // 形を置いたときに自動で作り、まだ手を入れていない (使う物がなくなったら消す)
 }
-export interface ImageData { id: string; name: string; texture: THREE.Texture }
+export interface ImageData { id: string; name: string; texture: THREE.Texture; file?: File } // file: 開いた画像ファイル (プロジェクトに入れる)
 export interface MaterialListItem { id: string; name: string; users: number }
 
 const DEFAULT_SETTINGS: MaterialSettings = { blend: 'opaque', backfaceCulling: false };
@@ -86,12 +86,19 @@ export class MaterialLibrary {
     return true;
   }
   users(id: string) { return this.instances.get(id)?.size ?? 0; }
+  // すべてのマテリアルと画像を消す (プロジェクトを開くとき。物はすでに片付けてあること)
+  reset() {
+    this.materials.clear();
+    this.images.clear();
+    this.instances.clear();
+    this.changed();
+  }
   list(): MaterialListItem[] { return [...this.materials.values()].map(m => ({ id: m.id, name: m.name, users: this.users(m.id) })); }
 
   // 画像 (同じテクスチャは 1 つにまとめる)
-  addImage(name: string, texture: THREE.Texture): ImageData {
+  addImage(name: string, texture: THREE.Texture, file?: File): ImageData {
     for (const img of this.images.values()) if (img.texture === texture) return img;
-    const img = { id: `i${this.nextId++}`, name, texture };
+    const img = { id: `i${this.nextId++}`, name, texture, file };
     this.images.set(img.id, img);
     this.changed();
     return img;

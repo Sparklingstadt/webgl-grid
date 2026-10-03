@@ -30,6 +30,8 @@ export default function App() {
   const pmxInput = useRef<HTMLInputElement>(null);
   const poseInput = useRef<HTMLInputElement>(null);
   const openFiles = useCallback(() => pmxInput.current?.click(), []);
+  const projectInput = useRef<HTMLInputElement>(null);
+  const openProject = useCallback(() => projectInput.current?.click(), []);
   const openPose = useCallback(() => poseInput.current?.click(), []);
   const toggleSide = useCallback(() => setSideOpen(o => !o), []);
 
@@ -49,13 +51,14 @@ export default function App() {
     closeMenus: () => { const was = !!openMenuRef.current; setOpenMenu(null); return was; },
     toggleSide,
     openFiles,
+    openProject,
   });
 
   return (
     <MenuContext.Provider value={{ open: openMenu, setOpen: setOpenMenu }}>
       <div id="app" className={[!sideOpen && 'side-hidden', !tlOpen && 'tl-hidden'].filter(Boolean).join(' ')}
            style={{ '--tl-h': `${bottomH}px` } as React.CSSProperties}>
-        <TopBar onOpenFiles={openFiles} onLoadPose={openPose} />
+        <TopBar onOpenFiles={openFiles} onLoadPose={openPose} onOpenProject={openProject} />
         <div style={{ display: 'contents' }} onPointerEnter={() => { hoverArea.current = 'view'; }}>
           <ViewportArea sideOpen={sideOpen} toggleSide={toggleSide} tlOpen={tlOpen} toggleTl={() => setTlOpen(o => !o)}
                         sideTab={sideTab} setSideTab={setSideTab} onOpenFiles={openFiles} onLoadPose={openPose}
@@ -80,6 +83,12 @@ export default function App() {
                const files = [...e.currentTarget.files ?? []];
                e.currentTarget.value = ''; // 同じファイルをもう一度選べるようにする
                if (files.length) engine.loadFiles(files);
+             }} />
+      <input type="file" ref={projectInput} accept=".wgp" hidden
+             onChange={e => {
+               const f = e.currentTarget.files?.[0];
+               e.currentTarget.value = '';
+               if (f) engine.openProject(f);
              }} />
       <input type="file" ref={poseInput} accept=".vpd" hidden
              onChange={e => {

@@ -1,9 +1,10 @@
-import { useEngine } from '../EngineContext';
+import { useEngine, useUi } from '../EngineContext';
 import { Menu, MenuItem, MenuLabel, MenuSep } from './Menu';
 
 // 上のバー: ファイルとヘルプのメニュー
-export function TopBar({ onOpenFiles, onLoadPose }: { onOpenFiles: () => void; onLoadPose: () => void }) {
+export function TopBar({ onOpenFiles, onLoadPose, onOpenProject }: { onOpenFiles: () => void; onLoadPose: () => void; onOpenProject: () => void }) {
   const engine = useEngine();
+  const projectName = useUi(s => s.projectName);
   return (
     <header className="topbar">
       <svg className="brand" viewBox="0 0 20 20" aria-hidden="true">
@@ -12,6 +13,9 @@ export function TopBar({ onOpenFiles, onLoadPose }: { onOpenFiles: () => void; o
         <path d="M2 7 9 7" stroke="#e87d0d" strokeWidth="2.4" strokeLinecap="round" />
       </svg>
       <Menu id="file" label="ファイル">
+        <MenuItem label="プロジェクトを開く… (.wgp)" kbd="Ctrl Shift O" onSelect={onOpenProject} />
+        <MenuItem label="プロジェクトを保存" kbd="Ctrl S" onSelect={() => engine.saveProject()} />
+        <MenuSep />
         <MenuItem label="MMD を読み込む…" kbd="Ctrl O" onSelect={onOpenFiles} />
         <div className="note" style={{ padding: '0 8px 4px' }}>.pmx とテクスチャ・.vmd・.vpd・曲</div>
         <MenuSep />
@@ -30,7 +34,7 @@ export function TopBar({ onOpenFiles, onLoadPose }: { onOpenFiles: () => void; o
           ['シェーダーエディター: ノードを追加 / 消す / 全体を表示', 'Shift A / X / Home'],
         ].map(([label, kbd]) => <MenuItem key={label} label={label} kbd={kbd} disabled />)}
       </Menu>
-      <span className="title">webgl-grid</span>
+      <span className="title">{projectName ? `${projectName}.wgp — webgl-grid` : 'webgl-grid'}</span>
     </header>
   );
 }

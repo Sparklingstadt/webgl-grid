@@ -16,6 +16,7 @@ import type { Stage } from './Stage';
 export class Motion implements System {
   helper: Any = null;
   camera: { cam: THREE.PerspectiveCamera; motion: MotionInfo } | null = null; // VMD のカメラモーション
+  cameraFile: File | null = null; // カメラモーションの .vmd (プロジェクトに入れる)
   isPlaying = () => false; // タイムラインが再生中か (止まっているあいだは、毎フレーム姿勢だけ計算し直す)
   private stageMat = new THREE.Matrix4();
   private up = new THREE.Vector3();
@@ -56,6 +57,7 @@ export class Motion implements System {
         // カメラの動き
         if (vmd.metadata.cameraCount > 0) {
           this.startCamera(loader.animationBuilder.buildCameraAnimation(vmd));
+          this.cameraFile = file;
           used = true;
         }
         // モデルの動き (骨と表情)
@@ -70,6 +72,7 @@ export class Motion implements System {
             mesh.pose(); // 前のモーションの姿勢を元に戻してから付ける
             helper.add(mesh, { animation: clip, physics: false });
             obj.motion = this.info(mesh, clip);
+            obj.motionFile = file;
             obj.animated = true;
             used = true;
           }
@@ -130,6 +133,7 @@ export class Motion implements System {
     this.helper.remove(obj.model);
     obj.animated = false;
     obj.motion = null;
+    obj.motionFile = undefined;
   }
 
   // --- カメラモーション ---
@@ -170,6 +174,7 @@ export class Motion implements System {
     if (!this.camera) return;
     this.helper.remove(this.camera.cam);
     this.camera = null;
+    this.cameraFile = null;
     this.ui.bump('keysVersion');
   }
 }
