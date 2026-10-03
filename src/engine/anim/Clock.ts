@@ -90,6 +90,15 @@ export class Clock implements System {
     if (this.frame !== this.lastFrame) this.changed();
   }
 
+  // 再生と同じように (飛ばずに) 時刻 t まで進める。レンダリングで 1 フレームずつ進めるときに使う (曲には合わせない)
+  advanceTo(t: number) {
+    const d = t - this.t;
+    if (d <= 0) return;
+    this.t = t;
+    this.events.emit('advance', d);
+    this.changed();
+  }
+
   private changed() {
     this.lastFrame = this.frame;
     this.events.emit('change');

@@ -41,9 +41,10 @@ export class Selection {
 
   // 描く前: 輪郭線 (OutlineEffect) の設定を、マテリアルの輪郭線 (outlineBase) から作る。
   // 選んでいる物だけはオレンジにする (MMD モデルは輪郭線のない材質にも付ける)。材質は物ごとに別なので、ほかの物には付かない
-  syncOutlines(objects: Obj[]) {
+  // hide: 選択の輪郭線を出さない (レンダリング中)
+  syncOutlines(objects: Obj[], hide = false) {
     for (const obj of objects) {
-      const on = obj === this.current;
+      const on = !hide && obj === this.current;
       obj.node.traverse(o => {
         const mesh = o as THREE.Mesh;
         if (!mesh.isMesh || !mesh.visible) return;

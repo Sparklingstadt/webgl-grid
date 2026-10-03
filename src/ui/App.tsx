@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { MenuContext } from './components/Menu';
-import { Palette, Toast } from './components/Overlays';
+import { Palette, RenderProgress, RenderResult, Toast } from './components/Overlays';
 import type { SideTab } from './components/sidebar/Sidebar';
 import { BottomArea, type BottomEditor } from './components/BottomArea';
 import { TopBar } from './components/TopBar';
@@ -58,7 +58,8 @@ export default function App() {
     <MenuContext.Provider value={{ open: openMenu, setOpen: setOpenMenu }}>
       <div id="app" className={[!sideOpen && 'side-hidden', !tlOpen && 'tl-hidden'].filter(Boolean).join(' ')}
            style={{ '--tl-h': `${bottomH}px` } as React.CSSProperties}>
-        <TopBar onOpenFiles={openFiles} onLoadPose={openPose} onOpenProject={openProject} />
+        <TopBar onOpenFiles={openFiles} onLoadPose={openPose} onOpenProject={openProject}
+                onOpenOutput={() => { setSideTab('output'); setSideOpen(true); }} />
         <div style={{ display: 'contents' }} onPointerEnter={() => { hoverArea.current = 'view'; }}>
           <ViewportArea sideOpen={sideOpen} toggleSide={toggleSide} tlOpen={tlOpen} toggleTl={() => setTlOpen(o => !o)}
                         sideTab={sideTab} setSideTab={setSideTab} onOpenFiles={openFiles} onLoadPose={openPose}
@@ -77,6 +78,8 @@ export default function App() {
       </div>
       <Toast />
       <Palette />
+      <RenderProgress />
+      <RenderResult />
       <input type="file" ref={pmxInput} multiple hidden
              accept=".pmx,.vmd,.vpd,.png,.jpg,.jpeg,.bmp,.tga,.gif,.spa,.sph,image/*,.mp3,.wav,.ogg,.oga,.m4a,.aac,.flac,.opus,audio/*"
              onChange={e => {

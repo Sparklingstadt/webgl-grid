@@ -1,4 +1,5 @@
 import { TL_DEFAULT_END } from '../core/constants';
+import { OUTPUT_DEFAULT, type OutputSettings } from '../core/output';
 import { createStore, type Store } from '../core/store';
 import { FX_LEVEL_DEFAULT, type FxLevel, type FxState } from './render/postfx';
 
@@ -20,9 +21,12 @@ export interface UiState {
   toast: { text: string; id: number } | null;
   palette: { x: number; y: number; c: number } | null;
   viewInfo: string;
-  hairHang: boolean | null;
+  hairHang: boolean | null; // 選んでいるモデルの髪を重力で垂らしているか (髪の形を保つ錘がなければ null)
   materialsVersion: number; // マテリアル (スロット・ノード・値) が変わった
-  projectName: string | null; // 保存した・開いたプロジェクトの名前 // 選んでいるモデルの髪を重力で垂らしているか (髪の形を保つ錘がなければ null)
+  projectName: string | null; // 保存した・開いたプロジェクトの名前
+  output: OutputSettings;   // 出力 (レンダリングの大きさ・形式)
+  rendering: { done: number; total: number } | null; // 動画をレンダリング中 (描いたフレーム数)
+  renderResult: { url: string; name: string; width: number; height: number } | null; // レンダリングした画像 (保存する前に見せる)
 }
 type Version = 'modelVersion' | 'values' | 'keysVersion' | 'materialsVersion';
 
@@ -32,6 +36,7 @@ export class UiChannel {
     frame: 0, playing: false, start: 0, end: TL_DEFAULT_END, keysVersion: 0,
     fxState: { ao: false, dof: false, bloom: false, diffusion: false, color: false }, fxLevel: { ...FX_LEVEL_DEFAULT },
     toast: null, palette: null, viewInfo: '', hairHang: null, materialsVersion: 0, projectName: null,
+    output: { ...OUTPUT_DEFAULT }, rendering: null, renderResult: null,
   });
   private valuesAt = 0;
   private toastTimer: ReturnType<typeof setTimeout> | undefined;

@@ -1,5 +1,6 @@
 import { strFromU8, strToU8, unzip, zip, type AsyncZippable } from 'fflate';
 import { FPS } from '../../core/constants';
+import { normalizeOutput, type OutputSettings } from '../../core/output';
 import type { NodeTree } from '../../core/materials/tree';
 import type { BoneValue } from '../../core/types';
 import type { Engine } from '../Engine';
@@ -48,6 +49,7 @@ export interface ProjectData {
   music: string | null;
   timeline: { start: number; end: number; frame: number };
   selected: number | null;
+  output?: OutputSettings; // 出力 (レンダリングの大きさ・形式)。古いプロジェクトにはない
 }
 
 const zipAsync = (files: AsyncZippable) => new Promise<Uint8Array>((ok, ng) => zip(files, { level: 6 }, (err, data) => (err ? ng(err) : ok(data))));
@@ -114,6 +116,7 @@ export class ProjectIO {
       music: e.music.file ? asset(e.music.file) : null,
       timeline: { start: e.clock.start, end: e.clock.end, frame: e.clock.frame },
       selected: cur ? e.world.objects.indexOf(cur) : null,
+      output: { ...e.output.settings },
     };
     data.assets = [...assets.values()];
     const files: AsyncZippable = { 'project.json': strToU8(JSON.stringify(data, null, 1)) };
@@ -229,6 +232,7 @@ export class ProjectIO {
     e.clock.setRange(data.timeline.start, data.timeline.end);
     e.clock.setPlaying(false);
     e.clock.seek(data.timeline.frame / FPS);
+    e.output.set(normalizeOutput(data.output));
     e.select(data.selected !== null ? objs[data.selected] ?? null : null);
     e.world.settle();
     e.viewport.requestDraw();

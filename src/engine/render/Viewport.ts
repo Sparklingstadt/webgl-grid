@@ -25,6 +25,9 @@ export class Viewport {
   private readonly after = new Set<() => void>();
   private readonly resizeHooks = new Set<() => void>();
   private observer: ResizeObserver | null = null;
+  private container: HTMLElement | null = null;
+  // レンダリング (画像・動画の書き出し) 中は、その大きさで描き、描画ループを止めておく
+  private output: { width: number; height: number } | null = null;
   private ticking = false;
   private tickLast = 0;
   private scheduled = false; // 次のフレームの呼び出しを頼んである
@@ -46,6 +49,7 @@ export class Viewport {
       return false;
     }
     this.canvas = canvas;
+    this.container = container;
     const { renderer } = this;
     renderer.setClearColor(0x000000, 0); // 背景は CSS の色 (Blender のビューポートの灰色) を見せる
     renderer.shadowMap.enabled = true;
@@ -69,7 +73,8 @@ export class Viewport {
     this.observer?.disconnect();
     this.observer = null;
     this.renderer?.dispose();
-    this.renderer = this.outline = this.canvas = null;
+    this.renderer = this.outline = this.canvas = this.container = null;
+    this.output = null;
   }
   get mounted() { return !!this.renderer; }
 
@@ -93,6 +98,7 @@ export class Viewport {
   private frame = (now: number) => {
     this.scheduled = false;
     if (!this.renderer) { this.ticking = false; return; }
+    if (this.output) return; // レンダリング中 (終わったら動かし直す)
     if (this.ticking) {
       if (this.systems.some(s => s.active())) {
         const dt = this.tickLast ? Math.min(Math.max(now - this.tickLast, 0) / 1000, 1 / 20) : 1 / 60;
@@ -115,17 +121,46 @@ export class Viewport {
     for (const cb of this.after) cb();
   }
 
-  private resize(container: HTMLElement) {
+  // --- レンダリング (書き出し) ---
+  // 描画先を width × height (等倍) にして、背景を塗り、描画ループを止める。描くのは呼ぶ側 (render() のあと、すぐ canvas を読む)。
+  // 縦の見える範囲 (fov) はそのままで、縦横比だけを合わせる
+  beginOutput(width: number, height: number, background: THREE.ColorRepresentation) {
     const { renderer } = this;
-    if (!renderer) return;
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    this.width = Math.max(container.clientWidth, 1);
-    this.height = Math.max(container.clientHeight, 1);
-    renderer.setSize(this.width, this.height, false);
+    if (!renderer) throw new Error('描画先がありません');
+    this.output = { width, height };
+    renderer.setClearColor(background, 1);
+    this.applySize(width, height, 1);
+  }
+  endOutput() {
+    if (!this.output) return;
+    this.output = null;
+    this.renderer?.setClearColor(0x000000, 0);
+    if (this.container) this.resize(this.container);
+    // 止めていたあいだの描画ループを動かし直す
+    this.ticking = false;
+    this.startTicking();
+    this.requestDraw();
+  }
+  get outputting() { return !!this.output; }
+  // 動いているもの (System) を dt 秒だけ進める (レンダリングでは、描画ループの代わりに 1 フレームずつ呼ぶ)
+  stepSystems(dt: number) {
+    for (const s of this.systems) if (s.active()) s.update(dt);
+  }
+
+  private resize(container: HTMLElement) {
+    if (!this.renderer || this.output) return; // レンダリング中は、終わってから合わせる
+    this.applySize(Math.max(container.clientWidth, 1), Math.max(container.clientHeight, 1), Math.min(window.devicePixelRatio || 1, 2));
+    this.render();
+  }
+  private applySize(width: number, height: number, pixelRatio: number) {
+    const renderer = this.renderer!;
+    renderer.setPixelRatio(pixelRatio);
+    this.width = width;
+    this.height = height;
+    renderer.setSize(width, height, false);
     const { camera } = this.graph;
-    camera.aspect = this.width / this.height;
+    camera.aspect = width / height;
     camera.updateProjectionMatrix();
     for (const cb of this.resizeHooks) cb();
-    this.render();
   }
 }

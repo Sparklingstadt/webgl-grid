@@ -239,3 +239,16 @@ select.bselect { padding: 3px 6px; background: var(--field); border: 1px solid #
 .linked-input { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); align-items: center; gap: 6px; }
 .linked-input > span { color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .linked-input .bbtn { text-align: left; }
+
+/* レンダリングの進み具合・レンダー結果 */
+.modal-back { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center;
+              padding: 16px; background: rgba(0, 0, 0, 0.55); }
+.modal { display: flex; flex-direction: column; gap: 8px; min-width: min(320px, 100%); max-width: 100%; max-height: 100%;
+         box-sizing: border-box; padding: 12px; background: var(--menu); border: 1px solid #2c2c2c; border-radius: 6px;
+         box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); }
+.modal-title { font-weight: 600; }
+.modal progress { width: 100%; accent-color: var(--accent); }
+.render-result img { display: block; min-height: 0; max-width: min(90vw, 1200px); max-height: calc(100vh - 140px);
+                     object-fit: contain; background: #000; }
+.modal .row, .side-content > .row { display: flex; flex-wrap: wrap; gap: 3px; }
+.side-content > .row .bbtn { flex: 1 1 auto; }

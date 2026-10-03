@@ -1,8 +1,8 @@
 import { useEngine, useUi } from '../EngineContext';
 import { Menu, MenuItem, MenuLabel, MenuSep } from './Menu';
 
-// 上のバー: ファイルとヘルプのメニュー
-export function TopBar({ onOpenFiles, onLoadPose, onOpenProject }: { onOpenFiles: () => void; onLoadPose: () => void; onOpenProject: () => void }) {
+// 上のバー: ファイル・レンダー・ヘルプのメニュー
+export function TopBar({ onOpenFiles, onLoadPose, onOpenProject, onOpenOutput }: { onOpenFiles: () => void; onLoadPose: () => void; onOpenProject: () => void; onOpenOutput: () => void }) {
   const engine = useEngine();
   const projectName = useUi(s => s.projectName);
   return (
@@ -24,12 +24,18 @@ export function TopBar({ onOpenFiles, onLoadPose, onOpenProject }: { onOpenFiles
         <MenuSep />
         <MenuItem label="最初の状態に戻す" onSelect={() => engine.resetAll()} />
       </Menu>
+      <Menu id="render" label="レンダー">
+        <MenuItem label="画像をレンダリング" kbd="F12" onSelect={() => engine.renderImage()} />
+        <MenuItem label="アニメーションをレンダリング" kbd="Ctrl F12" onSelect={() => engine.renderAnimation()} />
+        <MenuSep />
+        <MenuItem label="出力の設定…" onSelect={onOpenOutput} />
+      </Menu>
       <Menu id="help" label="ヘルプ">
         <MenuLabel>ショートカット</MenuLabel>
         {[
           ['再生 / 停止', 'Space'], ['キーフレームを挿入', 'I'], ['いまのキーフレームを削除', 'Alt I'],
           ['前 / 次のキーフレーム', '↓ ↑'], ['前 / 次のフレーム', '← →'], ['最初 / 最後のフレーム', 'Shift ← →'],
-          ['選んだ物 (タイムライン上ではキー) を削除', 'X'], ['選択を解除', 'Alt A'], ['追加メニュー', 'Shift A'],
+          ['選んだ物 (タイムライン上ではキー) を削除', 'X'], ['選択を解除', 'Alt A'], ['追加メニュー', 'Shift A'], ['画像 / アニメーションをレンダリング', 'F12 / Ctrl F12'],
           ['前・右・上から見る', 'テンキー 1 3 7'], ['視点を戻す (タイムライン上では全体を表示)', 'Home'], ['サイドバー', 'N'],
           ['シェーダーエディター: ノードを追加 / 消す / 全体を表示', 'Shift A / X / Home'],
         ].map(([label, kbd]) => <MenuItem key={label} label={label} kbd={kbd} disabled />)}

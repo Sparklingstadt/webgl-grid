@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { FPS, SHAPE_NAMES } from '../core/constants';
+import { outputFileName, type OutputSettings } from '../core/output';
 import type { BoneValue } from '../core/types';
 import { Clock } from './anim/Clock';
 import { Keyframes } from './anim/Keyframes';
@@ -17,6 +18,7 @@ import { Physics } from './mmd/Physics';
 import { Posing } from './mmd/Posing';
 import { Stage } from './mmd/Stage';
 import { VpdIO } from './mmd/VpdIO';
+import { RenderCancelled, RenderOutput } from './output/RenderOutput';
 import { Effects } from './render/Effects';
 import { SceneGraph } from './render/SceneGraph';
 import { Viewport } from './render/Viewport';
@@ -53,6 +55,7 @@ export class Engine {
   readonly clock = new Clock();
   readonly keyframes = new Keyframes(this.world, this.posing, this.viewport, this.ui);
   readonly music = new Music(this.ui, () => this.clock.playing);
+  readonly output = new RenderOutput(this.viewport, this.graph, this.clock, this.music, this.ui);
   readonly effects = new Effects(this.viewport, this.ui, () => this.camera.focusPoint());
   readonly loader = new MmdLoader(this.ui, () => this.viewport.requestDraw());
   readonly vpd = new VpdIO(this.posing, this.viewport, this.ui);
@@ -92,9 +95,11 @@ export class Engine {
     viewport.onBeforeRender(() => {
       camera.update();
       world.sync();
-      const held = this.input?.held ?? this.picker.target;
-      for (const o of world.objects) world.setHighlight(o, o === held);
-      selection.syncOutlines(world.objects);
+      // (レンダリング中は、掴んでいる物の明るさと選択の輪郭線を出さない)
+      const rendering = this.output.active;
+      const held = rendering ? null : this.input?.held ?? this.picker.target;
+      for (const o of world.objects) world.setHighlight(o, !!held && o === held);
+      selection.syncOutlines(world.objects, rendering);
       graph.aimShadows(camera.cam.tx, camera.cam.tz, camera.cam.dist);
     });
     // 描いたあと: 選んでいる物の情報と、ビューポート左上の文字 (Blender の「ユーザー・透視投影」と「(フレーム) 選んでいる物」)
@@ -365,6 +370,56 @@ export class Engine {
     }
   }
 
+  // --- レンダリング (Blender の F12 / Ctrl+F12) ---
+  setOutput(patch: Partial<OutputSettings>) { this.output.set(patch); }
+  // 書き出すファイルの名前の元: プロジェクトの名前、なければ選んでいるモデルの名前
+  private renderBaseName() { return this.ui.state.projectName ?? this.model?.model.name ?? 'レンダー'; }
+  private canRender() {
+    if (this.output.busy) return false;
+    if (!this.viewport.mounted) { this.ui.toast('描画先がないのでレンダリングできません'); return false; }
+    return true;
+  }
+  // いまのフレームを画像にして、保存する前に見せる
+  async renderImage() {
+    if (!this.canRender()) return;
+    try {
+      const blob = await this.output.renderImage();
+      this.closeRenderResult();
+      const { width, height } = this.output.settings;
+      this.ui.set({ renderResult: { url: URL.createObjectURL(blob), name: outputFileName(this.renderBaseName(), 'png', this.clock.frame), width, height } });
+    } catch (err) {
+      console.error(err);
+      this.ui.toast(`レンダリングできませんでした: ${(err as Error)?.message ?? err}`, 8000);
+    }
+  }
+  saveRenderResult() {
+    const r = this.ui.state.renderResult;
+    if (r) downloadUrl(r.url, r.name);
+  }
+  closeRenderResult() {
+    const r = this.ui.state.renderResult;
+    if (!r) return;
+    URL.revokeObjectURL(r.url);
+    this.ui.set({ renderResult: null });
+  }
+  // 開始〜終了フレームを動画にして保存する
+  async renderAnimation() {
+    if (!this.canRender()) return;
+    this.closeRenderResult();
+    const t0 = performance.now();
+    try {
+      const r = await this.output.renderAnimation();
+      const name = outputFileName(this.renderBaseName(), r.ext);
+      download(r.bytes, name, r.mime);
+      this.ui.toast(`${name} を書き出しました (${r.frames} フレーム・${(r.bytes.length / 1024 / 1024).toFixed(1)} MB・${((performance.now() - t0) / 1000).toFixed(1)} 秒)`, 8000);
+    } catch (err) {
+      if (err instanceof RenderCancelled) { this.ui.toast('レンダリングをキャンセルしました'); return; }
+      console.error(err);
+      this.ui.toast(`動画を作れませんでした: ${(err as Error)?.message ?? err}`, 10000);
+    }
+  }
+  cancelRender() { this.output.cancel(); }
+
   // マテリアルを変えた .pmx を書き出す (MMD で表せる範囲。ほかの部分は元の .pmx のまま)
   async exportPmx() {
     const o = this.model;
@@ -434,10 +489,14 @@ export class Engine {
 }
 
 // バイト列をファイルとしてダウンロードさせる
-function download(bytes: Uint8Array, name: string) {
-  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([bytes as BlobPart])), download: name });
+function download(bytes: Uint8Array, name: string, type = '') {
+  const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type }));
+  downloadUrl(url, name);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+function downloadUrl(href: string, name: string) {
+  const a = Object.assign(document.createElement('a'), { href, download: name });
   document.body.append(a);
   a.click();
   a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }

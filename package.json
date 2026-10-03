@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "fflate": "^0.8.3",
+    "mediabunny": "^1.61.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "three": "0.171.0"

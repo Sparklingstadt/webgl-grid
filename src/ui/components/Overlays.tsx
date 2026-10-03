@@ -31,3 +31,40 @@ export function Palette() {
     </div>
   );
 }
+
+// 動画をレンダリング中: 進み具合とキャンセル (画面全体を覆い、そのあいだは場面を触れないようにする)
+export function RenderProgress() {
+  const engine = useEngine();
+  const r = useUi(s => s.rendering);
+  if (!r) return null;
+  const pct = Math.round(r.done / r.total * 100);
+  return (
+    <div className="modal-back">
+      <div className="modal" role="dialog" aria-modal="true" aria-label="レンダリング中">
+        <div className="modal-title">アニメーションをレンダリング中…</div>
+        <progress max={r.total} value={r.done} aria-label="レンダリングの進み具合" />
+        <div className="note">{r.done} / {r.total} フレーム ({pct}%)</div>
+        <div className="row"><button type="button" className="bbtn" onClick={() => engine.cancelRender()}>キャンセル (Esc)</button></div>
+      </div>
+    </div>
+  );
+}
+
+// レンダリングした画像 (Blender のレンダーウィンドウ): 見てから保存する
+export function RenderResult() {
+  const engine = useEngine();
+  const r = useUi(s => s.renderResult);
+  if (!r) return null;
+  return (
+    <div className="modal-back" onPointerDown={e => { if (e.target === e.currentTarget) engine.closeRenderResult(); }}>
+      <div className="modal render-result" role="dialog" aria-modal="true" aria-label="レンダー結果">
+        <div className="modal-title">レンダー結果 <span className="note">{r.width} × {r.height}</span></div>
+        <img src={r.url} alt="レンダリングした画像" />
+        <div className="row">
+          <button type="button" className="bbtn" onClick={() => engine.saveRenderResult()}>画像を保存 ({r.name})</button>
+          <button type="button" className="bbtn" onClick={() => engine.closeRenderResult()}>閉じる (Esc)</button>
+        </div>
+      </div>
+    </div>
+  );
+}
