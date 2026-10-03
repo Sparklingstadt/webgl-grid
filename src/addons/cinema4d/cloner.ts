@@ -1,29 +1,20 @@
 import { int, num, oneOf, vec3 as vec } from '../../core/normalize';
 import { seededRandom } from '../../core/random';
+import { applyEffectors, type EffectorValue, type LayoutEnv } from './effectors';
 
 // --- クローナー (Cinema 4D のクローナー): 物を直線・放射・グリッドに並べる ---
 // 並べる場所は、元の物 (クローナー) の位置と向きから見た座標。元の物を動かす・回すと、クローンも一緒に動く
 export type ClonerMode = 'linear' | 'radial' | 'grid';
 export type Vec3 = [number, number, number];
-// エフェクタ (Cinema 4D の MoGraph エフェクタ)。上から順にかける
-//   plain: 全部のクローンに同じだけ / step: 最初のクローンの 0 から最後のクローンの値まで、だんだん強く /
-//   delay: MMD モデルのクローンを、1 つごとに frames フレームずつ遅らせて動かす
-export type EffectorKind = 'plain' | 'step' | 'delay';
+// エフェクタ (Cinema 4D の MoGraph エフェクタ)。上から順にかける。種類 (kind) は、アドオンが登録する (effectors.ts)
 export interface Effector {
-  kind: EffectorKind;
+  kind: string;
   enabled: boolean;
-  position: Vec3;    // ずらす量
+  position: Vec3;      // ずらす量
   rotationDeg: number; // 縦軸まわりの回転 (度)
-  scale: number;     // 大きさ (1 でそのまま)
-  frames: number;    // ディレイ: 1 つごとの遅れ (フレーム)
+  scale: number;       // 大きさ (1 でそのまま)
+  params: Record<string, EffectorValue>; // 種類ごとの設定 (ディレイの遅れ・ランダムのシードなど)
 }
-export const EFFECTOR_KINDS: { key: EffectorKind; name: string }[] = [
-  { key: 'plain', name: 'プレーン' }, { key: 'step', name: 'ステップ' }, { key: 'delay', name: 'ディレイ' },
-];
-export const newEffector = (kind: EffectorKind): Effector => ({
-  kind, enabled: true, position: [0, 0, 0], rotationDeg: 0,
-  scale: kind === 'step' ? 1.5 : 1, frames: kind === 'delay' ? 5 : 0,
-});
 export const MAX_DELAY_FRAMES = 300; // ディレイで遅らせられる長さ (覚えておく姿勢の数)
 export interface ClonerSettings {
   mode: ClonerMode;
@@ -55,6 +46,18 @@ export const CLONER_DEFAULT: ClonerSettings = {
 // 数の上限 (MMD モデルは 1 つずつ骨を動かして描くので少なめ)
 export const MAX_CLONES = { shape: 400, model: 25 };
 
+// エフェクタの設定をそろえる (知らない種類も残す。前の版のディレイの frames は params に)
+const KIND = /^[a-z][a-z0-9_.-]{0,40}$/;
+function normalizeEffector(e: Partial<Effector> & { frames?: unknown }): Effector {
+  const params: Record<string, EffectorValue> = {};
+  for (const [k, v] of Object.entries(e.params ?? {})) if (['number', 'boolean', 'string'].includes(typeof v) && Object.keys(params).length < 32) params[k] = v as EffectorValue;
+  if (typeof e.frames === 'number' && params.frames === undefined) params.frames = Math.min(Math.max(e.frames, 0), MAX_DELAY_FRAMES);
+  return {
+    kind: e.kind!, enabled: e.enabled !== false, position: vec(e.position, [0, 0, 0]), rotationDeg: num(e.rotationDeg, 0),
+    scale: num(e.scale, 1, 0.01, 100), params,
+  };
+}
+
 // 保存されていた・外から渡された設定を、使える値にそろえる
 export function normalizeCloner(s: Partial<ClonerSettings> | undefined): ClonerSettings {
   const d = CLONER_DEFAULT, o = s ?? {};
@@ -67,10 +70,7 @@ export function normalizeCloner(s: Partial<ClonerSettings> | undefined): ClonerS
     align: typeof o.align === 'boolean' ? o.align : d.align,
     grid: vec(o.grid, d.grid).map(n => int(n, 1, 1, 50)) as Vec3, spacing: vec(o.spacing, d.spacing),
     random: { position: num(r.position, 0, 0), rotationDeg: num(r.rotationDeg, 0, 0), seed: int(r.seed, 1, 0, 1e9) },
-    effectors: (Array.isArray(o.effectors) ? o.effectors : []).filter(e => EFFECTOR_KINDS.some(k => k.key === e?.kind)).slice(0, 16).map(e => ({
-      kind: e.kind, enabled: e.enabled !== false, position: vec(e.position, [0, 0, 0]), rotationDeg: num(e.rotationDeg, 0),
-      scale: num(e.scale, 1, 0.01, 100), frames: num(e.frames, 0, 0, MAX_DELAY_FRAMES),
-    })),
+    effectors: (Array.isArray(o.effectors) ? o.effectors : []).filter(e => typeof e?.kind === 'string' && KIND.test(e.kind)).slice(0, 16).map(normalizeEffector),
   };
 }
 
@@ -86,8 +86,8 @@ export function placeAround(p: Placement, x: number, z: number, r: number) {
   return { x: x + p.x * c + p.z * s, z: z - p.x * s + p.z * c, r: r + p.ry };
 }
 
-// クローンの置き場所。max 個まで
-export function clonerLayout(s: ClonerSettings, max: number): Placement[] {
+// クローンの置き場所。max 個まで。env (登録されたエフェクタ・時刻・クローナーの位置) がなければ、エフェクタはかけない
+export function clonerLayout(s: ClonerSettings, max: number, env?: LayoutEnv): Placement[] {
   const out: Placement[] = [];
   const D = Math.PI / 180;
   if (s.mode === 'linear') {
@@ -118,19 +118,7 @@ export function clonerLayout(s: ClonerSettings, max: number): Placement[] {
       p.ry += (rnd() * 2 - 1) * rotationDeg * D;
     }
   }
-  // エフェクタ (上から順に)
-  const n = out.length;
-  for (const e of s.effectors) {
-    if (!e.enabled) continue;
-    out.forEach((p, i) => {
-      if (e.kind === 'delay') { p.delay += e.frames * i; return; }
-      const t = e.kind === 'plain' ? 1 : n > 1 ? i / (n - 1) : 0; // ステップ: 最初 0 → 最後 1
-      p.x += e.position[0] * t;
-      p.y += e.position[1] * t;
-      p.z += e.position[2] * t;
-      p.ry += e.rotationDeg * D * t;
-      p.scale *= 1 + (e.scale - 1) * t;
-    });
-  }
+  // エフェクタ (上から順に。登録されている種類だけ)
+  if (env) applyEffectors(out, s.effectors, env);
   return out;
 }

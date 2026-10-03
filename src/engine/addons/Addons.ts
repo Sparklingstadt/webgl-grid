@@ -20,6 +20,7 @@ export interface AddonModule {
   description?: string;
   category?: string;
   enabledByDefault?: boolean; // 組み込みのアドオンを、最初から有効にしておく (切ったら、切ったまま覚えておく)
+  requires?: string[];        // 必要なアドオンの id (有効にすると一緒に有効にし、そのアドオンを切ると一緒に切る)
   register(api: AddonApi): void | (() => void) | Promise<void | (() => void)>;
   unregister?(api: AddonApi): void;
 }
@@ -28,6 +29,7 @@ export interface AddonInfo {
   source: 'builtin' | 'installed';
   enabled: boolean;
   enabledByDefault: boolean;
+  requires: string[];
   error: string | null; // 有効にできなかったわけ
   contributes: AddonContributions; // 足しているもの (有効なときだけ)
 }
@@ -54,6 +56,7 @@ export interface AddonApi {
   requestDraw(): void;
   refresh(): void; // パネルを描き直す (値を変えたとき)
   expose(value: unknown): void; // ほかから使える窓口を出す (engine.addons.exposed(id) で受け取る。切るとなくなる)
+  require<T>(id: string): T;    // 必要なアドオン (requires) が出した窓口 (なければエラー)
   addCommand(name: string, def: { description?: string; params?: Record<string, string>; run(params: Record<string, unknown>): unknown }): () => void;
   addMenuItem(def: { menu: MenuId; label: string; run(): void; enabled?(): boolean }): () => void;
   addPanel(def: { title: string; tab?: string; poll?(sel: SelInfo | null): boolean; props?(): PropDef[]; draw?(el: HTMLElement): void | (() => void); component?: unknown }): () => void;
@@ -150,7 +153,7 @@ export class Addons {
   list(): AddonInfo[] {
     return [...this.entries.values()].map(({ module: m, source, dispose, error }) => ({
       id: m.id, name: m.name, version: m.version ?? '', author: m.author ?? '', description: m.description ?? '', category: m.category ?? '',
-      source, enabled: !!dispose, enabledByDefault: !!m.enabledByDefault, error, contributes: this.contributions(m.id),
+      source, enabled: !!dispose, enabledByDefault: !!m.enabledByDefault, requires: m.requires ?? [], error, contributes: this.contributions(m.id),
     }));
   }
   private contributions(id: string): AddonContributions {
@@ -208,6 +211,18 @@ export class Addons {
     const e = this.entries.get(id);
     if (!e) throw new Error(`アドオン ${id} はありません`);
     if (e.dispose) return;
+    // 必要なアドオンを先に有効にする
+    for (const r of e.module.requires ?? []) {
+      const dep = this.entries.get(r);
+      if (dep && !dep.dispose && dep.module.requires?.includes(id)) continue; // (お互いに必要としているときは、回らない)
+      if (dep) await this.enable(r, remember);
+      if (!dep?.dispose) {
+        e.error = `アドオン ${dep?.module.name ?? r} が必要です${dep ? ' (有効にできませんでした)' : ' (ありません)'}`;
+        this.engine.ui.toast(`アドオン「${e.module.name}」を有効にできませんでした: ${e.error}`, 8000);
+        this.publish();
+        return;
+      }
+    }
     const disposers: (() => void)[] = [];
     const api = this.api(e.module.id, disposers, v => { e.exposed = v; });
     try {
@@ -232,6 +247,10 @@ export class Addons {
   disable(id: string, remember = true) {
     const e = this.entries.get(id);
     if (!e?.dispose) return;
+    // このアドオンを必要としているアドオンを、先に切る
+    const dependents = [...this.entries.values()].filter(x => x.dispose && x.module.requires?.includes(id));
+    for (const x of dependents) this.disable(x.module.id, remember);
+    if (dependents.length) this.engine.ui.toast(`${dependents.map(x => x.module.name).join('・')} も切りました (${e.module.name} が必要なため)`);
     const d = e.dispose;
     e.dispose = undefined;
     d();
@@ -262,6 +281,11 @@ export class Addons {
       requestDraw: () => viewport.requestDraw(),
       refresh,
       expose,
+      require: <T>(dep: string) => {
+        const v = this.exposed<T>(dep);
+        if (v === undefined) throw new Error(`アドオン ${dep} が必要です (有効にしてください)`);
+        return v;
+      },
       addCommand: (name, def) => track(this.commands.add({
         key: full(name), source: id, description: def.description, params: def.params,
         run: (_e, p) => def.run((p ?? {}) as Record<string, unknown>),

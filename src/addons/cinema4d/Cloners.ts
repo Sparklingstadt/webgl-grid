@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
-import { MAX_CLONES, MAX_DELAY_FRAMES, clonerLayout, cloneCount, type ClonerSettings } from './cloner';
+import { MAX_CLONES, MAX_DELAY_FRAMES, clonerLayout, cloneCount, type ClonerSettings, type Placement } from './cloner';
+import { hasLive, type LayoutEnv } from './effectors';
 import type { Viewport } from '../../engine/render/Viewport';
 import { isModel, type Any, type Obj } from '../../engine/types';
 import type { World } from '../../engine/world/World';
@@ -21,8 +22,9 @@ export class Cloners {
   private history = new WeakMap<Obj, Map<number, PoseSnap>>();
 
   // settingsOf: 物のクローナーの設定 (アドオンの物ごとの値。なければ普通の物)
+  // envOf: 並べるときに使うもの (登録されたエフェクタ・時刻・物の位置)
   constructor(private world: World, private viewport: Viewport, private frameNow: () => number,
-              private settingsOf: (obj: Obj) => ClonerSettings | null) {}
+              private settingsOf: (obj: Obj) => ClonerSettings | null, private envOf: (obj: Obj) => LayoutEnv) {}
 
   // クローンを、いまの設定で作り直す (設定がなければ、クローンを消して元の物を出す)
   rebuild(obj: Obj) {
@@ -41,12 +43,9 @@ export class Cloners {
     if (!cloner) return;
     const group = new THREE.Group();
     group.name = GROUP;
-    for (const p of clonerLayout(cloner, isModel(obj) ? MAX_CLONES.model : MAX_CLONES.shape)) {
+    for (const p of this.layout(obj, cloner)) {
       const g = new THREE.Group();
-      g.position.set(p.x, p.y, p.z);
-      g.rotation.y = p.ry;
-      g.scale.setScalar(p.scale);
-      g.userData.delay = Math.round(p.delay);
+      place(g, p);
       if (isModel(obj)) {
         const m: Any = cloneSkinned(obj.model);
         m.visible = true;
@@ -66,6 +65,8 @@ export class Cloners {
     obj.node.add(group);
   }
 
+  private layout(obj: Obj, cloner: ClonerSettings) { return clonerLayout(cloner, isModel(obj) ? MAX_CLONES.model : MAX_CLONES.shape, this.envOf(obj)); }
+
   private remember(obj: Obj, bones: THREE.Bone[], inf: number[] | undefined) {
     let map = this.history.get(obj);
     if (!map) this.history.set(obj, map = new Map());
@@ -82,6 +83,9 @@ export class Cloners {
       if (!this.settingsOf(obj)) continue;
       const group = obj.node.getObjectByName(GROUP);
       if (!group) continue;
+      // 時刻・物の位置で変わるエフェクタがあれば、置き場所を並べ直す (クローンは作り直さない)
+      const cloner = this.settingsOf(obj)!;
+      if (hasLive(cloner.effectors, this.envOf(obj))) this.layout(obj, cloner).forEach((p, i) => { const g = group.children[i]; if (g) place(g, p); });
       if (!isModel(obj)) {
         for (const g of group.children) {
           const m = g.children[0] as THREE.Mesh;
@@ -115,6 +119,14 @@ export class Cloners {
       }
     }
   }
+}
+
+// クローン 1 つの置き場所
+function place(g: THREE.Object3D, p: Placement) {
+  g.position.set(p.x, p.y, p.z);
+  g.rotation.y = p.ry;
+  g.scale.setScalar(Math.max(p.scale, 1e-4));
+  g.userData.delay = Math.round(p.delay);
 }
 
 // いまのフレームの元のモデルの姿勢を覚え、遅れの範囲より前のものは捨てる

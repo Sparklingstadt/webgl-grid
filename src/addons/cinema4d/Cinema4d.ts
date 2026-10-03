@@ -1,10 +1,12 @@
 import { MAX_BOXES } from '../../core/constants';
 import type { AddonApi, ObjectData } from '../../engine/addons/Addons';
+import { Registry } from '../../engine/addons/registry';
 import { isModel, type Obj } from '../../engine/types';
 import { MAX_CLONES, clonerLayout, normalizeCloner, placeAround, type ClonerSettings } from './cloner';
 import { Cloners } from './Cloners';
 import { normalizeDeformers, type Deformer } from './deform';
 import { Deformers } from './Deformers';
+import type { EffectorDef, LayoutEnv } from './effectors';
 
 // --- Cinema 4D アドオンの中身: クローナー (とエフェクタ)・デフォーマ ---
 // 設定は物ごとの値 (プロジェクトに入り、元に戻せる)。前の版のプロジェクトの cloner・deformers もそのまま読む。
@@ -12,6 +14,7 @@ import { Deformers } from './Deformers';
 export class Cinema4d {
   readonly cloners: Cloners;
   readonly deformers: Deformers;
+  readonly effectors = new Registry<EffectorDef>(); // エフェクタの種類 (MoGraph エフェクタのアドオンが登録する)
   private readonly clonerData: ObjectData<ClonerSettings>;
   private readonly deformerData: ObjectData<Deformer[]>;
   private on = true; // 切ったら false (クローンと変形を外すとき、値はあっても「なし」として作り直す)
@@ -20,7 +23,12 @@ export class Cinema4d {
     const e = api.engine;
     // (値を読むのは、登録の途中 (有効にしたときに当て直す) でも使えるよう、物の値から直接)
     const value = <T>(key: string) => (o: Obj) => (this.on ? (o.addonData?.[`${api.id}.${key}`] as T | undefined) ?? null : null);
-    this.cloners = new Cloners(e.world, e.viewport, () => e.clock.frame, value<ClonerSettings>('cloner'));
+    this.cloners = new Cloners(e.world, e.viewport, () => e.clock.frame, value<ClonerSettings>('cloner'), o => this.env(o));
+    // エフェクタの種類が増減したら、クローナーを並べ直す
+    this.effectors.events.on('changed', () => {
+      for (const o of e.world.objects) if (this.cloner(o)) this.cloners.rebuild(o);
+      api.refresh();
+    });
     this.deformers = new Deformers(this.cloners, e.viewport, value<Deformer[]>('deformers'));
     // 当てる順: クローナー → デフォーマ (デフォーマは、変形した形でクローンを作り直す)
     this.clonerData = api.addObjectData<ClonerSettings>({
@@ -33,6 +41,13 @@ export class Cinema4d {
     });
     api.onBeforeRender(() => this.cloners.sync());
   }
+  // エフェクタの種類を登録する (外す関数を返す)
+  addEffector(def: EffectorDef) { return this.effectors.add(def); }
+  private env(o: Obj): LayoutEnv {
+    const e = this.api.engine;
+    return { effector: k => this.effectors.get(k), time: e.clock.t, origin: { x: o.x, z: o.z, r: o.r } };
+  }
+
   // 切るとき (クローンと変形を外す前に呼ぶ)
   off() { this.on = false; }
 
@@ -59,7 +74,7 @@ export class Cinema4d {
     const e = this.api.engine, c = this.cloner(o);
     if (!o || !c) return false;
     if (isModel(o)) { e.ui.toast('MMD モデルのクローンは、1 つずつの物にはできません'); return false; }
-    const layout = clonerLayout(c, MAX_CLONES.shape).sort((a, b) => a.y - b.y); // 下の段から置く (上の段は積み重なる)
+    const layout = clonerLayout(c, MAX_CLONES.shape, this.env(o)).sort((a, b) => a.y - b.y); // 下の段から置く (上の段は積み重なる)
     const room = MAX_BOXES - e.world.objects.length + 1;
     if (layout.length > room) { e.ui.toast(`置ける物は ${MAX_BOXES} 個までなので、クローン ${layout.length} 個を 1 つずつの物にはできません (あと ${room} 個まで)`, 6000); return false; }
     const { x, z, r } = o, slot = o.slots[0], deformers = this.deformerData.get(o);

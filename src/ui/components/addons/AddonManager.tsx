@@ -84,6 +84,7 @@ export function AddonManager({ onClose }: { onClose: () => void }) {
                   <div className="addon-detail">
                     {a.description && <div>{a.description}</div>}
                     <div className="note">id: {a.id}{a.author && ` ・ 作者: ${a.author}`}{a.enabledByDefault && ' ・ 最初から有効'}</div>
+                  {a.requires.length > 0 && <div className="note">必要なアドオン: {a.requires.map(r => addons.find(x => x.id === r)?.name ?? r).join('・')} (一緒に有効にし、切ると一緒に切れます)</div>}
                     {a.enabled
                       ? (parts.length ? <ul className="addon-parts" aria-label={`${a.name} が足しているもの`}>{parts.map(p => <li key={p}>{p}</li>)}</ul>
                         : <div className="note">足しているものはありません</div>)

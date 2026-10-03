@@ -143,3 +143,33 @@ test('デフォーマ: サイドバーで足すと形が変わり、外すと戻
   await expect.poll(topWidth).toBe(0.5);
   expect(errors).toEqual([]);
 });
+
+test('MoGraph エフェクタ: ターゲットで向きを変え、フォーミュラは時刻で動く。アドオンを切ると効かず、設定は残る', async ({ page }) => {
+  const errors = await open(page);
+  const p = await screenPosOf(page, 0);
+  await page.mouse.click(p.x, p.y);
+  await page.getByRole('checkbox', { name: 'クローナーにする' }).click();
+  await choose(page, 'クローナーの並べ方', '直線');
+  const clones = (): Promise<[number, number][]> => page.evaluate(() => (window as Win).engine.world.objects[0].node.getObjectByName('__clones').children
+    .map((g: Win) => [+g.position.y.toFixed(2), +g.rotation.y.toFixed(2)]));
+  // ターゲット: 真横 (X 方向の遠く) を向く
+  await page.getByRole('button', { name: '+ ターゲット' }).click();
+  const target = page.getByRole('group', { name: 'エフェクタ 1 ターゲット' });
+  await target.getByRole('spinbutton', { name: 'ターゲットのターゲット X' }).fill('1000');
+  await page.keyboard.press('Enter');
+  await target.getByRole('spinbutton', { name: 'ターゲットのターゲット Z' }).fill('0');
+  await page.keyboard.press('Enter');
+  await expect.poll(async () => (await clones()).every(([, ry]) => Math.abs(ry - 1.57) < 0.02)).toBe(true);
+  // フォーミュラ: 時刻を進めると、上下の位置が変わる
+  await page.getByRole('button', { name: '+ フォーミュラ' }).click();
+  const at = async (frame: number) => { await page.evaluate(f => { (window as Win).engine.clock.seekFrame(f); }, frame); await page.waitForTimeout(50); return (await clones()).map(([y]) => y); };
+  const y0 = await at(0), y1 = await at(8);
+  expect(y0).not.toEqual(y1);
+  // MoGraph エフェクタを切ると、効かなくなり (設定は残る)、パネルに知らせを出す
+  await page.evaluate(() => (window as Win).engine.addons.disable('mograph'));
+  await expect.poll(async () => (await clones()).every(([y, ry]) => y === 0 && ry === 0)).toBe(true);
+  await expect(page.getByText('この種類のエフェクタは登録されていないので、働きません').first()).toBeVisible();
+  await page.evaluate(() => (window as Win).engine.addons.enable('mograph'));
+  await expect.poll(async () => (await clones()).every(([, ry]) => Math.abs(ry) > 0.5)).toBe(true);
+  expect(errors).toEqual([]);
+});

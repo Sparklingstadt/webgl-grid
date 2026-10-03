@@ -96,9 +96,11 @@ forwardAddon('set_cloner', 'cinema4d.set_cloner', 'クローナー (Cinema 4D �
   grid: vec3.optional().describe('グリッドの数 [x, y, z]'), spacing: vec3.optional().describe('グリッドの間隔 [x, y, z]'),
   random: z.object({ position: z.number().min(0).optional(), rotationDeg: z.number().min(0).optional(), seed: z.number().int().optional() }).optional().describe('ばらつき'),
   effectors: z.array(z.object({
-    kind: z.enum(['plain', 'step', 'delay']), enabled: z.boolean().optional(), position: vec3.optional(), rotationDeg: z.number().optional(),
-    scale: z.number().positive().optional(), frames: z.number().min(0).optional(),
-  })).optional().describe('エフェクタ (上から順にかける。渡すと並びごと入れ替える)。plain: 全部に同じだけ / step: 最初の 0 から最後の値まで / delay: MMD モデルのクローンを 1 つごとに frames フレーム遅らせる'),
+    kind: z.string().describe('plain・step・random・formula・time・target・delay (MoGraph エフェクタのアドオン)'), enabled: z.boolean().optional(),
+    position: vec3.optional(), rotationDeg: z.number().optional(), scale: z.number().positive().optional(),
+    params: z.record(z.string(), z.union([z.number(), z.boolean(), z.string()])).optional()
+      .describe('種類ごとの設定: random { seed }・formula { frequency (Hz), waves }・target { x, z }・delay { frames }'),
+  })).optional().describe('エフェクタ (上から順にかける。渡すと並びごと入れ替える)。位置・回転・大きさを、強さに合わせて足す。plain: 全部に同じだけ / step: 最初の 0 から最後の値まで / random: クローンごとにばらつかせる / formula: 番号と時刻で波のように / time: 時刻 (秒) に合わせて / target: params の場所へ向ける / delay: MMD モデルのクローンを 1 つごとに params.frames フレーム遅らせる'),
 });
 const hexColor = z.string().regex(/^#?[0-9a-fA-F]{6}$/).describe('"#rrggbb"');
 const lightType = z.enum(['point', 'sun', 'spot', 'area']).describe('Blender のライトの種類: ポイント・サン・スポット・エリア');
