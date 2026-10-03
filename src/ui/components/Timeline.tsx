@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { fitView, frameAt as frameAtView, rulerStep, zoomView } from '../../core/timelineMath';
 import { useEngine, useUi } from '../EngineContext';
 import { NumField } from './NumField';
@@ -25,7 +25,7 @@ export function Timeline({ open, typeSelect }: { open: boolean; typeSelect: Reac
   const expanded = engine.keyframes.expanded; // (切り替えると keysVersion が進むので、描き直される)
   const scrub = useRef<number | null>(null);
   const state = useRef({ frame, start, end });
-  state.current = { frame, start, end };
+  useLayoutEffect(() => { state.current = { frame, start, end }; }, [frame, start, end]); // (描くときに読む)
 
   const fit = useCallback(() => {
     const { start, end } = state.current;

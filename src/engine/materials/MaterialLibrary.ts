@@ -220,7 +220,7 @@ export class MaterialLibrary {
 
 // MeshPhysicalMaterial のシェーダーに、ノードから作った式を差し込む
 function injectShader(m: THREE.MeshPhysicalMaterial, code: ShaderCode, uniforms: Record<string, THREE.IUniform>) {
-  m.defines = { ...(m.defines ?? {}), USE_UV: '' }; // vUv を使う
+  m.defines = { ...m.defines, USE_UV: '' }; // vUv を使う
   m.onBeforeCompile = shader => {
     Object.assign(shader.uniforms, uniforms);
     shader.fragmentShader = shader.fragmentShader

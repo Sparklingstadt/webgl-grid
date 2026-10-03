@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Popover } from './Popover';
 
 // --- 選択肢 (Blender のドロップダウン) ---
@@ -13,7 +13,9 @@ export function BSelect<T extends string | number>({ value, options, onChange, l
 }) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
-  const btn = useRef<HTMLButtonElement>(null);
+  const btn = useRef<HTMLButtonElement | null>(null);
+  const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
+  const setBtn = useCallback((el: HTMLButtonElement | null) => { btn.current = el; setAnchor(el); }, []); // 一覧を出す位置の元 (描くときに使うので state)
   const listId = useId();
   const flat = options.flatMap(o => ('group' in o ? o.options : [o]));
   const cur = flat.findIndex(o => o.value === value);
@@ -65,14 +67,14 @@ export function BSelect<T extends string | number>({ value, options, onChange, l
   };
   return (
     <>
-      <button type="button" ref={btn} id={id} className={`bselect ${className ?? ''}`} role="combobox" aria-label={label} title={label}
+      <button type="button" ref={setBtn} id={id} className={`bselect ${className ?? ''}`} role="combobox" aria-label={label} title={label}
               aria-haspopup="listbox" aria-expanded={open} aria-controls={open ? listId : undefined}
               aria-activedescendant={open && active >= 0 ? `${listId}-${active}` : undefined}
               onClick={() => (open ? setOpen(false) : show())} onKeyDown={onKey}>
         <span className="bselect-text">{cur >= 0 ? flat[cur].label : placeholder}</span>
       </button>
       {open && (
-        <Popover anchor={btn.current} onClose={() => setOpen(false)} className="bselect-pop" matchWidth>
+        <Popover anchor={anchor} onClose={() => setOpen(false)} className="bselect-pop" matchWidth>
           <div id={listId} role="listbox" aria-label={label}>
             {options.map(o => ('group' in o
               ? <div key={`g:${o.group}`} role="group" aria-label={o.group}><div className="bselect-group" aria-hidden="true">{o.group}</div>{o.options.map(optionEl)}</div>

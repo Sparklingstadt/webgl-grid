@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { MenuContext } from './components/Menu';
 import { MissingFiles, RenderProgress, RenderResult } from './components/Dialogs';
 import { Palette, Toast } from './components/Overlays';
@@ -66,7 +66,7 @@ export default function App() {
   }, [openMenu]);
 
   const openMenuRef = useRef(openMenu);
-  openMenuRef.current = openMenu;
+  useLayoutEffect(() => { openMenuRef.current = openMenu; }, [openMenu]);
   useShortcuts(engine, {
     hoverArea,
     openAddMenu: () => setOpenMenu('add'),

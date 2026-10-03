@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { hexToRgb, hsvToRgb, rgbToHex, rgbToHsv, type Hsv } from '../../../core/hsv';
 
 // --- 色選び (Blender の色選びの窓) ---
@@ -6,14 +6,17 @@ import { hexToRgb, hsvToRgb, rgbToHex, rgbToHsv, type Hsv } from '../../../core/
 // Enter で 16 進を決めたら onDone (窓を閉じる)
 export function ColorPicker({ rgb, onChange, label, onDone }: { rgb: [number, number, number]; onChange: (rgb: [number, number, number]) => void; label: string; onDone?: () => void }) {
   // 灰色にしても色相を忘れないように、色相・彩度・明度を自分で持つ (外から色が変わったら合わせ直す)
-  const [hsv, setHsv] = useState<Hsv>(() => rgbToHsv(rgb));
-  const last = useRef(rgbToHex(rgb));
   const hex = rgbToHex(rgb);
-  if (hex !== last.current && hex !== rgbToHex(hsvToRgb(hsv))) { last.current = hex; setHsv(rgbToHsv(rgb, hsv.h)); }
+  const [hsv, setHsv] = useState<Hsv>(() => rgbToHsv(rgb));
+  const [seen, setSeen] = useState(hex); // 最後に合わせた色 (前の描画の情報は state に持つ)
+  if (hex !== seen) {
+    setSeen(hex);
+    if (hex !== rgbToHex(hsvToRgb(hsv))) setHsv(rgbToHsv(rgb, hsv.h));
+  }
   const set = (next: Hsv) => {
     setHsv(next);
     const c = hsvToRgb(next);
-    last.current = rgbToHex(c);
+    setSeen(rgbToHex(c));
     onChange(c);
   };
   const [draft, setDraft] = useState<string | null>(null);

@@ -1,9 +1,10 @@
-// 型チェック・単体テスト・e2e テストを同時に動かし、どれかが失敗したら失敗にする。
+// 型チェック・lint・単体テスト・e2e テストを同時に動かし、どれかが失敗したら失敗にする。
 // それぞれの出力は、終わったものから順にまとめて表示する (混ざらないように)
 import { spawn } from 'node:child_process';
 
 const jobs = [
   ['型チェック', 'npx', ['tsc', '-b']],
+  ['lint', 'npm', ['run', '-s', 'lint']],
   ['単体テスト', 'npx', ['vitest', 'run']],
   ['e2e テスト', 'npx', ['playwright', 'test']],
 ];

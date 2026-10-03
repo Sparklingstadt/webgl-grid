@@ -30,7 +30,7 @@ export function formatVpd(modelName: string, { bones, morphs }: VpdPose): string
 
 // .vpd でなければ null
 export function parseVpd(text: string): VpdPose | null {
-  if (!/^Vocaloid Pose Data file/.test(text.trimStart())) return null;
+  if (!text.trimStart().startsWith('Vocaloid Pose Data file')) return null;
   const n = '([-+0-9.eE]+)';
   const boneRe = new RegExp(`Bone\\d+\\{([^\\r\\n]*)\\s+${n},${n},${n};[^\\n]*\\n\\s*${n},${n},${n},${n};`, 'g');
   const morphRe = new RegExp(`Morph\\d+\\{([^\\r\\n]*)\\s+${n};`, 'g');

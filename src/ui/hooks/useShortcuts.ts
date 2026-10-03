@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import type { Engine } from '../../engine';
 
 export type Area = 'view' | 'timeline' | 'shader' | null;
@@ -13,7 +13,7 @@ export function useShortcuts(engine: Engine, actions: {
   openProject: () => void;
 }) {
   const ref = useRef(actions);
-  ref.current = actions;
+  useLayoutEffect(() => { ref.current = actions; }); // (キーの処理は、いちばん新しい actions を使う)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const a = ref.current;

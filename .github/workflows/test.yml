@@ -1,4 +1,4 @@
-# push と pull request のたびに、型チェック・単体テスト・e2e テストを流す (npm run test:all)。
+# push と pull request のたびに、型チェック・lint・単体テスト・e2e テストを流す (npm run test:all)。
 # 公開 (GitHub Pages) はしない
 name: test
 
@@ -19,8 +19,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24 # MCP サーバーは TypeScript をそのまま動かす (22.18 以上)
           cache: npm
@@ -29,7 +29,7 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm run test:all
       # 失敗したときは、e2e の記録 (スクリーンショット・トレース) を残す
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: playwright-results

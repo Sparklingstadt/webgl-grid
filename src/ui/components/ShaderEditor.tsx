@@ -50,7 +50,11 @@ export function ShaderEditor({ typeSelect, onHover }: { typeSelect: ReactNode; o
   const mat = engine.materials.active();
   const menu = useContext(MenuContext);
   const [view, setView] = useState({ x: 0, y: 0, zoom: 1 });
-  const [selected, setSelected] = useState<string | null>(null);
+  // 選んでいるノード (マテリアルが替わったら、選んでいないことにする)
+  const [selection, setSelection] = useState<{ mat: string | undefined; id: string | null }>({ mat: undefined, id: null });
+  const selected = selection.mat === mat?.id ? selection.id : null;
+  const setSelected = useCallback((id: string | null) => setSelection({ mat: engine.materials.active()?.id, id }), [engine]);
+  const [panning, setPanning] = useState(false);
   const [live, setLive] = useState<{ node?: { id: string; x: number; y: number }; link?: { from: SocketRef; x: number; y: number } }>({});
   const canvasRef = useRef<HTMLDivElement>(null);
   const drag = useRef<Drag | null>(null);
@@ -58,7 +62,7 @@ export function ShaderEditor({ typeSelect, onHover }: { typeSelect: ReactNode; o
   const fileRef = useRef<HTMLInputElement>(null);
   const imageFor = useRef<string | null>(null);
   const viewRef = useRef(view);
-  viewRef.current = view;
+  useLayoutEffect(() => { viewRef.current = view; }, [view]);
 
   // ノードがちょうど入るように表示する
   const fit = useCallback(() => {
@@ -70,7 +74,8 @@ export function ShaderEditor({ typeSelect, onHover }: { typeSelect: ReactNode; o
     const zoom = Math.min(1, (el.clientWidth - 40) / (x1 - x0), (el.clientHeight - 40) / (y1 - y0));
     setView({ zoom, x: el.clientWidth / 2 - (x0 + x1) / 2 * zoom, y: el.clientHeight / 2 - (y0 + y1) / 2 * zoom });
   }, [engine]);
-  useLayoutEffect(() => { setSelected(null); fit(); }, [mat?.id, fit]);
+  // マテリアルが替わったら、ノードが入るように表示し直す (エディターの大きさを測るので、描いたあと)
+  useLayoutEffect(() => { fit(); }, [mat?.id, fit]);
 
   // エディターの座標 (ノードの置き場所) に直す
   const toLocal = (clientX: number, clientY: number) => {
@@ -109,7 +114,7 @@ export function ShaderEditor({ typeSelect, onHover }: { typeSelect: ReactNode; o
     };
     addEventListener('keydown', onKey);
     return () => removeEventListener('keydown', onKey);
-  }, [engine, selected, menu, fit]);
+  }, [engine, selected, setSelected, menu, fit]);
 
   const onPointerDown = (e: RPointerEvent) => {
     if (!mat) return;
@@ -134,6 +139,7 @@ export function ShaderEditor({ typeSelect, onHover }: { typeSelect: ReactNode; o
     } else {
       setSelected(null);
       drag.current = { kind: 'pan', sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y };
+      setPanning(true);
     }
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     onPointerMove(e);
@@ -150,6 +156,7 @@ export function ShaderEditor({ typeSelect, onHover }: { typeSelect: ReactNode; o
   const onPointerUp = (e: RPointerEvent) => {
     const d = drag.current;
     drag.current = null;
+    setPanning(false);
     if (d?.kind === 'move' && live.node) engine.materials.moveNode(live.node.id, live.node.x, live.node.y);
     if (d?.kind === 'link') {
       const inp = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>('[data-in]');
@@ -192,7 +199,7 @@ export function ShaderEditor({ typeSelect, onHover }: { typeSelect: ReactNode; o
           </span>
         )}
       </div>
-      <div className={`node-editor${drag.current?.kind === 'pan' ? ' panning' : ''}`} ref={canvasRef}
+      <div className={`node-editor${panning ? ' panning' : ''}`} ref={canvasRef}
            style={{ backgroundPosition: `${view.x}px ${view.y}px`, backgroundSize: `${24 * view.zoom}px ${24 * view.zoom}px` }}
            onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
            onPointerEnter={() => { hovered.current = true; onHover(true); }} onPointerLeave={() => { hovered.current = false; }}>

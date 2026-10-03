@@ -8,7 +8,7 @@ export function Popover({ anchor, onClose, children, className, role, label, mat
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const close = useRef(onClose);
-  close.current = onClose;
+  useLayoutEffect(() => { close.current = onClose; }); // (いちばん新しい onClose を使う)
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el || !anchor) return;
