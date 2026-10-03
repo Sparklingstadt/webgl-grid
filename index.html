@@ -66,6 +66,7 @@
   .fx button[aria-pressed="true"] { background: #3a4558; color: #fff; }
   .fx input[type="range"] { width: 100%; margin: 0; accent-color: #8fa2c4; }
   .fx input[type="range"].off { opacity: 0.45; }
+  .fx .fx-sub { padding: 10px 0 10px 14px; font: 12px/1 system-ui, sans-serif; color: #9aa4b5; } /* 指で触りやすい高さに */
   .modes button[aria-expanded="true"] { color: #fff; }
   .morphs {
     position: fixed; right: 16px; bottom: 116px; width: min(320px, calc(100vw - 32px));
@@ -156,6 +157,14 @@
   <input type="range" data-fx-level="dof" min="0" max="3" step="0.05" aria-label="被写界深度のぼけの大きさ">
   <button type="button" data-fx="ao" aria-pressed="false">影の濃さ</button>
   <input type="range" data-fx-level="ao" min="0" max="2" step="0.05" aria-label="影の濃さ">
+  <button type="button" data-fx="color" aria-pressed="false">色調</button>
+  <span></span>
+  <label class="fx-sub" for="fx-temp">色温度</label>
+  <input type="range" id="fx-temp" data-fx-level="temp" data-fx-for="color" min="-1" max="1" step="0.02" aria-label="色温度 (左で青っぽく、右で暖かく)">
+  <label class="fx-sub" for="fx-sat">彩度</label>
+  <input type="range" id="fx-sat" data-fx-level="sat" data-fx-for="color" min="0" max="2" step="0.02" aria-label="彩度">
+  <label class="fx-sub" for="fx-bright">明度</label>
+  <input type="range" id="fx-bright" data-fx-level="bright" data-fx-for="color" min="0" max="2" step="0.02" aria-label="明度">
 </div>
 <div class="modes" role="group" aria-label="操作モード">
   <button type="button" data-mode="orbit" aria-pressed="true">回転</button>
@@ -1586,13 +1595,14 @@ function resize() {
 //   被写界深度 … 注視点にピントを合わせ、それ以外をぼかす
 //   影の濃さ   … SSAO 風 (GTAO)。物の接する所や隙間を暗くする
 const FX_KEY = 'webgl-grid-fx';
-const fxState = { ao: false, dof: false, bloom: false, diffusion: false }; // 後処理をかける順
+const fxState = { ao: false, dof: false, bloom: false, diffusion: false, color: false }; // 後処理をかける順
 try { Object.assign(fxState, JSON.parse(localStorage.getItem(FX_KEY) ?? '{}')); } catch {}
 const anyFx = () => Object.values(fxState).some(Boolean);
 // 効果の強さ。光る・ふんわりはブルームの強さそのもの、被写界深度は標準のぼけに対する倍率、
 // 影の濃さは 1 までが暗さの混ぜ具合、1 を超えると暗くなる範囲を広げる
 const FX_LEVEL_KEY = 'webgl-grid-fx-level';
-const FX_LEVEL_DEFAULT = { ao: 1, dof: 1, bloom: 0.7, diffusion: 0.2 };
+// 色調は、色温度 (-1 で青っぽく、1 で暖かく)・彩度 (0 で白黒)・明度 (1 がそのまま)
+const FX_LEVEL_DEFAULT = { ao: 1, dof: 1, bloom: 0.7, diffusion: 0.2, temp: 0, sat: 1, bright: 1 };
 const fxLevel = { ...FX_LEVEL_DEFAULT };
 try { Object.assign(fxLevel, JSON.parse(localStorage.getItem(FX_LEVEL_KEY) ?? '{}')); } catch {}
 let fx = null, fxLoading = null;
@@ -1605,14 +1615,18 @@ function applyFxLevels() {
   dof.uniforms.maxblur.value = 0.02 * fxLevel.dof;
   ao.blendIntensity = Math.min(fxLevel.ao, 1);
   ao.updateGtaoMaterial({ radius: 0.6 * Math.max(fxLevel.ao, 1), scale: Math.max(fxLevel.ao, 1) });
+  const u = fx.passes.color.uniforms;
+  u.temp.value = fxLevel.temp;
+  u.sat.value = fxLevel.sat;
+  u.bright.value = fxLevel.bright;
 }
 // 被写界深度のピントを合わせる点 (カメラモーション中はその注視点)
 const focusPoint = () => camMotion ? _target : new THREE.Vector3(cam.tx, cam.ty, cam.tz);
 function ensureFx() {
   fxLoading ??= (async () => {
     const pp = 'three/addons/postprocessing/';
-    const [{ EffectComposer }, { Pass }, { UnrealBloomPass }, { BokehPass }, { GTAOPass }, { OutputPass }] = await Promise.all(
-      ['EffectComposer', 'Pass', 'UnrealBloomPass', 'BokehPass', 'GTAOPass', 'OutputPass'].map(n => import(`${pp}${n}.js`)));
+    const [{ EffectComposer }, { Pass }, { UnrealBloomPass }, { BokehPass }, { GTAOPass }, { OutputPass }, { ShaderPass }] = await Promise.all(
+      ['EffectComposer', 'Pass', 'UnrealBloomPass', 'BokehPass', 'GTAOPass', 'OutputPass', 'ShaderPass'].map(n => import(`${pp}${n}.js`)));
     // 後処理では CSS の背景が透けないので、同じ縦のグラデーションを最初に全面に描く。
     // (scene.background にすると、影の濃さ (GTAO) の法線を描くときに背景の板まで法線用の材質で描かれ、
     //  値が壊れて黒く抜けるので、シーンには入れない)
@@ -1650,6 +1664,28 @@ function ensureFx() {
       // 引数は (大きさ, 強さ, 広がり, しきい値)。光るはごく明るい所だけ、ふんわりは全体に弱く
       bloom: new UnrealBloomPass(size, 0.7, 0.4, 0.95),
       diffusion: new UnrealBloomPass(size, 0.2, 0.7, 0),
+      // 色調: ほかの効果のあと、画面に出す直前 (リニアな色) にかける
+      color: new ShaderPass({
+        uniforms: { tDiffuse: { value: null }, temp: { value: 0 }, sat: { value: 1 }, bright: { value: 1 } },
+        vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+        fragmentShader: `
+          uniform sampler2D tDiffuse;
+          uniform float temp, sat, bright;
+          varying vec2 vUv;
+          void main() {
+            vec4 c = texture2D(tDiffuse, vUv);
+            vec3 col = c.rgb;
+            // 色温度: 暖かくするときは赤を残して青を弱め、青っぽくするときは逆にする
+            vec3 warm = vec3(1.0, 0.86, 0.66), cool = vec3(0.72, 0.86, 1.0);
+            col *= temp >= 0.0 ? mix(vec3(1.0), warm, temp) : mix(vec3(1.0), cool, -temp);
+            // 彩度: 明るさ (輝度) だけの白黒との間で混ぜる
+            float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
+            col = max(mix(vec3(l), col, sat), 0.0);
+            // 明度
+            col *= bright;
+            gl_FragColor = vec4(col, c.a);
+          }`,
+      }),
     };
     composer.addPass(new OutlineRenderPass());
     for (const k of Object.keys(fxState)) composer.addPass(passes[k]);
@@ -1665,7 +1701,7 @@ const fxButtons = fxPanel.querySelectorAll('button[data-fx]');
 const fxSliders = fxPanel.querySelectorAll('input[data-fx-level]');
 function updateFxButtons() {
   fxButtons.forEach(b => b.setAttribute('aria-pressed', fxState[b.dataset.fx]));
-  fxSliders.forEach(r => r.classList.toggle('off', !fxState[r.dataset.fxLevel]));
+  fxSliders.forEach(r => r.classList.toggle('off', !fxState[r.dataset.fxFor ?? r.dataset.fxLevel]));
 }
 fxSliders.forEach(r => { r.value = fxLevel[r.dataset.fxLevel]; });
 function closeFxPanel() {
@@ -1679,11 +1715,11 @@ fxToggle.addEventListener('click', () => {
 });
 // 強さのスライダー。オフの効果を動かしたら、その効果をオンにする
 fxSliders.forEach(r => r.addEventListener('input', () => {
-  const k = r.dataset.fxLevel;
+  const k = r.dataset.fxLevel, target = r.dataset.fxFor ?? k; // 色調の 3 本は「色調」のオン・オフに付く
   fxLevel[k] = +r.value;
   try { localStorage.setItem(FX_LEVEL_KEY, JSON.stringify(fxLevel)); } catch {}
   applyFxLevels();
-  if (!fxState[k]) setFx(k, true);
+  if (!fxState[target]) setFx(target, true);
   else requestDraw();
 }));
 fxButtons.forEach(b => b.addEventListener('click', () => setFx(b.dataset.fx, !fxState[b.dataset.fx])));
