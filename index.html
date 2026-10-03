@@ -516,32 +516,53 @@ canvas.addEventListener('pointermove', e => {
   requestDraw();
 });
 // クリックした立方体の色を次の色に変える。
-// ダブルクリック (削除) と区別するため、少し待ってから変える
+// ダブルクリック・ダブルタップ (削除) と区別するため、少し待ってから変える
+const DOUBLE_TAP_MS = 300;
 let wasDragged = false;
 let colorTimer = 0;
+let ignoreClicksUntil = 0; // ダブルタップで削除した直後のクリックは無視する
 canvas.addEventListener('click', e => {
-  if (wasDragged || e.detail > 1) return;
+  if (wasDragged || e.detail > 1 || performance.now() < ignoreClicksUntil) return;
   const picked = pickBox(screenRay(e.clientX, e.clientY));
   if (!picked) return;
   clearTimeout(colorTimer);
   colorTimer = setTimeout(() => {
     picked.box.c = (picked.box.c + 1) % PALETTE.length;
     requestDraw();
-  }, 250);
+  }, DOUBLE_TAP_MS);
 });
-// ダブルクリックした立方体を削除
-canvas.addEventListener('dblclick', e => {
+function deleteBox(box, x, y) {
   clearTimeout(colorTimer);
-  const picked = pickBox(screenRay(e.clientX, e.clientY));
-  if (!picked) return;
-  boxes.splice(boxes.indexOf(picked.box), 1);
+  boxes.splice(boxes.indexOf(box), 1);
   settle();
-  canvas.classList.toggle('over-box', !!pickBox(screenRay(e.clientX, e.clientY)));
+  canvas.classList.toggle('over-box', !!pickBox(screenRay(x, y)));
   updateAddButton();
   requestDraw();
+}
+// ダブルクリックした立方体を削除 (タッチはブラウザによって dblclick が来ないので、下のダブルタップで扱う)
+let lastPointerType = 'mouse';
+canvas.addEventListener('dblclick', e => {
+  if (lastPointerType === 'touch') return;
+  const picked = pickBox(screenRay(e.clientX, e.clientY));
+  if (picked) deleteBox(picked.box, e.clientX, e.clientY);
 });
+// 同じ立方体を素早く2回タップしたら削除
+let lastTap = null;
+function handleTap(e) {
+  const picked = pickBox(screenRay(e.clientX, e.clientY));
+  const now = performance.now();
+  if (picked && lastTap && lastTap.box === picked.box && now - lastTap.t < DOUBLE_TAP_MS &&
+      Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 30) {
+    lastTap = null;
+    ignoreClicksUntil = now + 400;
+    deleteBox(picked.box, e.clientX, e.clientY);
+    return;
+  }
+  lastTap = picked ? { box: picked.box, t: now, x: e.clientX, y: e.clientY } : null;
+}
 const endDrag = e => {
   pointers.delete(e.pointerId);
+  lastPointerType = e.pointerType;
   if (!drag) return;
   const two = drag.twist || drag.pinch;
   if (two) {
@@ -550,8 +571,10 @@ const endDrag = e => {
     wasDragged = true;
   } else {
     if (e.pointerId !== drag.id) return;
-    // 4px 以上動いたらドラッグ扱いにして、クリックで色を変えない
-    wasDragged = Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 4;
+    // 少し以上動いたらドラッグ扱いにして、クリックで色を変えない (指はぶれやすいので広めに)
+    const slop = e.pointerType === 'touch' ? 10 : 4;
+    wasDragged = Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > slop;
+    if (!wasDragged && e.type === 'pointerup' && e.pointerType === 'touch') handleTap(e);
   }
   if (drag.box || drag.rot || drag.twist) { settle(); requestDraw(); }
   drag = null;
