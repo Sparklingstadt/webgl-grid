@@ -403,6 +403,10 @@ const pointerAngle = ([a, b]) => {
   const p = pointers.get(a), q = pointers.get(b);
   return Math.atan2(q.y - p.y, q.x - p.x);
 };
+const pointerDistance = ([a, b]) => {
+  const p = pointers.get(a), q = pointers.get(b);
+  return Math.max(Math.hypot(q.x - p.x, q.y - p.y), 1);
+};
 
 canvas.addEventListener('pointerdown', e => {
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -410,10 +414,14 @@ canvas.addEventListener('pointerdown', e => {
   if (drag) {
     // 立方体を押さえたままもう1本の指を置いたら、2本指をひねって回す (スマホ用)
     const held = drag.box?.box ?? drag.rot?.box;
-    if (held && !drag.twist && pointers.size === 2) {
-      const ids = [drag.id, e.pointerId];
+    if (drag.twist || drag.pinch || pointers.size !== 2) return;
+    const ids = [drag.id, e.pointerId];
+    if (held) {
       drag.twist = { ...rotationGroup(held), ids, last: pointerAngle(ids), total: 0 };
       drag.box = drag.rot = null;
+    } else {
+      // 立方体以外に置いた2本の指は、ピンチでズーム
+      drag.pinch = { ids, last: pointerDistance(ids) };
     }
     return;
   }
@@ -454,7 +462,14 @@ canvas.addEventListener('pointermove', e => {
     rotateGroup(t, -t.total);
     return;
   }
-  if (e.pointerId !== drag.id) return; // 2本目の指の動きは、ひねり以外では使わない
+  if (drag.pinch) {
+    // 指を広げると近づき、狭めると離れる
+    const d = pointerDistance(drag.pinch.ids);
+    zoomBy(drag.pinch.last / d);
+    drag.pinch.last = d;
+    return;
+  }
+  if (e.pointerId !== drag.id) return; // 2本目の指の動きは、ひねり・ピンチ以外では使わない
   if (drag.rot) {
     // 右へドラッグすると手前の面が右へ動く向きに回す
     rotateGroup(drag.rot, (e.clientX - drag.sx) * 0.01);
@@ -528,9 +543,10 @@ canvas.addEventListener('dblclick', e => {
 const endDrag = e => {
   pointers.delete(e.pointerId);
   if (!drag) return;
-  if (drag.twist) {
-    // ひねっている指のどちらかを離したら終わり (残った指はそのまま離すまで何もしない)
-    if (!drag.twist.ids.includes(e.pointerId)) return;
+  const two = drag.twist || drag.pinch;
+  if (two) {
+    // ひねり・ピンチは、指のどちらかを離したら終わり (残った指はそのまま離すまで何もしない)
+    if (!two.ids.includes(e.pointerId)) return;
     wasDragged = true;
   } else {
     if (e.pointerId !== drag.id) return;
@@ -543,10 +559,14 @@ const endDrag = e => {
 };
 canvas.addEventListener('pointerup', endDrag);
 canvas.addEventListener('pointercancel', endDrag);
+// カメラの距離を factor 倍にする (ホイールとピンチで共通)
+function zoomBy(factor) {
+  cam.dist = Math.min(Math.max(cam.dist * factor, 2), 60);
+  requestDraw();
+}
 canvas.addEventListener('wheel', e => {
   e.preventDefault();
-  cam.dist = Math.min(Math.max(cam.dist * Math.exp(e.deltaY * 0.001), 2), 60);
-  requestDraw();
+  zoomBy(Math.exp(e.deltaY * 0.001));
 }, { passive: false });
 
 let pending = false;
