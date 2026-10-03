@@ -8,6 +8,9 @@ import { encodeShiftJis } from '../src/core/sjis';
 import { formatVpd } from '../src/core/vpdFormat';
 import { type Win } from './helpers';
 
+// (どのテストも同じ models フォルダを使うので、順に動かす)
+test.describe.configure({ mode: 'serial' });
+
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==', 'base64');
 
 test('起動したとき、models フォルダのモデル・モーション・ポーズを一覧から選ぶと、テクスチャ付きで読み込み、モーションとポーズを付ける', async ({ page }) => {
@@ -64,6 +67,35 @@ test('起動したとき、models フォルダのモデル・モーション・�
     await page.getByRole('button', { name: 'ファイル' }).click();
     await page.getByRole('menuitem', { name: 'models フォルダから読み込む…' }).click();
     await expect(picker).toBeVisible();
+    expect(errors).toEqual([]);
+  } finally {
+    await rm(MODELS_DIR, { recursive: true, force: true });
+  }
+});
+
+test('起動したとき、げのげ式初音ミク.pmx があればまず読み込み (一覧は出さない)、読み込めなければ一覧から選ぶ', async ({ page }) => {
+  // (中身はテスト用の人形。ファイル名だけを決まったモデルと同じにする)
+  const dir = path.join(MODELS_DIR, 'げのげ式初音ミク');
+  await rm(MODELS_DIR, { recursive: true, force: true });
+  await mkdir(dir, { recursive: true });
+  await writeFile(path.join(dir, 'げのげ式初音ミク.pmx'), makePmx('初音ミク', { texture: 'body.png' }));
+  await writeFile(path.join(dir, 'body.png'), PNG);
+  await mkdir(path.join(MODELS_DIR, 'フォルダ人形'), { recursive: true });
+  await writeFile(path.join(MODELS_DIR, 'フォルダ人形', 'フォルダ人形.pmx'), makePmx('フォルダ人形'));
+  try {
+    const errors: string[] = [];
+    page.on('pageerror', e => errors.push(String(e)));
+    await page.goto('/?debug');
+    await expect.poll(() => page.evaluate(() => (window as Win).engine?.world.models.map((m: Win) => m.model.name) ?? [])).toEqual(['初音ミク']);
+    expect(await page.evaluate(() => (window as Win).engine.history.canUndo)).toBe(false); // (読み込んだ場面が最初の状態)
+    const picker = page.getByRole('region', { name: 'models フォルダのモデル' });
+    await expect(picker).toHaveCount(0);
+    // 読み込めないとき (壊れた .pmx) は、いつもどおり一覧を出す
+    await writeFile(path.join(dir, 'げのげ式初音ミク.pmx'), Buffer.from('broken'));
+    await page.reload();
+    await expect(picker).toBeVisible();
+    await expect(picker.getByRole('list', { name: 'モデルの一覧' }).getByRole('button')).toHaveText([/げのげ式初音ミク/, /フォルダ人形/]);
+    expect(await page.evaluate(() => (window as Win).engine.world.models.length)).toBe(0);
     expect(errors).toEqual([]);
   } finally {
     await rm(MODELS_DIR, { recursive: true, force: true });

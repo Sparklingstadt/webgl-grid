@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { errorText } from '../../core/errors';
 import { t } from '../../core/i18n';
-import type { ModelFolderEntry, ModelsListing, FolderFileEntry } from '../../core/models';
+import { isDefaultModel, type ModelFolderEntry, type ModelsListing, type FolderFileEntry } from '../../core/models';
 import { fetchFolderFile, fetchModelFiles, listModelFolder } from '../../engine/io/modelsFolder';
+import type { Engine } from '../../engine';
 import { useEngine, useUi } from '../EngineContext';
 
 const mb = (n: number) => (n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
@@ -12,7 +13,8 @@ const isEmpty = (l: ModelsListing) => !l.models.length && !l.motions.length && !
 // 一覧は、アプリを配っているサーバー (開発サーバー・プレビュー・MCP サーバー) が教えてくれる。なければ出さない。
 // モーション (.vmd)・ポーズと表情 (.vpd) は、選んでいるモデルに付ける (選んでいなければ、置いてあるモデル全員に)。
 // 続けて選べるよう、読み込んでも閉じない。
-// (?nomodels を付けて開くと、起動したときには出さない)
+// 起動したときは、まず決まったモデル (げのげ式初音ミク.pmx。core/models.ts) を読み込んでみて、
+// なければ・読み込めなければ一覧を出す (?nomodels を付けて開くと、どちらもしない)
 export function ModelPicker() {
   const engine = useEngine();
   const open = useUi(s => s.modelPicker);
@@ -20,13 +22,16 @@ export function ModelPicker() {
   useUi(s => s.modelVersion);
   const [list, setList] = useState<ModelsListing | null>(null);
   const [loading, setLoading] = useState<string | null>(null);
-  // 起動したとき: 何かあれば一覧を出す
+  // 起動したとき: 決まったモデルを読み込んでみる。だめなら、何かあれば一覧を出す
   useEffect(() => {
     let alive = true;
-    void listModelFolder().then(l => {
+    void listModelFolder().then(async l => {
       if (!alive) return;
       setList(l);
-      if (!isEmpty(l) && !new URLSearchParams(location.search).has('nomodels')) engine.ui.set({ modelPicker: true });
+      if (new URLSearchParams(location.search).has('nomodels')) return;
+      const def = l.models.find(isDefaultModel);
+      if (def && await loadDefault(engine, def)) return;
+      if (alive && !isEmpty(l)) engine.ui.set({ modelPicker: true });
     });
     return () => { alive = false; };
   }, [engine]);
@@ -93,4 +98,20 @@ export function ModelPicker() {
       {section(t('ポーズ・表情'), t('ポーズの一覧'), list.poses, hasModel ? where : t('モデルを置いてから選ぶと、モデルにポーズと表情を当てます'))}
     </div>
   );
+}
+
+// 起動したときの決まったモデルを読み込む (テクスチャが足りなくても聞かない)。置けたら true。
+// 読み込んだ場面を最初の状態にする (元に戻す手に数えず、触るまで自動保存しない)
+async function loadDefault(engine: Engine, m: ModelFolderEntry) {
+  const before = engine.world.models.length;
+  try {
+    const files = await fetchModelFiles(m, (done, total) => engine.ui.toast(t('{name} を読み込み中… ({done} / {total})', { name: m.name, done, total }), 0));
+    await engine.loadFiles(files, { askTextures: false });
+  } catch (err) {
+    engine.ui.toast(t('{name} を読み込めませんでした: {error}', { name: m.name, error: errorText(err) }), 8000);
+    return false;
+  }
+  if (engine.world.models.length <= before) return false;
+  engine.history.reset();
+  return true;
 }

@@ -18,5 +18,9 @@ export interface FolderFileEntry {
   size: number;
 }
 export interface ModelsListing { models: ModelFolderEntry[]; motions: FolderFileEntry[]; poses: FolderFileEntry[] }
+// 起動したときに、まず読み込んでみるモデル (models/ のどこかにある、このファイル名の .pmx)。
+// 読み込めなければ、いつもどおり一覧から選んでもらう
+export const DEFAULT_MODEL_FILE = 'げのげ式初音ミク.pmx';
+export const isDefaultModel = (m: ModelFolderEntry) => (m.pmx.split('/').pop() ?? '').normalize('NFC') === DEFAULT_MODEL_FILE.normalize('NFC');
 // 一緒に読むファイル (テクスチャ)。モーション・曲は、勝手に付けないよう入れない
 export const MODEL_TEXTURE_FILE = /\.(png|jpe?g|bmp|tga|gif|webp|spa|sph|dds)$/i;
