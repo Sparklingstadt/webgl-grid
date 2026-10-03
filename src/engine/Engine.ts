@@ -11,6 +11,7 @@ import { patchPmxMaterials } from '../core/pmxMaterials';
 import { convertMmdMesh } from './materials/fromMmd';
 import { MaterialLibrary, type MaterialData, type MaterialOutline, type MaterialSettings } from './materials/MaterialLibrary';
 import { ProjectIO } from './project/ProjectIO';
+import { RemoteLink } from './remote/RemoteLink';
 import { toPmxValues } from './materials/toPmx';
 import { MmdLoader } from './mmd/MmdLoader';
 import { Motion } from './mmd/Motion';
@@ -60,6 +61,7 @@ export class Engine {
   readonly loader = new MmdLoader(this.ui, () => this.viewport.requestDraw());
   readonly vpd = new VpdIO(this.posing, this.viewport, this.ui);
   readonly project = new ProjectIO(this);
+  readonly remote = new RemoteLink(this);
   input: InputController | null = null;
 
   constructor() {

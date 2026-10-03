@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "webgl-grid": {
+      "command": "node",
+      "args": ["mcp/server.ts"]
+    }
+  }
+}

@@ -1,3 +1,4 @@
+import { REMOTE_DEFAULT_PORT } from '../../core/remote';
 import { useEngine, useUi } from '../EngineContext';
 import { Menu, MenuItem, MenuLabel, MenuSep } from './Menu';
 
@@ -5,6 +6,7 @@ import { Menu, MenuItem, MenuLabel, MenuSep } from './Menu';
 export function TopBar({ onOpenFiles, onLoadPose, onOpenProject, onOpenOutput }: { onOpenFiles: () => void; onLoadPose: () => void; onOpenProject: () => void; onOpenOutput: () => void }) {
   const engine = useEngine();
   const projectName = useUi(s => s.projectName);
+  const remote = useUi(s => s.remote);
   return (
     <header className="topbar">
       <svg className="brand" viewBox="0 0 20 20" aria-hidden="true">
@@ -21,6 +23,9 @@ export function TopBar({ onOpenFiles, onLoadPose, onOpenProject, onOpenOutput }:
         <MenuSep />
         <MenuItem label="ポーズを保存 (.vpd)" onSelect={() => engine.savePose()} />
         <MenuItem label="ポーズを読み込む (.vpd)…" onSelect={onLoadPose} />
+        <MenuSep />
+        <MenuItem label={remote === 'off' ? '外部から操作 (MCP) を受け付ける' : '外部から操作 (MCP) をやめる'}
+                  onSelect={() => (remote === 'off' ? engine.remote.connect(REMOTE_DEFAULT_PORT) : engine.remote.disconnect())} />
         <MenuSep />
         <MenuItem label="最初の状態に戻す" onSelect={() => engine.resetAll()} />
       </Menu>
@@ -40,6 +45,12 @@ export function TopBar({ onOpenFiles, onLoadPose, onOpenProject, onOpenOutput }:
           ['シェーダーエディター: ノードを追加 / 消す / 全体を表示', 'Shift A / X / Home'],
         ].map(([label, kbd]) => <MenuItem key={label} label={label} kbd={kbd} disabled />)}
       </Menu>
+      {remote !== 'off' && (
+        <span className={`remote-chip ${remote}`} aria-label="MCP の接続"
+              title={remote === 'connected' ? 'MCP サーバーにつながっています。外から操作できます' : 'MCP サーバーを待っています (npm run mcp)'}>
+          MCP {remote === 'connected' ? '接続中' : '待機中'}
+        </span>
+      )}
       <span className="title">{projectName ? `${projectName}.wgp — webgl-grid` : 'webgl-grid'}</span>
     </header>
   );

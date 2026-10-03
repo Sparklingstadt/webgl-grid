@@ -40,6 +40,7 @@ core/    純粋な計算とデータ (three.js の数学ライブラリは使っ
 | | `Posing` | 表情とボーン・IK と付与 (`System`) | World, Physics, Motion, Viewport, UiChannel |
 | | `VpdIO` | ポーズファイルの保存・読み込み | Posing, Viewport, UiChannel |
 | 出力 | `RenderOutput` | レンダリング: 描画先を出力の大きさにして (`Viewport.beginOutput`)、編集用の表示を隠して描く。動画はタイムラインを 1 フレームずつ進め (`Clock.advanceTo` と `Viewport.stepSystems`)、WebCodecs で圧縮する (mediabunny) | Viewport, SceneGraph, Clock, Music, UiChannel |
+| 外部からの操作 | `RemoteLink` | MCP サーバー (`mcp/`) の WebSocket につなぎ、届いた命令を 1 つずつ `commands.ts` で実行して返す。命令は画面と同じ `Engine` の操作を呼ぶ | Engine |
 | プロジェクト | `ProjectIO` | 場面をまるごと .wgp (ZIP: `project.json` + 読み込んだファイル) に保存し、開くときは同じ順に作り直す。ほかのサービスをまたいで使うので、`Engine` を受け取る (`Engine` の操作だけを使い、画面には触らない) | Engine |
 | 組み立て | `Engine` | 上のすべてを作ってイベントでつなぎ、画面に操作を出す | すべて |
 

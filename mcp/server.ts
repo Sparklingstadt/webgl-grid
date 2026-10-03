@@ -1,0 +1,172 @@
+#!/usr/bin/env node
+// --- webgl-grid の MCP サーバー ---
+// Claude などの MCP クライアントから、ブラウザで開いている webgl-grid を操作する。
+//   クライアント ⇄ (stdio) ⇄ この MCP サーバー ⇄ (WebSocket, 127.0.0.1) ⇄ ページ (?mcp を付けて開いたもの)
+// ファイルの読み書き (モデルの読み込み・レンダリングの保存・プロジェクト) は、このサーバーが手元のパスで行う。
+//   npm run mcp で起動。環境変数 WEBGL_GRID_MCP_PORT (WebSocket、既定 7457)・WEBGL_GRID_APP_PORT (アプリを配る、既定 7458)
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { z } from 'zod';
+import { REMOTE_DEFAULT_PORT } from '../src/core/remote.ts';
+import { openBrowser, serveApp } from './appServer.ts';
+import { AppBridge, NOT_CONNECTED } from './bridge.ts';
+import { collectFiles, readAsRemoteFiles, writeBase64 } from './files.ts';
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const CWD = process.cwd();
+const WS_PORT = Number(process.env.WEBGL_GRID_MCP_PORT) || REMOTE_DEFAULT_PORT;
+const APP_PORT = Number(process.env.WEBGL_GRID_APP_PORT) || REMOTE_DEFAULT_PORT + 1;
+const log = (msg: string) => process.stderr.write(`[webgl-grid-mcp] ${msg}\n`); // stdout は MCP の通信に使う
+
+const bridge = new AppBridge(WS_PORT, log);
+await bridge.ready.catch(err => { log(`ポート ${WS_PORT} で待てません: ${err.message}`); process.exit(1); });
+const appServer = await serveApp(path.join(ROOT, 'dist'), APP_PORT).catch(err => { log(`アプリを配れません: ${err.message}`); return null; });
+const appUrl = appServer ? `http://localhost:${APP_PORT}/?mcp=${WS_PORT}` : null;
+log(`WebSocket 127.0.0.1:${WS_PORT} で待っています${appUrl ? `。アプリ: ${appUrl}` : ' (dist/ がないので、アプリは npm run dev などで開いてください)'}`);
+
+type Content = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string };
+type Result = { content: Content[]; isError?: boolean };
+const text = (v: unknown): Content => ({ type: 'text', text: typeof v === 'string' ? v : JSON.stringify(v, null, 1) });
+
+// ページに命令を送る。つながっていなければ少し待つ (再読み込み中など)
+async function call(method: string, params: unknown = {}, timeoutMs = 60_000) {
+  if (!bridge.connected && !(await bridge.waitForApp(3000))) throw new Error(NOT_CONNECTED);
+  return await bridge.call(method, params, timeoutMs) as Record<string, unknown>;
+}
+
+const server = new McpServer({ name: 'webgl-grid', version: '1.0.0' }, {
+  instructions: 'ブラウザで動く MMD ビューアー・エディター webgl-grid を操作する。まず app_status でページがつながっているか確かめ、つながっていなければ open_app で開く。'
+    + '場面は get_state で、見た目は screenshot で確かめられる。長さの単位はこのアプリの単位 (MMD モデルの身長がおよそ 1.6)、角度は度、フレームは 30 fps。',
+});
+// 失敗はツールのエラーとして返す (クライアントが読んで直せるように)
+function tool<S extends z.ZodRawShape>(name: string, description: string, shape: S, run: (a: z.infer<z.ZodObject<S>>) => Promise<Result>) {
+  server.registerTool(name, { description, inputSchema: shape }, (async (a: z.infer<z.ZodObject<S>>) => {
+    try { return await run(a); } catch (err) { return { content: [text(`エラー: ${(err as Error).message}`)], isError: true }; }
+  }) as never);
+}
+// 引数をそのままページに渡して、結果を JSON で返すツール
+const forward = <S extends z.ZodRawShape>(name: string, description: string, shape: S, timeoutMs?: number) =>
+  tool(name, description, shape, async a => ({ content: [text(await call(name, a, timeoutMs))] }));
+
+const id = z.number().int().optional().describe('物の id (get_state の objects[].id)。省くと選んでいる物 (モデルの操作では最初のモデル)');
+const frame = z.number().int().min(0).optional();
+
+tool('app_status', 'ページがつながっているかと、アプリの URL', {}, async () => ({
+  content: [text({ connected: bridge.connected, page: bridge.appUrl, appUrl, websocketPort: WS_PORT })],
+}));
+tool('open_app', 'いつものブラウザでアプリを開き、つながるまで待つ (このサーバーが dist/ を配る。先に npm run build が必要)', {}, async () => {
+  if (bridge.connected) return { content: [text(`もうつながっています: ${bridge.appUrl}`)] };
+  if (!appUrl) throw new Error('dist/ がありません。リポジトリで npm run build を実行するか、npm run dev で開いたページの URL に ?mcp を付けて開いてください');
+  openBrowser(appUrl);
+  const ok = await bridge.waitForApp(30_000);
+  return { content: [text(ok ? `開きました: ${bridge.appUrl}` : `${appUrl} を開きましたが、30 秒たってもつながりません`)], isError: !ok };
+});
+
+forward('get_state', '場面の様子 (物の一覧と id・位置・マテリアル、タイムライン、視点、効果、出力の設定)', {});
+tool('screenshot', 'いまのビューポートの見た目 (グリッドや選択の輪郭線も込み) を画像で見る', { maxSize: z.number().int().min(64).max(4096).optional().describe('長い辺の最大ピクセル (既定 1024)') }, async a => {
+  const r = await call('screenshot', a);
+  return { content: [{ type: 'image', data: String(r.png), mimeType: 'image/png' }, text(`${r.width}×${r.height}`)] };
+});
+
+// 物
+forward('add_shape', '形を置いて選ぶ。x, z を省くと画面の中央付近の空いている所', {
+  shape: z.enum(['cube', 'torus', 'pyramid']).optional(), x: z.number().optional(), z: z.number().optional(),
+  color: z.union([z.number().int().min(0).max(7), z.string()]).optional().describe('0〜7 か色の名前 (黄土・赤・青緑・青・紫・緑・ピンク・灰)'),
+});
+forward('select', '物を選ぶ (id を省くと選択を解除)', { id });
+forward('set_object', '物の位置・向き・色を変える (重なる位置なら上に積まれる)', {
+  id, x: z.number().optional(), z: z.number().optional(), rotationDeg: z.number().optional().describe('縦軸まわりの回転 (度)'),
+  color: z.union([z.number().int().min(0).max(7), z.string()]).optional(),
+});
+forward('delete_object', '物を消す', { id });
+forward('reset_scene', '最初の状態 (立方体 1 個) に戻す', {});
+
+// ファイル
+tool('load_files', 'MMD のファイルを読み込む: .pmx (同じフォルダのテクスチャ画像も自動で送る)・.vmd (ダンス・カメラ)・.vpd (ポーズ)・曲 (.wav/.mp3 など)。フォルダを渡すと中のファイルをすべて送る', {
+  paths: z.array(z.string()).min(1).describe('手元のファイル・フォルダのパス (絶対パスがおすすめ)'),
+}, async a => {
+  const list = await collectFiles(a.paths, CWD);
+  const { files, bytes } = await readAsRemoteFiles(list);
+  const r = await call('load_files', { files }, 300_000);
+  return { content: [text({ sent: files.length, megabytes: +(bytes / 1048576).toFixed(1), message: r.message, added: r.added }), text(r.state)] };
+});
+
+// タイムライン・キーフレーム
+forward('timeline', 'タイムライン: いまのフレームへ飛ぶ・範囲 (開始・終了) を変える・再生/停止', {
+  frame, start: frame, end: frame, playing: z.boolean().optional(),
+});
+forward('insert_keyframe', 'モデルのいまのポーズと表情をキーフレームにする (frame を渡すとそこへ飛んでから)', { id, frame });
+forward('delete_keyframe', 'モデルのキーフレームを消す (frame を渡すとそこへ飛んでから)', { id, frame });
+
+// ポーズ・表情
+forward('list_bones', 'モデルの動かせるボーンの名前 (表示枠ごと)', { id });
+forward('set_bone', 'ボーンを動かす。回転は最初の姿勢からの角度 (度, X/Y/Z)、位置はずれ (MMD の単位)。省いた成分はそのまま', {
+  id, bone: z.string().describe('ボーンの名前 (例: 右腕, センター)'),
+  rotationDeg: z.array(z.number()).length(3).optional(), position: z.array(z.number()).length(3).optional(),
+});
+forward('reset_pose', '手で動かしたボーンを戻す', { id });
+forward('list_morphs', 'モデルの表情 (モーフ) の名前といまの値', { id });
+forward('set_morph', '表情 (モーフ) の値を 0〜1 で変える', { id, name: z.string(), value: z.number().min(0).max(1) });
+forward('set_hair_hang', '髪の形を保つ錘を外して、髪を重力で垂らす (on: false で戻す)', { id, on: z.boolean() });
+
+// 視点
+forward('set_camera', '視点を変える (カメラモーションは止まる)。view で前・右・上・最初の視点へ', {
+  view: z.enum(['front', 'right', 'top', 'home']).optional(), yawDeg: z.number().optional(), pitchDeg: z.number().optional(),
+  distance: z.number().positive().optional(), target: z.array(z.number()).length(3).optional().describe('注視点 [x, y, z]'),
+  fov: z.number().min(5).max(120).optional().describe('縦の画角 (度)'),
+});
+
+// マテリアル
+forward('list_materials', 'マテリアルの一覧 (プリンシプル BSDF の入力の値・設定・輪郭線)', {});
+forward('set_material', 'マテリアル (プリンシプル BSDF) の値を変える。色は "#rrggbb"', {
+  material: z.string().optional().describe('マテリアルの名前か id'), id, slot: z.number().int().min(0).optional().describe('material を省いたとき、物 id のこのスロットのマテリアル'),
+  inputs: z.record(z.string(), z.union([z.number(), z.string(), z.array(z.number())])).optional()
+    .describe('例: {"baseColor": "#ff8080", "roughness": 0.3, "metallic": 0, "alpha": 1, "emissionColor": "#000000", "emissionStrength": 0}'),
+  settings: z.object({ blend: z.enum(['opaque', 'blend', 'clip']).optional(), backfaceCulling: z.boolean().optional() }).optional(),
+  outline: z.object({ enabled: z.boolean().optional(), color: z.array(z.number()).length(3).optional(), size: z.number().min(0).optional() }).optional(),
+  name: z.string().optional().describe('名前を変える'),
+});
+
+// 効果・出力・レンダリング
+forward('set_effect', 'MME 風の効果のオン・オフと強さ', {
+  effect: z.enum(['ao', 'dof', 'bloom', 'diffusion', 'color']), enabled: z.boolean().optional(),
+  levels: z.record(z.string(), z.number()).optional().describe('強さ: ao, dof, bloom, diffusion, temp, sat, bright'),
+});
+forward('set_output', 'レンダリングの出力の設定', {
+  width: z.number().int().min(16).max(4096).optional(), height: z.number().int().min(16).max(4096).optional(),
+  format: z.enum(['mp4', 'webm']).optional(), quality: z.enum(['medium', 'high', 'veryHigh']).optional(), audio: z.boolean().optional(),
+});
+tool('render_image', 'いまの視点から出力の解像度で 1 枚レンダリングする (グリッド・選択の輪郭線なし)。画像を返し、path があれば PNG を保存する', {
+  frame, path: z.string().optional().describe('保存する .png のパス'),
+}, async a => {
+  const r = await call('render_image', { frame: a.frame }, 120_000);
+  const saved = a.path ? await writeBase64(a.path, CWD, String(r.png)) : null;
+  return { content: [{ type: 'image', data: String(r.png), mimeType: 'image/png' }, text({ width: r.width, height: r.height, frame: r.frame, saved })] };
+});
+tool('render_animation', 'タイムラインの開始〜終了フレームを動画 (MP4 / WebM) にして保存する。曲があれば入る', {
+  path: z.string().describe('保存するパス (.mp4 か .webm。拡張子は出力の形式に合わせて直す)'),
+}, async a => {
+  const r = await call('render_animation', {}, 3_600_000);
+  const target = a.path.replace(/\.(mp4|webm)$/i, '') + `.${r.ext}`;
+  const saved = await writeBase64(target, CWD, String(r.data));
+  return { content: [text({ ...saved, frames: r.frames, codec: r.codec })] };
+});
+
+// プロジェクト
+tool('save_project', 'いまの場面をプロジェクト (.wgp。モデルなどのファイルも入る) に保存する', { path: z.string() }, async a => {
+  const r = await call('save_project', {}, 300_000);
+  return { content: [text(await writeBase64(a.path, CWD, String(r.data)))] };
+});
+tool('open_project', 'プロジェクト (.wgp) を開く', { path: z.string() }, async a => {
+  const [p] = await collectFiles([a.path], CWD);
+  const { files } = await readAsRemoteFiles([p]);
+  return { content: [text(await call('open_project', { data: files[0].data, name: path.basename(p) }, 300_000))] };
+});
+
+await server.connect(new StdioServerTransport());
+const shutdown = () => { bridge.close(); appServer?.close(); process.exit(0); };
+process.stdin.on('close', shutdown);
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
