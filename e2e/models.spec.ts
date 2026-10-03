@@ -73,7 +73,7 @@ test('起動したとき、models フォルダのモデル・モーション・�
   }
 });
 
-test('起動したとき、げのげ式初音ミク.pmx があればまず読み込み (一覧は出さない)、読み込めなければ一覧から選ぶ', async ({ page }) => {
+test('起動したとき、げのげ式初音ミク.pmx があればまず読み込んでモーションを付け (一覧は出さない)、読み込めなければ一覧から選ぶ', async ({ page }) => {
   // (中身はテスト用の人形。ファイル名だけを決まったモデルと同じにする)
   const dir = path.join(MODELS_DIR, 'げのげ式初音ミク');
   await rm(MODELS_DIR, { recursive: true, force: true });
@@ -82,12 +82,18 @@ test('起動したとき、げのげ式初音ミク.pmx があればまず読み
   await writeFile(path.join(dir, 'body.png'), PNG);
   await mkdir(path.join(MODELS_DIR, 'フォルダ人形'), { recursive: true });
   await writeFile(path.join(MODELS_DIR, 'フォルダ人形', 'フォルダ人形.pmx'), makePmx('フォルダ人形'));
+  // モーション: モデルのフォルダにはないので、models/ の最初のもの (フォルダの名前の順で、「モーション」)
+  const vmd = Buffer.from(makeVmd([{ bone: 'センター', frame: 0, pos: [0, 0, 0] }, { bone: 'センター', frame: 30, pos: [0, 0, 6] }]));
+  await mkdir(path.join(MODELS_DIR, 'モーション'), { recursive: true });
+  await writeFile(path.join(MODELS_DIR, 'モーション', '歩く.vmd'), vmd);
   try {
     const errors: string[] = [];
     page.on('pageerror', e => errors.push(String(e)));
     await page.goto('/?debug');
     await expect.poll(() => page.evaluate(() => (window as Win).engine?.world.models.map((m: Win) => m.model.name) ?? [])).toEqual(['初音ミク']);
-    expect(await page.evaluate(() => (window as Win).engine.history.canUndo)).toBe(false); // (読み込んだ場面が最初の状態)
+    // モーションを付けて再生している。読み込んだ場面が最初の状態 (元に戻す手はない)
+    await expect.poll(() => page.evaluate(() => { const { engine } = window as Win; return [engine.world.models[0].animated, engine.clock.playing]; })).toEqual([true, true]);
+    expect(await page.evaluate(() => (window as Win).engine.history.canUndo)).toBe(false);
     const picker = page.getByRole('region', { name: 'models フォルダのモデル' });
     await expect(picker).toHaveCount(0);
     // 読み込めないとき (壊れた .pmx) は、いつもどおり一覧を出す

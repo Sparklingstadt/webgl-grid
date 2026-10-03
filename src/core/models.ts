@@ -22,5 +22,11 @@ export interface ModelsListing { models: ModelFolderEntry[]; motions: FolderFile
 // 読み込めなければ、いつもどおり一覧から選んでもらう
 export const DEFAULT_MODEL_FILE = 'げのげ式初音ミク.pmx';
 export const isDefaultModel = (m: ModelFolderEntry) => (m.pmx.split('/').pop() ?? '').normalize('NFC') === DEFAULT_MODEL_FILE.normalize('NFC');
+// 起動したときに決まったモデルに付けるモーション: モデルのフォルダ (の中のフォルダ) にある最初の .vmd、なければ models/ の最初の .vmd。
+// (一覧はフォルダ・場所の順。どれもなければ付けない)
+export function startMotion(motions: FolderFileEntry[], model: ModelFolderEntry): FolderFileEntry | null {
+  const inside = (m: FolderFileEntry) => !!model.folder && (m.folder === model.folder || m.folder.startsWith(`${model.folder}/`));
+  return motions.find(inside) ?? motions[0] ?? null;
+}
 // 一緒に読むファイル (テクスチャ)。モーション・曲は、勝手に付けないよう入れない
 export const MODEL_TEXTURE_FILE = /\.(png|jpe?g|bmp|tga|gif|webp|spa|sph|dds)$/i;

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { errorText } from '../../core/errors';
 import { t } from '../../core/i18n';
-import { isDefaultModel, type ModelFolderEntry, type ModelsListing, type FolderFileEntry } from '../../core/models';
+import { isDefaultModel, startMotion, type ModelFolderEntry, type ModelsListing, type FolderFileEntry } from '../../core/models';
 import { fetchFolderFile, fetchModelFiles, listModelFolder } from '../../engine/io/modelsFolder';
 import type { Engine } from '../../engine';
 import { useEngine, useUi } from '../EngineContext';
@@ -13,7 +13,7 @@ const isEmpty = (l: ModelsListing) => !l.models.length && !l.motions.length && !
 // 一覧は、アプリを配っているサーバー (開発サーバー・プレビュー・MCP サーバー) が教えてくれる。なければ出さない。
 // モーション (.vmd)・ポーズと表情 (.vpd) は、選んでいるモデルに付ける (選んでいなければ、置いてあるモデル全員に)。
 // 続けて選べるよう、読み込んでも閉じない。
-// 起動したときは、まず決まったモデル (げのげ式初音ミク.pmx。core/models.ts) を読み込んでみて、
+// 起動したときは、まず決まったモデル (げのげ式初音ミク.pmx。core/models.ts) を読み込んでみて (モーションがあれば付けて再生する)、
 // なければ・読み込めなければ一覧を出す (?nomodels を付けて開くと、どちらもしない)
 export function ModelPicker() {
   const engine = useEngine();
@@ -30,7 +30,7 @@ export function ModelPicker() {
       setList(l);
       if (new URLSearchParams(location.search).has('nomodels')) return;
       const def = l.models.find(isDefaultModel);
-      if (def && await loadDefault(engine, def)) return;
+      if (def && await loadDefault(engine, def, startMotion(l.motions, def))) return;
       if (alive && !isEmpty(l)) engine.ui.set({ modelPicker: true });
     });
     return () => { alive = false; };
@@ -100,9 +100,9 @@ export function ModelPicker() {
   );
 }
 
-// 起動したときの決まったモデルを読み込む (テクスチャが足りなくても聞かない)。置けたら true。
+// 起動したときの決まったモデルを読み込み (テクスチャが足りなくても聞かない)、モーションがあれば付ける。置けたら true。
 // 読み込んだ場面を最初の状態にする (元に戻す手に数えず、触るまで自動保存しない)
-async function loadDefault(engine: Engine, m: ModelFolderEntry) {
+async function loadDefault(engine: Engine, m: ModelFolderEntry, motion: FolderFileEntry | null) {
   const before = engine.world.models.length;
   try {
     const files = await fetchModelFiles(m, (done, total) => engine.ui.toast(t('{name} を読み込み中… ({done} / {total})', { name: m.name, done, total }), 0));
@@ -112,6 +112,12 @@ async function loadDefault(engine: Engine, m: ModelFolderEntry) {
     return false;
   }
   if (engine.world.models.length <= before) return false;
+  // (モーションを読み込めなくても、モデルは置いたまま)
+  if (motion) {
+    try { await engine.loadFiles([await fetchFolderFile(motion)], { toSelected: true }); } catch (err) {
+      engine.ui.toast(t('{name} を読み込めませんでした: {error}', { name: motion.name, error: errorText(err) }), 8000);
+    }
+  }
   engine.history.reset();
   return true;
 }
