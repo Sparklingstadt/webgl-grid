@@ -61,6 +61,7 @@ const hairX = (page: Page) => page.evaluate(() => {
 test('「髪を重力で垂らす」で、髪の錘を外して垂らし、オフで元の形に戻す', async ({ page }) => {
   const errors = await open(page);
   await loadTestModel(page, [], { physics: true });
+  await page.getByRole('tab', { name: '物理演算' }).click();
   const toggle = page.getByRole('checkbox', { name: '髪を重力で垂らす' });
   await expect(toggle).toBeVisible({ timeout: 30_000 }); // 錘のある髪が見つかったら出る
   await expect(toggle).not.toBeChecked();
@@ -81,5 +82,7 @@ test('髪の形を保つ錘がないモデルには、スイッチを出さな�
   await open(page);
   await loadTestModel(page); // 剛体のないモデル
   await expect(page.locator('#obj-name')).toHaveValue('テスト人形');
+  await page.getByRole('tab', { name: '物理演算' }).click();
+  await expect(page.getByText('このモデルには、物理演算の剛体がありません。')).toBeVisible();
   await expect(page.getByRole('checkbox', { name: '髪を重力で垂らす' })).toHaveCount(0);
 });

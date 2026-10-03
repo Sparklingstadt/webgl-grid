@@ -4,9 +4,10 @@ import { AddonManager } from './components/addons/AddonManager';
 import { MissingFiles, MissingTextures, RenderProgress, RenderResult } from './components/Dialogs';
 import { filesFromDrop } from './dropFiles';
 import { Palette, Toast } from './components/Overlays';
-import type { SideTab } from './components/sidebar/Sidebar';
+import { Sidebar, type SideTab } from './components/sidebar/Sidebar';
+import { StatusBar } from './components/StatusBar';
 import { BottomArea, type BottomEditor } from './components/BottomArea';
-import { TopBar } from './components/TopBar';
+import { TopBar, type Workspace } from './components/TopBar';
 import { ViewportArea } from './components/ViewportArea';
 import { useEngine, useUi } from './EngineContext';
 import { useShortcuts, type Area } from './hooks/useShortcuts';
@@ -16,7 +17,9 @@ import { t } from '../core/i18n';
 const NARROW = '(max-width: 760px)';
 const isNarrow = () => matchMedia(NARROW).matches;
 
-// Blender 風の画面全体: 上のバー・3D ビューポート (+サイドバー)・タイムライン
+// Blender 風の画面全体 (Blender の「レイアウト」のワークスペース):
+// 上のバー (メニュー・ワークスペース)、3D ビューポート、右の列 (アウトライナー・プロパティ)、下の領域 (タイムライン / シェーダーエディター)、状態バー。
+// 領域の境目はドラッグで動かせる
 export default function App() {
   const engine = useEngine();
   useUi(s => s.lang); // (言語を変えたら、画面を全部描き直す)
@@ -25,6 +28,8 @@ export default function App() {
   const [sideTab, setSideTab] = useState<SideTab>('object');
   const [bottom, setBottom] = useState<BottomEditor>('timeline');
   const [bottomH, setBottomH] = useState(() => (isNarrow() ? 168 : 150)); // 下の領域の高さ (px)。境目をドラッグで変える
+  const [sideW, setSideW] = useState(() => { try { return Number(localStorage.getItem('webgl-grid.sideW')) || 320; } catch { return 320; } }); // 右の列の幅
+  const [workspace, setWorkspace] = useState<Workspace>('layout');
   // シェーダーエディターにしたときは、ノードが見える高さまで広げる (Blender の「シェーディング」のように)
   const showEditor = useCallback((e: BottomEditor) => {
     setBottom(e);
@@ -64,6 +69,24 @@ export default function App() {
   const openProject = useCallback(() => projectInput.current?.click(), []);
   const openPose = useCallback(() => poseInput.current?.click(), []);
   const toggleSide = useCallback(() => setSideOpen(o => !o), []);
+  const showTab = useCallback((tab: SideTab) => { setSideTab(tab); setSideOpen(true); }, []);
+  // ワークスペース (Blender の上のバーのタブ): 下の領域・その高さ・プロパティのタブをまとめて切り替える
+  const goWorkspace = (w: Workspace) => {
+    setWorkspace(w);
+    if (w === 'shading') { showEditor('shader'); setSideTab('material'); return; }
+    setBottom('timeline');
+    setTlOpen(true);
+    setBottomH(w === 'animation' ? Math.round(innerHeight * 0.4) : isNarrow() ? 168 : 150);
+    if (w === 'animation' && engine.selection.model) setSideTab('bone');
+  };
+  // 領域の境目をドラッグ (下の領域の高さ・右の列の幅)
+  const drag = (e: React.PointerEvent, fn: (dx: number, dy: number) => void, done?: () => void) => {
+    const x0 = e.clientX, y0 = e.clientY;
+    const move = (ev: PointerEvent) => fn(ev.clientX - x0, ev.clientY - y0);
+    const up = () => { removeEventListener('pointermove', move); removeEventListener('pointerup', up); done?.(); };
+    addEventListener('pointermove', move);
+    addEventListener('pointerup', up);
+  };
 
   // 元に戻す: マウスのボタン (指) を押しているあいだは 1 手にまとめ、離したとき・キーを離したときに区切る
   useEffect(() => {
@@ -112,25 +135,28 @@ export default function App() {
   return (
     <MenuContext.Provider value={{ open: openMenu, setOpen: setOpenMenu }}>
       <div id="app" className={[!sideOpen && 'side-hidden', !tlOpen && 'tl-hidden'].filter(Boolean).join(' ')}
-           style={{ '--tl-h': `${bottomH}px` } as React.CSSProperties}>
+           style={{ '--tl-h': `${bottomH}px`, '--side-w': `${sideW}px` } as React.CSSProperties}>
         <TopBar onOpenFiles={openFiles} onOpenFolder={openFolder} onLoadPose={openPose} onOpenProject={openProject} onOpenAddons={() => setManagerOpen(true)}
-                onOpenOutput={() => { setSideTab('output'); setSideOpen(true); }} />
-        <div style={{ display: 'contents' }} onPointerEnter={() => { hoverArea.current = 'view'; }}>
+                onOpenOutput={() => showTab('output')} workspace={workspace} setWorkspace={goWorkspace} />
+        <div className="grid-view" onPointerEnter={() => { hoverArea.current = 'view'; }}>
           <ViewportArea sideOpen={sideOpen} toggleSide={toggleSide} tlOpen={tlOpen} toggleTl={() => setTlOpen(o => !o)}
-                        sideTab={sideTab} setSideTab={setSideTab} onOpenFiles={openFiles} onLoadPose={openPose}
-                        onOpenShaderEditor={() => showEditor('shader')}
-                        onViewportPointerDown={() => { if (isNarrow()) setSideOpen(false); }}
-                        showObjectTab={() => { setSideTab('object'); setSideOpen(true); }} />
+                        onOpenFiles={openFiles} showTab={showTab}
+                        onViewportPointerDown={() => { if (isNarrow()) setSideOpen(false); }} />
         </div>
+        {sideOpen && <>
+          <div className="area-resizer vertical" role="separator" aria-orientation="vertical" aria-label={t('右の列の幅')}
+               onPointerDown={e => {
+                 const w0 = sideW;
+                 let w = w0;
+                 drag(e, dx => { w = Math.min(Math.max(w0 - dx, 220), innerWidth - 320); setSideW(w); },
+                      () => { try { localStorage.setItem('webgl-grid.sideW', String(w)); } catch { /* (保存できなくても使える) */ } });
+               }} />
+          <Sidebar tab={sideTab} setTab={setSideTab} onLoadPose={openPose} onOpenShaderEditor={() => showEditor('shader')} />
+        </>}
         <div className="area-resizer" role="separator" aria-orientation="horizontal" aria-label={t('下の領域の高さ')}
-             onPointerDown={e => {
-               const startY = e.clientY, startH = bottomH;
-               const move = (ev: PointerEvent) => setBottomH(Math.min(Math.max(startH + startY - ev.clientY, 60), innerHeight - 160));
-               const up = () => { removeEventListener('pointermove', move); removeEventListener('pointerup', up); };
-               addEventListener('pointermove', move);
-               addEventListener('pointerup', up);
-             }} />
+             onPointerDown={e => { const h0 = bottomH; drag(e, (_, dy) => setBottomH(Math.min(Math.max(h0 - dy, 60), innerHeight - 160))); }} />
         <BottomArea editor={bottom} setEditor={showEditor} open={tlOpen} onHover={a => { hoverArea.current = a; }} />
+        <StatusBar />
       </div>
       <Toast />
       <Palette />

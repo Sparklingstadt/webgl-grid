@@ -7,18 +7,18 @@ import { AddonMenuItems } from './addons/AddonMenuItems';
 import { BSelect } from './controls/BSelect';
 import { Gizmo } from './Gizmo';
 import { Menu, MenuItem, MenuLabel, MenuSep } from './Menu';
-import { Sidebar, type SideTab } from './sidebar/Sidebar';
+import type { SideTab } from './sidebar/Sidebar';
+import { Icon } from './icons';
 import { OutputFrame, useShowFrame } from './OutputFrame';
 import { ModelPicker } from './ModelPicker';
 import { RecoverBanner } from './Overlays';
 import { requestRename } from './sidebar/Outliner';
 
-// 3D ビューポート: 見出し (ビュー・追加・オブジェクトのメニュー)、左のツールバー、左上の文字、
-// 右上のナビゲーションギズモ、右のサイドバー
+// 3D ビューポート (Blender の 3D ビューポート): 見出し (エディターの種類・モード・ビュー・追加・オブジェクトのメニュー)、
+// 左のツールバー、左上の文字、右上のナビゲーションギズモ
 export function ViewportArea(props: {
   sideOpen: boolean; toggleSide: () => void; tlOpen: boolean; toggleTl: () => void;
-  sideTab: SideTab; setSideTab: (t: SideTab) => void; onOpenFiles: () => void; onLoadPose: () => void; onOpenShaderEditor: () => void;
-  onViewportPointerDown: () => void; showObjectTab: () => void;
+  onOpenFiles: () => void; onViewportPointerDown: () => void; showTab: (tab: SideTab) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -43,7 +43,10 @@ export function ViewportArea(props: {
   return (
     <section className="area" aria-label={t('3D ビューポート')}>
       <div className="area-header">
-        <svg className="editor-type" viewBox="0 0 18 18" aria-hidden="true"><path d="M9 2 15.5 5.5v7L9 16 2.5 12.5v-7z M9 2v7 M2.5 5.5 9 9l6.5-3.5" fill="none" stroke="#ccc" strokeWidth="1.3" strokeLinejoin="round" /></svg>
+        <Icon name="view3d" className="editor-type" />
+        <BSelect<'object' | 'pose'> label={t('モード')} className="mode-select" value={poseMode ? 'pose' : 'object'}
+                                    onChange={v => engine.pose.setActive(v === 'pose')}
+                                    options={[{ value: 'object', label: t('オブジェクトモード') }, { value: 'pose', label: t('ポーズモード'), disabled: sel?.kind !== 'model' }]} />
         <Menu id="view" label={t('ビュー')}>
           <MenuItem label={t('前から見る')} kbd={t('テンキー 1')} onSelect={() => camera.snapView('front')} />
           <MenuItem label={t('右から見る')} kbd={t('テンキー 3')} onSelect={() => camera.snapView('right')} />
@@ -60,16 +63,11 @@ export function ViewportArea(props: {
           {SHAPES.map(d => <MenuItem key={d.key} label={t(d.name)} disabled={!canAdd} onSelect={() => engine.addShape(d.s)} />)}
           <MenuSep />
           <MenuLabel>{t('ライト')}</MenuLabel>
-          {LIGHT_TYPES.map(l => <MenuItem key={l.key} label={t(l.name)} disabled={!canAdd} onSelect={() => { engine.addLight(l.key); props.showObjectTab(); }} />)}
+          {LIGHT_TYPES.map(l => <MenuItem key={l.key} label={t(l.name)} disabled={!canAdd} onSelect={() => { engine.addLight(l.key); props.showTab('light'); }} />)}
           <MenuSep />
           <MenuItem label={t('MMD モデル…')} disabled={!canAdd} onSelect={props.onOpenFiles} />
           <AddonMenuItems menu="add" />
         </Menu>
-        {sel?.kind === 'model' && (
-          <BSelect<'object' | 'pose'> label={t('モード')} className="mode-select" value={poseMode ? 'pose' : 'object'}
-                                      onChange={v => engine.pose.setActive(v === 'pose')}
-                                      options={[{ value: 'object', label: t('オブジェクトモード') }, { value: 'pose', label: t('ポーズモード') }]} />
-        )}
         <Menu id="object" label={t('オブジェクト')}>
           <MenuItem label={t('削除')} kbd="X" disabled={!sel} onSelect={() => engine.deleteSelected()} />
           <MenuItem label={t('選択を解除')} kbd="Alt A" disabled={!sel} onSelect={() => engine.select(null)} />
@@ -114,7 +112,6 @@ export function ViewportArea(props: {
             </button>
           </div>
         </div>
-        {props.sideOpen && <Sidebar tab={props.sideTab} setTab={props.setSideTab} onLoadPose={props.onLoadPose} onOpenShaderEditor={props.onOpenShaderEditor} />}
       </div>
     </section>
   );

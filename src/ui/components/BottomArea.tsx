@@ -14,7 +14,7 @@ export function BottomArea({ editor, setEditor, open, onHover }: {
              options={[{ value: 'timeline', label: t('タイムライン') }, { value: 'shader', label: t('シェーダーエディター') }]} />
   );
   return (
-    <section className="area" aria-label={editor === 'timeline' ? t('タイムライン') : t('シェーダーエディター')}
+    <section className="area bottom" aria-label={editor === 'timeline' ? t('タイムライン') : t('シェーダーエディター')}
              onPointerEnter={() => onHover(editor)}>
       {editor === 'timeline'
         ? <Timeline open={open} typeSelect={typeSelect} />

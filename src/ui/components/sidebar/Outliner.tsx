@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { t } from '../../../core/i18n';
 import type { Engine } from '../../../engine';
 import { isModel, kindOf, type ModelObj, type Obj, type ObjKind } from '../../../engine/types';
 import { kindName, nameOf } from '../../../engine/world/Selection';
 import { useEngine, useUi } from '../../EngineContext';
 import { Popover } from '../controls/Popover';
+import { Icon as EditorIcon } from '../icons';
 import { MenuItem, MenuSep } from '../Menu';
 
 // --- アウトライナー (Blender のアウトライナー): 場面に置いた物を一覧にして、選ぶ・名前を変える・隠す・消す ---
@@ -60,13 +61,12 @@ function bonesOf(engine: Engine, o: ModelObj) {
   return bones.flatMap((b, i) => (ok.has(i) ? [{ i, name: b.name, depth: Math.min(depth(b), 12) }] : []));
 }
 
-export function Outliner({ onPickBone }: { onPickBone: () => void }) {
+export function Outliner({ onPickBone, style }: { onPickBone: () => void; style?: CSSProperties }) {
   const engine = useEngine();
   const sel = useUi(s => s.sel);
   useUi(s => s.sceneVersion);
   useUi(s => s.values); // (選んでいるボーン)
   useUi(s => s.lang);
-  const [open, setOpen] = useState(true);
   const [filter, setFilter] = useState('');
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(new Set());
   const [renaming, setRenaming] = useState<number | null>(null);
@@ -91,7 +91,7 @@ export function Outliner({ onPickBone }: { onPickBone: () => void }) {
     const onRename = () => {
       renameRequested = false;
       const id = engine.selection.current?.id;
-      if (id !== undefined) { setOpen(true); setRenaming(id); }
+      if (id !== undefined) setRenaming(id);
     };
     if (renameRequested) onRename();
     addEventListener('outliner-rename', onRename);
@@ -160,54 +160,52 @@ export function Outliner({ onPickBone }: { onPickBone: () => void }) {
   const menuObj = menu ? engine.world.find(menu.id) : null;
 
   return (
-    <section className={`outliner${open ? '' : ' closed'}`} aria-label={t('アウトライナー')}>
-      <div className="ol-head">
-        <button type="button" className="ol-fold" aria-expanded={open} onClick={() => setOpen(!open)}>{t('アウトライナー')}</button>
-        {open && <input type="search" className="ol-filter" placeholder={t('絞り込み')} aria-label={t('アウトライナーを絞り込む')} value={filter} onChange={e => setFilter(e.target.value)} />}
+    <section className="area outliner" aria-label={t('アウトライナー')} style={style}>
+      <div className="area-header">
+        <EditorIcon name="outliner" className="editor-type" />
+        <input type="search" className="ol-filter" placeholder={t('絞り込み')} aria-label={t('アウトライナーを絞り込む')} value={filter} onChange={e => setFilter(e.target.value)} />
       </div>
-      {open && (
-        <ul className={`ol-tree${drag ? ' dragging' : ''}`} role="tree" aria-label={t('シーンの物')} ref={tree}>
-          {!shown.length && <li className="ol-empty" role="none">{objects.length ? t('合う物がありません') : t('何も置いていません')}</li>}
-          {shown.map(({ o, bones }) => {
-            const name = nameOf(o), active = sel?.id === o.id, model = isModel(o);
-            const isOpen = model && (expanded.has(o.id) || (!!q && bones.length > 0));
-            return (
-              <li key={o.id} role="treeitem" aria-level={1} aria-selected={active} aria-expanded={model ? isOpen : undefined} aria-label={name}
-                  tabIndex={active || (!sel && o === shown[0].o) ? 0 : -1} ref={el => { if (el) rows.current.set(o.id, el); else rows.current.delete(o.id); }}
-                  onKeyDown={e => { if (e.target === e.currentTarget) onKey(e, o); }}>
-                <div className={`ol-row${active ? ' active' : ''}${o.hidden ? ' hidden' : ''}${drag?.id === o.id ? ' drag-source' : ''}${drag && drag.target === o.id && drag.id !== o.id ? ` drop-${drag.where}` : ''}`}
-                     onPointerDown={e => startDrag(e, o)}
-                     onClick={() => { if (!dragged.current) select(o); }} onDoubleClick={() => setRenaming(o.id)}
-                     onContextMenu={e => { e.preventDefault(); select(o); setMenu({ id: o.id, anchor: e.currentTarget }); }}>
-                  {model
-                    ? <button type="button" className="ol-twist" tabIndex={-1} aria-label={isOpen ? t('ボーンを閉じる') : t('ボーンを開く')} aria-expanded={isOpen}
-                              onClick={e => { e.stopPropagation(); toggle(o.id); }} />
-                    : <span className="ol-twist" />}
-                  <Icon kind={kindOf(o)} />
-                  {renaming === o.id
-                    ? <RenameField obj={o} onDone={() => { setRenaming(null); rows.current.get(o.id)?.focus(); }} />
-                    : <span className="ol-name" title={name}>{name}</span>}
-                  <button type="button" className="ol-toggle" tabIndex={-1} aria-label={t('ビューポートで隠す')} title={t('ビューポートで隠す (H)。レンダリングには写ります')}
-                          aria-pressed={!!o.hidden} onClick={e => { e.stopPropagation(); engine.setVisibility(o, { hidden: !o.hidden }); }}><Eye off={!!o.hidden} /></button>
-                  <button type="button" className="ol-toggle" tabIndex={-1} aria-label={t('レンダリングに写さない')} title={t('レンダリングに写さない')}
-                          aria-pressed={!!o.hideRender} onClick={e => { e.stopPropagation(); engine.setVisibility(o, { hideRender: !o.hideRender }); }}><Camera off={!!o.hideRender} /></button>
-                </div>
-                {isOpen && model && (
-                  <ul role="group">
-                    {bones.map(b => (
-                      <li key={b.i} role="treeitem" aria-level={2} aria-selected={active && o.boneSel === b.i} aria-label={b.name} tabIndex={-1}
-                          className={`ol-row ol-bone${active && o.boneSel === b.i ? ' active' : ''}`} style={{ paddingLeft: 28 + b.depth * 8 }}
-                          onClick={() => pickBone(o, b.i)} onKeyDown={e => { if (e.key === 'Enter') { e.stopPropagation(); pickBone(o, b.i); } }}>
-                        <Icon kind="bone" /><span className="ol-name" title={b.name}>{b.name}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      )}
+      <ul className={`ol-tree${drag ? ' dragging' : ''}`} role="tree" aria-label={t('シーンの物')} ref={tree}>
+        {!shown.length && <li className="ol-empty" role="none">{objects.length ? t('合う物がありません') : t('何も置いていません')}</li>}
+        {shown.map(({ o, bones }) => {
+          const name = nameOf(o), active = sel?.id === o.id, model = isModel(o);
+          const isOpen = model && (expanded.has(o.id) || (!!q && bones.length > 0));
+          return (
+            <li key={o.id} role="treeitem" aria-level={1} aria-selected={active} aria-expanded={model ? isOpen : undefined} aria-label={name}
+                tabIndex={active || (!sel && o === shown[0].o) ? 0 : -1} ref={el => { if (el) rows.current.set(o.id, el); else rows.current.delete(o.id); }}
+                onKeyDown={e => { if (e.target === e.currentTarget) onKey(e, o); }}>
+              <div className={`ol-row${active ? ' active' : ''}${o.hidden ? ' hidden' : ''}${drag?.id === o.id ? ' drag-source' : ''}${drag && drag.target === o.id && drag.id !== o.id ? ` drop-${drag.where}` : ''}`}
+                   onPointerDown={e => startDrag(e, o)}
+                   onClick={() => { if (!dragged.current) select(o); }} onDoubleClick={() => setRenaming(o.id)}
+                   onContextMenu={e => { e.preventDefault(); select(o); setMenu({ id: o.id, anchor: e.currentTarget }); }}>
+                {model
+                  ? <button type="button" className="ol-twist" tabIndex={-1} aria-label={isOpen ? t('ボーンを閉じる') : t('ボーンを開く')} aria-expanded={isOpen}
+                            onClick={e => { e.stopPropagation(); toggle(o.id); }} />
+                  : <span className="ol-twist" />}
+                <Icon kind={kindOf(o)} />
+                {renaming === o.id
+                  ? <RenameField obj={o} onDone={() => { setRenaming(null); rows.current.get(o.id)?.focus(); }} />
+                  : <span className="ol-name" title={name}>{name}</span>}
+                <button type="button" className="ol-toggle" tabIndex={-1} aria-label={t('ビューポートで隠す')} title={t('ビューポートで隠す (H)。レンダリングには写ります')}
+                        aria-pressed={!!o.hidden} onClick={e => { e.stopPropagation(); engine.setVisibility(o, { hidden: !o.hidden }); }}><Eye off={!!o.hidden} /></button>
+                <button type="button" className="ol-toggle" tabIndex={-1} aria-label={t('レンダリングに写さない')} title={t('レンダリングに写さない')}
+                        aria-pressed={!!o.hideRender} onClick={e => { e.stopPropagation(); engine.setVisibility(o, { hideRender: !o.hideRender }); }}><Camera off={!!o.hideRender} /></button>
+              </div>
+              {isOpen && model && (
+                <ul role="group">
+                  {bones.map(b => (
+                    <li key={b.i} role="treeitem" aria-level={2} aria-selected={active && o.boneSel === b.i} aria-label={b.name} tabIndex={-1}
+                        className={`ol-row ol-bone${active && o.boneSel === b.i ? ' active' : ''}`} style={{ paddingLeft: 28 + b.depth * 8 }}
+                        onClick={() => pickBone(o, b.i)} onKeyDown={e => { if (e.key === 'Enter') { e.stopPropagation(); pickBone(o, b.i); } }}>
+                      <Icon kind="bone" /><span className="ol-name" title={b.name}>{b.name}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </li>
+          );
+        })}
+      </ul>
       {menu && menuObj && (
         <Popover anchor={menu.anchor} onClose={() => setMenu(null)} className="menu-pop" role="menu" label={t('アウトライナーのメニュー')}>
           <div onClick={e => { if ((e.target as HTMLElement).closest('button:not(:disabled)')) setMenu(null); }}>

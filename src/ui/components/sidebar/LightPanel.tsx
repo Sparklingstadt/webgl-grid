@@ -1,11 +1,18 @@
 import { t } from '../../../core/i18n';
 import { AREA_SHAPES, LIGHT_TYPES, type AreaShape, type LightType } from '../../../core/light';
 import type { SelInfo } from '../../../engine';
-import { useEngine } from '../../EngineContext';
+import { useEngine, useUi } from '../../EngineContext';
 import { BSlider } from '../BSlider';
 import { BCheck } from '../controls/BCheck';
 import { HexColorField, keyOptions, SelectField } from '../fields';
-import { Panel } from './Panel';
+import { Empty, Panel } from './Panel';
+
+// --- ライトのタブ (Blender のライトのデータのプロパティ) ---
+export function LightPage() {
+  const sel = useUi(s => s.sel);
+  if (!sel?.light) return <Panel title={t('ライト')}><Empty>{t('ライトを選ぶと、ここで種類・色・明るさを変えられます。')}</Empty></Panel>;
+  return <LightPanel sel={sel} />;
+}
 
 // --- ライト (Blender のライトのプロパティ): 種類・色・パワー (サンは強さ)・半径・スポットサイズとブレンド・エリアの形状とサイズ・影 ---
 export function LightPanel({ sel }: { sel: SelInfo }) {

@@ -24,8 +24,8 @@ const cinema4d: AddonModule = {
     const { engine } = api;
     api.expose(c4d);
     const notLight = (sel: SelInfo | null) => !!sel && sel.kind !== 'light';
-    api.addPanel({ title: msg('デフォーマ'), tab: 'object', poll: notLight, component: ({ sel }: { sel: SelInfo }) => <DeformerPanel sel={sel} c4d={c4d} /> });
-    api.addPanel({ title: msg('クローナー'), tab: 'object', poll: notLight, component: ({ sel }: { sel: SelInfo }) => <ClonerPanel sel={sel} c4d={c4d} /> });
+    api.addPanel({ title: msg('デフォーマ'), tab: 'modifier', poll: notLight, component: ({ sel }: { sel: SelInfo }) => <DeformerPanel sel={sel} c4d={c4d} /> });
+    api.addPanel({ title: msg('クローナー'), tab: 'modifier', poll: notLight, component: ({ sel }: { sel: SelInfo }) => <ClonerPanel sel={sel} c4d={c4d} /> });
     api.addMenuItem({
       menu: 'object', label: msg('クローナーにする / やめる'),
       enabled: () => { const o = engine.selection.current; return !!o && !o.light; },

@@ -2,18 +2,15 @@ import { PALETTE, PALETTE_NAMES, paletteCss } from '../../../core/constants';
 import { t } from '../../../core/i18n';
 import { kindName } from '../../../engine/world/Selection';
 import { useEngine, useUi } from '../../EngineContext';
-import { BCheck } from '../controls/BCheck';
 import { NumField } from '../NumField';
-import { LightPanel } from './LightPanel';
 import { AddonPanels } from '../addons/AddonPanels';
 import { Empty, Panel } from './Panel';
 
-// --- オブジェクト: 選んでいる物の名前・位置・向き・色 ---
+// --- オブジェクト (Blender のオブジェクトのプロパティ): 選んでいる物の名前・位置・向き・色・モーション ---
+// (ライトの設定はライトのタブ、物理演算は物理演算のタブ)
 export function ObjectPage() {
   const engine = useEngine();
   const sel = useUi(s => s.sel);
-  const hairHang = useUi(s => s.hairHang);
-  const rigShown = useUi(s => s.rigShown);
   if (!sel) return <><Panel title={t('オブジェクト')}><Empty>{t('何も選んでいません。ビューポートで物をクリックすると選べます。')}</Empty></Panel><AddonPanels tab="object" /></>;
   const deg = ((sel.r * 180 / Math.PI) % 360 + 540) % 360 - 180;
   return (
@@ -40,22 +37,11 @@ export function ObjectPage() {
           </div>
         </Panel>
       )}
-      {sel.kind === 'model' && (hairHang !== null || engine.physics.hasRig(engine.selection.current)) && (
-        <Panel title={t('物理演算')}>
-          {hairHang !== null && <>
-            <BCheck checked={hairHang} onChange={on => engine.setHairHang(on)}>{t('髪を重力で垂らす')}</BCheck>
-            <div className="note">{t('髪の形を保つ「錘」の剛体を外して、髪をまっすぐ垂らします。オフにすると、モデルの作者が作った髪の形 (MMD と同じ) に戻ります')}</div>
-          </>}
-          <BCheck checked={rigShown} onChange={on => engine.showRig(on)}>{t('剛体と関節を表示')}</BCheck>
-          <div className="note">{t('物理演算の剛体 (赤: ボーン追従・緑: 物理・青: 物理 + 位置合わせ) と関節 (黄) を重ねて表示します (レンダリングには写りません)')}</div>
-        </Panel>
-      )}
       {sel.kind === 'model' && (
         <Panel title={t('モーション')}>
           <div className="note">{sel.animated ? t('VMD モーションを再生中です。タイムラインで動かせます。') : t('モーションはありません。ファイル > MMD を読み込む… で .vmd を選ぶと付きます。')}</div>
         </Panel>
       )}
-      {sel.kind === 'light' && <LightPanel sel={sel} />}
       <AddonPanels tab="object" />
       <button type="button" className="bbtn" onClick={() => engine.deleteSelected()}>{t('削除 (X)')}</button>
     </>

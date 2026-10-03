@@ -5,9 +5,14 @@ import { useEngine, useUi } from '../EngineContext';
 import { AddonMenuItems } from './addons/AddonMenuItems';
 import { Menu, MenuItem, MenuLabel, MenuSep } from './Menu';
 
-// 上のバー: ファイル・レンダー・ヘルプのメニュー
-export function TopBar({ onOpenFiles, onOpenFolder, onLoadPose, onOpenProject, onOpenOutput, onOpenAddons }: {
+// ワークスペース (Blender の上のバーのタブ): 下の領域とプロパティのタブを、作業に合わせてまとめて切り替える
+export type Workspace = 'layout' | 'shading' | 'animation';
+const WORKSPACES: [Workspace, string][] = [['layout', msg('レイアウト')], ['shading', msg('シェーディング')], ['animation', msg('アニメーション')]];
+
+// 上のバー: ファイル・編集・レンダー・ヘルプのメニューと、ワークスペースのタブ
+export function TopBar({ onOpenFiles, onOpenFolder, onLoadPose, onOpenProject, onOpenOutput, onOpenAddons, workspace, setWorkspace }: {
   onOpenFiles: () => void; onOpenFolder: () => void; onLoadPose: () => void; onOpenProject: () => void; onOpenOutput: () => void; onOpenAddons: () => void;
+  workspace: Workspace; setWorkspace: (w: Workspace) => void;
 }) {
   const engine = useEngine();
   const projectName = useUi(s => s.projectName);
@@ -74,6 +79,11 @@ export function TopBar({ onOpenFiles, onOpenFolder, onLoadPose, onOpenProject, o
           [msg('シェーダーエディター: ノードを追加 / 消す / 全体を表示'), 'Shift A / X / Home'],
         ].map(([label, kbd]) => <MenuItem key={label} label={t(label)} kbd={t(kbd)} disabled />)}
       </Menu>
+      <nav className="workspaces" role="tablist" aria-label={t('ワークスペース')}>
+        {WORKSPACES.map(([key, label]) => (
+          <button key={key} type="button" role="tab" aria-selected={workspace === key} onClick={() => setWorkspace(key)}>{t(label)}</button>
+        ))}
+      </nav>
       {remote !== 'off' && (
         <span className={`remote-chip ${remote}`} aria-label={t('MCP の接続')}
               title={remote === 'connected' ? t('MCP サーバーにつながっています。外から操作できます') : t('MCP サーバーを待っています (npm run mcp)')}>

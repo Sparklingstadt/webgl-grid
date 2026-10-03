@@ -11,6 +11,7 @@ test('形をクローナーにしてグリッドに並べ、クローンを押�
   const errors = await open(page);
   const p = await screenPosOf(page, 0);
   await page.mouse.click(p.x, p.y);
+  await page.getByRole('tab', { name: 'モディファイアー' }).click(); // (デフォーマ・クローナー・分割は、モディファイアーのタブ)
   await page.getByRole('checkbox', { name: 'クローナーにする' }).click();
   await expect(page.getByText('クローン 9 個')).toBeVisible(); // 既定: グリッド 3 × 1 × 3
   await expect.poll(() => steps(page)).toBe(2); // (続けて素早く変えると 1 手にまとまるので、手が積まれるのを待つ)
@@ -82,7 +83,7 @@ test('MMD モデルをクローナーにすると、クローンも同じ動き�
   expect(diff.moved).toBeGreaterThan(0.5); // モーションで動いている (それがクローンにも写っている)
   expect(diff.worst).toBeLessThan(1e-6);
   // MMD モデルは 1 つずつの物にはできない (ボタンを出さない)
-  await page.getByRole('tab', { name: 'オブジェクト' }).click();
+  await page.getByRole('tab', { name: 'モディファイアー' }).click();
   await expect(page.getByRole('button', { name: '1 つずつの物にする' })).toHaveCount(0);
   expect(errors).toEqual([]);
 });
@@ -91,6 +92,7 @@ test('エフェクタ: ステップで 1 つずつ大きく、ディレイで MM
   const errors = await open(page);
   const p = await screenPosOf(page, 0);
   await page.mouse.click(p.x, p.y);
+  await page.getByRole('tab', { name: 'モディファイアー' }).click(); // (デフォーマ・クローナー・分割は、モディファイアーのタブ)
   await page.getByRole('checkbox', { name: 'クローナーにする' }).click();
   await choose(page, 'クローナーの並べ方', '直線');
   await page.getByRole('button', { name: '+ ステップ' }).click();
@@ -129,6 +131,7 @@ test('デフォーマ: サイドバーで足すと形が変わり、外すと戻
   const errors = await open(page);
   const p = await screenPosOf(page, 0);
   await page.mouse.click(p.x, p.y);
+  await page.getByRole('tab', { name: 'モディファイアー' }).click(); // (デフォーマ・クローナー・分割は、モディファイアーのタブ)
   const topWidth = () => page.evaluate(() => {
     const g = (window as Win).engine.world.objects[0].mesh.geometry;
     const pos = g.attributes.position;
@@ -148,6 +151,7 @@ test('MoGraph エフェクタ: ターゲットで向きを変え、フォーミ�
   const errors = await open(page);
   const p = await screenPosOf(page, 0);
   await page.mouse.click(p.x, p.y);
+  await page.getByRole('tab', { name: 'モディファイアー' }).click(); // (デフォーマ・クローナー・分割は、モディファイアーのタブ)
   await page.getByRole('checkbox', { name: 'クローナーにする' }).click();
   await choose(page, 'クローナーの並べ方', '直線');
   const clones = (): Promise<[number, number][]> => page.evaluate(() => (window as Win).engine.world.objects[0].node.getObjectByName('__clones').children
@@ -178,6 +182,7 @@ test('MoGraph フィールド: エフェクタに球のフィールドを足す�
   const errors = await open(page);
   const p = await screenPosOf(page, 0);
   await page.mouse.click(p.x, p.y);
+  await page.getByRole('tab', { name: 'モディファイアー' }).click(); // (デフォーマ・クローナー・分割は、モディファイアーのタブ)
   await page.getByRole('checkbox', { name: 'クローナーにする' }).click();
   await choose(page, 'クローナーの並べ方', '直線');
   await page.getByRole('button', { name: '+ プレーン' }).click();
@@ -211,6 +216,7 @@ test('MoGraph 分割: 形をボロノイで破片に分け、エフェクタで�
   const errors = await open(page);
   const p = await screenPosOf(page, 0);
   await page.mouse.click(p.x, p.y);
+  await page.getByRole('tab', { name: 'モディファイアー' }).click(); // (デフォーマ・クローナー・分割は、モディファイアーのタブ)
   await page.getByRole('checkbox', { name: '分割する' }).click();
   await expect(page.getByText('破片 12 個')).toBeVisible();
   const top = () => page.evaluate(() => { const m = (window as Win).engine.world.objects[0].node.getObjectByName('__fracture'); m.geometry.computeBoundingBox(); return +m.geometry.boundingBox.max.y.toFixed(2); });

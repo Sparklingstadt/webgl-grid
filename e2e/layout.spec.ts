@@ -1,0 +1,48 @@
+import { expect, test } from './fixtures/test';
+import { loadTestModel, open } from './helpers';
+
+// Blender 風の画面: 右の列 (アウトライナー・プロパティ)、プロパティのタブ (選んでいる物に合うものだけ)、ワークスペース、状態バー
+const tabs = (page: import('@playwright/test').Page) => page.getByRole('tablist', { name: 'サイドバーのタブ' }).getByRole('tab');
+
+test('プロパティのタブは、選んでいる物に使えるものだけ出し、使えないタブからはオブジェクトに戻る', async ({ page }) => {
+  await open(page, { cube: false });
+  await expect(page.getByRole('region', { name: 'アウトライナー' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'プロパティ' })).toBeVisible();
+  // 何も選んでいない: 場面のタブとオブジェクトだけ
+  const names = async () => (await tabs(page).evaluateAll(els => els.map(e => e.getAttribute('aria-label'))));
+  expect(await names()).toEqual(['効果', '出力', 'シーン', 'オブジェクト']);
+  // 形: モディファイアーとマテリアル
+  await page.keyboard.press('Shift+A');
+  await page.getByRole('menuitem', { name: '立方体' }).click();
+  await expect.poll(names).toEqual(['効果', '出力', 'シーン', 'オブジェクト', 'モディファイアー', 'マテリアル']);
+  await page.getByRole('tab', { name: 'モディファイアー' }).click();
+  await expect(page.getByRole('checkbox', { name: 'クローナーにする' })).toBeVisible();
+  await expect(page.locator('.props-path')).toContainText('立方体');
+  // ライトを置くと、ライトのタブを開く
+  await page.keyboard.press('Shift+A');
+  await page.getByRole('menuitem', { name: 'ポイント' }).click();
+  await expect(page.getByRole('tab', { name: 'ライト' })).toHaveAttribute('aria-selected', 'true');
+  expect(await names()).not.toContain('モディファイアー');
+  // MMD モデル: 物理演算・表情・ボーンも
+  await loadTestModel(page);
+  await expect.poll(names).toEqual(['効果', '出力', 'シーン', 'オブジェクト', 'モディファイアー', '物理演算', '表情', 'ボーン', 'マテリアル']);
+  await page.getByRole('tab', { name: 'ボーン' }).click();
+  // 何も選ばないと、ボーンのタブはなくなり、オブジェクトを見せる (選び直すとボーンに戻る)
+  await page.keyboard.press('Alt+a');
+  await expect(page.getByRole('tab', { name: 'オブジェクト' })).toHaveAttribute('aria-selected', 'true');
+  await page.getByRole('tree', { name: 'シーンの物' }).getByRole('treeitem', { name: 'テスト人形' }).locator(':scope > .ol-row').click();
+  await expect(page.getByRole('tab', { name: 'ボーン' })).toHaveAttribute('aria-selected', 'true');
+});
+
+test('ワークスペース: シェーディングでシェーダーエディターとマテリアル、レイアウトでタイムラインに戻る。状態バーに数が出る', async ({ page }) => {
+  await open(page);
+  const ws = page.getByRole('tablist', { name: 'ワークスペース' });
+  await expect(ws.getByRole('tab', { name: 'レイアウト' })).toHaveAttribute('aria-selected', 'true');
+  await page.getByRole('tree', { name: 'シーンの物' }).getByRole('treeitem', { name: '立方体' }).locator(':scope > .ol-row').click();
+  await ws.getByRole('tab', { name: 'シェーディング' }).click();
+  await expect(page.getByRole('region', { name: 'シェーダーエディター' })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'マテリアル' })).toHaveAttribute('aria-selected', 'true');
+  await ws.getByRole('tab', { name: 'レイアウト' }).click();
+  await expect(page.getByRole('region', { name: 'タイムライン' })).toBeVisible();
+  await expect(page.getByRole('contentinfo', { name: '状態バー' })).toContainText('立方体 | オブジェクト 1/1 | フレーム 0');
+});

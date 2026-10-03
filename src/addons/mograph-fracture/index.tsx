@@ -21,7 +21,7 @@ const mographFracture: AddonModule = {
     const fracture = new Fracture(api, c4d);
     api.expose(fracture);
     api.addPanel({
-      title: msg('分割'), tab: 'object', poll: (sel: SelInfo | null) => sel?.kind === 'shape',
+      title: msg('分割'), tab: 'modifier', poll: (sel: SelInfo | null) => sel?.kind === 'shape',
       component: ({ sel }: { sel: SelInfo }) => <FracturePanel sel={sel} c4d={c4d} fracture={fracture} />,
     });
     const objOf = (id: unknown): Obj => {
