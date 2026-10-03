@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures/test';
 import { open, uiState } from './helpers';
 
 // タイムライン: 再生・フレームの移動・範囲

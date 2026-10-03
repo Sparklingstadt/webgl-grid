@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures/test';
 import { makeVmd } from './fixtures/vmd';
 import { loadTestModel, open, type Win } from './helpers';
 
@@ -27,7 +27,6 @@ const worstGap = (page: Page) => page.evaluate(() => {
 });
 
 test('タイムラインを飛んでも・繰り返しても、物理演算の剛体がボーンから離れない', async ({ page }) => {
-  test.slow(); // 物理エンジン (Ammo.js) を CDN から読む
   const errors = await open(page);
   // センターを前後に大きく動かすモーション (0 → 30 フレームで 10 進み、60 フレームで戻る)
   const vmd = makeVmd([
@@ -60,7 +59,6 @@ const hairX = (page: Page) => page.evaluate(() => {
 });
 
 test('「髪を重力で垂らす」で、髪の錘を外して垂らし、オフで元の形に戻す', async ({ page }) => {
-  test.slow(); // 物理エンジン (Ammo.js) を CDN から読む
   const errors = await open(page);
   await loadTestModel(page, [], { physics: true });
   const toggle = page.getByRole('checkbox', { name: '髪を重力で垂らす' });

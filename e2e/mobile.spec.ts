@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures/test';
 import { open } from './helpers';
 
 // スマホ (幅の狭い画面) のレイアウト

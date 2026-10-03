@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures/test';
 import { emptySpot, open, screenPosOf, uiState, type Win } from './helpers';
 
 // 3D ビューポートとメニュー・サイドバーの基本操作

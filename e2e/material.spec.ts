@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures/test';
 import { loadTestModel, open, type Win } from './helpers';
 
 // マテリアル: モデルの材質の一覧と、色・不透明度・表示・輪郭線を変え、元に戻す
