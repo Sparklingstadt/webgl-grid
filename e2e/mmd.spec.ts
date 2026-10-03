@@ -4,7 +4,7 @@ import { loadTestModel, open, uiState, type Win } from './helpers';
 
 // MMD モデル: 読み込み・表情・ボーン・キーフレーム・ポーズファイル (テスト用に組み立てた小さな PMX を使う)
 const rightArmRz = (page: import('@playwright/test').Page) => page.evaluate(() => {
-  const o = (window as Win).getSel();
+  const o = (window as Win).engine.selection.current;
   const i = o.model.skeleton.bones.findIndex((b: { name: string }) => b.name === '右腕');
   return o.pose?.get(i)?.rz ?? 0;
 });
@@ -28,7 +28,7 @@ test.describe('MMD モデル', () => {
     await slider.focus();
     await page.keyboard.press('Shift+ArrowRight');
     await expect(slider).toHaveAttribute('aria-valuenow', '0.1');
-    expect(await page.evaluate(() => (window as Win).getSel().model.morphTargetInfluences[0])).toBeCloseTo(0.1);
+    expect(await page.evaluate(() => (window as Win).engine.selection.current.model.morphTargetInfluences[0])).toBeCloseTo(0.1);
     await page.getByRole('button', { name: '表情を戻す' }).click();
     await expect(slider).toHaveAttribute('aria-valuenow', '0');
   });
@@ -62,7 +62,7 @@ test.describe('MMD モデル', () => {
     for (let i = 0; i < 6; i++) await page.keyboard.press('Shift+ArrowRight');
     await page.locator('canvas#c').hover();
     await page.keyboard.press('i');
-    expect(await page.evaluate(() => [...(window as Win).getSel().keys.keys()])).toEqual([0, 30]);
+    expect(await page.evaluate(() => [...(window as Win).engine.selection.current.keys.keys()])).toEqual([0, 30]);
     // フレーム 15 では 30°
     await frameField.fill('15');
     await page.keyboard.press('Enter');
@@ -73,7 +73,7 @@ test.describe('MMD モデル', () => {
     await page.keyboard.press('ArrowUp');
     expect((await uiState(page)).frame).toBe(30);
     await page.keyboard.press('Alt+i');
-    expect(await page.evaluate(() => [...(window as Win).getSel().keys.keys()])).toEqual([0]);
+    expect(await page.evaluate(() => [...(window as Win).engine.selection.current.keys.keys()])).toEqual([0]);
   });
 
   test('ポーズを .vpd に保存し、読み込むと元に戻る', async ({ page }) => {

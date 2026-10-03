@@ -1,15 +1,9 @@
 import type * as THREE from 'three';
+import type { BoneValue, PoseKey } from '../core/types';
 
 // MMDLoader などの three.js の付属品は、型の付いていない内部の値も使うので any で扱う
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type Any = any;
-
-// 手で動かしたボーンの値: 最初の姿勢からのオイラー角 (度、YXZ の順) と位置のずれ (MMD の単位)
-export interface BoneValue { rx: number; ry: number; rz: number; px: number; py: number; pz: number }
-export const ZERO_BONE: BoneValue = { rx: 0, ry: 0, rz: 0, px: 0, py: 0, pz: 0 };
-
-// キーフレーム 1 つ分: ポーズ (手で動かしたボーン) と表情
-export interface PoseKey { pose: Map<number, BoneValue>; morphs: Float32Array | null }
 
 // VMD モーションの再生の設定と、タイムラインに印を付けるキーフレームの位置 (フレーム番号)
 export interface MotionInfo { action: THREE.AnimationAction; duration: number; frames: Int32Array }
@@ -34,4 +28,7 @@ export interface Obj {
   solvers?: { ik: Any; grant: Any };  // IK と付与の計算
   boneSel?: number;                   // サイドバーで選んでいるボーン
   outlined?: boolean;                 // 選択中のオレンジの輪郭線を付けている
+  highlighted?: boolean;              // 掴んでいるので明るくしている
 }
+export type ModelObj = Obj & { model: Any };
+export const isModel = (o: Obj | null | undefined): o is ModelObj => o?.s === 3;

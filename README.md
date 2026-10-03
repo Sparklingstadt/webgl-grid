@@ -15,7 +15,7 @@ npm run dev
 
 表示された http://localhost:5173/ を開きます。`npm run build` で `dist/` に書き出せます（相対パスで参照するので、どのフォルダに置いても開けます）。three.js の物理演算に使う Ammo.js だけは、剛体を持つモデルを初めて読み込んだときに CDN（jsDelivr）から取ってきます。
 
-WebGL2 に対応したブラウザが必要です。URL に `?debug` を付けて開くと、動作確認用に中の状態をブラウザのコンソールから触れます（e2e テストもこれを使います）。
+WebGL2 に対応したブラウザが必要です。URL に `?debug` を付けて開くと、動作確認用にエンジンを `window.engine` としてブラウザのコンソールから触れます（e2e テストもこれを使います）。
 
 ## 画面
 
@@ -98,48 +98,43 @@ npm run test:e2e       # e2e テスト (Playwright。開発サーバーを立ち
 npm run test:all       # 型チェック・単体テスト・e2e をまとめて
 ```
 
-- **単体テスト**（`src/**/*.test.ts(x)`）: キーフレームの補間、積み重ねの判定と高さ・空いている場所の探し方、.vpd の書き出しと読み取り（左手系との変換、MMD の書式）、Shift-JIS への変換、ストア、タイムラインの目盛りと拡大縮小、スライダーと数値の欄（jsdom + Testing Library）。
+- **単体テスト**（`src/**/*.test.ts(x)`）: タイムライン（`Clock`）、描画先なしで組み立てたエンジン（追加・積み重ね・削除・選択・最初の状態に戻す・キーフレームの挿入と補間・移動・削除・前後のキーへの移動）、キーフレームの補間、積み重ねの判定と高さ・空いている場所の探し方、.vpd の書き出しと読み取り（左手系との変換、MMD の書式）、Shift-JIS への変換、ストア、タイムラインの目盛りと拡大縮小、スライダーと数値の欄（jsdom + Testing Library）。
 - **e2e テスト**（`e2e/`）: 最初の画面、追加メニュー、クリックでの選択と解除、ドラッグで積む、削除、サイドバーでの位置と色、視点とサイドバーのショートカット、効果のオン・オフと保存、タイムラインの再生・目盛り・フレームの欄・繰り返し、MMD モデルの読み込み・表情・ボーン・キーフレームの補間と削除・.vpd の保存と読み込み、スマホの画面（サイドバーの重ね表示、横にはみ出さないこと）。
 - e2e で使う MMD モデルは、配布の決まりがあるモデルをリポジトリに入れないように、`e2e/fixtures/pmx.ts` でテストのたびに小さな PMX（四角柱 1 本、ボーン 2 本、表情 1 つ）を組み立てています。WebGL は GPU のない環境でも動くよう、ソフトウェア描画（SwiftShader）で動かします。
 
 ## コードの構成
 
+`core/`（純粋な計算）← `engine/`（three.js の実行部）← `ui/`（React の画面）の 3 層で、依存は一方向だけです。考え方・各クラスの役割・つなぎ方は [ARCHITECTURE.md](ARCHITECTURE.md) にまとめています。
+
 ```
 src/
-  main.tsx, App.tsx         React の入口と、画面全体 (上のバー・ビューポート・タイムライン) の組み立て
-  store.ts                  エンジンの状態を React に知らせる小さなストア (useSyncExternalStore)
-  styles.css                Blender 風のテーマ
-  hooks/useShortcuts.ts     キーボードショートカット
-  components/               画面の部品
-    TopBar, Menu, ViewportArea, Gizmo, Timeline, BSlider, NumField, Overlays (お知らせ・パレット)
-    timelineMath.ts         タイムラインの目盛り・拡大縮小の計算
-    sidebar/                サイドバー (Sidebar, Panel, ObjectPage, MorphPage, BonePage, FxPage)
-  engine/                   three.js の場面と操作。React からは engine/index.ts だけを使う
-    index.ts                入口 (initEngine・resetAll と、画面の部品が使う関数)
-    ui.ts                   画面に知らせる状態とお知らせ
-    constants.ts, types.ts  定数と型
-    scene.ts                シーン・カメラ・光・地面のグリッド
-    objects.ts              置いた物の作成・削除・落下アニメーション・パレット
-    stacking.ts             積み重ねの計算 (分離軸判定・高さ・空いている場所)
-    selection.ts            選択と、選択中の輪郭線
-    camera.ts               オービットカメラ・レイ・決まった向きから見る
-    input.ts                ビューポートのマウス・タッチ操作
-    loop.ts                 描画ループ・描画・大きさの変更
-    timeline.ts             再生・フレーム・範囲
-    keyframes.ts            キーフレームの挿入・選択・移動・削除と、モデルへの反映
-    keyframeMath.ts         キーフレームの補間の計算
-    music.ts                曲
-    fx.ts, postfx.ts        効果 (MME 風の後処理) の設定と、後処理のパス
-    sjis.ts                 Shift-JIS への変換
-    mmd/                    MMD の読み込み (loader)・物理演算 (physics)・モーションとカメラモーション (motion)・
-                            ステージ (stage)・表情とボーン (pose)・ポーズファイル (vpd, vpdFormat)
+  main.tsx                  入口: Engine を 1 つ作り、EngineProvider で画面に渡す
+  core/                     純粋な計算とデータ
+    constants.ts, types.ts  定数とポーズ・キーフレームの型
+    events.ts, store.ts     型付きイベントと、小さなストア
+    stacking.ts             積み重ね (分離軸判定・高さ・空いている場所)
+    keyframeMath.ts         キーフレームの補間
+    vpdFormat.ts, sjis.ts   .vpd の書式と Shift-JIS
+    timelineMath.ts         タイムラインの目盛り・拡大縮小
+  engine/                   three.js の実行部 (クラスごと)
+    Engine.ts               組み立てと、画面への窓口
+    UiChannel.ts            画面に知らせる状態とお知らせ
+    render/                 SceneGraph (場面)・Viewport (描画先と描画ループ)・Effects, postfx (MME 風の後処理)
+    world/                  World (置いた物・積み重ね・落下)・Selection (選択)・ColorPicker (パレット)
+    view/                   CameraController (カメラ・レイ・視点)・InputController (マウス・タッチ)
+    anim/                   Clock (タイムライン)・Keyframes (キーフレーム)・Music (曲)
+    mmd/                    MmdLoader・Physics・Stage・Motion (ダンスとカメラ)・Posing (表情とボーン)・VpdIO
+  ui/                       React の画面
+    App.tsx, EngineContext.tsx, styles.css
+    components/             TopBar, Menu, ViewportArea, Gizmo, Timeline, BSlider, NumField, Overlays, sidebar/
+    hooks/useShortcuts.ts   キーボードショートカット
 e2e/                        e2e テスト (Playwright) と、テスト用 PMX を組み立てる fixtures/pmx.ts
 ```
 
 ## しくみ
 
 - 描画は three.js（0.171.0）です。PMX の読み込みには three.js の `MMDLoader` を使っています。`MMDLoader` は r172 で three.js 本体から外されたため、three.js はこれが入っている最後の版に固定しています。MMD の読み込みや後処理などの大きな部品は、初めて使うときに読み込みます（Vite がファイルを分けます）。
-- 画面の部品は React で、three.js の場面はエンジン（`src/engine`）が持ちます。エンジンは状態が変わると小さなストアに書き、部品は `useSyncExternalStore` でそれを読んで描き直します。毎フレーム変わるもの（再生中の表情・ボーンの値）は、描き直しを 0.1 秒に 1 回に間引きます。タイムラインとナビゲーションギズモは 2D の canvas に直接描きます。
+- 画面の部品は React で、three.js の場面はエンジン（`src/engine`）が持ちます。エンジンは状態が変わると `UiChannel` のストアに書き、部品は `useUi`（`useSyncExternalStore`）でそれを読んで描き直します。毎フレーム変わるもの（再生中の表情・ボーンの値）は、描き直しを 0.1 秒に 1 回に間引きます。タイムラインとナビゲーションギズモは 2D の canvas に直接描きます。
 - 地面は大きな板に専用のシェーダーを当てて描いています。Blender の床のように面は塗らず、`fwidth` で距離に関係なく線幅が一定になるようにアンチエイリアスした 1 単位ごとの細線と 5 単位ごとの太線、X 軸（赤）と Z 軸（青）だけを引き、遠くほど透明にしています。
 - MMD の輪郭線と、選択中のオレンジの輪郭線は three.js の `OutlineEffect` です（選んだ物の材質の輪郭線の設定を一時的に変える）。
 - 手で動かしたボーンは、モーションのないモデルでは、最初の姿勢に戻してから手の値を当て、`CCDIKSolver`（IK）と付与を計算し直します。物理演算で動く骨はそのままにします。モーションのあるモデルでは、毎フレームのモーションのあとに手の値を当てます。

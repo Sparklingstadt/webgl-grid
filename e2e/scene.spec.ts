@@ -13,7 +13,7 @@ test.describe('ビューポート', () => {
     const s = await uiState(page);
     expect(s).toMatchObject({ frame: 0, start: 0, end: 250, playing: false, sel: null });
     // WebGL で描けている (エラーが出ていない)
-    expect(await page.evaluate(() => (window as Win).gl.renderer.getContext().getError())).toBe(0);
+    expect(await page.evaluate(() => (window as Win).engine.viewport.renderer.getContext().getError())).toBe(0);
     expect(errors).toEqual([]);
   });
 
@@ -22,7 +22,7 @@ test.describe('ビューポート', () => {
     await page.getByRole('button', { name: '追加' }).click();
     await page.getByRole('menuitem', { name: 'トーラス' }).click();
     await expect(page.getByRole('menu')).toHaveCount(0); // 選んだらメニューは閉じる
-    expect(await page.evaluate(() => (window as Win).boxes.length)).toBe(2);
+    expect(await page.evaluate(() => (window as Win).engine.world.objects.length)).toBe(2);
     await expect.poll(async () => (await uiState(page)).sel?.name).toBe('トーラス');
     await expect(page.locator('.prop')).toContainText('トーラス');
   });
@@ -55,7 +55,7 @@ test.describe('ビューポート', () => {
     await page.mouse.move(to.x, to.y, { steps: 12 });
     await page.mouse.up();
     // 落ち着くまで待ってから、上に載った高さを見る
-    await expect.poll(() => page.evaluate(() => (window as Win).boxes[1].y)).toBeCloseTo(1, 3);
+    await expect.poll(() => page.evaluate(() => (window as Win).engine.world.objects[1].y)).toBeCloseTo(1, 3);
   });
 
   test('X で選んだ物を削除する', async ({ page }) => {
@@ -63,7 +63,7 @@ test.describe('ビューポート', () => {
     const p = await screenPosOf(page, 0);
     await page.mouse.click(p.x, p.y);
     await page.keyboard.press('x');
-    expect(await page.evaluate(() => (window as Win).boxes.length)).toBe(0);
+    expect(await page.evaluate(() => (window as Win).engine.world.objects.length)).toBe(0);
     await expect.poll(async () => (await uiState(page)).sel).toBeNull();
   });
 
@@ -73,9 +73,9 @@ test.describe('ビューポート', () => {
     await page.mouse.click(p.x, p.y);
     await page.getByRole('spinbutton', { name: '位置 X' }).fill('3');
     await page.keyboard.press('Enter');
-    expect(await page.evaluate(() => (window as Win).boxes[0].x)).toBe(3);
+    expect(await page.evaluate(() => (window as Win).engine.world.objects[0].x)).toBe(3);
     await page.getByRole('button', { name: '青', exact: true }).click();
-    expect(await page.evaluate(() => (window as Win).boxes[0].c)).toBe(3);
+    expect(await page.evaluate(() => (window as Win).engine.world.objects[0].c)).toBe(3);
   });
 
   test('テンキー 7 で上から、Home で元の視点に戻る。N でサイドバーを開け閉めする', async ({ page }) => {
@@ -97,7 +97,7 @@ test.describe('ビューポート', () => {
     await page.getByRole('menuitem', { name: '三角錐' }).click();
     await page.getByRole('button', { name: 'ファイル' }).click();
     await page.getByRole('menuitem', { name: '最初の状態に戻す' }).click();
-    expect(await page.evaluate(() => (window as Win).boxes.map((b: { s: number }) => b.s))).toEqual([0]);
+    expect(await page.evaluate(() => (window as Win).engine.world.objects.map((b: { s: number }) => b.s))).toEqual([0]);
   });
 });
 
@@ -106,7 +106,7 @@ test.describe('効果', () => {
     await open(page);
     await page.getByRole('tab', { name: '効果' }).click();
     await page.getByRole('checkbox', { name: '光るを使う' }).check();
-    await expect.poll(() => page.evaluate(() => !!(window as Win).getFx())).toBe(true);
+    await expect.poll(() => page.evaluate(() => !!(window as Win).engine.effects.fx)).toBe(true);
     // オフの効果のスライダーを動かすと、その効果がオンになる
     const slider = page.getByRole('slider', { name: '彩度' });
     await slider.focus();

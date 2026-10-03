@@ -19,7 +19,7 @@
     /* Linting */
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "erasableSyntaxOnly": true,
+    "erasableSyntaxOnly": false, /* エンジンのクラスは、コンストラクタ引数で依存を受け取る (parameter properties) */
     "noFallthroughCasesInSwitch": true
   },
   "include": ["src"]

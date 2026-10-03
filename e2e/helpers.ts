@@ -11,23 +11,23 @@ export async function open(page: Page) {
   page.on('pageerror', e => errors.push(String(e)));
   page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
   await page.goto('/?debug');
-  await page.waitForFunction(() => (window as Win).boxes?.length === 1 && (window as Win).ui);
+  await page.waitForFunction(() => (window as Win).engine?.world.objects.length === 1 && (window as Win).engine.viewport.mounted);
   return errors;
 }
 
 // エンジンの ui ストアの値
 export const uiState = (page: Page) => page.evaluate(() => {
-  const s = (window as Win).ui.get();
+  const s = (window as Win).engine.ui.state;
   return { frame: s.frame, playing: s.playing, start: s.start, end: s.end, sel: s.sel, viewInfo: s.viewInfo, toast: s.toast?.text ?? null };
 });
 
 // 置いた物 i の真ん中が、画面のどこに映っているか
 export const screenPosOf = (page: Page, i: number) => page.evaluate(i => {
-  const w = window as Win;
-  const b = w.boxes[i];
-  w.camera.updateMatrixWorld();
-  const v = new w.THREE.Vector3(b.x, b.py + b.h / 2, b.z).project(w.camera);
-  const r = w.gl.canvas.getBoundingClientRect();
+  const w = window as Win, { engine } = w;
+  const b = engine.world.objects[i], camera = engine.graph.camera;
+  camera.updateMatrixWorld();
+  const v = new w.THREE.Vector3(b.x, b.py + b.h / 2, b.z).project(camera);
+  const r = engine.viewport.canvas.getBoundingClientRect();
   return { x: r.left + (v.x + 1) / 2 * r.width, y: r.top + (1 - v.y) / 2 * r.height };
 }, i);
 
