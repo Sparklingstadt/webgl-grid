@@ -8,7 +8,7 @@ import { surfaceShader } from '../../core/materials/tree';
 import type { MaterialLibrary } from '../materials/MaterialLibrary';
 import type { SceneGraph } from '../render/SceneGraph';
 import type { System, Viewport } from '../render/Viewport';
-import type { Any, ModelObj, Obj } from '../types';
+import { isModel, type Any, type ModelObj, type Obj } from '../types';
 import type { UiChannel } from '../UiChannel';
 
 // 形の形状 (底が y = 0。形ごとに 1 つを、置いた物どうしで共有する)
@@ -62,7 +62,7 @@ export class World implements System {
 
   has(obj: Obj) { return this.objects.includes(obj); }
   find(id: number | null) { return this.objects.find(o => o.id === id) ?? null; }
-  get models() { return this.objects.filter((o): o is ModelObj => o.s === 3); }
+  get models() { return this.objects.filter(isModel); }
   get full() { return this.objects.length >= MAX_BOXES; }
 
   private add(base: Omit<Obj, 'node' | 'id'>, object3d: THREE.Object3D): Obj {
@@ -100,12 +100,12 @@ export class World implements System {
   }
   // スロット i のマテリアルを替える (null ならマテリアルなし)
   setSlot(obj: Obj, i: number, id: string | null) {
-    const target: THREE.Mesh = obj.s === 3 ? obj.model : obj.mesh!;
+    const target: THREE.Mesh = isModel(obj) ? obj.model : obj.mesh!;
     const list = [target.material].flat();
     if (i < 0 || i >= list.length) return;
     this.lib.release(list[i]);
     const m = this.lib.instance(id);
-    if (obj.s !== 3 && shapeDef(obj.s).flat) m.flatShading = true;
+    if (!isModel(obj) && shapeDef(obj.s).flat) m.flatShading = true;
     list[i] = m;
     target.material = Array.isArray(target.material) ? list : list[0];
     obj.slots[i] = id;
@@ -159,9 +159,9 @@ export class World implements System {
   }
   // 消した物の形状を片付ける
   dispose(obj: Obj) {
-    const mesh: THREE.Mesh | undefined = obj.s === 3 ? obj.model : obj.mesh;
+    const mesh: THREE.Mesh | undefined = isModel(obj) ? obj.model : obj.mesh;
     const base: THREE.BufferGeometry | undefined = mesh?.userData.baseGeometry; // デフォーマで変形する前の形
-    if (obj.s === 3) { disposeModel(obj.node); base?.dispose(); }
+    if (isModel(obj)) { disposeModel(obj.node); base?.dispose(); }
     else if (base) mesh!.geometry.dispose(); // 形は共有なので、変形した写しだけ捨てる
   }
   // 消した物を、objects の index 番目に置き直す (元に戻すとき)。材質はスロットのマテリアルから作り直す
@@ -169,10 +169,10 @@ export class World implements System {
     if (this.has(obj)) return;
     this.graph.scene.add(obj.node);
     this.objects.splice(Math.min(Math.max(index, 0), this.objects.length), 0, obj);
-    const target: THREE.Mesh = obj.s === 3 ? obj.model : obj.mesh!;
+    const target: THREE.Mesh = isModel(obj) ? obj.model : obj.mesh!;
     const list = obj.slots.map(id => {
       const m = this.lib.instance(id);
-      if (obj.s !== 3 && shapeDef(obj.s).flat) m.flatShading = true;
+      if (!isModel(obj) && shapeDef(obj.s).flat) m.flatShading = true;
       return m;
     });
     target.material = Array.isArray(target.material) ? list : list[0];
@@ -257,7 +257,7 @@ export class World implements System {
         if (!m.emissive) continue;
         m.userData.baseEmissive ??= m.emissive.clone();
         m.emissive.copy(m.userData.baseEmissive);
-        if (on) m.emissive.addScalar(obj.s === 3 ? 0.12 : 0.3); // トゥーン調のモデルは明るくなりやすいので控えめに
+        if (on) m.emissive.addScalar(isModel(obj) ? 0.12 : 0.3); // トゥーン調のモデルは明るくなりやすいので控えめに
       }
     });
   }

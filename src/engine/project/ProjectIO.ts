@@ -7,7 +7,7 @@ import type { LightSettings } from '../../core/light';
 import type { Engine } from '../Engine';
 import { applyTrait } from '../extend/Registry';
 import { download } from '../io/download';
-import type { Any, ModelObj, Obj } from '../types';
+import { isModel, kindOf, type Any, type ModelObj, type Obj } from '../types';
 import {
   PROJECT_EXT, PROJECT_FORMAT, PROJECT_VERSION, ProjectCancelled, parseData, projectBaseName, readEmbedded, writeEmbedded, writeReference,
   type PickMissing, type ProjectData, type ProjectStorage, type SavedAsset, type SavedImage, type SavedMaterial, type SavedObject,
@@ -110,9 +110,9 @@ export class ProjectIO {
     };
     const filesOf = (mesh: Any): string[] => [...(mesh.userData.usedFiles ?? [mesh.userData.sourceFile])].map(asset);
     const objects: SavedObject[] = e.world.objects.map(o => {
-      const base: SavedObject = { kind: o.light ? 'light' : o.s === 3 ? 'model' : 'shape', s: o.s, x: o.x, y: o.y, z: o.z, r: o.r, c: o.c, slots: [...o.slots], activeSlot: o.activeSlot };
+      const base: SavedObject = { kind: kindOf(o), s: o.s, x: o.x, y: o.y, z: o.z, r: o.r, c: o.c, slots: [...o.slots], activeSlot: o.activeSlot };
       for (const t of e.ext.traits.list()) base[t.key] = t.get(o) ?? null; // 物ごとの設定 (クローナー・デフォーマ・ライト・アドオンのもの)
-      if (o.s !== 3) return base;
+      if (!isModel(o)) return base;
       const inf: number[] | undefined = o.model.morphTargetInfluences;
       return {
         ...base,
@@ -130,7 +130,7 @@ export class ProjectIO {
     for (const img of lib.images.values()) {
       let from: SavedImage['from'] | null = null;
       e.world.objects.forEach((o, i) => {
-        const k = o.s === 3 ? (o.model.userData.convertedImages ?? []).indexOf(img.id) : -1;
+        const k = isModel(o) ? (o.model.userData.convertedImages ?? []).indexOf(img.id) : -1;
         if (k >= 0 && !from) from = { object: i, index: k };
       });
       const k = e.stage.model ? (e.stage.model.userData.convertedImages ?? []).indexOf(img.id) : -1;
@@ -210,7 +210,7 @@ export class ProjectIO {
       if (obj) Object.assign(obj, { x: so.x, z: so.z, r: so.r, y: so.y, py: so.y, vy: 0, activeSlot: so.activeSlot });
       objs.push(obj);
     }
-    for (const obj of objs) if (obj?.s === 3) await e.physics.start(obj as ModelObj);
+    for (const obj of objs) if (isModel(obj)) await e.physics.start(obj);
 
     // 画像を対応づけ、保存したマテリアルを作ってスロットに入れる
     const imageId = new Map<string, string>();
@@ -244,8 +244,8 @@ export class ProjectIO {
     // ポーズ・表情・キーフレーム・髪
     data.objects.forEach((so, i) => {
       const obj = objs[i];
-      if (obj?.s !== 3 || !so.pose) return;
-      const m = obj as ModelObj;
+      if (!isModel(obj) || !so.pose) return;
+      const m = obj;
       m.pose = new Map(so.pose);
       const inf: number[] | undefined = m.model.morphTargetInfluences;
       if (inf && so.morphs) so.morphs.forEach((v, k) => { inf[k] = v; });
@@ -259,7 +259,7 @@ export class ProjectIO {
     const byMotion = new Map<string, ModelObj[]>();
     data.objects.forEach((so, i) => {
       const obj = objs[i];
-      if (obj?.s === 3 && so.motion) byMotion.set(so.motion, [...(byMotion.get(so.motion) ?? []), obj as ModelObj]);
+      if (isModel(obj) && so.motion) byMotion.set(so.motion, [...(byMotion.get(so.motion) ?? []), obj]);
     });
     for (const [id, targets] of byMotion) { const f = fileOf(id); if (f) await e.motion.load([f], targets); }
     const camFile = fileOf(data.cameraMotion);

@@ -3,8 +3,28 @@ import { hexToRgb } from '../../core/hsv';
 import { hexToLinear, linearToHex } from '../../core/materials/color';
 import type { Color3, SocketDef, SocketValue } from '../../core/materials/nodes';
 import { BSlider } from './BSlider';
+import { BSelect, type SelectOption } from './controls/BSelect';
 import { ColorPicker } from './controls/ColorPicker';
 import { Popover } from './controls/Popover';
+
+// 見出しの付いた選択の欄 (左に見出し、右に選択)。ariaLabel を省くと見出しと同じ
+export function SelectField<T extends string | number>({ label, ariaLabel, value, options, onChange }: {
+  label: string; ariaLabel?: string; value: T; options: readonly SelectOption<T>[]; onChange: (v: T) => void;
+}) {
+  return (
+    <div className="color-field">
+      <span>{label}</span>
+      <BSelect<T> label={ariaLabel ?? label} value={value} onChange={onChange} options={[...options]} />
+    </div>
+  );
+}
+// 一覧 ({ key, name }) から選ぶ欄
+export const keyOptions = <K extends string>(list: readonly { key: K; name: string }[]) => list.map(x => ({ value: x.key, label: x.name }));
+
+// 画面の色 ("#rrggbb") の設定の欄 (欄はリニアな色で扱う)
+export function HexColorField({ label, value, onChange }: { label: string; value: string; onChange: (hex: string) => void }) {
+  return <ColorField label={label} value={hexToLinear(value)} onChange={c => onChange(linearToHex(c))} />;
+}
 
 // 色の欄。値はリニアな色 (マテリアルと同じ)、欄には画面の色で見せる。押すと色選びの窓が開く
 export function ColorField({ label, value, onChange, compact }: { label: string; value: Color3; onChange: (c: Color3) => void; compact?: boolean }) {

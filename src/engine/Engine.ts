@@ -1,5 +1,5 @@
 import { channelKeys, keyFrames, type Channel, type Curve } from '../core/animation';
-import { MAX_CLONES, clonerLayout, normalizeCloner, type ClonerSettings } from '../core/cloner';
+import { MAX_CLONES, clonerLayout, normalizeCloner, placeAround, type ClonerSettings } from '../core/cloner';
 import { normalizeDeformers, type Deformer } from '../core/deform';
 import type { LightSettings, LightType } from '../core/light';
 import { FPS, MAX_BOXES } from '../core/constants';
@@ -31,7 +31,7 @@ import { Effects } from './render/Effects';
 import { Environment } from './render/Environment';
 import { SceneGraph } from './render/SceneGraph';
 import { Viewport } from './render/Viewport';
-import type { ModelObj, Obj } from './types';
+import { isModel, isShape, type ModelObj, type Obj } from './types';
 import { UiChannel } from './UiChannel';
 import { CameraController } from './view/CameraController';
 import { InputController } from './view/InputController';
@@ -227,13 +227,12 @@ export class Engine {
   bakeCloner() {
     const o = this.selection.current;
     if (!o?.cloner) return;
-    if (o.s === 3) { this.ui.toast('MMD モデルのクローンは、1 つずつの物にはできません'); return; }
+    if (isModel(o)) { this.ui.toast('MMD モデルのクローンは、1 つずつの物にはできません'); return; }
     const layout = clonerLayout(o.cloner, MAX_CLONES.shape).sort((a, b) => a.y - b.y); // 下の段から置く (上の段は積み重なる)
     const room = MAX_BOXES - this.world.objects.length + 1;
     if (layout.length > room) { this.ui.toast(`置ける物は ${MAX_BOXES} 個までなので、クローン ${layout.length} 個を 1 つずつの物にはできません (あと ${room} 個まで)`, 6000); return; }
-    const { x, z, r } = o, cos = Math.cos(r), sin = Math.sin(r), slot = o.slots[0];
-    // 元の物の向きで回してから、元の物の位置へ。最初のクローンには元の物を使う (マテリアルを手放さないように)
-    const at = (p: { x: number; z: number }) => [x + p.x * cos + p.z * sin, z - p.x * sin + p.z * cos];
+    const { x, z, r } = o, slot = o.slots[0];
+    // 最初のクローンには元の物を使う (マテリアルを手放さないように)
     this.cloners.set(o, null);
     layout.forEach((p, i) => {
       const obj = i === 0 ? o : this.world.addShape(o.s, 0, 0, o.c);
@@ -241,8 +240,7 @@ export class Engine {
         this.world.setSlot(obj, 0, slot);
         if (o.deformers) this.deformers.set(obj, structuredClone(o.deformers)); // デフォーマも同じに
       }
-      [obj.x, obj.z] = at(p);
-      obj.r = r + p.ry;
+      Object.assign(obj, placeAround(p, x, z, r));
     });
     this.world.settle();
     this.selection.select(o);
@@ -252,7 +250,7 @@ export class Engine {
 
   setObjColor(c: number) {
     const o = this.selection.current;
-    if (!o || o.s === 3) return;
+    if (!isShape(o)) return;
     this.world.setShapeColor(o, c);
     this.viewport.requestDraw();
   }

@@ -11,7 +11,7 @@ import type { Engine } from '../Engine';
 import { nameOf } from '../world/Selection';
 import { projectBaseName } from '../project/ProjectIO';
 import type { FxKey, FxLevel } from '../render/postfx';
-import { isModel, type Any, type ModelObj, type Obj } from '../types';
+import { isModel, kindOf, type Any, type ModelObj, type Obj } from '../types';
 
 // --- 外部 (MCP) から使える操作 ---
 // 名前 → (エンジン, 引数) → 結果 (JSON にできる値)。ファイルは base64 でやりとりする。
@@ -57,7 +57,7 @@ export function sceneState(e: Engine) {
     selected: e.selection.current?.id ?? null,
     objects: e.world.objects.map(o => ({
       id: o.id,
-      kind: o.light ? 'light' : isModel(o) ? 'model' : 'shape',
+      kind: kindOf(o),
       name: nameOf(o),
       ...(o.light ? { light: o.light } : {}),
       position: [r3(o.x), r3(o.y), r3(o.z)],
@@ -68,6 +68,7 @@ export function sceneState(e: Engine) {
       materials: o.slots.map(id => (id ? lib.materials.get(id)?.name ?? null : null)),
       cloner: o.cloner ?? null,
       deformers: o.deformers ?? [],
+      ...(o.ext && Object.keys(o.ext).length ? { addons: o.ext } : {}), // アドオンの、物ごとの値
     })),
     stage: e.stage.model?.name ?? null,
     music: e.music.file?.name ?? null,
@@ -76,6 +77,8 @@ export function sceneState(e: Engine) {
     effects: { enabled: e.ui.state.fxState, levels: e.ui.state.fxLevel },
     output: e.output.settings,
     scene: e.environment.settings,
+    // アドオンの場面の値 (名前は "アドオンの id.名前")
+    addons: Object.fromEntries(e.ext.parts.list().filter(p => p.key.includes('.')).map(p => [p.key, p.save()])),
   };
 }
 

@@ -1,4 +1,4 @@
-import { hexToRgb, rgbToHex } from './hsv';
+import { bool, hex, num, oneOf } from './normalize';
 
 // --- ライトのオブジェクト (Blender のライト): ポイント・サン・スポット・エリア ---
 // 置いた物と同じく位置 (x, z) と向き (縦軸まわりの回転) を持ち、高さは自分で決める (積み重ねには加わらない)。
@@ -42,7 +42,7 @@ export const lightDefault = (type: LightType): LightSettings => ({
 interface OldLight { intensity?: number; angleDeg?: number; softness?: number; width?: number; depth?: number }
 
 export function normalizeLight(o: (Partial<LightSettings> & OldLight) | undefined): LightSettings {
-  const type = LIGHT_TYPES.some(t => t.key === o?.type) ? o!.type! : 'point';
+  const type = oneOf(o?.type, LIGHT_TYPES, 'point');
   const d = lightDefault(type), s = { ...o };
   // 前の版 (明るさ intensity を持つ) から: 明るさ → パワー、広がり (半分の角度) → スポットサイズ、縁のぼけ → ブレンド、幅・奥行き → サイズ
   if (s.power === undefined && typeof s.intensity === 'number') {
@@ -52,16 +52,15 @@ export function normalizeLight(o: (Partial<LightSettings> & OldLight) | undefine
     if (typeof s.softness === 'number') s.blend = s.softness;
     if (typeof s.width === 'number') { s.size = s.width; s.sizeY = s.depth; s.shape = s.width === s.depth ? 'square' : 'rectangle'; }
   }
-  const num = (v: unknown, dv: number, lo: number, hi: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(Math.max(v, lo), hi) : dv);
   return {
-    type, color: typeof s.color === 'string' && hexToRgb(s.color) ? rgbToHex(hexToRgb(s.color)!) : d.color,
+    type, color: hex(s.color, d.color),
     power: num(s.power, d.power, 0, 1e6), strength: num(s.strength, d.strength, 0, 1000),
     radius: num(s.radius, d.radius, 0, 10), angleDeg: num(s.angleDeg, d.angleDeg, 0, 180),
     spotSizeDeg: num(s.spotSizeDeg, d.spotSizeDeg, 1, 180), blend: num(s.blend, d.blend, 0, 1),
-    shape: AREA_SHAPES.some(a => a.key === s.shape) ? s.shape! : d.shape,
+    shape: oneOf(s.shape, AREA_SHAPES, d.shape),
     size: num(s.size, d.size, 0.01, 100), sizeY: num(s.sizeY, d.sizeY, 0.01, 100),
     height: num(s.height, d.height, 0.05, 100), tiltDeg: num(s.tiltDeg, d.tiltDeg, -180, 180), range: num(s.range, d.range, 0, 1000),
-    shadows: type === 'area' ? false : typeof s.shadows === 'boolean' ? s.shadows : d.shadows,
+    shadows: type !== 'area' && bool(s.shadows, d.shadows),
   };
 }
 

@@ -1,6 +1,6 @@
 import { overlaps, topOf } from '../../core/stacking';
 import type { Viewport } from '../render/Viewport';
-import type { Obj } from '../types';
+import { isModel, type Obj } from '../types';
 import type { ColorPicker } from '../world/ColorPicker';
 import type { Selection } from '../world/Selection';
 import type { World } from '../world/World';
@@ -255,7 +255,7 @@ export class InputController {
     if (this.wasDragged || e.detail > 1 || performance.now() < this.ignoreClicksUntil) return;
     const picked = this.camera.pick(this.camera.screenRay(e.clientX, e.clientY));
     this.selection.select(picked?.obj ?? null);
-    if (!picked || picked.obj.s === 3 || this.lastPointerType !== 'touch') return;
+    if (!picked || isModel(picked.obj) || this.lastPointerType !== 'touch') return;
     clearTimeout(this.colorTimer);
     const { clientX: x, clientY: y } = e;
     this.colorTimer = setTimeout(() => { if (this.world.has(picked.obj)) this.picker.open(picked.obj, x, y); }, DOUBLE_TAP_MS);

@@ -1,4 +1,4 @@
-import { hexToRgb, rgbToHex } from './hsv';
+import { bool, hex, num, oneOf } from './normalize';
 
 // --- シーンの設定 (Cinema 4D の空・床・太陽): 背景の空、床、太陽の光、部屋の光 (環境光) ---
 // 色は画面の色 (sRGB) の "#rrggbb"
@@ -20,19 +20,16 @@ export const SCENE_DEFAULT: SceneSettings = {
   environment: 0.3,
 };
 
-const hex = (v: unknown, d: string) => (typeof v === 'string' && hexToRgb(v) ? rgbToHex(hexToRgb(v)!) : d);
-const num = (v: unknown, d: number, lo: number, hi: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(Math.max(v, lo), hi) : d);
-
 export function normalizeScene(s: Partial<{ [K in keyof SceneSettings]: Partial<SceneSettings[K]> }> | undefined): SceneSettings {
   const d = SCENE_DEFAULT, o = s ?? {};
   const sky = o.sky ?? {}, floor = o.floor ?? {}, sun = o.sun ?? {};
   return {
-    sky: { mode: SKY_MODES.some(m => m.key === sky.mode) ? sky.mode! : d.sky.mode, top: hex(sky.top, d.sky.top), bottom: hex(sky.bottom, d.sky.bottom) },
-    floor: { enabled: typeof floor.enabled === 'boolean' ? floor.enabled : d.floor.enabled, color: hex(floor.color, d.floor.color), roughness: num(floor.roughness, d.floor.roughness, 0, 1) },
+    sky: { mode: oneOf(sky.mode, SKY_MODES, d.sky.mode), top: hex(sky.top, d.sky.top), bottom: hex(sky.bottom, d.sky.bottom) },
+    floor: { enabled: bool(floor.enabled, d.floor.enabled), color: hex(floor.color, d.floor.color), roughness: num(floor.roughness, d.floor.roughness, 0, 1) },
     sun: {
       intensity: num(sun.intensity, d.sun.intensity, 0, 10), color: hex(sun.color, d.sun.color),
       azimuthDeg: num(sun.azimuthDeg, d.sun.azimuthDeg, -360, 360), elevationDeg: num(sun.elevationDeg, d.sun.elevationDeg, 1, 90),
-      shadows: typeof sun.shadows === 'boolean' ? sun.shadows : d.sun.shadows,
+      shadows: bool(sun.shadows, d.sun.shadows),
     },
     environment: num(o.environment, d.environment, 0, 5),
   };

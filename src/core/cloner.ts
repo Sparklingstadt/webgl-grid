@@ -1,3 +1,6 @@
+import { int, num, oneOf, vec3 as vec } from './normalize';
+import { seededRandom } from './random';
+
 // --- クローナー (Cinema 4D のクローナー): 物を直線・放射・グリッドに並べる ---
 // 並べる場所は、元の物 (クローナー) の位置と向きから見た座標。元の物を動かす・回すと、クローンも一緒に動く
 export type ClonerMode = 'linear' | 'radial' | 'grid';
@@ -52,25 +55,21 @@ export const CLONER_DEFAULT: ClonerSettings = {
 // 数の上限 (MMD モデルは 1 つずつ骨を動かして描くので少なめ)
 export const MAX_CLONES = { shape: 400, model: 25 };
 
-const int = (v: number, lo: number, hi: number) => Math.min(Math.max(Math.round(Number.isFinite(v) ? v : lo), lo), hi);
-const num = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
-const vec = (v: unknown, d: Vec3): Vec3 => (Array.isArray(v) ? d.map((x, i) => num(v[i], x)) as Vec3 : [...d]);
-
 // 保存されていた・外から渡された設定を、使える値にそろえる
 export function normalizeCloner(s: Partial<ClonerSettings> | undefined): ClonerSettings {
   const d = CLONER_DEFAULT, o = s ?? {};
   const r: Partial<ClonerSettings['random']> = o.random ?? {};
   return {
-    mode: CLONER_MODES.some(m => m.key === o.mode) ? o.mode! : d.mode,
-    count: int(num(o.count, d.count), 1, MAX_CLONES.shape),
+    mode: oneOf(o.mode, CLONER_MODES, d.mode),
+    count: int(o.count, d.count, 1, MAX_CLONES.shape),
     step: vec(o.step, d.step), stepRotDeg: num(o.stepRotDeg, d.stepRotDeg),
-    radius: Math.max(num(o.radius, d.radius), 0), startDeg: num(o.startDeg, d.startDeg), endDeg: num(o.endDeg, d.endDeg),
+    radius: num(o.radius, d.radius, 0), startDeg: num(o.startDeg, d.startDeg), endDeg: num(o.endDeg, d.endDeg),
     align: typeof o.align === 'boolean' ? o.align : d.align,
-    grid: vec(o.grid, d.grid).map(n => int(n, 1, 50)) as Vec3, spacing: vec(o.spacing, d.spacing),
-    random: { position: Math.max(num(r.position, 0), 0), rotationDeg: Math.max(num(r.rotationDeg, 0), 0), seed: int(num(r.seed, 1), 0, 1e9) },
+    grid: vec(o.grid, d.grid).map(n => int(n, 1, 1, 50)) as Vec3, spacing: vec(o.spacing, d.spacing),
+    random: { position: num(r.position, 0, 0), rotationDeg: num(r.rotationDeg, 0, 0), seed: int(r.seed, 1, 0, 1e9) },
     effectors: (Array.isArray(o.effectors) ? o.effectors : []).filter(e => EFFECTOR_KINDS.some(k => k.key === e?.kind)).slice(0, 16).map(e => ({
       kind: e.kind, enabled: e.enabled !== false, position: vec(e.position, [0, 0, 0]), rotationDeg: num(e.rotationDeg, 0),
-      scale: Math.min(Math.max(num(e.scale, 1), 0.01), 100), frames: Math.min(Math.max(num(e.frames, 0), 0), MAX_DELAY_FRAMES),
+      scale: num(e.scale, 1, 0.01, 100), frames: num(e.frames, 0, 0, MAX_DELAY_FRAMES),
     })),
   };
 }
@@ -81,16 +80,10 @@ export function cloneCount(s: ClonerSettings, max: number) {
   return Math.min(n, max);
 }
 
-// 同じシードなら同じばらつきになる乱数 (mulberry32)
-function random(seed: number) {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
+// クローンの置き場所を、元の物 (底面の中心 x, z と向き r) の外から見た位置と向きにする
+export function placeAround(p: Placement, x: number, z: number, r: number) {
+  const c = Math.cos(r), s = Math.sin(r);
+  return { x: x + p.x * c + p.z * s, z: z - p.x * s + p.z * c, r: r + p.ry };
 }
 
 // クローンの置き場所。max 個まで
@@ -118,7 +111,7 @@ export function clonerLayout(s: ClonerSettings, max: number): Placement[] {
   }
   const { position, rotationDeg, seed } = s.random;
   if (position || rotationDeg) {
-    const rnd = random(seed);
+    const rnd = seededRandom(seed);
     for (const p of out) {
       p.x += (rnd() * 2 - 1) * position;
       p.z += (rnd() * 2 - 1) * position;

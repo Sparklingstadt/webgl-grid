@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CLONER_DEFAULT, clonerLayout, cloneCount, newEffector, normalizeCloner, type ClonerSettings } from './cloner';
+import { CLONER_DEFAULT, clonerLayout, cloneCount, newEffector, normalizeCloner, placeAround, type ClonerSettings } from './cloner';
 
 const s = (p: Partial<ClonerSettings>): ClonerSettings => normalizeCloner({ ...CLONER_DEFAULT, ...p });
 const r2 = (p: { x: number; y: number; z: number; ry: number }) => [p.x, p.y, p.z, p.ry].map(v => Math.round(v * 100) / 100 + 0);
@@ -57,5 +57,14 @@ describe('クローナーの並べ方', () => {
   it('エフェクタの設定をそろえる (知らない種類は外し、遅れと大きさは範囲に収める)', () => {
     const n = normalizeCloner({ effectors: [{ kind: 'shader' } as never, { kind: 'delay', frames: 9999, scale: -1 } as never] });
     expect(n.effectors).toEqual([{ kind: 'delay', enabled: true, position: [0, 0, 0], rotationDeg: 0, scale: 0.01, frames: 300 }]);
+  });
+});
+
+describe('クローンの置き場所を外から見た位置にする', () => {
+  it('元の物の向きで回してから、元の物の位置へずらす', () => {
+    const p = { x: 1, y: 0, z: 0, ry: 0.2, scale: 1, delay: 0 };
+    expect(placeAround(p, 5, 3, 0)).toEqual({ x: 6, z: 3, r: 0.2 });
+    const q = placeAround(p, 5, 3, Math.PI / 2); // 縦軸まわりに 90° (+X は -Z へ)
+    expect([+q.x.toFixed(6), +q.z.toFixed(6), +q.r.toFixed(6)]).toEqual([5, 2, +(Math.PI / 2 + 0.2).toFixed(6)]);
   });
 });

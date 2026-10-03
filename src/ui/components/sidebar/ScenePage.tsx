@@ -1,10 +1,8 @@
-import { hexToLinear, linearToHex } from '../../../core/materials/color';
 import { SKY_MODES, type SkyMode } from '../../../core/scene';
 import { useEngine, useUi } from '../../EngineContext';
 import { BSlider } from '../BSlider';
 import { BCheck } from '../controls/BCheck';
-import { BSelect } from '../controls/BSelect';
-import { ColorField } from '../fields';
+import { HexColorField, keyOptions, SelectField } from '../fields';
 import { Panel } from './Panel';
 
 // --- シーン (Cinema 4D の空・床・太陽、Blender のワールド): 背景の空・床・太陽の光・部屋の光 ---
@@ -12,17 +10,11 @@ export function ScenePage() {
   const engine = useEngine();
   const s = useUi(st => st.scene);
   const env = engine.environment;
-  // 色の欄はリニアな色、設定は画面の色 ("#rrggbb")
-  const color = (label: string, hex: string, set: (hex: string) => void) =>
-    <ColorField label={label} value={hexToLinear(hex)} onChange={c => set(linearToHex(c))} />;
+  const color = (label: string, hex: string, set: (hex: string) => void) => <HexColorField label={label} value={hex} onChange={set} />;
   return (
     <>
       <Panel title="空">
-        <div className="color-field">
-          <span>空</span>
-          <BSelect<SkyMode> label="空の種類" value={s.sky.mode} onChange={mode => env.set({ sky: { mode } })}
-                   options={SKY_MODES.map(m => ({ value: m.key, label: m.name }))} />
-        </div>
+        <SelectField<SkyMode> label="空" ariaLabel="空の種類" value={s.sky.mode} onChange={mode => env.set({ sky: { mode } })} options={keyOptions(SKY_MODES)} />
         {s.sky.mode !== 'viewport' && color(s.sky.mode === 'gradient' ? '上の色' : '色', s.sky.top, top => env.set({ sky: { top } }))}
         {s.sky.mode === 'gradient' && color('地平線の色', s.sky.bottom, bottom => env.set({ sky: { bottom } }))}
         <div className="note">背景に描く空。レンダリングした画像・動画にも写ります</div>

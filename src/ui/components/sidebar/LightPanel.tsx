@@ -1,11 +1,9 @@
 import { AREA_SHAPES, LIGHT_TYPES, type AreaShape, type LightType } from '../../../core/light';
-import { hexToLinear, linearToHex } from '../../../core/materials/color';
 import type { SelInfo } from '../../../engine';
 import { useEngine } from '../../EngineContext';
 import { BSlider } from '../BSlider';
 import { BCheck } from '../controls/BCheck';
-import { BSelect } from '../controls/BSelect';
-import { ColorField } from '../fields';
+import { HexColorField, keyOptions, SelectField } from '../fields';
 import { Panel } from './Panel';
 
 // --- ライト (Blender のライトのプロパティ): 種類・色・パワー (サンは強さ)・半径・スポットサイズとブレンド・エリアの形状とサイズ・影 ---
@@ -16,12 +14,8 @@ export function LightPanel({ sel }: { sel: SelInfo }) {
   const t = l.type;
   return (
     <Panel title="ライト" head={t !== 'area' ? <BCheck checked={l.shadows} label="影" onChange={shadows => set({ shadows })} /> : undefined}>
-      <div className="color-field">
-        <span>種類</span>
-        <BSelect<LightType> label="ライトの種類" value={t} onChange={type => set({ type })}
-                 options={LIGHT_TYPES.map(x => ({ value: x.key, label: x.name }))} />
-      </div>
-      <ColorField label="カラー" value={hexToLinear(l.color)} onChange={c => set({ color: linearToHex(c) })} />
+      <SelectField<LightType> label="種類" ariaLabel="ライトの種類" value={t} onChange={type => set({ type })} options={keyOptions(LIGHT_TYPES)} />
+      <HexColorField label="カラー" value={l.color} onChange={color => set({ color })} />
       {t === 'sun'
         ? <BSlider label="強さ" value={l.strength} min={0} max={20} step={0.05} digits={2} unit=" W/m²" onChange={strength => set({ strength })} />
         : <BSlider label="パワー" value={l.power} min={0} max={t === 'area' ? 500 : 5000} step={t === 'area' ? 1 : 10} digits={0} unit=" W" onChange={power => set({ power })} />}
@@ -32,11 +26,7 @@ export function LightPanel({ sel }: { sel: SelInfo }) {
         <BSlider label="ブレンド" value={l.blend} min={0} max={1} step={0.01} onChange={blend => set({ blend })} />
       </>}
       {t === 'area' && <>
-        <div className="color-field">
-          <span>形状</span>
-          <BSelect<AreaShape> label="エリアの形状" value={l.shape} onChange={shape => set({ shape })}
-                   options={AREA_SHAPES.map(x => ({ value: x.key, label: x.name }))} />
-        </div>
+        <SelectField<AreaShape> label="形状" ariaLabel="エリアの形状" value={l.shape} onChange={shape => set({ shape })} options={keyOptions(AREA_SHAPES)} />
         <BSlider label={l.shape === 'square' ? 'サイズ' : 'サイズ X'} value={l.size} min={0.1} max={10} step={0.1} digits={1} unit=" m" onChange={size => set({ size })} />
         {l.shape === 'rectangle' && <BSlider label="サイズ Y" value={l.sizeY} min={0.1} max={10} step={0.1} digits={1} unit=" m" onChange={sizeY => set({ sizeY })} />}
       </>}

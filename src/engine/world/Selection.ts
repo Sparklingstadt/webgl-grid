@@ -2,7 +2,7 @@ import type * as THREE from 'three';
 import { Emitter } from '../../core/events';
 import { lightName } from '../../core/light';
 import { shapeName } from '../../core/shapes';
-import { isModel, type ModelObj, type Obj } from '../types';
+import { isModel, kindOf, type ModelObj, type Obj } from '../types';
 import type { UiChannel } from '../UiChannel';
 import type { World } from './World';
 
@@ -37,7 +37,7 @@ export class Selection {
     const name = nameOf(o);
     if (prev && prev.id === o.id && prev.x === o.x && prev.y === o.y && prev.z === o.z && prev.r === o.r &&
         prev.c === o.c && prev.animated === !!o.animated && prev.name === name && prev.cloner === (o.cloner ?? null) && prev.deformers === (o.deformers ?? null) && prev.light === (o.light ?? null)) return;
-    this.ui.set({ sel: { id: o.id, kind: o.light ? 'light' : o.s === 3 ? 'model' : 'shape', name, c: o.c, x: o.x, y: o.y, z: o.z, r: o.r, animated: !!o.animated, cloner: o.cloner ?? null, deformers: o.deformers ?? null, light: o.light ?? null } });
+    this.ui.set({ sel: { id: o.id, kind: kindOf(o), name, c: o.c, x: o.x, y: o.y, z: o.z, r: o.r, animated: !!o.animated, cloner: o.cloner ?? null, deformers: o.deformers ?? null, light: o.light ?? null } });
   }
 
   // 描く前: 輪郭線 (OutlineEffect) の設定を、マテリアルの輪郭線 (outlineBase) から作る。
@@ -53,7 +53,7 @@ export class Selection {
           const base = m.userData.outlineBase ?? { visible: false };
           m.userData.outlineParameters = on
             ? { ...base, visible: true, color: SELECT_COLOR, alpha: 1,
-                thickness: obj.s === 3 ? Math.max(base.thickness ?? 0, 0.004) : 0.008 }
+                thickness: isModel(obj) ? Math.max(base.thickness ?? 0, 0.004) : 0.008 }
             : base;
         }
       });

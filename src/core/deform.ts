@@ -1,3 +1,5 @@
+import { num } from './normalize';
+
 // --- デフォーマ (Cinema 4D のデフォーマ): 形を曲げる・ねじる・細くする・ふくらませる ---
 // 物の大きさ (バウンディングボックス) の範囲で、軸にそって変形する。軸の向きの 0 (底) 〜 1 (上) を t とする
 export type DeformerKind = 'bend' | 'twist' | 'taper' | 'bulge';
@@ -23,12 +25,11 @@ export const activeDeformers = (list: Deformer[] | null | undefined) => (list ??
 
 export function normalizeDeformers(list: unknown): Deformer[] {
   if (!Array.isArray(list)) return [];
-  const num = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
   return list.filter(d => DEFORMER_KINDS.some(k => k.key === d?.kind)).slice(0, 16).map(d => {
     const k = DEFORMER_KINDS.find(x => x.key === d.kind)!;
     return {
       kind: d.kind, enabled: d.enabled !== false, axis: (['x', 'y', 'z'] as const).includes(d.axis) ? d.axis : 'y',
-      amount: Math.min(Math.max(num(d.amount, k.def), k.min), k.max), directionDeg: num(d.directionDeg, 0),
+      amount: num(d.amount, k.def, k.min, k.max), directionDeg: num(d.directionDeg, 0),
     };
   });
 }

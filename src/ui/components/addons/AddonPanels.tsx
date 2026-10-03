@@ -1,11 +1,9 @@
 import { useEffect, useRef } from 'react';
-import { hexToLinear, linearToHex } from '../../../core/materials/color';
 import type { PanelDef, PropDef } from '../../../engine/extend/Registry';
 import { useEngine, useUi } from '../../EngineContext';
 import { BSlider } from '../BSlider';
 import { BCheck } from '../controls/BCheck';
-import { BSelect } from '../controls/BSelect';
-import { ColorField } from '../fields';
+import { HexColorField, SelectField } from '../fields';
 import { NumField } from '../NumField';
 import { Panel } from '../sidebar/Panel';
 
@@ -55,14 +53,9 @@ function PropRow({ prop: p }: { prop: PropDef }) {
     case 'boolean':
       return <BCheck checked={p.get()} onChange={v => p.set(v)}>{p.label}</BCheck>;
     case 'select':
-      return (
-        <div className="color-field">
-          <span>{p.label}</span>
-          <BSelect<string> label={p.label} value={p.get()} onChange={v => p.set(v)} options={p.options} />
-        </div>
-      );
+      return <SelectField<string> label={p.label} value={p.get()} onChange={v => p.set(v)} options={p.options} />;
     case 'color':
-      return <ColorField label={p.label} value={hexToLinear(p.get())} onChange={c => p.set(linearToHex(c))} />;
+      return <HexColorField label={p.label} value={p.get()} onChange={v => p.set(v)} />;
     case 'button':
       return <button type="button" className="bbtn" onClick={() => p.run()}>{p.label}</button>;
     case 'text':

@@ -4,7 +4,7 @@ import { useEngine, useUi } from '../../EngineContext';
 import { BSlider } from '../BSlider';
 import { BCheck } from '../controls/BCheck';
 import { BSelect } from '../controls/BSelect';
-import { ColorField, SocketField, TextField } from '../fields';
+import { ColorField, SelectField, SocketField, TextField } from '../fields';
 import { Empty, Panel } from './Panel';
 
 // --- マテリアル (Blender の「マテリアル」プロパティ) ---
@@ -48,11 +48,8 @@ export function MaterialPage({ onOpenShaderEditor }: { onOpenShaderEditor: () =>
       {mat && <Surface onOpenShaderEditor={onOpenShaderEditor} />}
       {mat && (
         <Panel title="設定">
-          <div className="color-field">
-            <span>ブレンド</span>
-            <BSelect label="ブレンドモード" value={mat.settings.blend} onChange={blend => engine.materials.setSettings({ blend })}
-                     options={[{ value: 'opaque', label: '不透明' }, { value: 'blend', label: 'アルファブレンド' }, { value: 'clip', label: 'アルファクリップ' }] as const} />
-          </div>
+          <SelectField label="ブレンド" ariaLabel="ブレンドモード" value={mat.settings.blend} onChange={blend => engine.materials.setSettings({ blend })}
+                       options={[{ value: 'opaque', label: '不透明' }, { value: 'blend', label: 'アルファブレンド' }, { value: 'clip', label: 'アルファクリップ' }] as const} />
           <BCheck checked={mat.settings.backfaceCulling} onChange={backfaceCulling => engine.materials.setSettings({ backfaceCulling })}>裏面を表示しない</BCheck>
         </Panel>
       )}
