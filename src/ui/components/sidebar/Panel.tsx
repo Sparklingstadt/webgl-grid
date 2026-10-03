@@ -15,6 +15,6 @@ export const Empty = ({ children }: { children: ReactNode }) => <div className="
 // MMD モデルを選んでいるときだけ中身を出す (中身はモデルが変わるたびに作り直す)
 export function NeedModel({ children }: { children: (id: number) => ReactNode }) {
   const sel = useUi(s => s.sel);
-  if (sel?.kind !== 'model') return <Panel title="モデル"><Empty>MMD モデルをクリックして選ぶと、表情とボーンを動かせます。</Empty></Panel>;
+  if (sel?.kind !== 'model') return <Panel title="モデル"><Empty>MMD モデルをクリックして選ぶと、ここで材質・表情・ボーンを変えられます。</Empty></Panel>;
   return <>{children(sel.id)}</>;
 }

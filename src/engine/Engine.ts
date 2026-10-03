@@ -3,6 +3,7 @@ import type { BoneValue } from '../core/types';
 import { Clock } from './anim/Clock';
 import { Keyframes } from './anim/Keyframes';
 import { Music } from './anim/Music';
+import { Materials, type MaterialProps } from './mmd/Materials';
 import { MmdLoader } from './mmd/MmdLoader';
 import { Motion } from './mmd/Motion';
 import { Physics } from './mmd/Physics';
@@ -47,6 +48,7 @@ export class Engine {
   readonly effects = new Effects(this.viewport, this.ui, () => this.camera.focusPoint());
   readonly loader = new MmdLoader(this.ui, () => this.viewport.requestDraw());
   readonly vpd = new VpdIO(this.posing, this.viewport, this.ui);
+  readonly materials = new Materials(this.viewport, this.ui);
   input: InputController | null = null;
 
   constructor() {
@@ -244,6 +246,12 @@ export class Engine {
   boneNote(i: number) { return this.model ? this.posing.boneNote(this.model, i) : ''; }
   setBone(i: number, key: keyof BoneValue, v: number) { if (this.model) this.posing.setBone(this.model, i, key, v); }
   resetPose() { if (this.model) this.posing.resetPose(this.model); }
+  // 材質 (サイドバーの「マテリアル」)
+  materialList() { return this.model ? this.materials.list(this.model) : []; }
+  material(i: number) { return this.model ? this.materials.get(this.model, i) : null; }
+  setMaterial(i: number, patch: Partial<Omit<MaterialProps, 'name'>>) { if (this.model) this.materials.set(this.model, i, patch); }
+  resetMaterial(i: number) { if (this.model) this.materials.reset(this.model, i); }
+  resetAllMaterials() { if (this.model) this.materials.resetAll(this.model); }
   // 髪の形を保つ錘を外して、髪を重力で垂らす (MMD とは見た目が変わる)
   setHairHang(on: boolean) {
     if (!this.model) return;

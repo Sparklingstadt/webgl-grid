@@ -101,6 +101,20 @@ canvas#c.over-box { cursor: pointer; }
 .note { color: var(--dim); font-size: 11px; }
 .check { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .check input { margin: 0; accent-color: var(--accent); }
+/* 材質の一覧 (Blender のマテリアルスロット) */
+.mat-list { list-style: none; margin: 0; padding: 2px; max-height: 190px; overflow-y: auto; background: var(--field); border-radius: 4px; }
+.mat-list li { display: flex; align-items: center; gap: 4px; border-radius: 3px; }
+.mat-list li[aria-selected="true"] { background: var(--accent); }
+.mat-list .mat-name { flex: 1; min-width: 0; padding: 3px 6px; border: 0; background: transparent; text-align: left; cursor: pointer;
+                      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mat-list .mat-eye { width: 22px; height: 20px; padding: 0; border: 0; background: transparent; cursor: pointer; color: var(--text); display: grid; place-items: center; }
+.mat-list .mat-eye[aria-pressed="false"] { opacity: 0.35; }
+.mat-list .mat-edited { color: var(--select); padding-right: 6px; }
+.color-field { display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: center; gap: 6px; }
+.color-field > span { color: var(--dim); text-align: right; }
+.color-field input[type="color"] { width: 100%; height: 22px; padding: 0; border: 0; border-radius: 4px; background: var(--field); cursor: pointer; }
+.color-field input[type="color"]::-webkit-color-swatch-wrapper { padding: 2px; }
+.color-field input[type="color"]::-webkit-color-swatch { border: 0; border-radius: 3px; }
 .bbtn { padding: 4px 8px; border: 0; border-radius: 4px; background: var(--widget); cursor: pointer; text-align: center;
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bbtn:hover:not(:disabled) { background: var(--widget-hi); }

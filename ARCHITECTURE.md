@@ -37,6 +37,7 @@ core/    純粋な計算とデータ (three.js の数学ライブラリは使っ
 | | `Stage` | ステージ | SceneGraph, Viewport |
 | | `Motion` | VMD のダンスとカメラ (`System`、カメラは `CameraOverride`) | World, Physics, Stage, CameraController, UiChannel |
 | | `Posing` | 表情とボーン・IK と付与 (`System`) | World, Physics, Motion, Viewport, UiChannel |
+| | `Materials` | 材質の表示・色・不透明度・反射・輪郭線と、元に戻す | Viewport, UiChannel |
 | | `VpdIO` | ポーズファイルの保存・読み込み | Posing, Viewport, UiChannel |
 | 組み立て | `Engine` | 上のすべてを作ってイベントでつなぎ、画面に操作を出す | すべて |
 
