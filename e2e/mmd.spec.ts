@@ -11,12 +11,15 @@ const rightArmRz = (page: import('@playwright/test').Page) => page.evaluate(() =
 
 test.describe('MMD モデル', () => {
   test('読み込むと選ばれた状態で置かれ、オブジェクトのパネルに名前が出る', async ({ page }) => {
+    const warnings: string[] = [];
+    page.on('console', m => { if (m.type() === 'warning' && /THREE\./.test(m.text())) warnings.push(m.text()); });
     const errors = await open(page);
     await loadTestModel(page);
     expect((await uiState(page)).sel?.kind).toBe('model');
     await expect(page.locator('.prop')).toContainText('テスト人形');
     await expect(page.locator('.view-info')).toHaveText(/テスト人形/);
     expect(errors).toEqual([]);
+    expect(warnings).toEqual([]); // (取り込んだ MMD の部品が「外される予定」の警告を出さない)
   });
 
   test('表情のスライダーでモーフを動かす', async ({ page }) => {
