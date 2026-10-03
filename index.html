@@ -52,7 +52,7 @@
   .toast[hidden] { display: none; }
   .fx {
     position: fixed; right: 16px; bottom: 116px;
-    display: grid; grid-template-columns: 1fr 1fr; gap: 2px; padding: 3px;
+    display: grid; grid-template-columns: auto minmax(120px, 160px); align-items: center; gap: 2px 10px; padding: 3px 12px 3px 3px;
     background: rgba(20, 24, 32, 0.92); border: 1px solid #2c3340; border-radius: 10px;
     backdrop-filter: blur(6px); user-select: none;
   }
@@ -64,6 +64,8 @@
   }
   .fx button:hover { color: #dce3ee; }
   .fx button[aria-pressed="true"] { background: #3a4558; color: #fff; }
+  .fx input[type="range"] { width: 100%; margin: 0; accent-color: #8fa2c4; }
+  .fx input[type="range"].off { opacity: 0.45; }
   .modes button[aria-expanded="true"] { color: #fff; }
 </style>
 <script type="importmap">
@@ -91,9 +93,13 @@
        accept=".pmx,.vmd,.png,.jpg,.jpeg,.bmp,.tga,.gif,.spa,.sph,image/*,.mp3,.wav,.ogg,.oga,.m4a,.aac,.flac,.opus,audio/*">
 <div class="fx" id="fx-panel" role="group" aria-label="効果 (MME 風)" hidden>
   <button type="button" data-fx="bloom" aria-pressed="false">光る</button>
+  <input type="range" data-fx-level="bloom" min="0" max="2" step="0.05" aria-label="光るの強さ">
   <button type="button" data-fx="diffusion" aria-pressed="false">ふんわり</button>
+  <input type="range" data-fx-level="diffusion" min="0" max="1" step="0.02" aria-label="ふんわりの強さ">
   <button type="button" data-fx="dof" aria-pressed="false">被写界深度</button>
+  <input type="range" data-fx-level="dof" min="0" max="3" step="0.05" aria-label="被写界深度のぼけの大きさ">
   <button type="button" data-fx="ao" aria-pressed="false">影の濃さ</button>
+  <input type="range" data-fx-level="ao" min="0" max="2" step="0.05" aria-label="影の濃さ">
 </div>
 <div class="modes" role="group" aria-label="操作モード">
   <button type="button" data-mode="orbit" aria-pressed="true">回転</button>
@@ -1277,7 +1283,23 @@ const FX_KEY = 'webgl-grid-fx';
 const fxState = { ao: false, dof: false, bloom: false, diffusion: false }; // 後処理をかける順
 try { Object.assign(fxState, JSON.parse(localStorage.getItem(FX_KEY) ?? '{}')); } catch {}
 const anyFx = () => Object.values(fxState).some(Boolean);
+// 効果の強さ。光る・ふんわりはブルームの強さそのもの、被写界深度は標準のぼけに対する倍率、
+// 影の濃さは 1 までが暗さの混ぜ具合、1 を超えると暗くなる範囲を広げる
+const FX_LEVEL_KEY = 'webgl-grid-fx-level';
+const FX_LEVEL_DEFAULT = { ao: 1, dof: 1, bloom: 0.7, diffusion: 0.2 };
+const fxLevel = { ...FX_LEVEL_DEFAULT };
+try { Object.assign(fxLevel, JSON.parse(localStorage.getItem(FX_LEVEL_KEY) ?? '{}')); } catch {}
 let fx = null, fxLoading = null;
+function applyFxLevels() {
+  if (!fx) return;
+  const { ao, dof, bloom, diffusion } = fx.passes;
+  bloom.strength = fxLevel.bloom;
+  diffusion.strength = fxLevel.diffusion;
+  dof.uniforms.aperture.value = 0.0025 * fxLevel.dof;
+  dof.uniforms.maxblur.value = 0.02 * fxLevel.dof;
+  ao.blendIntensity = Math.min(fxLevel.ao, 1);
+  ao.updateGtaoMaterial({ radius: 0.6 * Math.max(fxLevel.ao, 1), scale: Math.max(fxLevel.ao, 1) });
+}
 // 被写界深度のピントを合わせる点 (カメラモーション中はその注視点)
 const focusPoint = () => camMotion ? _target : new THREE.Vector3(cam.tx, cam.ty, cam.tz);
 function ensureFx() {
@@ -1323,20 +1345,23 @@ function ensureFx() {
       bloom: new UnrealBloomPass(size, 0.7, 0.4, 0.95),
       diffusion: new UnrealBloomPass(size, 0.2, 0.7, 0),
     };
-    passes.ao.updateGtaoMaterial({ radius: 0.6 });
     composer.addPass(new OutlineRenderPass());
     for (const k of Object.keys(fxState)) composer.addPass(passes[k]);
     composer.addPass(new OutputPass());
     fx = { composer, passes };
+    applyFxLevels();
   })();
   return fxLoading;
 }
 const fxPanel = document.getElementById('fx-panel');
 const fxToggle = document.getElementById('fx-toggle');
 const fxButtons = fxPanel.querySelectorAll('button[data-fx]');
+const fxSliders = fxPanel.querySelectorAll('input[data-fx-level]');
 function updateFxButtons() {
   fxButtons.forEach(b => b.setAttribute('aria-pressed', fxState[b.dataset.fx]));
+  fxSliders.forEach(r => r.classList.toggle('off', !fxState[r.dataset.fxLevel]));
 }
+fxSliders.forEach(r => { r.value = fxLevel[r.dataset.fxLevel]; });
 function closeFxPanel() {
   fxPanel.hidden = true;
   fxToggle.setAttribute('aria-expanded', 'false');
@@ -1345,9 +1370,18 @@ fxToggle.addEventListener('click', () => {
   fxPanel.hidden = !fxPanel.hidden;
   fxToggle.setAttribute('aria-expanded', String(!fxPanel.hidden));
 });
-fxButtons.forEach(b => b.addEventListener('click', async () => {
-  const k = b.dataset.fx;
-  fxState[k] = !fxState[k];
+// 強さのスライダー。オフの効果を動かしたら、その効果をオンにする
+fxSliders.forEach(r => r.addEventListener('input', () => {
+  const k = r.dataset.fxLevel;
+  fxLevel[k] = +r.value;
+  try { localStorage.setItem(FX_LEVEL_KEY, JSON.stringify(fxLevel)); } catch {}
+  applyFxLevels();
+  if (!fxState[k]) setFx(k, true);
+  else requestDraw();
+}));
+fxButtons.forEach(b => b.addEventListener('click', () => setFx(b.dataset.fx, !fxState[b.dataset.fx])));
+async function setFx(k, on) {
+  fxState[k] = on;
   updateFxButtons();
   try { localStorage.setItem(FX_KEY, JSON.stringify(fxState)); } catch {}
   if (anyFx() && !fx) {
@@ -1361,7 +1395,7 @@ fxButtons.forEach(b => b.addEventListener('click', async () => {
     }
   }
   requestDraw();
-}));
+}
 updateFxButtons();
 if (anyFx()) ensureFx().then(requestDraw, err => console.error(err)); // 前回オンにしていた効果
 addEventListener('resize', resize);
@@ -1370,7 +1404,7 @@ resize();
 // 動作確認用: ?debug を付けて開いたときだけ、中の状態をコンソールから触れるようにする
 if (new URLSearchParams(location.search).has('debug')) {
   Object.assign(window, { THREE, renderer, scene, camera, boxes, cam, makeBox, settle, pickBox, screenRay, rayPlane,
-    loadPmx, loadFiles, getAnimHelper: () => animHelper, getCamMotion: () => camMotion, getStage: () => stageModel, getFx: () => fx, fxState, getMusic: () => music, camera, getDrag: () => drag, paletteEl, swatches, pointers, physicsList, outline });
+    loadPmx, loadFiles, getAnimHelper: () => animHelper, getCamMotion: () => camMotion, getStage: () => stageModel, getFx: () => fx, fxState, fxLevel, getMusic: () => music, camera, getDrag: () => drag, paletteEl, swatches, pointers, physicsList, outline });
 }
 </script>
 </body>
