@@ -18,6 +18,7 @@ export default defineConfig({
   reporter: process.env.CI ? 'github' : 'list',
   use: {
     baseURL: `http://localhost:${PORT}/`,
+    locale: 'ja-JP', // (テストは日本語の画面で)
     trace: 'retain-on-failure',
     launchOptions: { args: GPU ? ['--use-angle=metal', '--enable-gpu'] : ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] },
   },

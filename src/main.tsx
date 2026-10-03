@@ -4,11 +4,13 @@ import * as THREE from 'three';
 import { remotePortFromSearch } from './core/remote';
 import { Engine } from './engine';
 import { BUILTIN_ADDONS } from './addons';
+import { startLang } from './i18n';
 import { indexedDbStore } from './engine/project/autosaveStore';
 import App from './ui/App';
 import { EngineProvider } from './ui/EngineContext';
 import './ui/styles.css';
 
+startLang(); // 画面の言語 (前に選んだもの・ブラウザの言語)
 const engine = new Engine();
 // 動作確認用: ?debug を付けて開いたときだけ、エンジンをコンソール (と e2e テスト) から触れるようにする
 if (new URLSearchParams(location.search).has('debug')) Object.assign(window, { engine, THREE });

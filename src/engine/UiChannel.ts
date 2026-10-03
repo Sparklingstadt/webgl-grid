@@ -4,6 +4,7 @@ import { OUTPUT_DEFAULT, type OutputSettings } from '../core/output';
 import { normalizeScene, type SceneSettings } from '../core/scene';
 import { createStore, type Store } from '../core/store';
 import type { AddonInfo } from './addons/Addons';
+import { getLang, langEvents, type Lang } from '../core/i18n';
 import { FX_LEVEL_DEFAULT, type FxLevel, type FxState } from './render/postfx';
 
 // --- エンジンから画面 (React) へ知らせる状態と、お知らせ ---
@@ -38,6 +39,7 @@ export interface UiState {
   // 参照だけのプロジェクトを開くときに見つからないファイル (探してもらう)
   missingFiles: { project: string; files: { name: string; size?: number; source?: string }[] } | null;
   addons: AddonInfo[];      // アドオンの一覧 (アドオンマネージャー)
+  lang: Lang;               // 画面の言語
   addonsVersion: number;       // アドオンのメニュー・パネル・値が変わった
 }
 type Version = 'modelVersion' | 'values' | 'keysVersion' | 'materialsVersion' | 'addonsVersion';
@@ -49,8 +51,11 @@ export class UiChannel {
     fxState: { ao: false, dof: false, bloom: false, diffusion: false, color: false }, fxLevel: { ...FX_LEVEL_DEFAULT },
     toast: null, palette: null, viewInfo: '', hairHang: null, materialsVersion: 0, projectName: null,
     output: { ...OUTPUT_DEFAULT }, rendering: null, renderResult: null, remote: 'off', missingFiles: null, history: { labels: ['最初'], index: 0 }, recovery: null, scene: normalizeScene(undefined),
-    addons: [], addonsVersion: 0,
+    addons: [], addonsVersion: 0, lang: getLang(),
   });
+  constructor() {
+    langEvents.on('changed', lang => this.set({ lang }));
+  }
   private valuesAt = 0;
   private toastTimer: ReturnType<typeof setTimeout> | undefined;
   private toastId = 0;

@@ -1,4 +1,6 @@
+import { LANGS, setLang, type Lang } from '../../core/i18n';
 import { REMOTE_DEFAULT_PORT } from '../../core/remote';
+import { BSelect } from './controls/BSelect';
 import { useEngine, useUi } from '../EngineContext';
 import { AddonMenuItems } from './addons/AddonMenuItems';
 import { Menu, MenuItem, MenuLabel, MenuSep } from './Menu';
@@ -12,6 +14,7 @@ export function TopBar({ onOpenFiles, onLoadPose, onOpenProject, onOpenOutput, o
   const remote = useUi(s => s.remote);
   const history = useUi(s => s.history);
   const recovery = useUi(s => s.recovery);
+  const lang = useUi(s => s.lang);
   return (
     <header className="topbar">
       <svg className="brand" viewBox="0 0 20 20" aria-hidden="true">
@@ -75,6 +78,8 @@ export function TopBar({ onOpenFiles, onLoadPose, onOpenProject, onOpenOutput, o
           MCP {remote === 'connected' ? '接続中' : '待機中'}
         </span>
       )}
+      <BSelect<Lang> label="言語 (Language)" className="lang-select" value={lang} onChange={setLang}
+                     options={LANGS.map(l => ({ value: l.key, label: l.name }))} />
       <span className="title">{projectName ? `${projectName} — webgl-grid` : 'webgl-grid'}</span>
     </header>
   );

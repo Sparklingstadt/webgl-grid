@@ -7,7 +7,7 @@ import type { SideTab } from './components/sidebar/Sidebar';
 import { BottomArea, type BottomEditor } from './components/BottomArea';
 import { TopBar } from './components/TopBar';
 import { ViewportArea } from './components/ViewportArea';
-import { useEngine } from './EngineContext';
+import { useEngine, useUi } from './EngineContext';
 import { useShortcuts, type Area } from './hooks/useShortcuts';
 
 // 幅の狭い画面では、サイドバーはビューポートの上に重ねて出す (最初はしまっておく)
@@ -17,6 +17,7 @@ const isNarrow = () => matchMedia(NARROW).matches;
 // Blender 風の画面全体: 上のバー・3D ビューポート (+サイドバー)・タイムライン
 export default function App() {
   const engine = useEngine();
+  useUi(s => s.lang); // (言語を変えたら、画面を全部描き直す)
   const [sideOpen, setSideOpen] = useState(() => !isNarrow());
   const [tlOpen, setTlOpen] = useState(true);
   const [sideTab, setSideTab] = useState<SideTab>('object');
