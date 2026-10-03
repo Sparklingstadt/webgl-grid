@@ -65,10 +65,10 @@
   <button type="button" data-shape="1" aria-pressed="false">トーラス</button>
   <button type="button" data-shape="2" aria-pressed="false">三角錐</button>
   <span class="sep"></span>
-  <button type="button" id="load-pmx" aria-label="PMX モデルを読み込む">PMX…</button>
+  <button type="button" id="load-pmx" aria-label="MMD のモデル (.pmx) やモーション (.vmd) を読み込む">MMD…</button>
 </div>
 <input type="file" id="pmx-input" multiple hidden
-       accept=".pmx,.png,.jpg,.jpeg,.bmp,.tga,.gif,.spa,.sph,image/*">
+       accept=".pmx,.vmd,.png,.jpg,.jpeg,.bmp,.tga,.gif,.spa,.sph,image/*">
 <div class="modes" role="group" aria-label="操作モード">
   <button type="button" data-mode="orbit" aria-pressed="true">回転</button>
   <button type="button" data-mode="pan" aria-pressed="false">移動</button>
@@ -274,6 +274,7 @@ function makeBox(x, z, c, s = 0) {
 function removeObject(obj) {
   scene.remove(obj.node);
   stopPhysics(obj);
+  stopMotion(obj);
   if (obj.s === 3) {
     // モデルは形状・材質・テクスチャを片付ける
     obj.node.traverse(o => {
@@ -726,16 +727,30 @@ canvas.addEventListener('wheel', e => {
   zoomBy(Math.exp(e.deltaY * 0.001));
 }, { passive: false });
 
-// --- PMX モデルの読み込み ---
-// .pmx とテクスチャ画像をまとめて選んでもらい、ブラウザの中だけで読む (どこにも送らない)
+// --- MMD モデル (.pmx) とモーション (.vmd) の読み込み ---
+// .pmx とテクスチャ画像 (と、あれば .vmd) をまとめて選んでもらい、ブラウザの中だけで読む (どこにも送らない)。
+// .vmd だけを選んだときは、置いてあるモデル全員にそのモーションを付ける
 const MODEL_HEIGHT = 2; // 読み込んだモデルは高さ 2 (立方体2個分) にそろえる
 const pmxInput = document.getElementById('pmx-input');
 loadButton.addEventListener('click', () => pmxInput.click());
 pmxInput.addEventListener('change', () => {
   const files = [...pmxInput.files];
   pmxInput.value = ''; // 同じファイルをもう一度選べるようにする
-  if (files.length) loadPmx(files);
+  if (files.length) loadFiles(files);
 });
+async function loadFiles(files) {
+  const vmd = files.find(f => /\.vmd$/i.test(f.name));
+  if (files.some(f => /\.pmx$/i.test(f.name))) {
+    const obj = await loadPmx(files);
+    if (obj && vmd) await playMotion(vmd, [obj]);
+  } else if (vmd) {
+    const models = boxes.filter(b => b.s === 3);
+    if (!models.length) { toast('先に .pmx のモデルを読み込んでください。'); return; }
+    await playMotion(vmd, models);
+  } else {
+    toast('.pmx や .vmd が選ばれていません。モデルの .pmx とテクスチャ画像、またはモーションの .vmd を選んでください。');
+  }
+}
 // ファイル名の比較用: パスの区切りをそろえ、最後の名前だけを小文字・NFC で取り出す
 const fileKey = path => decodeURIComponent(path).replace(/\\/g, '/').split('/').pop().normalize('NFC').toLowerCase();
 let mmdLoaderModule = null;
@@ -770,6 +785,7 @@ async function loadPmx(files) {
     const obj = addModel(mesh);
     await startPhysics(obj, mesh);
     toast(`${pmx.name} を置きました`);
+    return obj;
   } catch (err) {
     console.error(err);
     toast(`${pmx.name} を読み込めませんでした: ${err?.message ?? err}`, 8000);
@@ -794,6 +810,7 @@ function addModel(mesh) {
                 h: size.y * k, hx: Math.max(size.x * k / 2, 0.05), hz: Math.max(size.z * k / 2, 0.05) };
   [obj.x, obj.z] = findFreeSpot(radiusOf(obj));
   makeNode(obj, mesh);
+  obj.model = mesh;
   // 当たり判定用の複製。置いたモデルはポーズを変えないので、骨やモーフの計算をしない普通のメッシュで判定する
   // (骨で変形するメッシュのまま判定すると、頂点ごとに骨を計算するので 9 万ポリゴンで 1 回 50ms ほどかかる)
   const proxy = new THREE.Mesh(mesh.geometry, new THREE.MeshBasicMaterial());
@@ -860,6 +877,51 @@ async function startPhysics(obj, mesh) {
     toast(`物理演算を開始できませんでした: ${err?.message ?? err}`, 8000);
   }
 }
+// --- VMD モーションの再生 ---
+// MMDAnimationHelper が、モーションの再生・IK (足の接地など)・付与 (連動する骨) を計算する。
+// 物理演算は上の仕組みのまま、モーションのあとに計算する
+let animHelper = null;
+async function playMotion(vmd, objs) {
+  toast(`${vmd.name} を読み込み中…`, 0);
+  const url = URL.createObjectURL(vmd);
+  try {
+    mmdLoaderModule ??= await import('three/addons/loaders/MMDLoader.js');
+    const { MMDAnimationHelper } = await import('three/addons/animation/MMDAnimationHelper.js');
+    animHelper ??= new MMDAnimationHelper();
+    const loader = new mmdLoaderModule.MMDLoader();
+    let empty = 0;
+    for (const obj of objs) {
+      const mesh = obj.model;
+      const clip = await new Promise((resolve, reject) => loader.loadAnimation(url, mesh, resolve, undefined, reject));
+      if (!boxes.includes(obj)) continue; // 読み込み中に消された
+      if (!clip.tracks.length) { empty++; continue; } // 骨や表情の名前が1つも合わない
+      if (animHelper.objects.has(mesh)) animHelper.remove(mesh);
+      mesh.pose(); // 前のモーションの姿勢を元に戻してから付ける
+      animHelper.add(mesh, { animation: clip, physics: false });
+      obj.animated = true;
+      // 最初のフレームの姿勢に、物理演算の剛体を合わせる
+      animHelper.update(0);
+      const p = physicsList.find(p => p.obj === obj);
+      if (p) { obj.node.updateMatrixWorld(true); p.physics.reset(); p.physics.warmup(30); }
+    }
+    toast(empty === objs.length
+      ? `${vmd.name} には、このモデルの骨や表情に合う動きがありませんでした`
+      : `${vmd.name} を再生しています`);
+    startTicking();
+  } catch (err) {
+    console.error(err);
+    toast(`${vmd.name} を読み込めませんでした: ${err?.message ?? err}`, 8000);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+function stopMotion(obj) {
+  if (!obj.animated) return;
+  animHelper.remove(obj.model);
+  obj.animated = false;
+}
+const hasMotion = () => boxes.some(b => b.animated);
+
 function stopPhysics(obj) {
   const i = physicsList.findIndex(p => p.obj === obj);
   if (i >= 0) physicsList.splice(i, 1); // Ammo 側の後片付けの API はないので、参照を外すだけ
@@ -874,9 +936,10 @@ function startTicking() {
 }
 const _p = new THREE.Vector3(), _v = new THREE.Vector3(), _a = new THREE.Vector3();
 function tick(now) {
-  if (!physicsList.length) { ticking = false; return; }
+  if (!physicsList.length && !hasMotion()) { ticking = false; return; }
   const dt = tickLast ? Math.min(Math.max(now - tickLast, 0) / 1000, 1 / 20) : 1 / 60;
   tickLast = now;
+  if (hasMotion()) animHelper.update(dt); // モーションを先に進めてから物理演算
   for (const p of physicsList) {
     // モデルの動きの加速度を「見かけの重力」として足す (運ぶと髪がなびき、落ちると浮く)。
     // MMDPhysics はモデル自身の座標で計算するので、置き場所の動きはこうしないと伝わらない
@@ -950,7 +1013,7 @@ resize();
 // 動作確認用: ?debug を付けて開いたときだけ、中の状態をコンソールから触れるようにする
 if (new URLSearchParams(location.search).has('debug')) {
   Object.assign(window, { THREE, renderer, scene, camera, boxes, cam, makeBox, settle, pickBox, screenRay, rayPlane,
-    loadPmx, getDrag: () => drag, paletteEl, swatches, pointers, physicsList, outline });
+    loadPmx, loadFiles, getAnimHelper: () => animHelper, getDrag: () => drag, paletteEl, swatches, pointers, physicsList, outline });
 }
 </script>
 </body>
