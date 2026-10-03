@@ -151,6 +151,12 @@ export const COMMANDS: Record<string, Command> = {
     e.setLight(patch);
     return { id: obj.id, light: obj.light };
   },
+  duplicate_object: async (e, p) => {
+    e.select(objOf(e, p?.id));
+    const obj = await e.duplicateSelected();
+    if (!obj) throw new Error('複製できませんでした (これ以上置けないか、モデルのファイルがありません)');
+    return { id: obj.id, name: obj.name };
+  },
   reorder_objects: (e, p) => {
     const ids = (p?.ids ?? []) as number[];
     for (const id of ids) objOf(e, id);

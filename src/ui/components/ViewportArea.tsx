@@ -74,6 +74,7 @@ export function ViewportArea(props: {
           <AddonMenuItems menu="add" />
         </Menu>
         <Menu id="object" label={t('オブジェクト')}>
+          <MenuItem label={t('複製')} kbd="Shift D" disabled={!sel || !canAdd} onSelect={() => void engine.duplicateSelected()} />
           <MenuItem label={t('削除')} kbd="X" disabled={!sel} onSelect={() => engine.deleteSelected()} />
           <MenuItem label={t('選択を解除')} kbd="Alt A" disabled={!sel} onSelect={() => engine.select(null)} />
           <MenuItem label={t('名前を変更')} kbd="F2" disabled={!sel} onSelect={() => { if (!props.sideOpen) props.toggleSide(); requestRename(); }} />

@@ -90,6 +90,9 @@ export function useShortcuts(engine: Engine, actions: {
         case 'KeyN':
           a.toggleN();
           break;
+        case 'KeyD':
+          if (e.shiftKey && !engine.pose.active) { e.preventDefault(); void engine.duplicateSelected(); } // Shift+D: 複製
+          break;
         case 'KeyT':
           a.toggleTools();
           break;

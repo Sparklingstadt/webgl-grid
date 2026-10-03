@@ -67,6 +67,33 @@ describe('History', () => {
     expect(cube.hidden).toBeUndefined();
   });
 
+  it('複製 (Shift+D): 隣に置いて選び、マテリアルは共有、名前に番号。ライトは設定も写す。1 手で戻せる', async () => {
+    const e = engineWithCube();
+    const cube = e.world.objects[0];
+    e.select(cube);
+    e.setObjProp('r', 90);
+    e.setVisibility(cube, { hideRender: true });
+    step(e);
+    const copy = (await e.duplicateSelected())!;
+    step(e);
+    expect(e.world.objects).toEqual([cube, copy]);
+    expect(e.selection.current).toBe(copy);
+    expect([copy.s, copy.c, copy.r, copy.hideRender, copy.slots]).toEqual([cube.s, cube.c, cube.r, true, cube.slots]);
+    expect(copy.x !== cube.x || copy.z !== cube.z).toBe(true);
+    expect(e.ui.state.sel?.name).toBe('立方体.001');
+    expect((await e.duplicateSelected())!.name).toBe('立方体.002');
+    step(e);
+    expect(e.ui.state.history.labels.slice(-2)).toEqual(['追加', '追加']);
+    await e.history.undo();
+    await e.history.undo();
+    expect(e.world.objects).toEqual([cube]);
+    // ライト
+    const light = e.addLight('spot', { power: 777, color: '#ff0000' })!;
+    const lcopy = (await e.duplicateSelected())!;
+    expect(lcopy.light).toMatchObject({ type: 'spot', power: 777, color: '#ff0000' });
+    expect(lcopy.light).not.toBe(light.light);
+  });
+
   it('並べ替え (アウトライナー) を 1 手にして戻す', async () => {
     const e = engineWithCube();
     e.addShape(1); e.addShape(2); step(e);

@@ -21,6 +21,8 @@ describe('外部からの命令', () => {
     s = await runCommand(e, 'get_state', {}) as typeof s;
     expect(s.objects.find(o => o.id === 1)).toMatchObject({ name: '立方体', hideRender: true });
     expect(s.objects.find(o => o.id === 1)).not.toHaveProperty('hidden');
+    expect(await runCommand(e, 'duplicate_object', { id: 1 })).toMatchObject({ name: '立方体.001' });
+    await runCommand(e, 'delete_object', { id: e.world.objects.at(-1)!.id });
     expect(await runCommand(e, 'reorder_objects', { ids: [id] })).toEqual({ order: [id, 1] });
     await expect(runCommand(e, 'reorder_objects', { ids: [42] })).rejects.toThrow('id 42 の物はありません');
     await runCommand(e, 'delete_object', { id });

@@ -210,6 +210,7 @@ export function Outliner({ onPickBone, style, onHover }: { onPickBone: () => voi
         <Popover anchor={menu.anchor} onClose={() => setMenu(null)} className="menu-pop" role="menu" label={t('アウトライナーのメニュー')}>
           <div onClick={e => { if ((e.target as HTMLElement).closest('button:not(:disabled)')) setMenu(null); }}>
             <MenuItem label={t('名前を変更')} kbd="F2" onSelect={() => setRenaming(menuObj.id)} />
+            <MenuItem label={t('複製')} kbd="Shift+D" onSelect={() => { engine.select(menuObj); void engine.duplicateSelected(); }} />
             <MenuSep />
             <MenuItem label={menuObj.hidden ? t('ビューポートで表示') : t('ビューポートで隠す')} kbd="H" onSelect={() => engine.setVisibility(menuObj, { hidden: !menuObj.hidden })} />
             <MenuItem label={t('ほかを隠す')} kbd="Shift+H" onSelect={() => { engine.select(menuObj); engine.hideSelected(true); }} />

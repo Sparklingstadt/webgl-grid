@@ -928,5 +928,6 @@ const dict: Dictionary = {
   "エリアを最大化": "Toggle Maximize Area",
   "エリアを元に戻す": "Restore Area",
   "エリアを最大化 / 元に戻す": "Maximize / Restore Area",
+  "これ以上置けません": "No more objects can be placed",
 };
 export default dict;

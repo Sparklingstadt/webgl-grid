@@ -1,4 +1,6 @@
-import { channelKeys, keyFrames, type Channel, type Curve } from '../core/animation';
+import { animationFromJson, animationToJson, channelKeys, isEmpty, keyFrames, type Channel, type Curve } from '../core/animation';
+import { radiusOf } from '../core/stacking';
+import { applyObjectData } from './addons/registry';
 import type { LightSettings, LightType } from '../core/light';
 import { FPS } from '../core/constants';
 import { SONG_FILE } from '../core/models';
@@ -31,7 +33,7 @@ import { Effects } from './render/Effects';
 import { Environment } from './render/Environment';
 import { SceneGraph } from './render/SceneGraph';
 import { Viewport } from './render/Viewport';
-import { isShape, type ModelObj, type Obj } from './types';
+import { isModel, isShape, type ModelObj, type Obj } from './types';
 import { UiChannel } from './UiChannel';
 import { CameraController } from './view/CameraController';
 import { InputController } from './view/InputController';
@@ -220,6 +222,64 @@ export class Engine {
     if (!o?.light) return;
     this.lights.set(o, patch);
     this.selection.publish();
+  }
+
+  // --- 複製 (Shift+D。Blender と同じく、マテリアルは元と共有し、名前に番号を付ける) ---
+  // 隣の空いている場所に置いて、新しい方を選ぶ。向き・表示・物ごとの値 (ライト・アドオン) も写す。
+  // MMD モデルは同じファイルから読み直し、ポーズ・表情・キーフレーム・モーション・IK・髪も写す。元に戻すでは 1 手
+  duplicateSelected(): Promise<Obj | null> {
+    const src = this.selection.current;
+    if (!src) return Promise.resolve(null);
+    if (this.world.full) { this.ui.toast(t('これ以上置けません')); return Promise.resolve(null); }
+    return this.history.batch(async () => {
+      const [x, z] = this.world.findFreeSpot(radiusOf(src), src.x + 1, src.z);
+      let obj: Obj;
+      if (isModel(src)) {
+        const files: File[] = [...(src.model.userData.usedFiles ?? [src.model.userData.sourceFile])].filter(Boolean);
+        const loaded = files.length ? await this.loader.load(files, { ask: false }) : null;
+        if (!loaded || !this.world.has(src)) return null;
+        const m = this.world.addModel(loaded.mesh, x, z, loaded.slots);
+        src.slots.forEach((id, i) => { if (m.slots[i] !== id) this.world.setSlot(m, i, id); });
+        await this.physics.start(m);
+        m.pose = new Map([...(src.pose ?? [])].map(([b, v]) => [b, { ...v }]));
+        const from: number[] | undefined = src.model.morphTargetInfluences, to: number[] | undefined = m.model.morphTargetInfluences;
+        if (from && to) from.forEach((v, i) => { to[i] = v; });
+        m.anim = isEmpty(src.anim) ? null : animationFromJson(animationToJson(src.anim!));
+        m.ikOff = src.ikOff ? new Set(src.ikOff) : undefined;
+        if (src.motionFiles?.length) { await this.motion.load(src.motionFiles, [m]); this.motion.seek(this.clock.t, 0); }
+        this.posing.applyIkSwitch(m);
+        const hang = this.physics.hairHang(src);
+        if (hang) this.physics.setHairHang(m, true);
+        void this.posing.solve(m);
+        obj = m;
+      } else if (src.light) {
+        obj = this.lights.add({ ...src.light }, x, z);
+      } else {
+        obj = this.world.addShape(src.s, x, z, src.c);
+        src.slots.forEach((id, i) => this.world.setSlot(obj, i, id));
+      }
+      obj.r = src.r;
+      // 物ごとの値 (表示・アドオンの値。名前は下で番号を付ける)
+      for (const d of this.addons.objectData.list()) {
+        if (d.key === 'name' || d.key === 'light') continue;
+        const v = d.get(src);
+        if (v !== undefined && v !== null) applyObjectData(d, obj, structuredClone(v));
+      }
+      obj.name = this.nextName(nameOf(src));
+      this.world.settle();
+      this.selection.select(obj);
+      this.objChanged();
+      return obj;
+    });
+  }
+  // 「名前.001」から始めて、使われていない番号の名前 (Blender と同じ)
+  private nextName(name: string) {
+    const base = name.replace(/\.\d{3,}$/, '');
+    const used = new Set(this.world.objects.map(nameOf));
+    for (let n = 1; ; n++) {
+      const next = `${base}.${String(n).padStart(3, '0')}`;
+      if (!used.has(next)) return next;
+    }
   }
 
   // --- 名前・表示 (アウトライナー・サイドバー・H / Alt+H) ---
