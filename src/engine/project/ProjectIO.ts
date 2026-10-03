@@ -108,7 +108,7 @@ export class ProjectIO {
     };
     const filesOf = (mesh: Any): string[] => [...(mesh.userData.usedFiles ?? [mesh.userData.sourceFile])].map(asset);
     const objects: SavedObject[] = e.world.objects.map(o => {
-      const base: SavedObject = { kind: o.s === 3 ? 'model' : 'shape', s: o.s, x: o.x, y: o.y, z: o.z, r: o.r, c: o.c, slots: [...o.slots], activeSlot: o.activeSlot, cloner: o.cloner ?? null, deformers: o.deformers ?? null };
+      const base: SavedObject = { kind: o.light ? 'light' : o.s === 3 ? 'model' : 'shape', s: o.s, x: o.x, y: o.y, z: o.z, r: o.r, c: o.c, slots: [...o.slots], activeSlot: o.activeSlot, cloner: o.cloner ?? null, deformers: o.deformers ?? null, light: o.light ?? null };
       if (o.s !== 3) return base;
       const inf: number[] | undefined = o.model.morphTargetInfluences;
       return {
@@ -197,7 +197,9 @@ export class ProjectIO {
     const objs: (Obj | null)[] = [];
     for (const so of data.objects) {
       let obj: Obj | null = null;
-      if (so.kind === 'shape') {
+      if (so.kind === 'light') {
+        obj = e.lights.add(so.light ?? {}, so.x, so.z);
+      } else if (so.kind === 'shape') {
         obj = e.world.addShape(so.s, so.x, so.z, so.c);
       } else {
         const loaded = await e.loader.load(filesOf(so.files));

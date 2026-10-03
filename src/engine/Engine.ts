@@ -1,8 +1,8 @@
 import { channelKeys, keyFrames, type Channel, type Curve } from '../core/animation';
 import { MAX_CLONES, clonerLayout, normalizeCloner, type ClonerSettings } from '../core/cloner';
 import { normalizeDeformers, type Deformer } from '../core/deform';
+import type { LightSettings, LightType } from '../core/light';
 import { FPS, MAX_BOXES } from '../core/constants';
-import { shapeName } from '../core/shapes';
 import { errorText } from '../core/errors';
 import { patchPmxMaterials } from '../core/pmxMaterials';
 import type { BoneValue } from '../core/types';
@@ -34,6 +34,8 @@ import { CameraController } from './view/CameraController';
 import { InputController } from './view/InputController';
 import { Cloners } from './world/Cloners';
 import { Deformers } from './world/Deformers';
+import { Lights } from './world/Lights';
+import { nameOf } from './world/Selection';
 import { ColorPicker } from './world/ColorPicker';
 import { Selection } from './world/Selection';
 import { World } from './world/World';
@@ -56,6 +58,7 @@ export class Engine {
   readonly selection = new Selection(this.world, this.ui);
   readonly cloners = new Cloners(this.world, this.viewport, () => this.clock.frame);
   readonly deformers = new Deformers(this.cloners, this.viewport);
+  readonly lights = new Lights(this.world, this.viewport);
   readonly materials = new MaterialEditor(this.library, this.world, this.selection, this.ui);
   readonly picker = new ColorPicker(this.world, this.viewport, this.ui);
   readonly camera = new CameraController(this.graph, this.viewport, this.ui, this.world);
@@ -73,7 +76,7 @@ export class Engine {
   readonly effects = new Effects(this.viewport, this.ui, () => this.camera.focusPoint());
   readonly loader = new MmdLoader(this.ui, this.library, () => this.viewport.requestDraw());
   readonly vpd = new VpdIO(this.posing, this.viewport, this.ui);
-  readonly history = new History(this.world, this.library, this.physics, this.motion, this.posing, this.keyframes, this.clock, this.selection, this.viewport, this.ui, this.cloners, this.deformers, this.environment);
+  readonly history = new History(this.world, this.library, this.physics, this.motion, this.posing, this.keyframes, this.clock, this.selection, this.viewport, this.ui, this.cloners, this.deformers, this.environment, this.lights);
   readonly project = new ProjectIO(this);
   readonly autosave = new Autosave(this.project, this.history, this.ui);
   readonly remote = new RemoteLink(this);
@@ -190,6 +193,23 @@ export class Engine {
     this.cloners.set(o, next);
     this.selection.publish();
   }
+  // --- ライト (Cinema 4D のライト) ---
+  // 画面中央の近くに置いて選ぶ
+  addLight(type: LightType, settings: Partial<LightSettings> = {}) {
+    if (this.world.full) return null;
+    const [x, z] = this.world.findFreeSpot(0.3, this.camera.cam.tx, this.camera.cam.tz);
+    const obj = this.lights.add({ ...settings, type }, x, z);
+    this.selection.select(obj);
+    this.viewport.requestDraw();
+    return obj;
+  }
+  setLight(patch: Partial<LightSettings>) {
+    const o = this.selection.current;
+    if (!o?.light) return;
+    this.lights.set(o, patch);
+    this.selection.publish();
+  }
+
   // 選んでいる物のデフォーマを入れ替える (空でやめる)
   setDeformers(list: Deformer[]) {
     const o = this.selection.current;
@@ -410,7 +430,7 @@ export class Engine {
         }
       }
     } else if (obj) {
-      rows.push({ label: shapeName(obj.s), keys: [], motion: null, editable: false });
+      rows.push({ label: nameOf(obj), keys: [], motion: null, editable: false });
     }
     const cam = this.motion.camera;
     if (cam) rows.push({ label: 'カメラ', keys: [], motion: cam.motion.frames, editable: false });

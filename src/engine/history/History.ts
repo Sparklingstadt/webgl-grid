@@ -4,6 +4,7 @@ import { describeChange, type ObjState, type SceneState } from '../../core/histo
 import type { Clock } from '../anim/Clock';
 import type { Cloners } from '../world/Cloners';
 import type { Deformers } from '../world/Deformers';
+import type { Lights } from '../world/Lights';
 import type { Environment } from '../render/Environment';
 import type { SceneSettings } from '../../core/scene';
 import type { Keyframes } from '../anim/Keyframes';
@@ -39,7 +40,7 @@ export class History {
 
   constructor(private world: World, private library: MaterialLibrary, private physics: Physics, private motion: Motion,
               private posing: Posing, private keyframes: Keyframes, private clock: Clock, private selection: Selection,
-              private viewport: Viewport, private ui: UiChannel, private cloners: Cloners, private deformers: Deformers, private environment: Environment) {
+              private viewport: Viewport, private ui: UiChannel, private cloners: Cloners, private deformers: Deformers, private environment: Environment, private lights: Lights) {
     world.keepRemoved = true;
     world.events.on('removed', obj => { this.removed.set(obj.id, obj); this.soon(); });
     world.events.on('added', () => this.soon());
@@ -126,7 +127,7 @@ export class History {
   private capture(label: string): Step {
     const motionFiles = new Map<number, File>();
     const objects: ObjState[] = this.world.objects.map(o => {
-      const st: ObjState = { id: o.id, s: o.s, x: o.x, y: o.y, z: o.z, r: o.r, c: o.c, slots: [...o.slots], cloner: o.cloner ? structuredClone(o.cloner) : null, deformers: o.deformers ? structuredClone(o.deformers) : null };
+      const st: ObjState = { id: o.id, s: o.s, x: o.x, y: o.y, z: o.z, r: o.r, c: o.c, slots: [...o.slots], cloner: o.cloner ? structuredClone(o.cloner) : null, deformers: o.deformers ? structuredClone(o.deformers) : null, light: o.light ? { ...o.light } : null };
       if (!isModel(o)) return st;
       // キーのあるボーン・表情の値は、いまのフレームで決まるので入れない
       const anim = o.anim;
@@ -167,6 +168,7 @@ export class History {
         if (!obj) continue;
         Object.assign(obj, { x: st.x, y: st.y, py: st.y, vy: 0, z: st.z, r: st.r, c: st.c });
         st.slots.forEach((id, k) => { if (obj.slots[k] !== id) world.setSlot(obj, k, id); });
+        if (st.light && JSON.stringify(obj.light) !== JSON.stringify(st.light)) this.lights.set(obj, st.light);
         if (JSON.stringify(obj.deformers ?? null) !== JSON.stringify(st.deformers ?? null)) this.deformers.set(obj, st.deformers ? structuredClone(st.deformers) : []);
         if (JSON.stringify(obj.cloner ?? null) !== JSON.stringify(st.cloner ?? null)) this.cloners.set(obj, st.cloner ? structuredClone(st.cloner) : null);
         if (!isModel(obj)) continue;

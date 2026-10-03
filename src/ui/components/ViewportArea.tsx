@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { LIGHT_TYPES } from '../../core/light';
 import { SHAPES } from '../../core/shapes';
 import { useEngine, useUi } from '../EngineContext';
 import { Gizmo } from './Gizmo';
@@ -47,6 +48,9 @@ export function ViewportArea(props: {
         <Menu id="add" label="追加">
           <MenuLabel>メッシュ</MenuLabel>
           {SHAPES.map(d => <MenuItem key={d.key} label={d.name} disabled={!canAdd} onSelect={() => engine.addShape(d.s)} />)}
+          <MenuSep />
+          <MenuLabel>ライト</MenuLabel>
+          {LIGHT_TYPES.map(t => <MenuItem key={t.key} label={t.name} disabled={!canAdd} onSelect={() => { engine.addLight(t.key); props.showObjectTab(); }} />)}
           <MenuSep />
           <MenuItem label="MMD モデル…" disabled={!canAdd} onSelect={props.onOpenFiles} />
         </Menu>

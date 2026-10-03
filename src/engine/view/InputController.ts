@@ -232,10 +232,11 @@ export class InputController {
     const members = group.map(g => g.o);
     obj.x = hit[0] + held.ox;
     obj.z = hit[1] + held.oz;
+    if (obj.light) { this.viewport.requestDraw(); return; } // ライトは高さを変えずに運ぶ
     for (const g of group) { g.o.x = obj.x + g.dx; g.o.z = obj.z + g.dz; }
     // 運んでいない物を落とし、運んでいる山はその上に載せる
     this.world.settle(members);
-    const others = this.world.objects.filter(o => !members.includes(o));
+    const others = this.world.objects.filter(o => !members.includes(o) && !o.light);
     const base = Math.max(held.held, ...group.map(g =>
       Math.max(0, ...others.filter(o => overlaps(o, g.o)).map(topOf)) - g.dy));
     held.held = base;

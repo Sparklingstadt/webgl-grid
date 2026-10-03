@@ -35,3 +35,33 @@ test('空を単色にすると背景 (書き出した画像も) が変わり、�
   expect(await page.evaluate(() => (window as Win).engine.graph.scene.getObjectByName('floor').visible)).toBe(false);
   expect(errors).toEqual([]);
 });
+
+test('ライト: 追加メニューから置いて種類と高さを変え、レンダリングでは目印を描かない', async ({ page }) => {
+  const errors = await open(page);
+  await page.getByRole('button', { name: '追加' }).click();
+  await page.getByRole('menuitem', { name: '点光源' }).click();
+  await expect(page.getByRole('combobox', { name: 'ライトの種類' })).toHaveText('点光源');
+  await choose(page, 'ライトの種類', 'スポットライト');
+  const height = page.getByRole('slider', { name: '高さ' });
+  await height.focus();
+  await page.keyboard.press('Shift+ArrowRight'); // 3.5 → 4.0
+  const state = () => page.evaluate(() => {
+    const { engine } = window as Win;
+    const o = engine.world.objects.find((x: Win) => x.light);
+    let type = '';
+    o.node.traverse((c: Win) => { if (c.isLight) type = c.type; });
+    return { type, y: +o.y.toFixed(2), gizmos: (() => { let n = 0; o.node.traverse((c: Win) => { if (c.userData.editorOnly && c.visible) n++; }); return n; })() };
+  });
+  await expect.poll(state).toEqual({ type: 'SpotLight', y: 4, gizmos: 2 });
+  // レンダリングしているあいだは、目印を隠す (終わったら戻す)
+  const during = await page.evaluate(() => {
+    const { engine } = window as Win;
+    const o = engine.world.objects.find((x: Win) => x.light);
+    let seen = -1;
+    const off = engine.viewport.onRender(() => { if (engine.output.active) { seen = 0; o.node.traverse((c: Win) => { if (c.userData.editorOnly && c.visible) seen++; }); } });
+    return engine.output.renderPng().then(() => { off(); return seen; });
+  });
+  expect(during).toBe(0);
+  expect((await state()).gizmos).toBe(2);
+  expect(errors).toEqual([]);
+});

@@ -1,3 +1,4 @@
+import type * as THREE from 'three';
 import { FPS, VIEWPORT_BG } from '../../core/constants';
 import { errorText } from '../../core/errors';
 import { VIDEO_FORMATS, frameSpan, normalizeOutput, outputFileName, type OutputSettings } from '../../core/output';
@@ -189,12 +190,19 @@ export class RenderOutput {
     this.active = true;
     this.gridWas = this.graph.grid.visible;
     this.graph.grid.visible = false;
+    // ライトの目印など、ビューポートだけの物も描かない
+    this.hidden = [];
+    this.graph.scene.traverse(o => { if (o.userData.editorOnly && o.visible) this.hidden.push(o); });
+    for (const o of this.hidden) o.visible = false;
     this.viewport.beginOutput(width, height, VIEWPORT_BG);
   }
   private gridWas = true;
+  private hidden: THREE.Object3D[] = [];
   private end() {
     this.active = false;
     this.graph.grid.visible = this.gridWas;
+    for (const o of this.hidden) o.visible = true;
+    this.hidden = [];
     this.viewport.endOutput();
   }
 

@@ -1,5 +1,6 @@
 import type { ClonerSettings } from '../core/cloner';
 import type { Deformer } from '../core/deform';
+import type { LightSettings } from '../core/light';
 import { TL_DEFAULT_END } from '../core/constants';
 import { OUTPUT_DEFAULT, type OutputSettings } from '../core/output';
 import { normalizeScene, type SceneSettings } from '../core/scene';
@@ -9,7 +10,8 @@ import { FX_LEVEL_DEFAULT, type FxLevel, type FxState } from './render/postfx';
 // --- エンジンから画面 (React) へ知らせる状態と、お知らせ ---
 // エンジンの各部は、画面に見せたいことをここに書く (React の部品は Store を購読して描き直す)
 export interface SelInfo {
-  id: number; kind: 'shape' | 'model'; name: string; c: number;
+  id: number; kind: 'shape' | 'model' | 'light'; name: string; c: number;
+  light: LightSettings | null;   // ライトの設定 (ライトだけ)
   x: number; y: number; z: number; r: number; animated: boolean;
   cloner: ClonerSettings | null; // クローナーの設定 (なければ普通の物)
   deformers: Deformer[] | null;  // デフォーマ

@@ -2,6 +2,7 @@ import { strFromU8, strToU8, unzip, zip, type AsyncZippable } from 'fflate';
 import type { AnimationJson } from '../../core/animation';
 import type { ClonerSettings } from '../../core/cloner';
 import type { Deformer } from '../../core/deform';
+import type { LightSettings } from '../../core/light';
 import type { NodeTree } from '../../core/materials/tree';
 import type { OutputSettings } from '../../core/output';
 import type { SceneSettings } from '../../core/scene';
@@ -27,12 +28,13 @@ export interface SavedAsset { id: string; name: string; type: string; size?: num
 export type PickMissing = (missing: SavedAsset[]) => Promise<File[] | 'skip' | 'cancel'>;
 export class ProjectCancelled extends Error { constructor() { super('開くのをやめました'); } }
 export interface SavedObject {
-  kind: 'shape' | 'model';
+  kind: 'shape' | 'model' | 'light';
   s: number; x: number; y: number; z: number; r: number; c: number;
   slots: (string | null)[];
   activeSlot?: number;
   cloner?: ClonerSettings | null; // クローナー
   deformers?: Deformer[] | null;  // デフォーマ
+  light?: LightSettings | null;   // ライト
   // MMD モデルだけ
   files?: string[];
   pose?: Pose;

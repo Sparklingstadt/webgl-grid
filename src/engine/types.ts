@@ -2,6 +2,7 @@ import type * as THREE from 'three';
 import type { Animation } from '../core/animation';
 import type { ClonerSettings } from '../core/cloner';
 import type { Deformer } from '../core/deform';
+import type { LightSettings } from '../core/light';
 import type { BoneValue } from '../core/types';
 
 // MMDLoader などの three.js の付属品は、型の付いていない内部の値も使うので any で扱う
@@ -35,6 +36,7 @@ export interface Obj {
   activeSlot?: number;                // サイドバーで選んでいるスロット
   cloner?: ClonerSettings | null;     // クローナー (並べ方。なければ普通の物)
   deformers?: Deformer[] | null;      // デフォーマ (形を曲げる・ねじるなど)
+  light?: LightSettings | null;       // ライト (ライトのオブジェクトだけ)
   highlighted?: boolean;              // 掴んでいるので明るくしている
 }
 export type ModelObj = Obj & { model: Any };

@@ -96,6 +96,16 @@ forward('set_cloner', 'クローナー (Cinema 4D のクローナー): 物を直
     scale: z.number().positive().optional(), frames: z.number().min(0).optional(),
   })).optional().describe('エフェクタ (上から順にかける。渡すと並びごと入れ替える)。plain: 全部に同じだけ / step: 最初の 0 から最後の値まで / delay: MMD モデルのクローンを 1 つごとに frames フレーム遅らせる'),
 });
+const hexColor = z.string().regex(/^#?[0-9a-fA-F]{6}$/).describe('"#rrggbb"');
+const lightSettings = {
+  color: hexColor.optional(), intensity: z.number().min(0).optional().describe('明るさ (点・スポットはカンデラ。点 30・スポット 80 くらい。エリアはニト 6 くらい)'),
+  height: z.number().positive().optional().describe('床からの高さ'), range: z.number().min(0).optional().describe('届く距離 (0 で果てしなく)'),
+  angleDeg: z.number().min(1).max(89).optional().describe('スポット: 広がり (度)'), softness: z.number().min(0).max(1).optional().describe('スポット: 縁のぼけ'),
+  tiltDeg: z.number().optional().describe('スポット・エリア: 真下からの傾き (物の向きの前へ)'), width: z.number().positive().optional(), depth: z.number().positive().optional(),
+  shadows: z.boolean().optional(),
+};
+forward('add_light', 'ライト (Cinema 4D のライト) を置いて選ぶ。向きは set_object の rotationDeg', { type: z.enum(['point', 'spot', 'area']).optional(), x: z.number().optional(), z: z.number().optional(), ...lightSettings });
+forward('set_light', 'ライトの設定を変える (渡したところだけ)', { id, type: z.enum(['point', 'spot', 'area']).optional(), ...lightSettings });
 forward('set_deformers', 'デフォーマ (Cinema 4D のデフォーマ): 物を曲げる・ねじる・細くする・ふくらませる。上から順にかける。並びごと入れ替える (空でやめる)。MMD モデルはボーンで動かす前の形にかける', {
   id, deformers: z.array(z.object({
     kind: z.enum(['bend', 'twist', 'taper', 'bulge']), enabled: z.boolean().optional(), axis: z.enum(['x', 'y', 'z']).optional(),
@@ -157,7 +167,6 @@ forward('set_effect', 'MME 風の効果のオン・オフと強さ', {
   effect: z.enum(['ao', 'dof', 'bloom', 'diffusion', 'color']), enabled: z.boolean().optional(),
   levels: z.record(z.string(), z.number()).optional().describe('強さ: ao, dof, bloom, diffusion, temp, sat, bright'),
 });
-const hexColor = z.string().regex(/^#?[0-9a-fA-F]{6}$/).describe('"#rrggbb"');
 forward('set_scene', 'シーンの設定 (Cinema 4D の空・床・太陽): 背景の空、床、太陽の光、部屋の光 (環境光)。渡したところだけ変える', {
   sky: z.object({ mode: z.enum(['viewport', 'color', 'gradient']).optional(), top: hexColor.optional(), bottom: hexColor.optional() }).optional()
     .describe('viewport: ビューポートの灰色 / color: top の単色 / gradient: 地平線 (bottom) から真上 (top) へ'),

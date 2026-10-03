@@ -1,5 +1,5 @@
 import { FPS, PALETTE_NAMES, VIEWPORT_BG } from '../../core/constants';
-import { SHAPES, findShape, shapeName } from '../../core/shapes';
+import { SHAPES, findShape } from '../../core/shapes';
 import { hexToLinear, linearToHex } from '../../core/materials/color';
 import { NODE_TYPES } from '../../core/materials/nodes';
 import { surfaceShader } from '../../core/materials/tree';
@@ -8,6 +8,7 @@ import { fromBase64, toBase64, type RemoteFile } from '../../core/remote';
 import { keyFrames } from '../../core/animation';
 import type { BoneValue } from '../../core/types';
 import type { Engine } from '../Engine';
+import { nameOf } from '../world/Selection';
 import { projectBaseName } from '../project/ProjectIO';
 import type { FxKey, FxLevel } from '../render/postfx';
 import { isModel, type Any, type ModelObj, type Obj } from '../types';
@@ -56,8 +57,9 @@ export function sceneState(e: Engine) {
     selected: e.selection.current?.id ?? null,
     objects: e.world.objects.map(o => ({
       id: o.id,
-      kind: isModel(o) ? 'model' : 'shape',
-      name: isModel(o) ? o.model.name : shapeName(o.s),
+      kind: o.light ? 'light' : isModel(o) ? 'model' : 'shape',
+      name: nameOf(o),
+      ...(o.light ? { light: o.light } : {}),
       position: [r3(o.x), r3(o.y), r3(o.z)],
       rotationDeg: r3(o.r * DEG),
       ...(isModel(o)
@@ -137,6 +139,22 @@ export const COMMANDS: Record<string, Command> = {
     return { id: obj.id, cloner: obj.cloner ?? null, clones: e.cloners.count(obj) };
   },
   // デフォーマ: 並びごと入れ替える (空でやめる)
+  // ライト: 置く・変える
+  add_light: (e, p) => {
+    const { type = 'point', x, z, ...settings } = p ?? {};
+    const obj = e.addLight(type, settings);
+    if (!obj) throw new Error('これ以上置けません');
+    if (x !== undefined || z !== undefined) COMMANDS.set_object(e, { id: obj.id, x, z });
+    return { id: obj.id, light: obj.light };
+  },
+  set_light: (e, p) => {
+    const obj = objOf(e, p?.id);
+    if (!obj.light) throw new Error(`id ${obj.id} はライトではありません`);
+    e.select(obj);
+    const { id: _id, ...patch } = p ?? {};
+    e.setLight(patch);
+    return { id: obj.id, light: obj.light };
+  },
   set_deformers: (e, p) => {
     const obj = objOf(e, p?.id);
     e.select(obj);
