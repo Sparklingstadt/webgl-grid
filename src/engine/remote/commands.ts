@@ -259,11 +259,23 @@ export const COMMANDS: Record<string, Command> = {
   },
 
   // --- プロジェクト ---
-  save_project: async e => ({ data: toBase64(await e.project.save()) }),
+  // reference: ファイルは参照だけ (.wgpj の JSON)
+  save_project: async (e, p) => ({ data: toBase64(await e.project.save(p?.reference ? 'reference' : 'embedded')) }),
+  // files: 参照しているファイル (MCP サーバーが探したもの)。見つからないものがあればエラー (allowMissing なら、なしで開く)
   open_project: async (e, p) => {
-    await e.project.open(fromBase64(String(p?.data ?? '')));
-    if (p?.name) e.ui.set({ projectName: String(p.name).replace(/\.wgp$/i, '') });
-    return sceneState(e);
+    const files: RemoteFile[] = p?.files ?? [];
+    const provided = new Map(toFiles(files).map((f, i) => [files[i].asset ?? '', f]));
+    let skipped: string[] = [];
+    await e.project.open(fromBase64(String(p?.data ?? '')), {
+      provided,
+      pick: async missing => {
+        skipped = missing.map(a => a.name);
+        if (p?.allowMissing) return 'skip';
+        throw new Error(`参照しているファイルが見つかりません: ${skipped.join('、')}`);
+      },
+    });
+    if (p?.name) e.ui.set({ projectName: String(p.name).replace(/\.wgpj?$/i, '') });
+    return { missing: skipped, ...sceneState(e) };
   },
 };
 

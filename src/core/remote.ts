@@ -11,7 +11,8 @@ export type RemoteResponse = { id: number; result: unknown } | { id: number; err
 
 // ファイルは base64 で送る (名前はファイル名だけ。MMD のテクスチャはファイル名で対応づける)
 // path は MCP サーバーが読んだ元の場所 (分かるときだけ。参照だけのプロジェクトで使う)
-export interface RemoteFile { name: string; type?: string; data: string; path?: string }
+// asset はプロジェクトを開くとき、そのファイルが参照されている asset の id
+export interface RemoteFile { name: string; type?: string; data: string; path?: string; asset?: string }
 
 // ページの URL の ?mcp (=ポート番号) から、つなぎに行くポートを決める。なければ null
 export function remotePortFromSearch(search: string): number | null {

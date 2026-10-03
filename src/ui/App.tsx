@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { MenuContext } from './components/Menu';
-import { Palette, RenderProgress, RenderResult, Toast } from './components/Overlays';
+import { MissingFiles, Palette, RenderProgress, RenderResult, Toast } from './components/Overlays';
 import type { SideTab } from './components/sidebar/Sidebar';
 import { BottomArea, type BottomEditor } from './components/BottomArea';
 import { TopBar } from './components/TopBar';
@@ -80,6 +80,7 @@ export default function App() {
       <Palette />
       <RenderProgress />
       <RenderResult />
+      <MissingFiles />
       <input type="file" ref={pmxInput} multiple hidden
              accept=".pmx,.vmd,.vpd,.png,.jpg,.jpeg,.bmp,.tga,.gif,.spa,.sph,image/*,.mp3,.wav,.ogg,.oga,.m4a,.aac,.flac,.opus,audio/*"
              onChange={e => {
@@ -87,7 +88,7 @@ export default function App() {
                e.currentTarget.value = ''; // 同じファイルをもう一度選べるようにする
                if (files.length) engine.loadFiles(files);
              }} />
-      <input type="file" ref={projectInput} accept=".wgp" hidden
+      <input type="file" ref={projectInput} accept=".wgp,.wgpj" hidden
              onChange={e => {
                const f = e.currentTarget.files?.[0];
                e.currentTarget.value = '';

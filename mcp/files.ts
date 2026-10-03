@@ -56,6 +56,20 @@ export async function readAsRemoteFiles(paths: string[]): Promise<{ files: Remot
   return { files, bytes };
 }
 
+// 参照だけのプロジェクト (.wgpj) が参照しているファイルを探す: 元の場所 → プロジェクトから見た場所 → プロジェクトと同じフォルダ。
+// 大きさが合うものを優先する
+export async function findAsset(a: { name: string; size?: number; source?: string; relative?: string }, projectDir: string) {
+  const candidates = [a.source, a.relative && path.resolve(projectDir, a.relative), path.join(projectDir, a.name)].filter((p): p is string => !!p);
+  let fallback: string | null = null;
+  for (const p of candidates) {
+    const st = await stat(p).catch(() => null);
+    if (!st?.isFile()) continue;
+    if (a.size === undefined || st.size === a.size) return p;
+    fallback ??= p;
+  }
+  return fallback;
+}
+
 // base64 の中身をファイルに書く (フォルダがなければ作る)。書いた場所の絶対パスを返す
 export async function writeBase64(target: string, cwd: string, b64: string) {
   const p = path.resolve(cwd, target);

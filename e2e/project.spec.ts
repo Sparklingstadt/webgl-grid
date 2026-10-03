@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { strFromU8, unzipSync } from 'fflate';
 import { expect, test, type Page } from './fixtures/test';
+import { makePmx } from './fixtures/pmx';
 import { makeVmd } from './fixtures/vmd';
 import { loadTestModel, open, uiState, type Win } from './helpers';
 
@@ -34,12 +35,11 @@ const snapshot = (page: Page) => page.evaluate(() => {
   };
 });
 
-test('保存したプロジェクトを開き直すと、同じ場面に戻る', async ({ page }) => {
-  test.setTimeout(90_000);
-  let errors = await open(page);
-  // モデル (物理演算つき) とダンスのモーション
-  const vmd = makeVmd([{ bone: 'センター', frame: 0, pos: [0, 0, 0] }, { bone: 'センター', frame: 60, pos: [0, 0, 5] }]);
-  await loadTestModel(page, [{ name: 'テスト.vmd', mimeType: 'application/octet-stream', buffer: Buffer.from(vmd) }], { physics: true });
+// テスト用の場面: モデル (物理演算つき)・ダンス・キーフレーム・髪・マテリアル・積んだ形・視点・タイムライン
+const VMD = Buffer.from(makeVmd([{ bone: 'センター', frame: 0, pos: [0, 0, 0] }, { bone: 'センター', frame: 60, pos: [0, 0, 5] }]));
+const PMX = Buffer.from(makePmx('テスト人形', { physics: true }));
+async function buildScene(page: Page) {
+  await loadTestModel(page, [{ name: 'テスト.vmd', mimeType: 'application/octet-stream', buffer: VMD }], { physics: true });
   await expect.poll(() => page.evaluate(() => (window as Win).engine.physics.entries.length), { timeout: 30_000 }).toBe(1);
   await page.evaluate(() => {
     const { engine } = window as Win;
@@ -64,6 +64,12 @@ test('保存したプロジェクトを開き直すと、同じ場面に戻る',
     engine.clock.seekFrame(25);
     engine.select(model);
   });
+}
+
+test('保存したプロジェクトを開き直すと、同じ場面に戻る', async ({ page }) => {
+  test.setTimeout(90_000);
+  let errors = await open(page);
+  await buildScene(page);
   const before = await snapshot(page);
   expect(before.objects.map((o: Win) => o.s)).toEqual([0, 3, 1, 1]);
   expect(before.objects[3].y).toBeGreaterThan(0); // 積んである
@@ -83,16 +89,62 @@ test('保存したプロジェクトを開き直すと、同じ場面に戻る',
   // まっさらなページで開き直す
   errors = await open(page);
   // (ダウンロードしたファイルは別の名前で置かれるので、保存した名前で選ぶ)
-  await page.locator('input[type=file][accept=".wgp"]').setInputFiles({ name: download.suggestedFilename(), mimeType: 'application/zip', buffer: await readFile(path) });
+  await page.locator('input[type=file][accept=".wgp,.wgpj"]').setInputFiles({ name: download.suggestedFilename(), mimeType: 'application/zip', buffer: await readFile(path) });
   await page.waitForFunction(() => (window as Win).engine.ui.state.projectName === 'プロジェクト', undefined, { timeout: 30_000 });
   expect(await snapshot(page)).toEqual(before);
-  await expect(page.locator('.title')).toHaveText('プロジェクト.wgp — webgl-grid');
+  await expect(page.locator('.title')).toHaveText('プロジェクト — webgl-grid');
   expect(errors).toEqual([]);
 });
 
 test('プロジェクトでないファイルは開かず、今の場面はそのまま', async ({ page }) => {
   await open(page);
-  await page.locator('input[type=file][accept=".wgp"]').setInputFiles({ name: 'ちがう.wgp', mimeType: 'application/octet-stream', buffer: Buffer.from('not a zip') });
+  await page.locator('input[type=file][accept=".wgp,.wgpj"]').setInputFiles({ name: 'ちがう.wgp', mimeType: 'application/octet-stream', buffer: Buffer.from('not a zip') });
   await expect.poll(async () => (await uiState(page)).toast).toMatch(/^ちがう\.wgp を開けませんでした: プロジェクトのファイル/);
   expect(await page.evaluate(() => (window as Win).engine.world.objects.length)).toBe(1);
+});
+
+test('ファイルは参照だけ (.wgpj) で保存し、開くときに足りないファイルを選ぶ', async ({ page }) => {
+  test.setTimeout(90_000);
+  let errors = await open(page);
+  await buildScene(page);
+  const before = await snapshot(page);
+  // ファイル > ファイルは参照だけで保存 (.wgpj): 小さな JSON で、ファイルの中身は入らない
+  await page.getByRole('button', { name: 'ファイル' }).click();
+  const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('menuitem', { name: /参照だけで保存/ }).click()]);
+  expect(download.suggestedFilename()).toBe('プロジェクト.wgpj');
+  const json = await readFile((await download.path())!);
+  const data = JSON.parse(json.toString('utf8'));
+  expect(data.storage).toBe('reference');
+  expect(data.assets.map((a: { name: string; size: number; path?: string }) => [a.name, a.size, a.path])).toEqual([
+    ['テスト人形.pmx', PMX.length, undefined], ['テスト.vmd', VMD.length, undefined],
+  ]);
+  expect(json.length).toBeLessThan(20_000);
+  const wgpj = { name: 'プロジェクト.wgpj', mimeType: 'application/json', buffer: json };
+
+  // 同じページで開き直すときは、読み込んだファイルを覚えているので、そのまま開ける
+  await page.locator('input[type=file][accept=".wgp,.wgpj"]').setInputFiles(wgpj);
+  await expect.poll(async () => (await uiState(page)).toast).toBe('プロジェクト.wgpj を開きました');
+  expect(await snapshot(page)).toEqual(before);
+
+  // まっさらなページでは、足りないファイルを聞かれる。違う名前のファイルを選んでも対応づかず、もう一度聞かれる
+  errors = await open(page);
+  await page.locator('input[type=file][accept=".wgp,.wgpj"]').setInputFiles(wgpj);
+  const dialog = page.getByRole('dialog', { name: 'ファイルを探す' });
+  await expect(dialog.getByRole('list', { name: '見つからないファイル' }).getByRole('listitem')).toHaveCount(2);
+  await dialog.getByLabel('ファイルを選ぶ').setInputFiles([{ name: 'テスト.vmd', mimeType: 'application/octet-stream', buffer: VMD }]);
+  await expect(dialog.getByRole('listitem')).toHaveCount(1);
+  await expect(dialog.getByRole('listitem')).toContainText('テスト人形.pmx');
+  await dialog.getByLabel('ファイルを選ぶ').setInputFiles([{ name: 'テスト人形.pmx', mimeType: 'application/octet-stream', buffer: PMX }]);
+  await expect(dialog).toHaveCount(0);
+  await page.waitForFunction(() => (window as Win).engine.ui.state.projectName === 'プロジェクト', undefined, { timeout: 30_000 });
+  expect(await snapshot(page)).toEqual(before);
+  expect(errors).toEqual([]);
+
+  // 「やめる」と、いまの場面はそのまま
+  errors = await open(page);
+  await page.locator('input[type=file][accept=".wgp,.wgpj"]').setInputFiles(wgpj);
+  await page.getByRole('dialog', { name: 'ファイルを探す' }).getByRole('button', { name: /やめる/ }).click();
+  await expect.poll(async () => (await uiState(page)).toast).toBe('プロジェクトを開くのをやめました');
+  expect(await page.evaluate(() => (window as Win).engine.world.objects.length)).toBe(1);
+  expect(errors).toEqual([]);
 });

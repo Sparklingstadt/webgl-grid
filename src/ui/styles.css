@@ -256,3 +256,5 @@ select.bselect { padding: 3px 6px; background: var(--field); border: 1px solid #
 /* 外部からの操作 (MCP) のつながり */
 .remote-chip { margin-left: 8px; padding: 1px 6px; border-radius: 8px; font-size: 11px; color: var(--dim); border: 1px solid #555; user-select: none; }
 .remote-chip.connected { color: #fff; background: #2a7a3a; border-color: #2a7a3a; }
+.missing-files ul { margin: 0; padding: 0 0 0 18px; max-height: 40vh; overflow: auto; overflow-wrap: anywhere; }
+.missing-files li { margin: 2px 0; }

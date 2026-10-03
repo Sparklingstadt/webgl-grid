@@ -68,3 +68,42 @@ export function RenderResult() {
     </div>
   );
 }
+
+// 参照だけのプロジェクト (.wgpj) を開くとき、見つからないファイルを探してもらう。
+// フォルダを選ぶと、その中 (サブフォルダも) から名前と大きさで探す
+export function MissingFiles() {
+  const engine = useEngine();
+  const m = useUi(s => s.missingFiles);
+  const dirInput = useRef<HTMLInputElement>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  if (!m) return null;
+  const take = (input: HTMLInputElement) => {
+    const files = [...input.files ?? []];
+    input.value = '';
+    if (files.length) engine.answerMissingFiles(files);
+  };
+  return (
+    <div className="modal-back">
+      <div className="modal missing-files" role="dialog" aria-modal="true" aria-label="ファイルを探す">
+        <div className="modal-title">{m.project} が参照しているファイルが見つかりません</div>
+        <div className="note">ファイルが入っているフォルダか、ファイルそのものを選んでください。名前と大きさで対応づけます</div>
+        <ul aria-label="見つからないファイル">
+          {m.files.map(f => (
+            <li key={f.name + f.size}>
+              {f.name}{f.size !== undefined && <span className="note"> ({(f.size / 1024 / 1024).toFixed(1)} MB)</span>}
+              {f.source && <div className="note">{f.source}</div>}
+            </li>
+          ))}
+        </ul>
+        <div className="row">
+          <button type="button" className="bbtn" onClick={() => dirInput.current?.click()}>フォルダを選ぶ…</button>
+          <button type="button" className="bbtn" onClick={() => fileInput.current?.click()}>ファイルを選ぶ…</button>
+          <button type="button" className="bbtn" onClick={() => engine.answerMissingFiles('skip')}>見つかったものだけで開く</button>
+          <button type="button" className="bbtn" onClick={() => engine.answerMissingFiles('cancel')}>やめる (Esc)</button>
+        </div>
+        <input type="file" ref={dirInput} hidden aria-label="フォルダを選ぶ" {...{ webkitdirectory: '' }} onChange={e => take(e.currentTarget)} />
+        <input type="file" ref={fileInput} hidden multiple aria-label="ファイルを選ぶ" onChange={e => take(e.currentTarget)} />
+      </div>
+    </div>
+  );
+}

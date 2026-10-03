@@ -10,7 +10,7 @@ import { addNode, connect, disconnect, findNode, removeNode, surfaceShader, whyN
 import { patchPmxMaterials } from '../core/pmxMaterials';
 import { convertMmdMesh } from './materials/fromMmd';
 import { MaterialLibrary, type MaterialData, type MaterialOutline, type MaterialSettings } from './materials/MaterialLibrary';
-import { ProjectIO } from './project/ProjectIO';
+import { PROJECT_EXT, ProjectCancelled, ProjectIO, type ProjectStorage } from './project/ProjectIO';
 import { RemoteLink } from './remote/RemoteLink';
 import { toPmxValues } from './materials/toPmx';
 import { MmdLoader } from './mmd/MmdLoader';
@@ -177,6 +177,7 @@ export class Engine {
   // .vmd だけ・曲だけのときは、置いてあるモデル全員に付ける
   async loadFiles(files: File[]) {
     const { world, ui } = this;
+    this.project.remember(files); // 参照だけのプロジェクトを開くときに使う
     const vmds = files.filter(f => /\.vmd$/i.test(f.name));
     const vpd = files.find(f => /\.vpd$/i.test(f.name));
     const song = files.find(isAudio);
@@ -347,13 +348,14 @@ export class Engine {
   }
   // --- プロジェクト (.wgp) ---
   // いまの場面 (モデル・配置・マテリアル・ポーズ・キーフレーム・モーション・曲・視点・タイムライン) を保存する
-  async saveProject() {
+  // embedded: ファイルも入れた .wgp、reference: ファイルは参照だけの .wgpj
+  async saveProject(storage: ProjectStorage = 'embedded') {
     this.ui.toast('プロジェクトを保存中…', 0);
     try {
-      const bytes = await this.project.save();
-      const name = `${this.ui.state.projectName ?? 'プロジェクト'}.wgp`;
-      download(bytes, name);
-      this.ui.set({ projectName: name.replace(/\.wgp$/i, '') });
+      const bytes = await this.project.save(storage);
+      const name = `${this.ui.state.projectName ?? 'プロジェクト'}.${PROJECT_EXT[storage]}`;
+      download(bytes, name, storage === 'reference' ? 'application/json' : 'application/zip');
+      this.ui.set({ projectName: projectBaseName(name) });
       this.ui.toast(`${name} を保存しました (${(bytes.length / 1024 / 1024).toFixed(1)} MB)`);
     } catch (err) {
       console.error(err);
@@ -362,14 +364,38 @@ export class Engine {
   }
   async openProject(file: File) {
     this.ui.toast(`${file.name} を開いています…`, 0);
+    let skipped = 0;
     try {
-      await this.project.open(new Uint8Array(await file.arrayBuffer()));
-      this.ui.set({ projectName: file.name.replace(/\.wgp$/i, '') });
-      this.ui.toast(`${file.name} を開きました`);
+      await this.project.open(new Uint8Array(await file.arrayBuffer()), {
+        // 参照しているファイルが見つからなければ、画面で探してもらう
+        pick: async missing => {
+          this.ui.hideToast();
+          const r = await this.askMissingFiles(file.name, missing);
+          if (r === 'skip') skipped = missing.length;
+          this.ui.toast(`${file.name} を開いています…`, 0);
+          return r;
+        },
+      });
+      this.ui.set({ projectName: projectBaseName(file.name) });
+      this.ui.toast(skipped ? `${file.name} を開きました (見つからないファイルが ${skipped} 個あります)` : `${file.name} を開きました`, skipped ? 8000 : 4000);
     } catch (err) {
+      if (err instanceof ProjectCancelled) { this.ui.toast('プロジェクトを開くのをやめました'); return; }
       console.error(err);
       this.ui.toast(`${file.name} を開けませんでした: ${(err as Error)?.message ?? err}`, 8000);
     }
+  }
+
+  // 見つからないファイルの画面: 選んだファイル (フォルダ) を渡す・見つかったものだけで開く・やめる
+  private missingAnswer: ((r: File[] | 'skip' | 'cancel') => void) | null = null;
+  private askMissingFiles(project: string, missing: { name: string; size?: number; source?: string }[]) {
+    this.ui.set({ missingFiles: { project, files: missing.map(({ name, size, source }) => ({ name, size, source })) } });
+    return new Promise<File[] | 'skip' | 'cancel'>(ok => { this.missingAnswer = ok; });
+  }
+  answerMissingFiles(r: File[] | 'skip' | 'cancel') {
+    const answer = this.missingAnswer;
+    this.missingAnswer = null;
+    this.ui.set({ missingFiles: null });
+    answer?.(r);
   }
 
   // --- レンダリング (Blender の F12 / Ctrl+F12) ---
@@ -491,6 +517,8 @@ export class Engine {
 }
 
 // バイト列をファイルとしてダウンロードさせる
+const projectBaseName = (name: string) => name.replace(/\.wgpj?$/i, '');
+
 function download(bytes: Uint8Array, name: string, type = '') {
   const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type }));
   downloadUrl(url, name);

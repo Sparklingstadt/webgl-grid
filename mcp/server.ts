@@ -12,7 +12,8 @@ import { z } from 'zod';
 import { REMOTE_DEFAULT_PORT } from '../src/core/remote.ts';
 import { openBrowser, serveApp } from './appServer.ts';
 import { AppBridge, NOT_CONNECTED } from './bridge.ts';
-import { collectFiles, readAsRemoteFiles, writeBase64 } from './files.ts';
+import { readFile } from 'node:fs/promises';
+import { collectFiles, findAsset, readAsRemoteFiles, writeBase64 } from './files.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CWD = process.cwd();
@@ -155,14 +156,38 @@ tool('render_animation', 'タイムラインの開始〜終了フレームを動
 });
 
 // プロジェクト
-tool('save_project', 'いまの場面をプロジェクト (.wgp。モデルなどのファイルも入る) に保存する', { path: z.string() }, async a => {
-  const r = await call('save_project', {}, 300_000);
-  return { content: [text(await writeBase64(a.path, CWD, String(r.data)))] };
+tool('save_project', 'いまの場面をプロジェクトに保存する。.wgp はモデル・モーション・曲などのファイルも入れる。.wgpj (reference) はファイルを入れず、元のファイルの場所を参照するだけ (小さい)', {
+  path: z.string().describe('保存するパス (.wgp か .wgpj)'),
+  reference: z.boolean().optional().describe('ファイルは参照だけにする (省くと、path が .wgpj なら参照だけ)'),
+}, async a => {
+  const reference = a.reference ?? /\.wgpj$/i.test(a.path);
+  const target = path.resolve(CWD, a.path.replace(/\.wgpj?$/i, '') + (reference ? '.wgpj' : '.wgp'));
+  const r = await call('save_project', { reference }, 300_000);
+  if (!reference) return { content: [text(await writeBase64(target, CWD, String(r.data)))] };
+  // 参照だけ: プロジェクトのファイルから見た場所も書いておく (フォルダごと動かしても開けるように)
+  const data = JSON.parse(Buffer.from(String(r.data), 'base64').toString('utf8'));
+  for (const asset of data.assets) if (asset.source) asset.relative = path.relative(path.dirname(target), asset.source);
+  const unknown = data.assets.filter((x: { source?: string }) => !x.source).map((x: { name: string }) => x.name);
+  const saved = await writeBase64(target, CWD, Buffer.from(JSON.stringify(data, null, 1)).toString('base64'));
+  return { content: [text({ ...saved, note: unknown.length ? `元の場所が分からないファイル (ページで直接読み込んだもの): ${unknown.join('、')}。開くときはプロジェクトと同じフォルダから探します` : undefined })] };
 });
-tool('open_project', 'プロジェクト (.wgp) を開く', { path: z.string() }, async a => {
-  const [p] = await collectFiles([a.path], CWD);
-  const { files } = await readAsRemoteFiles([p]);
-  return { content: [text(await call('open_project', { data: files[0].data, name: path.basename(p) }, 300_000))] };
+tool('open_project', 'プロジェクト (.wgp / .wgpj) を開く。.wgpj は参照しているファイルを手元から探して送る', {
+  path: z.string(), allowMissing: z.boolean().optional().describe('.wgpj で見つからないファイルがあっても、なしで開く'),
+}, async a => {
+  const p = path.resolve(CWD, a.path);
+  const bytes = await readFile(p);
+  const files = [];
+  if (bytes[0] === 0x7b) { // .wgpj (JSON): 参照しているファイルを探す
+    const data = JSON.parse(bytes.toString('utf8'));
+    for (const asset of data.assets ?? []) {
+      const found = await findAsset(asset, path.dirname(p));
+      if (!found) continue;
+      const { files: [f] } = await readAsRemoteFiles([found]);
+      files.push({ ...f, asset: asset.id });
+    }
+  }
+  const r = await call('open_project', { data: bytes.toString('base64'), name: path.basename(p), files, allowMissing: a.allowMissing }, 300_000);
+  return { content: [text(r)] };
 });
 
 await server.connect(new StdioServerTransport());

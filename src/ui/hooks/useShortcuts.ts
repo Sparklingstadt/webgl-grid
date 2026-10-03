@@ -20,6 +20,7 @@ export function useShortcuts(engine: Engine, actions: {
       // レンダリング中・レンダー結果を見ているあいだは、Esc (キャンセル・閉じる) だけを受け付ける
       if (engine.ui.state.rendering) { if (e.key === 'Escape') engine.cancelRender(); e.preventDefault(); return; }
       if (engine.ui.state.renderResult) { if (e.key === 'Escape') engine.closeRenderResult(); return; }
+      if (engine.ui.state.missingFiles) { if (e.key === 'Escape') engine.answerMissingFiles('cancel'); return; }
       if (e.key === 'Escape') { if (!a.closeMenus()) engine.picker.close(); return; }
       // F12: 画像をレンダリング、Ctrl+F12: アニメーションをレンダリング (Blender と同じ)
       if (e.key === 'F12') { e.preventDefault(); if (e.ctrlKey || e.metaKey) engine.renderAnimation(); else engine.renderImage(); return; }
@@ -29,7 +30,7 @@ export function useShortcuts(engine: Engine, actions: {
       if (t.closest('input, select, textarea, [contenteditable]')) return;
       if (t.closest('.bslider') && /^(Arrow|Enter$)/.test(e.key)) return;
       if ((e.ctrlKey || e.metaKey) && e.code === 'KeyO') { e.preventDefault(); if (e.shiftKey) a.openProject(); else a.openFiles(); return; }
-      if ((e.ctrlKey || e.metaKey) && e.code === 'KeyS') { e.preventDefault(); engine.saveProject(); return; }
+      if ((e.ctrlKey || e.metaKey) && e.code === 'KeyS') { e.preventDefault(); engine.saveProject(e.altKey ? 'reference' : 'embedded'); return; }
       if (e.ctrlKey || e.metaKey) return;
       const hoverTl = a.hoverArea.current === 'timeline';
       // シェーダーエディターの上では、X (ノードを消す)・Shift+A (ノードを追加)・Home はエディターが受け持つ

@@ -15,8 +15,10 @@ export function TopBar({ onOpenFiles, onLoadPose, onOpenProject, onOpenOutput }:
         <path d="M2 7 9 7" stroke="#e87d0d" strokeWidth="2.4" strokeLinecap="round" />
       </svg>
       <Menu id="file" label="ファイル">
-        <MenuItem label="プロジェクトを開く… (.wgp)" kbd="Ctrl Shift O" onSelect={onOpenProject} />
-        <MenuItem label="プロジェクトを保存" kbd="Ctrl S" onSelect={() => engine.saveProject()} />
+        <MenuItem label="プロジェクトを開く… (.wgp / .wgpj)" kbd="Ctrl Shift O" onSelect={onOpenProject} />
+        <MenuItem label="プロジェクトを保存 (.wgp)" kbd="Ctrl S" onSelect={() => engine.saveProject()} />
+        <MenuItem label="ファイルは参照だけで保存 (.wgpj)" kbd="Ctrl Alt S" onSelect={() => engine.saveProject('reference')} />
+        <div className="note" style={{ padding: '0 8px 4px' }}>.wgpj はモデル・モーション・曲を入れない小さなファイル。開くときに元のファイルを選びます</div>
         <MenuSep />
         <MenuItem label="MMD を読み込む…" kbd="Ctrl O" onSelect={onOpenFiles} />
         <div className="note" style={{ padding: '0 8px 4px' }}>.pmx とテクスチャ・.vmd・.vpd・曲</div>
@@ -51,7 +53,7 @@ export function TopBar({ onOpenFiles, onLoadPose, onOpenProject, onOpenOutput }:
           MCP {remote === 'connected' ? '接続中' : '待機中'}
         </span>
       )}
-      <span className="title">{projectName ? `${projectName}.wgp — webgl-grid` : 'webgl-grid'}</span>
+      <span className="title">{projectName ? `${projectName} — webgl-grid` : 'webgl-grid'}</span>
     </header>
   );
 }

@@ -90,6 +90,21 @@ test('MCP のツールで、形を置き・モデルを読み込み・キーフ�
     expect(reopened.project).toBe('シーン');
     expect(reopened.objects.map((o: { kind: string }) => o.kind)).toEqual(['shape', 'shape', 'model']);
     expect(reopened.objects[2].keyframes).toEqual([10]);
+
+    // 参照だけのプロジェクト (.wgpj): MCP で読んだファイルは元の場所を覚えていて、開くときに自動で読み込む
+    const ref = path.join(dir, 'プロジェクト', '参照.wgpj');
+    await json('save_project', { path: ref });
+    const saved = JSON.parse(await readFile(ref, 'utf8'));
+    expect(saved.assets.map((a: { name: string; relative: string }) => [a.name, a.relative])).toEqual([
+      ['テスト人形.pmx', path.join('..', 'テスト人形.pmx')], ['テスト.vmd', path.join('..', 'テスト.vmd')],
+    ]);
+    await json('reset_scene');
+    await page.reload(); // 読んだファイルを覚えていない、まっさらなページ
+    await expect(page.getByLabel('MCP の接続')).toHaveText('MCP 接続中');
+    const refOpened = await json('open_project', { path: ref });
+    expect(refOpened.missing).toEqual([]);
+    expect(refOpened.objects.map((o: { kind: string }) => o.kind)).toEqual(['shape', 'shape', 'model']);
+    expect(refOpened.objects[2].keyframes).toEqual([10]);
     expect(errors).toEqual([]);
   } finally {
     await client.close();

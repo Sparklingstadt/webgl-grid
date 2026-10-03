@@ -28,6 +28,8 @@ export interface UiState {
   rendering: { done: number; total: number } | null; // 動画をレンダリング中 (描いたフレーム数)
   renderResult: { url: string; name: string; width: number; height: number } | null; // レンダリングした画像 (保存する前に見せる)
   remote: 'off' | 'waiting' | 'connected'; // 外部からの操作 (MCP サーバーとのつながり)
+  // 参照だけのプロジェクトを開くときに見つからないファイル (探してもらう)
+  missingFiles: { project: string; files: { name: string; size?: number; source?: string }[] } | null;
 }
 type Version = 'modelVersion' | 'values' | 'keysVersion' | 'materialsVersion';
 
@@ -37,7 +39,7 @@ export class UiChannel {
     frame: 0, playing: false, start: 0, end: TL_DEFAULT_END, keysVersion: 0,
     fxState: { ao: false, dof: false, bloom: false, diffusion: false, color: false }, fxLevel: { ...FX_LEVEL_DEFAULT },
     toast: null, palette: null, viewInfo: '', hairHang: null, materialsVersion: 0, projectName: null,
-    output: { ...OUTPUT_DEFAULT }, rendering: null, renderResult: null, remote: 'off',
+    output: { ...OUTPUT_DEFAULT }, rendering: null, renderResult: null, remote: 'off', missingFiles: null,
   });
   private valuesAt = 0;
   private toastTimer: ReturnType<typeof setTimeout> | undefined;
