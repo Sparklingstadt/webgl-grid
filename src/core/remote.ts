@@ -4,6 +4,10 @@
 // このファイルはページと MCP サーバー (Node) の両方から読むので、型と定数だけを置く
 export const REMOTE_DEFAULT_PORT = 7457;
 export const REMOTE_PROTOCOL = 1;
+// MCP サーバーが動いているかを、ページを配っているサーバー (Vite・MCP サーバー) に同じオリジンで問い合わせる場所。
+// 返事は常に 200 の { up: boolean }。ブラウザは、つながらなかった WebSocket を必ずエラーとして出すので、
+// 動いていると分かってからつなぐ (待っているあいだにエラーを出さない)
+export const REMOTE_STATUS_PATH = '/__webgl-grid-mcp';
 
 export interface RemoteHello { type: 'hello'; app: 'webgl-grid'; protocol: number; url: string }
 export interface RemoteRequest { id: number; method: string; params?: unknown }

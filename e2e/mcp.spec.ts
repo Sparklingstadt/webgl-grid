@@ -111,3 +111,33 @@ test('MCP のツールで、形を置き・モデルを読み込み・キーフ�
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test('MCP サーバーを待っているあいだはエラーを出さず、あとから起動するとつながる', async ({ page }, info) => {
+  test.setTimeout(60_000);
+  const wsPort = 17557 + info.workerIndex * 2, appPort = wsPort + 1;
+  const messages: string[] = [];
+  page.on('console', m => { if (m.type() === 'error' || m.type() === 'warning') messages.push(m.text()); });
+  page.on('pageerror', e => messages.push(String(e)));
+  await page.goto(`/?debug&mcp=${wsPort}`);
+  await expect(page.getByLabel('MCP の接続')).toHaveText('MCP 待機中');
+  await page.waitForTimeout(1500); // 1 回つなぎ直すあいだ
+  expect(messages).toEqual([]);
+
+  // 3 回つなぎ直すあいだ (1・2・4 秒) に起動すれば、つながる
+  const client = new Client({ name: 'e2e', version: '0' });
+  await client.connect(new StdioClientTransport({
+    command: 'node', args: ['mcp/server.ts'], cwd: process.cwd(), stderr: 'ignore',
+    env: { ...process.env, WEBGL_GRID_MCP_PORT: String(wsPort), WEBGL_GRID_APP_PORT: String(appPort) } as Record<string, string>,
+  }));
+  try {
+    await expect(page.getByLabel('MCP の接続')).toHaveText('MCP 接続中', { timeout: 10_000 });
+    const r = await client.callTool({ name: 'app_status', arguments: {} }) as ToolResult;
+    expect(JSON.parse((r.content[0] as { text: string }).text).connected).toBe(true);
+  } finally {
+    await client.close();
+  }
+  // サーバーが止まっても、待っているあいだはエラーを出さない
+  await expect(page.getByLabel('MCP の接続')).toHaveText('MCP 待機中');
+  await page.waitForTimeout(1500);
+  expect(messages).toEqual([]);
+});

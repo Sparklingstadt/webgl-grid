@@ -126,6 +126,8 @@ MCP クライアント ⇄ (stdio) ⇄ MCP サーバー (mcp/server.ts) ⇄ (Web
   1. `npm run build`（MCP サーバーが `dist/` を `http://localhost:7458/` で配ります）
   2. MCP クライアントにサーバーを登録します。Claude Code では、このリポジトリを開くと `.mcp.json` の `webgl-grid` が使えます。ほかのクライアントでは、コマンド `node`、引数 `<このリポジトリ>/mcp/server.ts` を登録します（Node.js 22.18 以上。TypeScript をそのまま動かします）。手で起動するときは `npm run mcp`。
   3. ツール `open_app` で、いつものブラウザにアプリが開いてつながります。`npm run dev` で開いたページなら、URL に `?mcp` を付けるか「ファイル > 外部から操作 (MCP) を受け付ける」を選びます。つながると上のバーに「MCP 接続中」と出ます。
+  - MCP サーバーが動いていないときは「MCP 待機中」になり、1・2・4 秒おいて 3 回までつなぎ直します（サーバーが止まって切れたときも同じ）。それでもつながらなければやめてお知らせを出すので、サーバーを起動してからもう一度「受け付ける」を選んでください。
+  - 待っているあいだ、ブラウザのコンソールにエラーは出ません。ブラウザはつながらなかった WebSocket を必ずエラーとして出すので、先にページを配っているサーバー（`npm run dev`・`npm run preview`・MCP サーバー）に、MCP サーバーが動いているかを `/__webgl-grid-mcp` で問い合わせ、動いているときだけつなぎます。
 - ツール:
 
 | 分類 | ツール |
@@ -225,7 +227,7 @@ src/
     components/             TopBar, Menu, ViewportArea, Gizmo, Timeline, BSlider, NumField, Overlays (お知らせ・パレット), Dialogs (レンダリング・ファイルを探す窓), sidebar/
     components/controls/    アプリ独自の入力部品 (BSelect・BCheck・BProgress・ColorPicker・Popover)
     hooks/useShortcuts.ts   キーボードショートカット
-mcp/                        MCP サーバー (server: ツール・bridge: ページとの WebSocket・files: ファイルの読み書き・appServer: dist/ を配る)
+mcp/                        MCP サーバー (server: ツール・bridge: ページとの WebSocket・files: ファイルの読み書き・appServer: dist/ を配る・status: 動いているかの問い合わせに答える)
 e2e/                        e2e テスト (Playwright) と、テスト用 PMX を組み立てる fixtures/pmx.ts
 ```
 
