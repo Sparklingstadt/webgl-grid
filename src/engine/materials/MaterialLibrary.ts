@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { t } from '../../core/i18n';
 import { Emitter } from '../../core/events';
 import { generate, type ShaderCode, type UniformSpec } from '../../core/materials/glsl';
 import type { Color3 } from '../../core/materials/nodes';
@@ -52,7 +53,7 @@ export class MaterialLibrary {
     }
   }
 
-  create(name = 'マテリアル', init: Partial<Omit<MaterialData, 'id' | 'name'>> = {}): MaterialData {
+  create(name = t('マテリアル'), init: Partial<Omit<MaterialData, 'id' | 'name'>> = {}): MaterialData {
     const data: MaterialData = {
       id: `m${this.nextId++}`, name: this.uniqueName(name),
       tree: init.tree ?? createTree(),

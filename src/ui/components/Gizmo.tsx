@@ -1,5 +1,6 @@
 import { useEffect, useRef, type MouseEvent } from 'react';
 import * as THREE from 'three';
+import { t } from '../../core/i18n';
 import { useEngine } from '../EngineContext';
 
 // Blender のナビゲーションギズモ: いまの視点から見た X・Y・Z 軸の向き。軸の丸をクリックすると、その向きから見る。
@@ -83,7 +84,7 @@ export function Gizmo() {
     return best;
   };
   return (
-    <canvas ref={ref} id="gizmo" role="img" aria-label="視点の向き (軸の丸をクリックするとその向きから見る)"
+    <canvas ref={ref} id="gizmo" role="img" aria-label={t('視点の向き (軸の丸をクリックするとその向きから見る)')}
             onPointerMove={e => { hover.current = { inside: true, axis: axisAt(e) }; drawRef.current(); }}
             onPointerLeave={() => { hover.current = { inside: false, axis: -1 }; drawRef.current(); }}
             onClick={e => { const i = axisAt(e); if (i >= 0 && AXES[i].view) engine.camera.snapView(AXES[i].view); }} />

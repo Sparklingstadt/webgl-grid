@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import { hexToRgb } from '../../core/hsv';
+import { t } from '../../core/i18n';
 import { hexToLinear, linearToHex } from '../../core/materials/color';
 import type { Color3, SocketDef, SocketValue } from '../../core/materials/nodes';
 import { BSlider } from './BSlider';
@@ -39,7 +40,7 @@ export function ColorField({ label, value, onChange, compact }: { label: string;
       <button type="button" ref={setBtn} className="bcolor" aria-label={label} title={`${label} ${hex}`} aria-haspopup="dialog" aria-expanded={open}
               style={{ background: hex }} onClick={() => setOpen(o => !o)} />
       {open && (
-        <Popover anchor={anchor} onClose={() => setOpen(false)} className="color-pop" role="dialog" label={`${label}を選ぶ`}>
+        <Popover anchor={anchor} onClose={() => setOpen(false)} className="color-pop" role="dialog" label={t('{label}を選ぶ', { label })}>
           <ColorPicker label={label} rgb={hexToRgb(hex)!} onDone={() => { setOpen(false); btn.current?.focus(); }} onChange={c => onChange(hexToLinear(`#${c.map(v => Math.round(v * 255).toString(16).padStart(2, '0')).join('')}`))} />
         </Popover>
       )}
@@ -49,11 +50,12 @@ export function ColorField({ label, value, onChange, compact }: { label: string;
 
 // ノードの入力の値の欄 (色なら色の欄、値ならスライダー)
 export function SocketField({ def, value, onChange, compact }: { def: SocketDef; value: SocketValue | undefined; onChange: (v: SocketValue) => void; compact?: boolean }) {
-  if (def.noValue || value === undefined) return <span className="socket-label">{def.label}</span>;
-  if (def.kind === 'color') return <ColorField label={def.label} value={value as Color3} onChange={onChange} compact={compact} />;
+  const label = t(def.label);
+  if (def.noValue || value === undefined) return <span className="socket-label">{label}</span>;
+  if (def.kind === 'color') return <ColorField label={label} value={value as Color3} onChange={onChange} compact={compact} />;
   const step = def.step ?? 0.01;
   return (
-    <BSlider label={def.label} value={value as number} min={def.min ?? 0} max={def.max ?? 1} step={step}
+    <BSlider label={label} value={value as number} min={def.min ?? 0} max={def.max ?? 1} step={step}
              digits={step >= 0.05 ? 2 : 3} onChange={onChange} />
   );
 }

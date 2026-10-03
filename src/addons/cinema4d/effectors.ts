@@ -1,3 +1,4 @@
+import { msg } from '../../core/i18n';
 import type { Effector, FieldLayer, Placement, Vec3 } from './cloner';
 
 // --- MoGraph の登録口: エフェクタ・フィールド・クローナーの並べ方 ---
@@ -64,8 +65,8 @@ export interface FieldDef {
 export interface FieldGizmo { shape: 'sphere' | 'box' | 'cylinder' | 'plane'; center: [number, number, number]; size: number[]; inner?: number; axis?: 'x' | 'y' | 'z' }
 // フィールドの重ね方 (Cinema 4D のブレンドモード)
 export const FIELD_BLENDS: { value: FieldLayer['blend']; label: string }[] = [
-  { value: 'normal', label: '標準' }, { value: 'max', label: '最大' }, { value: 'min', label: '最小' },
-  { value: 'add', label: '加算' }, { value: 'subtract', label: '減算' }, { value: 'multiply', label: '乗算' },
+  { value: 'normal', label: msg('標準') }, { value: 'max', label: msg('最大') }, { value: 'min', label: msg('最小') },
+  { value: 'add', label: msg('加算') }, { value: 'subtract', label: msg('減算') }, { value: 'multiply', label: msg('乗算') },
 ];
 
 // クローナーの並べ方 (直線・放射・グリッドのほかに、アドオンが足すもの)

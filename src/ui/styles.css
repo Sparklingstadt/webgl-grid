@@ -364,5 +364,7 @@ details.sub > summary { cursor: pointer; color: var(--dim); font-size: 11px; pad
 @media (max-width: 760px) { .addon-filter { grid-template-columns: 1fr 1fr; } .addon-filter input { grid-column: 1 / -1; } }
 .addon-draw { min-width: 0; }
 .motext-text { width: 100%; box-sizing: border-box; resize: vertical; min-height: 2.6em; font: inherit; margin-bottom: 4px; }
-.topbar .lang-select { margin-left: auto; min-width: 96px; }
+.topbar .lang-select { margin-left: auto; flex: 0 0 auto; width: auto; min-width: 0; max-width: 120px; }
 .topbar .lang-select + .title { margin-left: 8px; }
+.drop-hint { position: fixed; inset: 8px; z-index: 70; display: flex; align-items: center; justify-content: center; pointer-events: none;
+             border: 2px dashed var(--accent); border-radius: 8px; background: rgba(20, 30, 50, 0.55); color: var(--text); font-size: 15px; }

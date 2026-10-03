@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef } from 'react';
 import { PALETTE, PALETTE_NAMES, paletteCss } from '../../core/constants';
+import { getLang, t } from '../../core/i18n';
 import { useEngine, useUi } from '../EngineContext';
 
 // 画面上部のお知らせ (読み込み中・エラーなど)
@@ -23,9 +24,9 @@ export function Palette() {
   }, [palette]);
   if (!palette) return null;
   return (
-    <div className="palette" role="group" aria-label="色" ref={ref}>
+    <div className="palette" role="group" aria-label={t('色')} ref={ref}>
       {PALETTE.map((_, i) => (
-        <button key={i} type="button" aria-label={PALETTE_NAMES[i]} aria-pressed={palette.c === i}
+        <button key={i} type="button" aria-label={t(PALETTE_NAMES[i])} aria-pressed={palette.c === i}
                 style={{ background: paletteCss(i) }} onClick={() => engine.picker.pick(i)} />
       ))}
     </div>
@@ -37,12 +38,12 @@ export function RecoverBanner() {
   const engine = useEngine();
   const r = useUi(s => s.recovery);
   if (!r?.banner) return null;
-  const when = new Date(r.time).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const when = new Date(r.time).toLocaleString(getLang(), { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   return (
-    <div className="recover" role="region" aria-label="前回の続き" onPointerDown={e => e.stopPropagation()}>
-      <span>前回の続きがあります <span className="note">({when}{r.name ? `・${r.name}` : ''})</span></span>
-      <button type="button" className="bbtn" onClick={() => void engine.autosave.recover()}>開く</button>
-      <button type="button" className="bbtn" aria-label="閉じる" onClick={() => engine.autosave.dismiss()}>×</button>
+    <div className="recover" role="region" aria-label={t('前回の続き')} onPointerDown={e => e.stopPropagation()}>
+      <span>{t('前回の続きがあります')} <span className="note">({when}{r.name ? `・${r.name}` : ''})</span></span>
+      <button type="button" className="bbtn" onClick={() => void engine.autosave.recover()}>{t('開く')}</button>
+      <button type="button" className="bbtn" aria-label={t('閉じる')} onClick={() => engine.autosave.dismiss()}>×</button>
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import { msg } from '../../core/i18n';
 import * as THREE from 'three';
 import { int, num } from '../../core/normalize';
 import { shapeDef } from '../../core/shapes';
@@ -25,10 +26,10 @@ export const SPLINE_DEFAULT: SplineSettings = {
 };
 // タートルの見本
 export const TURTLE_PRESETS: { key: string; name: string; set: Partial<SplineSettings> }[] = [
-  { key: 'tree', name: '木', set: { premise: 'F', rules: 'F=FF-[-F+F+F]+[+F-F-F]', iterations: 3, angle: 22.5, step: 0.12, shrink: 1 } },
-  { key: 'plant', name: '草', set: { premise: 'X', rules: 'X=F+[[X]-X]-F[-FX]+X; F=FF', iterations: 4, angle: 25, step: 0.06, shrink: 1 } },
-  { key: 'tree3d', name: '立体の木', set: { premise: 'A', rules: 'A=F[&+A]////[&+A]////[&+A]', iterations: 5, angle: 28, step: 0.6, shrink: 0.72 } },
-  { key: 'koch', name: 'コッホ曲線', set: { premise: 'F', rules: 'F=F+F--F+F', iterations: 3, angle: 60, step: 0.06, shrink: 1 } },
+  { key: 'tree', name: msg('木'), set: { premise: 'F', rules: 'F=FF-[-F+F+F]+[+F-F-F]', iterations: 3, angle: 22.5, step: 0.12, shrink: 1 } },
+  { key: 'plant', name: msg('草'), set: { premise: 'X', rules: 'X=F+[[X]-X]-F[-FX]+X; F=FF', iterations: 4, angle: 25, step: 0.06, shrink: 1 } },
+  { key: 'tree3d', name: msg('立体の木'), set: { premise: 'A', rules: 'A=F[&+A]////[&+A]////[&+A]', iterations: 5, angle: 28, step: 0.6, shrink: 0.72 } },
+  { key: 'koch', name: msg('コッホ曲線'), set: { premise: 'F', rules: 'F=F+F--F+F', iterations: 3, angle: 60, step: 0.06, shrink: 1 } },
 ];
 export function normalizeSpline(o: Partial<SplineSettings> | null | undefined): SplineSettings {
   const d = SPLINE_DEFAULT, s = o ?? {};
@@ -83,7 +84,7 @@ export class MoSpline {
       this.api.engine.viewport.requestDraw();
       return;
     }
-    if (this.c4d.cloner(o)) { this.problems.set(o, 'クローナーにしている物は、MoSpline にできません'); return; }
+    if (this.c4d.cloner(o)) { this.problems.set(o, msg('クローナーにしている物は、MoSpline にできません')); return; }
     const lines = s.mode === 'turtle' ? turtleSpline(s) : simpleSpline(s);
     const b = boundsOf(lines), r = Math.max(s.radius, s.radiusEnd);
     Object.assign(o, {

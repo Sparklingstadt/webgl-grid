@@ -1,6 +1,7 @@
 import { Emitter } from '../../core/events';
 import { animationFromJson, animationToJson, isEmpty } from '../../core/animation';
 import { describeChange, type ObjState, type SceneState } from '../../core/history';
+import { msg, t } from '../../core/i18n';
 import type { Clock } from '../anim/Clock';
 import type { Addons } from '../addons/Addons';
 import { applyObjectData, same } from '../addons/registry';
@@ -54,7 +55,7 @@ export class History {
   reset() {
     clearTimeout(this.timer);
     this.pending = false;
-    this.steps = [this.capture('最初')];
+    this.steps = [this.capture(msg('最初'))];
     this.index = 0;
     this.collect();
     this.publish();
@@ -122,7 +123,7 @@ export class History {
       this.index = to;
       await this.restore(this.steps[to]);
       this.publish();
-      this.ui.toast(`${delta < 0 ? '元に戻す' : 'やり直す'}: ${label}`, 1500);
+      this.ui.toast(delta < 0 ? t('元に戻す: {label}', { label: t(label) }) : t('やり直す: {label}', { label: t(label) }), 1500);
       this.events.emit('changed');
     });
     return this.queue;

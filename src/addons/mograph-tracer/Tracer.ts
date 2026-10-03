@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { msg } from '../../core/i18n';
 import { hex, int, num } from '../../core/normalize';
 import type { AddonApi, ObjectData } from '../../engine/addons/Addons';
 import { isModel, type Obj } from '../../engine/types';
@@ -40,7 +41,7 @@ export class Tracer {
 
   constructor(private api: AddonApi, c4d: Cinema4d) {
     this.settingsOf = o => (this.on ? (o.addonData?.[`${api.id}.tracer`] as TracerSettings | undefined) ?? null : null);
-    this.data = api.addObjectData<TracerSettings>({ key: 'tracer', label: 'トレーサー', normalize: raw => normalizeTracer(raw as Partial<TracerSettings>), apply: o => this.reset(o) });
+    this.data = api.addObjectData<TracerSettings>({ key: 'tracer', label: msg('トレーサー'), normalize: raw => normalizeTracer(raw as Partial<TracerSettings>), apply: o => this.reset(o) });
     api.onBeforeRender(() => this.sync());
     this.offSource = c4d.addSplineSource(o => this.states.get(o)?.lines ?? null);
   }

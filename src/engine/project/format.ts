@@ -1,5 +1,6 @@
 import { strFromU8, strToU8, unzip, zip, type AsyncZippable } from 'fflate';
 import type { AnimationJson } from '../../core/animation';
+import { t } from '../../core/i18n';
 import type { NodeTree } from '../../core/materials/tree';
 import type { BoneValue } from '../../core/types';
 import type { MaterialOutline, MaterialSettings, MmdSource } from '../materials/MaterialLibrary';
@@ -21,7 +22,7 @@ export interface SavedAsset { id: string; name: string; type: string; size?: num
 // 参照だけのプロジェクトを開くとき、見つからないファイルを探してもらう。
 // 選ばれたファイル / 'skip' (見つかったものだけで開く) / 'cancel' (開くのをやめる)
 export type PickMissing = (missing: SavedAsset[]) => Promise<File[] | 'skip' | 'cancel'>;
-export class ProjectCancelled extends Error { constructor() { super('開くのをやめました'); } }
+export class ProjectCancelled extends Error { constructor() { super(t('開くのをやめました')); } }
 export interface SavedObject {
   kind: 'shape' | 'model' | 'light';
   s: number; x: number; y: number; z: number; r: number; c: number;
@@ -72,17 +73,17 @@ export const projectBaseName = (name: string) => name.replace(/\.wgpj?$/i, '');
 
 export function parseData(json: string): ProjectData {
   let data: ProjectData;
-  try { data = JSON.parse(json); } catch { throw new Error('プロジェクトのファイルではありません'); }
-  if (data?.format !== PROJECT_FORMAT) throw new Error('プロジェクトのファイルではありません');
-  if (data.version > PROJECT_VERSION) throw new Error('このプロジェクトは新しい版で保存されています');
+  try { data = JSON.parse(json); } catch { throw new Error(t('プロジェクトのファイルではありません')); }
+  if (data?.format !== PROJECT_FORMAT) throw new Error(t('プロジェクトのファイルではありません'));
+  if (data.version > PROJECT_VERSION) throw new Error(t('このプロジェクトは新しい版で保存されています'));
   return data;
 }
 // .wgp: ZIP の中のファイルを取り出す
 export async function readEmbedded(bytes: Uint8Array) {
   let entries: Record<string, Uint8Array>;
-  try { entries = await unzipAsync(bytes); } catch { throw new Error('プロジェクトのファイル (.wgp / .wgpj) ではありません'); }
+  try { entries = await unzipAsync(bytes); } catch { throw new Error(t('プロジェクトのファイル (.wgp / .wgpj) ではありません')); }
   const json = entries['project.json'];
-  if (!json) throw new Error('プロジェクトのファイル (.wgp) ではありません (project.json がありません)');
+  if (!json) throw new Error(t('プロジェクトのファイル (.wgp) ではありません (project.json がありません)'));
   const data = parseData(strFromU8(json));
   const files = new Map<string, File>();
   for (const a of data.assets) {

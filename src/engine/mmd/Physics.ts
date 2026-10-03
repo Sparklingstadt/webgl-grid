@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { errorText } from '../../core/errors';
 import { findHairWeights } from '../../core/hairWeights';
+import { t } from '../../core/i18n';
 import type { System, Viewport } from '../render/Viewport';
 import type { Any, ModelObj, Obj } from '../types';
 import type { UiChannel } from '../UiChannel';
@@ -16,7 +17,7 @@ function loadAmmo() {
     script.src = AMMO_URL;
     const w = window as Any;
     script.onload = () => w.Ammo().then((lib: Any) => { w.Ammo = lib; resolve(lib); }, reject);
-    script.onerror = () => reject(new Error('Ammo.js を読み込めませんでした'));
+    script.onerror = () => reject(new Error(t('Ammo.js を読み込めませんでした')));
     document.head.append(script);
   });
   return ammoReady;
@@ -115,7 +116,7 @@ export class Physics implements System {
       this.viewport.startTicking();
     } catch (err) {
       console.error(err);
-      this.ui.toast(`物理演算を開始できませんでした: ${errorText(err)}`, 8000);
+      this.ui.toast(t('物理演算を開始できませんでした: {error}', { error: errorText(err) }), 8000);
     }
   }
   // 髪を重力で垂らしているか。髪の形を保つ錘がない (か物理演算がない) モデルは null

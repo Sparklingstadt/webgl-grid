@@ -19,7 +19,8 @@ class Writer {
   build() { return new Uint8Array(this.bytes); }
 }
 
-export function makePmx(name = 'テスト人形', { physics = false } = {}): Uint8Array {
+// texture: 材質に付けるテクスチャのファイル名 (なければテクスチャなし)
+export function makePmx(name = 'テスト人形', { physics = false, texture }: { physics?: boolean; texture?: string } = {}): Uint8Array {
   const w = new Writer();
   // ヘッダー: 文字コード UTF-16、追加 UV なし、インデックスはすべて 4 バイト
   for (const c of 'PMX ') w.u8(c.charCodeAt(0));
@@ -45,7 +46,7 @@ export function makePmx(name = 'テスト人形', { physics = false } = {}): Uin
   const faces = [0, 1, 5, 0, 5, 4, 1, 2, 6, 1, 6, 5, 2, 3, 7, 2, 7, 6, 3, 0, 4, 3, 4, 7, 4, 5, 6, 4, 6, 7, 0, 2, 1, 0, 3, 2];
   w.i32(faces.length);
   for (const f of faces) w.i32(f);
-  w.i32(0); // テクスチャなし
+  if (texture) { w.i32(1); w.text(texture); } else w.i32(0); // テクスチャ
 
   // 材質 1 つ
   w.i32(1);
@@ -55,7 +56,7 @@ export function makePmx(name = 'テスト人形', { physics = false } = {}): Uin
   w.f32(0.4, 0.3, 0.2);      // 環境色
   w.u8(0x01 | 0x10);         // 両面表示・輪郭線あり
   w.f32(0, 0, 0, 1); w.f32(1); // 輪郭線の色・太さ
-  w.i32(-1); w.i32(-1); w.u8(0); // テクスチャ・スフィアなし
+  w.i32(texture ? 0 : -1); w.i32(-1); w.u8(0); // テクスチャ・スフィアなし
   w.u8(1); w.u8(0);          // 共有トゥーン 0
   w.text('');
   w.i32(faces.length);

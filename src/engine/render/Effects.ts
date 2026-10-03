@@ -1,5 +1,6 @@
 import type * as THREE from 'three';
 import { errorText } from '../../core/errors';
+import { t } from '../../core/i18n';
 import type { UiChannel } from '../UiChannel';
 import { FX_KEYS, FX_LEVEL_DEFAULT, applyFxLevels, createPostFx, type FxKey, type FxLevel, type FxState, type PostFx } from './postfx';
 import type { Viewport } from './Viewport';
@@ -56,13 +57,13 @@ export class Effects {
     this.ui.set({ fxState: { ...this.state } });
     save(FX_KEY, this.state);
     if (this.any() && !this.fx && this.viewport.mounted) {
-      this.ui.toast('効果を準備中…', 0);
+      this.ui.toast(t('効果を準備中…'), 0);
       try {
         await this.ensure();
         this.ui.hideToast();
       } catch (err) {
         console.error(err);
-        this.ui.toast(`効果を読み込めませんでした: ${errorText(err)}`, 8000);
+        this.ui.toast(t('効果を読み込めませんでした: {error}', { error: errorText(err) }), 8000);
       }
     }
     this.viewport.requestDraw();

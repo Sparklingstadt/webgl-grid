@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { t } from '../../../core/i18n';
 import { useUi } from '../../EngineContext';
 
 // Blender のパネル: 見出しを押すと開け閉めできる
@@ -15,6 +16,6 @@ export const Empty = ({ children }: { children: ReactNode }) => <div className="
 // MMD モデルを選んでいるときだけ中身を出す (中身はモデルが変わるたびに作り直す)
 export function NeedModel({ children }: { children: (id: number) => ReactNode }) {
   const sel = useUi(s => s.sel);
-  if (sel?.kind !== 'model') return <Panel title="モデル"><Empty>MMD モデルをクリックして選ぶと、ここで材質・表情・ボーンを変えられます。</Empty></Panel>;
+  if (sel?.kind !== 'model') return <Panel title={t('モデル')}><Empty>{t('MMD モデルをクリックして選ぶと、ここで材質・表情・ボーンを変えられます。')}</Empty></Panel>;
   return <>{children(sel.id)}</>;
 }

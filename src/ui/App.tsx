@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { MenuContext } from './components/Menu';
 import { AddonManager } from './components/addons/AddonManager';
-import { MissingFiles, RenderProgress, RenderResult } from './components/Dialogs';
+import { MissingFiles, MissingTextures, RenderProgress, RenderResult } from './components/Dialogs';
+import { filesFromDrop } from './dropFiles';
 import { Palette, Toast } from './components/Overlays';
 import type { SideTab } from './components/sidebar/Sidebar';
 import { BottomArea, type BottomEditor } from './components/BottomArea';
@@ -9,6 +10,7 @@ import { TopBar } from './components/TopBar';
 import { ViewportArea } from './components/ViewportArea';
 import { useEngine, useUi } from './EngineContext';
 import { useShortcuts, type Area } from './hooks/useShortcuts';
+import { t } from '../core/i18n';
 
 // 幅の狭い画面では、サイドバーはビューポートの上に重ねて出す (最初はしまっておく)
 const NARROW = '(max-width: 760px)';
@@ -36,6 +38,28 @@ export default function App() {
   const pmxInput = useRef<HTMLInputElement>(null);
   const poseInput = useRef<HTMLInputElement>(null);
   const openFiles = useCallback(() => pmxInput.current?.click(), []);
+  const folderInput = useRef<HTMLInputElement>(null);
+  const openFolder = useCallback(() => folderInput.current?.click(), []);
+  // ファイル・フォルダを画面に落とす: プロジェクトなら開き、ほかは MMD の読み込み (フォルダの中も)
+  const [dropping, setDropping] = useState(false);
+  useEffect(() => {
+    const over = (e: DragEvent) => { if (e.dataTransfer?.types.includes('Files')) { e.preventDefault(); setDropping(true); } };
+    const leave = (e: DragEvent) => { if (!e.relatedTarget) setDropping(false); };
+    const drop = (e: DragEvent) => {
+      if (!e.dataTransfer?.types.includes('Files') || (e.target as HTMLElement).closest?.('.modal')) return;
+      e.preventDefault();
+      setDropping(false);
+      void filesFromDrop(e.dataTransfer).then(files => {
+        const project = files.find(f => /\.wgpj?$/i.test(f.name));
+        if (project) engine.project.openFile(project);
+        else if (files.length) engine.loadFiles(files);
+      });
+    };
+    addEventListener('dragover', over);
+    addEventListener('dragleave', leave);
+    addEventListener('drop', drop);
+    return () => { removeEventListener('dragover', over); removeEventListener('dragleave', leave); removeEventListener('drop', drop); };
+  }, [engine]);
   const projectInput = useRef<HTMLInputElement>(null);
   const openProject = useCallback(() => projectInput.current?.click(), []);
   const openPose = useCallback(() => poseInput.current?.click(), []);
@@ -88,7 +112,7 @@ export default function App() {
     <MenuContext.Provider value={{ open: openMenu, setOpen: setOpenMenu }}>
       <div id="app" className={[!sideOpen && 'side-hidden', !tlOpen && 'tl-hidden'].filter(Boolean).join(' ')}
            style={{ '--tl-h': `${bottomH}px` } as React.CSSProperties}>
-        <TopBar onOpenFiles={openFiles} onLoadPose={openPose} onOpenProject={openProject} onOpenAddons={() => setManagerOpen(true)}
+        <TopBar onOpenFiles={openFiles} onOpenFolder={openFolder} onLoadPose={openPose} onOpenProject={openProject} onOpenAddons={() => setManagerOpen(true)}
                 onOpenOutput={() => { setSideTab('output'); setSideOpen(true); }} />
         <div style={{ display: 'contents' }} onPointerEnter={() => { hoverArea.current = 'view'; }}>
           <ViewportArea sideOpen={sideOpen} toggleSide={toggleSide} tlOpen={tlOpen} toggleTl={() => setTlOpen(o => !o)}
@@ -97,7 +121,7 @@ export default function App() {
                         onViewportPointerDown={() => { if (isNarrow()) setSideOpen(false); }}
                         showObjectTab={() => { setSideTab('object'); setSideOpen(true); }} />
         </div>
-        <div className="area-resizer" role="separator" aria-orientation="horizontal" aria-label="下の領域の高さ"
+        <div className="area-resizer" role="separator" aria-orientation="horizontal" aria-label={t('下の領域の高さ')}
              onPointerDown={e => {
                const startY = e.clientY, startH = bottomH;
                const move = (ev: PointerEvent) => setBottomH(Math.min(Math.max(startH + startY - ev.clientY, 60), innerHeight - 160));
@@ -112,6 +136,7 @@ export default function App() {
       <RenderProgress />
       <RenderResult />
       <MissingFiles />
+      <MissingTextures />
       {managerOpen && <AddonManager onClose={() => setManagerOpen(false)} />}
       <input type="file" ref={pmxInput} multiple hidden
              accept=".pmx,.vmd,.vpd,.png,.jpg,.jpeg,.bmp,.tga,.gif,.spa,.sph,image/*,.mp3,.wav,.ogg,.oga,.m4a,.aac,.flac,.opus,audio/*"
@@ -120,6 +145,13 @@ export default function App() {
                e.currentTarget.value = ''; // 同じファイルをもう一度選べるようにする
                if (files.length) engine.loadFiles(files);
              }} />
+      <input type="file" ref={folderInput} hidden aria-label={t('MMD のフォルダを選ぶ')} {...{ webkitdirectory: '' }}
+             onChange={e => {
+               const files = [...e.currentTarget.files ?? []];
+               e.currentTarget.value = '';
+               if (files.length) engine.loadFiles(files);
+             }} />
+      {dropping && <div className="drop-hint">{t('落とすと読み込みます (.pmx とテクスチャ・フォルダ・.vmd・.vpd・曲・プロジェクト)')}</div>}
       <input type="file" ref={projectInput} accept=".wgp,.wgpj" hidden
              onChange={e => {
                const f = e.currentTarget.files?.[0];

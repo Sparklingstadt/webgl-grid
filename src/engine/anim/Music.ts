@@ -1,6 +1,9 @@
 import { Emitter } from '../../core/events';
+import { t } from '../../core/i18n';
 import type { UiChannel } from '../UiChannel';
 import type { TimeSource } from './Clock';
+
+const tapToPlay = () => t('画面をタップ (クリック) するか ▶ を押すと曲を再生します');
 
 // --- 曲 ---
 // タイムラインの再生と一緒に鳴らす。鳴っているあいだは、タイムラインがこの再生位置に合わせて進む (TimeSource)
@@ -48,11 +51,11 @@ export class Music implements TimeSource {
     if (!audio) return;
     this.isWaiting = false;
     audio.play().then(() => {
-      if (this.ui.state.toast?.text.startsWith('画面をタップ')) this.ui.hideToast(); // 「画面をタップ…」のお知らせを消す
+      if (this.ui.state.toast?.text === tapToPlay()) this.ui.hideToast(); // 「画面をタップ…」のお知らせを消す
     }, () => {
       if (!this.isPlaying()) return;
       this.isWaiting = true;
-      this.ui.toast('画面をタップ (クリック) するか ▶ を押すと曲を再生します', 0);
+      this.ui.toast(tapToPlay(), 0);
     });
   }
 

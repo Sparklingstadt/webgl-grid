@@ -1,3 +1,4 @@
+import { msg } from '../../core/i18n';
 import { int, num, vec3 as vec } from '../../core/normalize';
 import { seededRandom } from '../../core/random';
 import { applyEffectors, paramsOf, type EffectorValue, type LayoutEnv } from './effectors';
@@ -47,7 +48,7 @@ export interface ClonerSettings {
 export interface Placement { x: number; y: number; z: number; ry: number; scale: number; delay: number }
 
 export const CLONER_MODES: { key: ClonerMode; name: string }[] = [
-  { key: 'linear', name: '直線' }, { key: 'radial', name: '放射' }, { key: 'grid', name: 'グリッド' },
+  { key: 'linear', name: msg('直線') }, { key: 'radial', name: msg('放射') }, { key: 'grid', name: msg('グリッド') },
 ];
 export const CLONER_DEFAULT: ClonerSettings = {
   mode: 'grid', count: 5, step: [1.5, 0, 0], stepRotDeg: 0,

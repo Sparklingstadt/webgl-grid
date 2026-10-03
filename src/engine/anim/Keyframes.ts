@@ -2,6 +2,7 @@ import {
   channelKeys, createAnimation, deleteKeys, evaluate, insertKeys, isEmpty, keyFrames, moveKeys, type Channel, type Curve,
 } from '../../core/animation';
 import { FPS } from '../../core/constants';
+import { t } from '../../core/i18n';
 import type { Posing } from '../mmd/Posing';
 import type { Viewport } from '../render/Viewport';
 import type { ModelObj } from '../types';
@@ -27,7 +28,7 @@ export class Keyframes {
     this.selected.add(frame);
     this.changed();
     const names = only?.map(i => obj.model.skeleton.bones[i]?.name).join('、');
-    this.ui.toast(only ? `フレーム ${frame} に ${names} のキーを打ちました` : `フレーム ${frame} にキーを打ちました (${n} チャンネル)`, 2500);
+    this.ui.toast(only ? t('フレーム {frame} に {names} のキーを打ちました', { frame, names: names ?? '' }) : t('フレーム {frame} にキーを打ちました ({n} チャンネル)', { frame, n }), 2500);
   }
 
   // frames を選ぶ。add なら今の選択に足す (選んであるものは外す)
@@ -51,29 +52,29 @@ export class Keyframes {
     this.changed();
   }
   // 選んだフレームのキーを削除する。消したら true
-  deleteSelected(obj: ModelObj, t: number) {
+  deleteSelected(obj: ModelObj, time: number) {
     if (!obj.anim || !this.selected.size) return false;
     const n = deleteKeys(obj.anim, this.selected);
     this.selected.clear();
     if (isEmpty(obj.anim)) obj.anim = null;
-    this.applyAll(t, true);
+    this.applyAll(time, true);
     this.changed();
-    if (n) this.ui.toast(`キーを ${n} 個削除しました`, 2500);
+    if (n) this.ui.toast(t('キーを {n} 個削除しました', { n }), 2500);
     return n > 0;
   }
   // フレーム frame にあるキーを削除 (Alt+I)。channel を渡すと、そのチャンネルのキーだけ
-  deleteAt(obj: ModelObj, frame: number, t: number, channel?: Channel) {
-    if (!keyFrames(obj.anim).includes(frame)) { this.ui.toast(`フレーム ${frame} にはキーがありません`, 2500); return; }
+  deleteAt(obj: ModelObj, frame: number, time: number, channel?: Channel) {
+    if (!keyFrames(obj.anim).includes(frame)) { this.ui.toast(t('フレーム {frame} にはキーがありません', { frame }), 2500); return; }
     if (channel) {
       deleteKeys(obj.anim!, [frame], channel);
       if (isEmpty(obj.anim)) obj.anim = null;
-      this.applyAll(t, true);
+      this.applyAll(time, true);
       this.changed();
       return;
     }
     this.selected.clear();
     this.selected.add(frame);
-    this.deleteSelected(obj, t);
+    this.deleteSelected(obj, time);
   }
 
   // チャンネルの、フレーム frame のキーの補間曲線 (キーがなければ null)

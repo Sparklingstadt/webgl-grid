@@ -1,3 +1,4 @@
+import { t } from '../../../core/i18n';
 import type { MenuId } from '../../../engine/addons/registry';
 import { useEngine, useUi } from '../../EngineContext';
 import { MenuItem, MenuSep } from '../Menu';
@@ -12,7 +13,7 @@ export function AddonMenuItems({ menu }: { menu: MenuId }) {
   return (
     <>
       <MenuSep />
-      {items.map(m => <MenuItem key={m.key} label={m.label} disabled={m.enabled ? !m.enabled() : false} onSelect={() => m.run()} />)}
+      {items.map(m => <MenuItem key={m.key} label={t(m.label)} disabled={m.enabled ? !m.enabled() : false} onSelect={() => m.run()} />)}
     </>
   );
 }

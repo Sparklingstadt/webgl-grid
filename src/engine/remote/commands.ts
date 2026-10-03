@@ -155,7 +155,7 @@ export const COMMANDS: Record<string, Command> = {
     const files = toFiles(p?.files ?? []);
     if (!files.length) throw new Error('ファイルがありません');
     const before = e.world.objects.length;
-    await e.loadFiles(files);
+    await e.loadFiles(files, { askTextures: false }); // (外からの操作では、画面で聞かない)
     return { message: e.ui.state.toast?.text ?? null, added: e.world.objects.slice(before).map(o => o.id), state: sceneState(e) };
   },
 

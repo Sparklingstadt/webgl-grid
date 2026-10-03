@@ -24,6 +24,7 @@ export function useShortcuts(engine: Engine, actions: {
       if (engine.ui.state.rendering) { if (e.key === 'Escape') engine.output.cancel(); e.preventDefault(); return; }
       if (engine.ui.state.renderResult) { if (e.key === 'Escape') engine.output.closeResult(); return; }
       if (engine.ui.state.missingFiles) { if (e.key === 'Escape') engine.project.answerMissing('cancel'); return; }
+      if (engine.ui.state.missingTextures) { if (e.key === 'Escape') engine.loader.answerTextures([]); return; }
       if (a.dialogOpen()) { if (e.key === 'Escape') a.closeDialog(); return; } // (アドオンマネージャーのあいだは、場面のショートカットを使わない)
       if (e.key === 'Escape') { if (!a.closeMenus()) engine.picker.close(); return; }
       // Ctrl+,: アドオンマネージャー (Blender のプリファレンスと同じキー)

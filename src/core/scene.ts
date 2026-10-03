@@ -1,3 +1,4 @@
+import { msg } from './i18n';
 import { bool, hex, num, oneOf } from './normalize';
 
 // --- シーンの設定 (Cinema 4D の空・床・太陽): 背景の空、床、太陽の光、部屋の光 (環境光) ---
@@ -10,7 +11,7 @@ export interface SceneSettings {
   environment: number;                                    // 部屋の光 (環境光) の明るさ
 }
 export const SKY_MODES: { key: SkyMode; name: string }[] = [
-  { key: 'viewport', name: 'ビューポートの灰色' }, { key: 'color', name: '単色' }, { key: 'gradient', name: 'グラデーション' },
+  { key: 'viewport', name: msg('ビューポートの灰色') }, { key: 'color', name: msg('単色') }, { key: 'gradient', name: msg('グラデーション') },
 ];
 // 今までの見た目 (太陽の向きは、前からの (0.6, 1.0, 0.35) と同じ)
 export const SCENE_DEFAULT: SceneSettings = {

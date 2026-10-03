@@ -1,3 +1,4 @@
+import { msg } from '../../core/i18n';
 import type { AddonModule } from '../../engine/addons/Addons';
 import type { SelInfo } from '../../engine';
 import type { Obj } from '../../engine/types';
@@ -15,18 +16,18 @@ const cinema4d: AddonModule = {
   name: 'Cinema 4D',
   version: '1.0.0',
   author: 'webgl-grid',
-  category: 'モデリング',
-  description: 'Cinema 4D のクローナー (直線・放射・グリッドに並べる。エフェクタ: プレーン・ステップ・ディレイ) と、デフォーマ (ベンド・ツイスト・テーパー・バルジ)。サイドバーの「オブジェクト」で使います。',
+  category: msg('モデリング'),
+  description: msg('Cinema 4D のクローナー (直線・放射・グリッドに並べる。エフェクタ: プレーン・ステップ・ディレイ) と、デフォーマ (ベンド・ツイスト・テーパー・バルジ)。サイドバーの「オブジェクト」で使います。'),
   enabledByDefault: true,
   register(api) {
     const c4d = new Cinema4d(api);
     const { engine } = api;
     api.expose(c4d);
     const notLight = (sel: SelInfo | null) => !!sel && sel.kind !== 'light';
-    api.addPanel({ title: 'デフォーマ', tab: 'object', poll: notLight, component: ({ sel }: { sel: SelInfo }) => <DeformerPanel sel={sel} c4d={c4d} /> });
-    api.addPanel({ title: 'クローナー', tab: 'object', poll: notLight, component: ({ sel }: { sel: SelInfo }) => <ClonerPanel sel={sel} c4d={c4d} /> });
+    api.addPanel({ title: msg('デフォーマ'), tab: 'object', poll: notLight, component: ({ sel }: { sel: SelInfo }) => <DeformerPanel sel={sel} c4d={c4d} /> });
+    api.addPanel({ title: msg('クローナー'), tab: 'object', poll: notLight, component: ({ sel }: { sel: SelInfo }) => <ClonerPanel sel={sel} c4d={c4d} /> });
     api.addMenuItem({
-      menu: 'object', label: 'クローナーにする / やめる',
+      menu: 'object', label: msg('クローナーにする / やめる'),
       enabled: () => { const o = engine.selection.current; return !!o && !o.light; },
       run: () => { const o = engine.selection.current; c4d.setCloner(c4d.cloner(o) ? null : {}, o); },
     });

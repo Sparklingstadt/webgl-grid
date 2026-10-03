@@ -1,3 +1,4 @@
+import { msg } from '../../core/i18n';
 import * as THREE from 'three';
 import { seededRandom } from '../../core/random';
 import type { AddonModule } from '../../engine/addons/Addons';
@@ -81,31 +82,31 @@ function samplesOf(mesh: THREE.Mesh, dist: string, count: number, seed: number, 
 }
 
 const DISTS = [
-  { value: 'vertices', label: '頂点' }, { value: 'faces', label: '面の中心' },
-  { value: 'surface', label: '表面 (ランダム)' }, { value: 'volume', label: '中身 (ランダム)' },
+  { value: 'vertices', label: msg('頂点') }, { value: 'faces', label: msg('面の中心') },
+  { value: 'surface', label: msg('表面 (ランダム)') }, { value: 'volume', label: msg('中身 (ランダム)') },
 ];
 
 export function makeModes(find: (id: number) => Obj | null): ClonerModeDef[] {
   const cache = new WeakMap<THREE.BufferGeometry, Map<string, Sample[]>>();
   return [
     {
-      key: 'honeycomb', name: 'ハニカム', description: '蜂の巣のように、1 段おきに半分ずらして並べる',
+      key: 'honeycomb', name: msg('ハニカム'), description: msg('蜂の巣のように、1 段おきに半分ずらして並べる'),
       params: [
-        { key: 'width', label: '横の数', type: 'number', default: 5, min: 1, max: 50, step: 1 },
-        { key: 'height', label: '段の数', type: 'number', default: 5, min: 1, max: 50, step: 1 },
-        { key: 'spacing', label: '間隔', type: 'number', default: 1.2, min: 0.01, step: 0.1, digits: 2 },
-        { key: 'plane', label: '向き', type: 'select', default: 'xz', options: [{ value: 'xz', label: '床 (XZ)' }, { value: 'xy', label: '壁 (XY)' }] },
+        { key: 'width', label: msg('横の数'), type: 'number', default: 5, min: 1, max: 50, step: 1 },
+        { key: 'height', label: msg('段の数'), type: 'number', default: 5, min: 1, max: 50, step: 1 },
+        { key: 'spacing', label: msg('間隔'), type: 'number', default: 1.2, min: 0.01, step: 0.1, digits: 2 },
+        { key: 'plane', label: msg('向き'), type: 'select', default: 'xz', options: [{ value: 'xz', label: msg('床 (XZ)') }, { value: 'xy', label: msg('壁 (XY)') }] },
       ],
       layout: (q, max) => honeycomb(q, max),
     },
     {
-      key: 'object', name: 'オブジェクト', description: 'ほかの物の頂点・面の中心・表面・中身に並べる (その物を動かすと、ついていく。MMD モデルは動かす前の形)',
+      key: 'object', name: msg('オブジェクト'), description: msg('ほかの物の頂点・面の中心・表面・中身に並べる (その物を動かすと、ついていく。MMD モデルは動かす前の形)'),
       params: [
-        { key: 'target', label: '物', type: 'object', default: 0 },
-        { key: 'distribution', label: '分布', type: 'select', default: 'surface', options: DISTS },
-        { key: 'count', label: '数', type: 'number', default: 50, min: 1, step: 1, hint: '表面・中身のときの数' },
-        { key: 'seed', label: 'シード', type: 'number', default: 1, min: 0, step: 1 },
-        { key: 'align', label: '面の向きに合わせる', type: 'boolean', default: true },
+        { key: 'target', label: msg('物'), type: 'object', default: 0 },
+        { key: 'distribution', label: msg('分布'), type: 'select', default: 'surface', options: DISTS },
+        { key: 'count', label: msg('数'), type: 'number', default: 50, min: 1, step: 1, hint: msg('表面・中身のときの数') },
+        { key: 'seed', label: msg('シード'), type: 'number', default: 1, min: 0, step: 1 },
+        { key: 'align', label: msg('面の向きに合わせる'), type: 'boolean', default: true },
       ],
       live: true,
       layout: (q, max, origin: Origin) => {
@@ -133,11 +134,11 @@ export function makeModes(find: (id: number) => Obj | null): ClonerModeDef[] {
 
 const mographModes: AddonModule = {
   id: 'mograph-modes',
-  name: 'MoGraph 配置',
+  name: msg('MoGraph 配置'),
   version: '1.0.0',
   author: 'webgl-grid',
   category: 'MoGraph',
-  description: 'クローナーの並べ方を足す: ハニカム (蜂の巣) と、オブジェクト (ほかの物の頂点・面・表面・中身に並べる)。クローナーの「並べ方」から選びます。',
+  description: msg('クローナーの並べ方を足す: ハニカム (蜂の巣) と、オブジェクト (ほかの物の頂点・面・表面・中身に並べる)。クローナーの「並べ方」から選びます。'),
   enabledByDefault: true,
   requires: ['cinema4d'],
   register(api) {

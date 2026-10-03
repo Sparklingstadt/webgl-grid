@@ -1,4 +1,5 @@
 import { MAX_BOXES } from '../../core/constants';
+import { msg, t } from '../../core/i18n';
 import type { AddonApi, ObjectData } from '../../engine/addons/Addons';
 import { Registry } from '../../engine/addons/registry';
 import { isModel, type Obj } from '../../engine/types';
@@ -38,11 +39,11 @@ export class Cinema4d {
     this.deformers = new Deformers(this.cloners, e.viewport, value<Deformer[]>('deformers'));
     // 当てる順: クローナー → デフォーマ (デフォーマは、変形した形でクローンを作り直す)
     this.clonerData = api.addObjectData<ClonerSettings>({
-      key: 'cloner', aliases: ['cloner'], label: 'クローナー',
+      key: 'cloner', aliases: ['cloner'], label: msg('クローナー'),
       normalize: raw => normalizeCloner(raw as Partial<ClonerSettings>), apply: o => this.cloners.rebuild(o),
     });
     this.deformerData = api.addObjectData<Deformer[]>({
-      key: 'deformers', aliases: ['deformers'], label: 'デフォーマ',
+      key: 'deformers', aliases: ['deformers'], label: msg('デフォーマ'),
       normalize: raw => { const l = normalizeDeformers(raw); return l.length ? l : null; }, apply: o => this.deformers.apply(o),
     });
     api.onBeforeRender(() => this.cloners.sync());
@@ -106,10 +107,10 @@ export class Cinema4d {
   bake(o = this.current) {
     const e = this.api.engine, c = this.cloner(o);
     if (!o || !c) return false;
-    if (isModel(o)) { e.ui.toast('MMD モデルのクローンは、1 つずつの物にはできません'); return false; }
+    if (isModel(o)) { e.ui.toast(t('MMD モデルのクローンは、1 つずつの物にはできません')); return false; }
     const layout = clonerLayout(c, MAX_CLONES.shape, this.env(o)).sort((a, b) => a.y - b.y); // 下の段から置く (上の段は積み重なる)
     const room = MAX_BOXES - e.world.objects.length + 1;
-    if (layout.length > room) { e.ui.toast(`置ける物は ${MAX_BOXES} 個までなので、クローン ${layout.length} 個を 1 つずつの物にはできません (あと ${room} 個まで)`, 6000); return false; }
+    if (layout.length > room) { e.ui.toast(t('置ける物は {max} 個までなので、クローン {n} 個を 1 つずつの物にはできません (あと {room} 個まで)', { max: MAX_BOXES, n: layout.length, room }), 6000); return false; }
     const { x, z, r } = o, slot = o.slots[0], deformers = this.deformerData.get(o);
     // 最初のクローンには元の物を使う (マテリアルを手放さないように)
     this.clonerData.set(o, null);
@@ -123,7 +124,7 @@ export class Cinema4d {
     });
     e.world.settle();
     e.selection.select(o);
-    e.ui.toast(`クローン ${layout.length} 個を、1 つずつの物にしました`);
+    e.ui.toast(t('クローン {n} 個を、1 つずつの物にしました', { n: layout.length }));
     e.viewport.requestDraw();
     return true;
   }

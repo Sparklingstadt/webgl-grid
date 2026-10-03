@@ -1,6 +1,8 @@
 // --- フォーミュラの式 (Cinema 4D のフォーミュラ・エフェクタと同じ書き方) ---
 // 数・変数・+ - * / % ^・( )・関数だけを読む (JavaScript としては動かさないので、プロジェクトに入っていても安全)。
 // 三角関数は度で (Cinema 4D と同じく、既定の式は sin((t*f + id/count)*360))
+import { msg, t as tr } from '../../core/i18n';
+
 export type Vars = Record<string, number>;
 type Node = (v: Vars) => number;
 
@@ -15,7 +17,10 @@ const FUNCS: Record<string, (...a: number[]) => number> = {
 };
 const CONSTS: Record<string, number> = { pi: Math.PI, PI: Math.PI, e: Math.E };
 
-export class ExprError extends Error {}
+// (文は日本語の鍵と {名前} に入れる値で持ち、出すときに今の言語に訳す)
+export class ExprError extends Error {
+  constructor(readonly src: string, readonly params?: Record<string, string>) { super(tr(src, params)); }
+}
 
 // 式を読んで、変数から値を出す関数にする (読めなければ ExprError)
 export function compile(src: string): Node {
@@ -24,7 +29,7 @@ export function compile(src: string): Node {
   const peek = () => toks[i];
   const take = (t?: string) => {
     const x = toks[i];
-    if (t !== undefined && x !== t) throw new ExprError(`${t} がありません${x ? ` (${x} のところ)` : ''}`);
+    if (t !== undefined && x !== t) throw x ? new ExprError(msg('{want} がありません ({got} のところ)'), { want: t, got: x }) : new ExprError(msg('{want} がありません'), { want: t });
     i++;
     return x;
   };
@@ -57,13 +62,13 @@ export function compile(src: string): Node {
   }
   function atom(): Node {
     const t = take();
-    if (t === undefined) throw new ExprError('式が途中で終わっています');
+    if (t === undefined) throw new ExprError(msg('式が途中で終わっています'));
     if (t === '(') { const a = expr(); take(')'); return a; }
-    if (/^[\d.]/.test(t)) { const n = Number(t); if (!Number.isFinite(n)) throw new ExprError(`${t} は数ではありません`); return () => n; }
+    if (/^[\d.]/.test(t)) { const n = Number(t); if (!Number.isFinite(n)) throw new ExprError(msg('{token} は数ではありません'), { token: t }); return () => n; }
     if (/^[A-Za-z_]/.test(t)) {
       if (peek() === '(') {
         const f = Object.hasOwn(FUNCS, t) ? FUNCS[t] : undefined;
-        if (!f) throw new ExprError(`知らない関数です: ${t}`);
+        if (!f) throw new ExprError(msg('知らない関数です: {name}'), { name: t });
         take('(');
         const args: Node[] = [];
         if (peek() !== ')') { args.push(expr()); while (peek() === ',') { take(); args.push(expr()); } }
@@ -71,22 +76,25 @@ export function compile(src: string): Node {
         return v => f(...args.map(a => a(v)));
       }
       if (Object.hasOwn(CONSTS, t)) { const c = CONSTS[t]; return () => c; }
-      return v => { if (!Object.hasOwn(v, t)) throw new ExprError(`知らない変数です: ${t}`); return v[t]; };
+      return v => { if (!Object.hasOwn(v, t)) throw new ExprError(msg('知らない変数です: {name}'), { name: t }); return v[t]; };
     }
-    throw new ExprError(`読めない文字です: ${t}`);
+    throw new ExprError(msg('読めない文字です: {token}'), { token: t });
   }
-  if (!toks.length) throw new ExprError('式がありません');
+  if (!toks.length) throw new ExprError(msg('式がありません'));
   const root = expr();
-  if (i < toks.length) throw new ExprError(`余分な文字があります: ${toks[i]}`);
+  if (i < toks.length) throw new ExprError(msg('余分な文字があります: {token}'), { token: toks[i] });
   return root;
 }
 
 // 読んだ式を覚えておく (毎フレーム読み直さない)。読めない式は、いつも 0 を返す
-const cache = new Map<string, { fn: Node | null; error: string | null }>();
+const cache = new Map<string, { fn: Node | null; readonly error: string | null }>();
 export function formula(src: string) {
   let c = cache.get(src);
   if (!c) {
-    try { c = { fn: compile(src), error: null }; } catch (err) { c = { fn: null, error: (err as Error).message }; }
+    try { c = { fn: compile(src), error: null }; } catch (err) {
+      const e = err as Error;
+      c = { fn: null, get error() { return e instanceof ExprError ? tr(e.src, e.params) : e.message; } };
+    }
     if (cache.size > 200) cache.clear();
     cache.set(src, c);
   }

@@ -1,3 +1,4 @@
+import { msg } from '../core/i18n';
 import type { AddonModule } from '../engine/addons/Addons';
 
 interface Bob { height: number; period: number }
@@ -7,15 +8,15 @@ const DEFAULT: Bob = { height: 0.3, period: 2 };
 // (物ごとの値・オブジェクトのタブのパネル・メニュー・描く前の処理を使う例)
 const float: AddonModule = {
   id: 'float',
-  name: 'ふわふわ',
+  name: msg('ふわふわ'),
   version: '1.0.0',
   author: 'webgl-grid',
-  category: 'アニメーション',
-  description: '物をタイムラインの時刻に合わせて、ふわふわ上下に揺らします。「オブジェクト > ふわふわさせる」か、サイドバーの「オブジェクト」で設定します。',
+  category: msg('アニメーション'),
+  description: msg('物をタイムラインの時刻に合わせて、ふわふわ上下に揺らします。「オブジェクト > ふわふわさせる」か、サイドバーの「オブジェクト」で設定します。'),
   register(api) {
     const { engine } = api;
     const bob = api.addObjectData<Bob>({
-      key: 'bob', label: 'ふわふわ',
+      key: 'bob', label: msg('ふわふわ'),
       normalize: raw => {
         if (!raw || typeof raw !== 'object') return null;
         const r = raw as Partial<Bob>;
@@ -32,19 +33,19 @@ const float: AddonModule = {
     });
     const current = () => engine.selection.current;
     api.addMenuItem({
-      menu: 'object', label: 'ふわふわさせる / やめる', enabled: () => !!current(),
+      menu: 'object', label: msg('ふわふわさせる / やめる'), enabled: () => !!current(),
       run: () => { const o = current(); if (o) bob.set(o, bob.get(o) ? null : { ...DEFAULT }); },
     });
     api.addPanel({
-      title: 'ふわふわ', tab: 'object', poll: sel => !!sel,
+      title: msg('ふわふわ'), tab: 'object', poll: sel => !!sel,
       props: () => {
         const o = current(), b = o ? bob.get(o) : null;
         const set = (p: Partial<Bob>) => { if (o) bob.set(o, { ...DEFAULT, ...b, ...p }); };
         return [
-          { type: 'boolean', label: 'ふわふわさせる', get: () => !!b, set: on => { if (o) bob.set(o, on ? { ...DEFAULT } : null); } },
+          { type: 'boolean', label: msg('ふわふわさせる'), get: () => !!b, set: on => { if (o) bob.set(o, on ? { ...DEFAULT } : null); } },
           ...(b ? [
-            { type: 'number', label: '高さ', unit: ' m', min: 0, max: 3, step: 0.05, digits: 2, get: () => b.height, set: (height: number) => set({ height }) },
-            { type: 'number', label: '周期', unit: ' 秒', min: 0.1, max: 10, step: 0.1, digits: 1, get: () => b.period, set: (period: number) => set({ period }) },
+            { type: 'number', label: msg('高さ'), unit: ' m', min: 0, max: 3, step: 0.05, digits: 2, get: () => b.height, set: (height: number) => set({ height }) },
+            { type: 'number', label: msg('周期'), unit: msg(' 秒'), min: 0.1, max: 10, step: 0.1, digits: 1, get: () => b.period, set: (period: number) => set({ period }) },
           ] as const : []),
         ];
       },

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { t } from '../../core/i18n';
 import type { Color3 } from '../../core/materials/nodes';
 import { addNode, connect, createTree, surfaceShader } from '../../core/materials/tree';
 import type { Any } from '../types';
@@ -23,7 +24,7 @@ export function convertMmdMaterial(toon: Any, lib: MaterialLibrary, label: strin
   const baseLinear = linear(diffuse);
   const mapFile: string | undefined = toon.userData?.MMD?.mapFileName;
   if (toon.map && !(mapFile && missing?.has(fileKey(mapFile)))) {
-    const img = lib.addImage(toon.map.name || `${label} のテクスチャ`, toon.map);
+    const img = lib.addImage(toon.map.name || t('{label} のテクスチャ', { label }), toon.map);
     const tex = addNode(tree, 'image', -760, -40);
     tex.props.image = img.id;
     if (isWhite(srgb(diffuse))) {
@@ -72,7 +73,7 @@ export function convertMmdMaterial(toon: Any, lib: MaterialLibrary, label: strin
 export function convertMmdMesh(mesh: Any, lib: MaterialLibrary): string[] {
   const toons: Any[] = [mesh.material].flat();
   const before = new Set(lib.images.keys());
-  const ids = toons.map((t, i) => convertMmdMaterial(t, lib, `${mesh.name || 'モデル'} ${i + 1}`, mesh.userData.missingTextures).id);
+  const ids = toons.map((m, i) => convertMmdMaterial(m, lib, `${mesh.name || t('モデル')} ${i + 1}`, mesh.userData.missingTextures).id);
   // 変換で作った画像 (作った順)。プロジェクトを開くとき、同じ順に作り直した画像と対応づける
   mesh.userData.convertedImages = [...lib.images.keys()].filter(id => !before.has(id));
   const instances = ids.map(id => lib.instance(id));

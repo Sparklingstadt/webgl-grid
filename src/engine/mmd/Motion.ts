@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { DEFAULT_FOV, FPS, MMD_SCALE } from '../../core/constants';
 import { errorText } from '../../core/errors';
+import { t } from '../../core/i18n';
 import type { System } from '../render/Viewport';
 import type { Any, ModelObj, MotionInfo, Obj } from '../types';
 import type { UiChannel } from '../UiChannel';
@@ -42,7 +43,7 @@ export class Motion implements System {
   // .vmd を読んで、モデルの動きを objs に、カメラの動きをカメラに付ける。何か付いたら true
   async load(vmds: File[], objs: ModelObj[]) {
     const label = vmds.map(f => f.name).join('、');
-    this.ui.toast(`${label} を読み込み中…`, 0);
+    this.ui.toast(t('{name} を読み込み中…', { name: label }), 0);
     try {
       const [{ MMDLoader }, helper] = await Promise.all([loadMMDLoader(), this.ensureHelper()]);
       const loader: Any = new MMDLoader();
@@ -81,15 +82,15 @@ export class Motion implements System {
       }
       if (!used) {
         this.ui.toast(hasModelMotion && !objs.length
-          ? '先に .pmx のモデルを読み込んでください。'
-          : `${label} には、このモデルの骨や表情に合う動きも、カメラの動きもありませんでした`, 8000);
+          ? t('先に .pmx のモデルを読み込んでください。')
+          : t('{name} には、このモデルの骨や表情に合う動きも、カメラの動きもありませんでした', { name: label }), 8000);
         return false;
       }
-      this.ui.toast(`${label} を再生しています${this.camera ? '。カメラを自分で動かすと、カメラモーションは止まります' : ''}`, 6000);
+      this.ui.toast(this.camera ? t('{name} を再生しています。カメラを自分で動かすと、カメラモーションは止まります', { name: label }) : t('{name} を再生しています', { name: label }), 6000);
       return true;
     } catch (err) {
       console.error(err);
-      this.ui.toast(`${label} を読み込めませんでした: ${errorText(err)}`, 8000);
+      this.ui.toast(t('{name} を読み込めませんでした: {error}', { name: label, error: errorText(err) }), 8000);
       return false;
     }
   }

@@ -1,4 +1,5 @@
 import { FPS } from './constants';
+import { msg, t } from './i18n';
 
 // --- 出力 (Blender の出力プロパティ): レンダリングする画像・動画の大きさと形式 ---
 export type VideoFormat = 'mp4' | 'webm';
@@ -13,18 +14,18 @@ export interface OutputSettings {
 export const OUTPUT_DEFAULT: OutputSettings = { width: 1920, height: 1080, format: 'mp4', quality: 'high', audio: true };
 
 export const RESOLUTION_PRESETS: { name: string; width: number; height: number }[] = [
-  { name: 'フル HD (1920×1080)', width: 1920, height: 1080 },
+  { name: msg('フル HD (1920×1080)'), width: 1920, height: 1080 },
   { name: 'HD (1280×720)', width: 1280, height: 720 },
   { name: '4K (3840×2160)', width: 3840, height: 2160 },
-  { name: '縦長 フル HD (1080×1920)', width: 1080, height: 1920 },
-  { name: '正方形 (1080×1080)', width: 1080, height: 1080 },
+  { name: msg('縦長 フル HD (1080×1920)'), width: 1080, height: 1920 },
+  { name: msg('正方形 (1080×1080)'), width: 1080, height: 1080 },
 ];
 export const VIDEO_FORMATS: { key: VideoFormat; name: string; ext: string }[] = [
   { key: 'mp4', name: 'MPEG-4 (H.264)', ext: 'mp4' },
   { key: 'webm', name: 'WebM (VP9)', ext: 'webm' },
 ];
 export const VIDEO_QUALITIES: { key: VideoQuality; name: string }[] = [
-  { key: 'medium', name: '標準' }, { key: 'high', name: '高' }, { key: 'veryHigh', name: '最高' },
+  { key: 'medium', name: msg('標準') }, { key: 'high', name: msg('高') }, { key: 'veryHigh', name: msg('最高') },
 ];
 
 export const OUTPUT_MIN = 16;
@@ -44,7 +45,7 @@ export function frameSpan(start: number, end: number) {
 
 // 保存するファイルの名前。画像は Blender と同じく 4 桁のフレーム番号を付ける
 export function outputFileName(base: string, ext: string, frame?: number) {
-  const safe = base.replace(/[\\/:*?"<>|]/g, '_').trim() || 'レンダー';
+  const safe = base.replace(/[\\/:*?"<>|]/g, '_').trim() || t('レンダー');
   return frame === undefined ? `${safe}.${ext}` : `${safe}_${String(frame).padStart(4, '0')}.${ext}`;
 }
 

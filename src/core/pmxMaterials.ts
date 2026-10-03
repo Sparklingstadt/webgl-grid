@@ -1,3 +1,5 @@
+import { t } from './i18n';
+
 // .pmx の材質だけを書き換える (ほかの部分はバイト単位でそのまま残すので、MMD 本体でもそのまま読める)。
 // PMX 2.0 / 2.1 の書式で、頂点・面・テクスチャを読み飛ばして材質の場所を探す
 
@@ -33,7 +35,7 @@ class Reader {
 // 材質の名前と場所。.pmx でなければ例外
 export function readPmxMaterials(buffer: ArrayBuffer): PmxMaterialEntry[] {
   const view = new DataView(buffer);
-  if (String.fromCharCode(...new Uint8Array(buffer, 0, 4)) !== 'PMX ') throw new Error('.pmx ファイルではありません');
+  if (String.fromCharCode(...new Uint8Array(buffer, 0, 4)) !== 'PMX ') throw new Error(t('.pmx ファイルではありません'));
   const globalsCount = view.getUint8(8);
   const g = Array.from(new Uint8Array(buffer, 9, globalsCount));
   const [encoding, addUv, vertexIndexSize, textureIndexSize, , boneIndexSize] = g;
@@ -49,7 +51,7 @@ export function readPmxMaterials(buffer: ArrayBuffer): PmxMaterialEntry[] {
     else if (type === 1) r.skip(2 * boneIndexSize + 4);            // BDEF2
     else if (type === 2 || type === 4) r.skip(4 * boneIndexSize + 16); // BDEF4・QDEF
     else if (type === 3) r.skip(2 * boneIndexSize + 4 + 36);       // SDEF
-    else throw new Error(`頂点の変形の種類が分かりません (${type})`);
+    else throw new Error(t('頂点の変形の種類が分かりません ({type})', { type }));
     r.skip(4);
   }
   r.skip(r.i32() * vertexIndexSize); // 面
@@ -78,7 +80,7 @@ export function patchPmxMaterials(buffer: ArrayBuffer, patches: Map<number, PmxM
   const view = new DataView(out.buffer);
   for (const [index, v] of patches) {
     const m = materials[index];
-    if (!m) throw new Error(`材質 ${index} がありません`);
+    if (!m) throw new Error(t('材質 {index} がありません', { index }));
     let p = m.offset;
     const f = (...xs: number[]) => { for (const x of xs) { view.setFloat32(p, x, true); p += 4; } };
     f(...v.diffuse, ...v.specular, v.specularPower, ...v.ambient);

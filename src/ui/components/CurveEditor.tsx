@@ -1,5 +1,6 @@
 import { useRef } from 'react';
 import { CURVE_PRESETS, type Curve } from '../../core/animation';
+import { t } from '../../core/i18n';
 import { BSelect } from './controls/BSelect';
 import { NumField } from './NumField';
 
@@ -28,7 +29,7 @@ export function CurveEditor({ curve, onChange, label }: { curve: Curve; onChange
     const hx = curve[i * 2], hy = curve[i * 2 + 1];
     return (
       <circle cx={px(hx)} cy={py(hy)} r={6} className="curve-handle" tabIndex={0} role="slider"
-              aria-label={`${label}の点 ${i + 1}`} aria-valuenow={hx} aria-valuetext={`横 ${hx}・縦 ${hy}`}
+              aria-label={t('{label}の点 {n}', { label, n: i + 1 })} aria-valuenow={hx} aria-valuetext={t('横 {x}・縦 {y}', { x: hx, y: hy })}
               onPointerDown={e => { e.stopPropagation(); drag.current = i; svg.current!.setPointerCapture(e.pointerId); }}
               onKeyDown={e => {
                 const d = e.shiftKey ? 0.1 : 0.01;
@@ -54,18 +55,18 @@ export function CurveEditor({ curve, onChange, label }: { curve: Curve; onChange
         {handle(1)}
       </svg>
       <div className="prop">
-        <label>形</label>
-        <BSelect label={`${label}の形`} value={preset} placeholder="カスタム" onChange={i => onChange([...CURVE_PRESETS[i].curve] as Curve)}
-                 options={CURVE_PRESETS.map((p, i) => ({ value: i, label: p.name }))} />
-        <label>点 1</label>
+        <label>{t('形')}</label>
+        <BSelect label={t('{label}の形', { label })} value={preset} placeholder={t('カスタム')} onChange={i => onChange([...CURVE_PRESETS[i].curve] as Curve)}
+                 options={CURVE_PRESETS.map((p, i) => ({ value: i, label: t(p.name) }))} />
+        <label>{t('点 1')}</label>
         <div className="row">
-          <NumField label={`${label}の点 1 の横`} value={x1} min={0} max={1} step={0.01} digits={2} onCommit={v => set(0, v, y1)} />
-          <NumField label={`${label}の点 1 の縦`} value={y1} min={0} max={1} step={0.01} digits={2} onCommit={v => set(0, x1, v)} />
+          <NumField label={t('{label}の点 1 の横', { label })} value={x1} min={0} max={1} step={0.01} digits={2} onCommit={v => set(0, v, y1)} />
+          <NumField label={t('{label}の点 1 の縦', { label })} value={y1} min={0} max={1} step={0.01} digits={2} onCommit={v => set(0, x1, v)} />
         </div>
-        <label>点 2</label>
+        <label>{t('点 2')}</label>
         <div className="row">
-          <NumField label={`${label}の点 2 の横`} value={x2} min={0} max={1} step={0.01} digits={2} onCommit={v => set(1, v, y2)} />
-          <NumField label={`${label}の点 2 の縦`} value={y2} min={0} max={1} step={0.01} digits={2} onCommit={v => set(1, x2, v)} />
+          <NumField label={t('{label}の点 2 の横', { label })} value={x2} min={0} max={1} step={0.01} digits={2} onCommit={v => set(1, v, y2)} />
+          <NumField label={t('{label}の点 2 の縦', { label })} value={y2} min={0} max={1} step={0.01} digits={2} onCommit={v => set(1, x2, v)} />
         </div>
       </div>
     </div>

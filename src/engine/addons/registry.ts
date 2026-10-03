@@ -1,4 +1,5 @@
 import { Emitter } from '../../core/events';
+import { t } from '../../core/i18n';
 import type { Engine } from '../Engine';
 import type { SelInfo } from '../UiChannel';
 import type { Any, Obj } from '../types';
@@ -70,7 +71,7 @@ export class Registry<T extends { key: string }> {
   readonly events = new Emitter<{ changed: [] }>();
 
   add(item: T): () => void {
-    if (this.items.has(item.key)) throw new Error(`${item.key} はもう登録されています`);
+    if (this.items.has(item.key)) throw new Error(t('{key} はもう登録されています', { key: item.key }));
     this.items.set(item.key, item);
     this.events.emit('changed');
     return () => {

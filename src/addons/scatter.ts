@@ -1,3 +1,4 @@
+import { msg, t } from '../core/i18n';
 import { seededRandom } from '../core/random';
 import type { AddonModule } from '../engine/addons/Addons';
 import { isShape } from '../engine/types';
@@ -6,16 +7,16 @@ import { isShape } from '../engine/types';
 // (メニュー・MCP の命令から、アプリの操作を呼ぶ例)
 const scatter: AddonModule = {
   id: 'scatter',
-  name: 'ランダムに散らす',
+  name: msg('ランダムに散らす'),
   version: '1.0.0',
   author: 'webgl-grid',
-  category: 'オブジェクト',
-  description: '選んだ形と同じ形 (同じマテリアル) を、まわりにランダムに置きます。「オブジェクト > ランダムに散らす」から使います。',
+  category: msg('オブジェクト'),
+  description: msg('選んだ形と同じ形 (同じマテリアル) を、まわりにランダムに置きます。「オブジェクト > ランダムに散らす」から使います。'),
   register(api) {
     const { engine } = api;
     const run = (count: number, radius: number, seed: number) => {
       const src = engine.selection.current;
-      if (!isShape(src)) throw new Error('散らす形をクリックして選んでください (MMD モデルとライトは散らせません)');
+      if (!isShape(src)) throw new Error(t('散らす形をクリックして選んでください (MMD モデルとライトは散らせません)'));
       const r = seededRandom(seed), made: number[] = [];
       for (let i = 0; i < count && !engine.world.full; i++) {
         const a = r() * Math.PI * 2, d = Math.sqrt(r()) * radius;
@@ -26,11 +27,11 @@ const scatter: AddonModule = {
         made.push(o.id);
       }
       engine.viewport.requestDraw();
-      api.toast(`${made.length} 個置きました`);
+      api.toast(t('{n} 個置きました', { n: made.length }));
       return made;
     };
     api.addMenuItem({
-      menu: 'object', label: 'ランダムに散らす (10 個)',
+      menu: 'object', label: msg('ランダムに散らす (10 個)'),
       enabled: () => { const o = engine.selection.current; return isShape(o) && !engine.world.full; },
       run: () => { try { run(10, 3, Date.now() % 100000); } catch (err) { api.toast((err as Error).message); } },
     });

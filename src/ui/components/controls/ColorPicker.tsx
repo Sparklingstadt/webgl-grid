@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { hexToRgb, hsvToRgb, rgbToHex, rgbToHsv, type Hsv } from '../../../core/hsv';
+import { t } from '../../../core/i18n';
 
 // --- 色選び (Blender の色選びの窓) ---
 // 彩度・明度の面と色相のバーをドラッグ (矢印キーでも動く) するか、16 進で打つ。色は画面の色 (sRGB の 0〜1)
@@ -23,12 +24,12 @@ export function ColorPicker({ rgb, onChange, label, onDone }: { rgb: [number, nu
   const hueColor = rgbToHex(hsvToRgb({ h: hsv.h, s: 1, v: 1 }));
   return (
     <div className="color-picker">
-      <Pad2d label={`${label}の彩度と明度`} x={hsv.s} y={hsv.v} style={{ backgroundColor: hueColor }} className="cp-sv"
+      <Pad2d label={t('{label}の彩度と明度', { label })} x={hsv.s} y={hsv.v} style={{ backgroundColor: hueColor }} className="cp-sv"
              onChange={(s, v) => set({ ...hsv, s, v })} />
-      <Pad2d label={`${label}の色相`} x={hsv.h / 360} className="cp-hue" onChange={h => set({ ...hsv, h: Math.min(h, 0.9999) * 360 })} />
+      <Pad2d label={t('{label}の色相', { label })} x={hsv.h / 360} className="cp-hue" onChange={h => set({ ...hsv, h: Math.min(h, 0.9999) * 360 })} />
       <div className="cp-row">
         <span className="cp-swatch" style={{ background: hex }} aria-hidden="true" />
-        <input className="text-field" type="text" aria-label={`${label} (16 進)`} spellCheck={false} value={draft ?? hex}
+        <input className="text-field" type="text" aria-label={t('{label} (16 進)', { label })} spellCheck={false} value={draft ?? hex}
                onFocus={e => e.currentTarget.select()}
                onChange={e => setDraft(e.currentTarget.value)}
                onBlur={() => { const c = draft !== null ? hexToRgb(draft) : null; if (c) set(rgbToHsv(c, hsv.h)); setDraft(null); }}
@@ -56,7 +57,7 @@ function Pad2d({ x, y, onChange, label, className, style }: {
   return (
     <div className={className} style={style} role="slider" tabIndex={0} aria-label={label}
          aria-valuenow={Math.round(x * 100)} aria-valuemin={0} aria-valuemax={100}
-         aria-valuetext={y === undefined ? `${Math.round(x * 360)}°` : `彩度 ${Math.round(x * 100)}%・明度 ${Math.round(y * 100)}%`}
+         aria-valuetext={y === undefined ? `${Math.round(x * 360)}°` : t('彩度 {s}%・明度 {v}%', { s: Math.round(x * 100), v: Math.round(y * 100) })}
          onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); at(e); }}
          onPointerMove={e => { if (e.currentTarget.hasPointerCapture(e.pointerId)) at(e); }}
          onKeyDown={e => {

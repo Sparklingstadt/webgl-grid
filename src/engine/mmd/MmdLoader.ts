@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { errorText } from '../../core/errors';
+import { t } from '../../core/i18n';
 import { convertMmdMesh } from '../materials/fromMmd';
 import type { MaterialLibrary } from '../materials/MaterialLibrary';
 import type { Any } from '../types';
@@ -22,17 +23,43 @@ const fileKey = (path: string) => decodeURIComponent(path).replace(/\\/g, '/').s
 export class MmdLoader {
   constructor(private ui: UiChannel, private library: MaterialLibrary, private onProgress: () => void) {}
 
-  async load(files: File[]): Promise<LoadedModel | null> {
-    const mesh = await this.loadMesh(files);
+  // ask: テクスチャが見つからなければ、置く前に探してもらう (画面から読むとき。プロジェクト・MCP では聞かない)
+  async load(files: File[], opts: { ask?: boolean } = {}): Promise<LoadedModel | null> {
+    let mesh = await this.loadMesh(files, opts.ask);
     if (!mesh) return null;
+    const names: string[] = mesh.userData.missingTextureNames ?? [];
+    if (opts.ask && names.length) {
+      const picked = await this.askTextures(mesh.userData.fileName, names);
+      if (picked.length) {
+        // 選ばれた画像も入れて、読み直す (前に読んだ方は捨てる)
+        disposeMesh(mesh);
+        const again = await this.loadMesh([...files, ...picked], true);
+        if (!again) return null;
+        mesh = again;
+      }
+    }
     const slots = convertMmdMesh(mesh, this.library);
     return { mesh, slots, isStage: Stage.isStage(mesh, mesh.userData.fileName) };
   }
 
-  private async loadMesh(files: File[]): Promise<Any | null> {
+  // 見つからないテクスチャの画面: 選んだ画像 (フォルダの中も) を渡す・テクスチャなしで置く ([])
+  private textureAnswer: ((files: File[]) => void) | null = null;
+  private askTextures(model: string, files: string[]) {
+    this.ui.hideToast();
+    this.ui.set({ missingTextures: { model, files } });
+    return new Promise<File[]>(ok => { this.textureAnswer = ok; });
+  }
+  answerTextures(files: File[]) {
+    const answer = this.textureAnswer;
+    this.textureAnswer = null;
+    this.ui.set({ missingTextures: null });
+    answer?.(files);
+  }
+
+  private async loadMesh(files: File[], quiet = false): Promise<Any | null> {
     const pmx = files.find(f => /\.pmx$/i.test(f.name));
-    if (!pmx) { this.ui.toast('.pmx ファイルが選ばれていません。モデルの .pmx とテクスチャ画像をまとめて選んでください。'); return null; }
-    this.ui.toast(`${pmx.name} を読み込み中…`, 0);
+    if (!pmx) { this.ui.toast(t('.pmx ファイルが選ばれていません。モデルの .pmx とテクスチャ画像をまとめて選んでください。')); return null; }
+    this.ui.toast(t('{name} を読み込み中…', { name: pmx.name }), 0);
     const MODEL_URL = '__model__.pmx';
     const byKey = new Map(files.map(f => [fileKey(f.name), f]));
     const urls = new Map(files.map(f => [fileKey(f.name), URL.createObjectURL(f)]));
@@ -56,7 +83,8 @@ export class MmdLoader {
     manager.onLoad = () => {
       for (const u of urls.values()) URL.revokeObjectURL(u);
       this.onProgress();
-      if (missing.size) this.ui.toast(`見つからないテクスチャがあります: ${[...missing].join('、')}`, 8000);
+      // (画面から読むときは、置く前に探してもらうので知らせない)
+      if (missing.size && !quiet) this.ui.toast(t('見つからないテクスチャがあります: {files}', { files: [...missing].join('、') }), 8000);
     };
     try {
       const { MMDLoader } = await loadMMDLoader();
@@ -67,6 +95,7 @@ export class MmdLoader {
       const mesh = loader.meshBuilder.build(data, './', undefined, (err: unknown) => console.error(err));
       // 見つからなかったテクスチャ (組み立てるあいだに、すぐ分かる)。マテリアルにするとき、画像なしにする (黒く写らないように)
       mesh.userData.missingTextures = new Set([...missing].map(fileKey));
+      mesh.userData.missingTextureNames = [...missing].map(n => n.replace(/\\/g, '/'));
       mesh.userData.morphPanels = new Map(data.morphs.map((m: Any) => [m.name, m.panel]));
       // ボーンを手で動かすための情報: 表示枠 (MMD でボーンを選ぶときのグループ)、フラグ、最初の姿勢
       mesh.userData.boneFrames = (data.frames ?? []).map((f: Any) => ({
@@ -82,7 +111,7 @@ export class MmdLoader {
       return mesh;
     } catch (err) {
       console.error(err);
-      this.ui.toast(`${pmx.name} を読み込めませんでした: ${errorText(err)}`, 8000);
+      this.ui.toast(t('{name} を読み込めませんでした: {error}', { name: pmx.name, error: errorText(err) }), 8000);
       return null;
     }
   }
@@ -98,4 +127,14 @@ function fixEmptyMorphs(mesh: THREE.Object3D) {
     // (表情の対応表は空のまま残す。消すと、表情の動きを含む .vmd を読むときに MMDLoader が止まる)
     if (o.morphTargetInfluences?.length === 0) { o.morphTargetInfluences = undefined; o.morphTargetDictionary = {}; }
   });
+}
+
+// 読み直す前に捨てるメッシュ (形・骨・材質とテクスチャ)
+function disposeMesh(mesh: Any) {
+  mesh.geometry?.dispose();
+  mesh.skeleton?.dispose();
+  for (const m of [mesh.material].flat()) {
+    for (const k of ['map', 'matcap', 'gradientMap']) m?.[k]?.dispose?.();
+    m?.dispose?.();
+  }
 }

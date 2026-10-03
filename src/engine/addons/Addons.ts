@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { errorText } from '../../core/errors';
+import { t } from '../../core/i18n';
 import type { Engine } from '../Engine';
 import { download } from '../io/download';
 import type { Obj } from '../types';
@@ -101,9 +102,9 @@ async function importCode(code: string): Promise<unknown> {
 }
 function check(m: unknown): AddonModule {
   const a = ((m as { default?: unknown })?.default ?? m) as AddonModule;
-  if (!a || typeof a !== 'object' || typeof a.register !== 'function') throw new Error('アドオンではありません (register を持つオブジェクトを export default してください)');
-  if (typeof a.id !== 'string' || !ID.test(a.id)) throw new Error('アドオンの id は、英小文字で始まる英小文字・数字・-・_ (40 文字まで) にしてください');
-  if (typeof a.name !== 'string' || !a.name) throw new Error('アドオンの name (名前) がありません');
+  if (!a || typeof a !== 'object' || typeof a.register !== 'function') throw new Error(t('アドオンではありません (register を持つオブジェクトを export default してください)'));
+  if (typeof a.id !== 'string' || !ID.test(a.id)) throw new Error(t('アドオンの id は、英小文字で始まる英小文字・数字・-・_ (40 文字まで) にしてください'));
+  if (typeof a.name !== 'string' || !a.name) throw new Error(t('アドオンの name (名前) がありません'));
   return a;
 }
 
@@ -132,7 +133,7 @@ export class Addons {
     for (const [id, code] of Object.entries(saved.installed)) {
       try { this.add(check(await importCode(code)), 'installed', code); } catch (err) {
         console.error(err);
-        this.engine.ui.toast(`アドオン ${id} を読み込めませんでした: ${errorText(err)}`, 8000);
+        this.engine.ui.toast(t('アドオン {id} を読み込めませんでした: {error}', { id, error: errorText(err) }), 8000);
       }
     }
     // 前に有効にしていたものと、初めて見る組み込みの「最初から有効」のもの
@@ -169,7 +170,7 @@ export class Addons {
   // インストールしたアドオンのコードを、ファイルとして保存する
   exportCode(id: string) {
     const e = this.entries.get(id);
-    if (!e?.code) throw new Error('インストールしたアドオンではありません');
+    if (!e?.code) throw new Error(t('インストールしたアドオンではありません'));
     download(new TextEncoder().encode(e.code), `${id}.js`, 'text/javascript');
   }
   isEnabled(id: string) { return !!this.entries.get(id)?.dispose; }
@@ -177,7 +178,7 @@ export class Addons {
   // アドオンを一覧に足す (有効にはしない)
   add(module: AddonModule, source: AddonInfo['source'] = 'builtin', code?: string) {
     const m = check(module);
-    if (this.entries.has(m.id)) throw new Error(`アドオン ${m.id} はもうあります`);
+    if (this.entries.has(m.id)) throw new Error(t('アドオン {id} はもうあります', { id: m.id }));
     this.entries.set(m.id, { module: m, source, code, error: null });
     this.publish();
     return m.id;
@@ -187,7 +188,7 @@ export class Addons {
   async install(code: string) {
     const m = check(await importCode(code));
     const old = this.entries.get(m.id);
-    if (old?.source === 'builtin') throw new Error(`${m.id} は組み込みのアドオンと同じ id です`);
+    if (old?.source === 'builtin') throw new Error(t('{id} は組み込みのアドオンと同じ id です', { id: m.id }));
     if (old) this.remove(m.id);
     this.add(m, 'installed', code);
     await this.enable(m.id);
@@ -196,8 +197,8 @@ export class Addons {
   // インストールしたアドオンを消す
   uninstall(id: string) {
     const e = this.entries.get(id);
-    if (!e) throw new Error(`アドオン ${id} はありません`);
-    if (e.source === 'builtin') throw new Error('組み込みのアドオンは消せません (切ることはできます)');
+    if (!e) throw new Error(t('アドオン {id} はありません', { id }));
+    if (e.source === 'builtin') throw new Error(t('組み込みのアドオンは消せません (切ることはできます)'));
     this.remove(id);
     this.save();
     this.publish();
@@ -209,7 +210,7 @@ export class Addons {
 
   async enable(id: string, remember = true) {
     const e = this.entries.get(id);
-    if (!e) throw new Error(`アドオン ${id} はありません`);
+    if (!e) throw new Error(t('アドオン {id} はありません', { id }));
     if (e.dispose) return;
     // 必要なアドオンを先に有効にする
     for (const r of e.module.requires ?? []) {
@@ -217,8 +218,8 @@ export class Addons {
       if (dep && !dep.dispose && dep.module.requires?.includes(id)) continue; // (お互いに必要としているときは、回らない)
       if (dep) await this.enable(r, remember);
       if (!dep?.dispose) {
-        e.error = `アドオン ${dep?.module.name ?? r} が必要です${dep ? ' (有効にできませんでした)' : ' (ありません)'}`;
-        this.engine.ui.toast(`アドオン「${e.module.name}」を有効にできませんでした: ${e.error}`, 8000);
+        e.error = dep ? t('アドオン {name} が必要です (有効にできませんでした)', { name: t(dep.module.name) }) : t('アドオン {name} が必要です (ありません)', { name: r });
+        this.engine.ui.toast(t('アドオン「{name}」を有効にできませんでした: {error}', { name: t(e.module.name), error: e.error }), 8000);
         this.publish();
         return;
       }
@@ -238,7 +239,7 @@ export class Addons {
       for (const d of disposers.reverse()) { try { d(); } catch { /* (外せるものだけ外す) */ } }
       console.error(err);
       e.error = errorText(err);
-      this.engine.ui.toast(`アドオン「${e.module.name}」を有効にできませんでした: ${e.error}`, 8000);
+      this.engine.ui.toast(t('アドオン「{name}」を有効にできませんでした: {error}', { name: t(e.module.name), error: e.error }), 8000);
     }
     if (remember) this.save();
     this.publish();
@@ -250,7 +251,7 @@ export class Addons {
     // このアドオンを必要としているアドオンを、先に切る
     const dependents = [...this.entries.values()].filter(x => x.dispose && x.module.requires?.includes(id));
     for (const x of dependents) this.disable(x.module.id, remember);
-    if (dependents.length) this.engine.ui.toast(`${dependents.map(x => x.module.name).join('・')} も切りました (${e.module.name} が必要なため)`);
+    if (dependents.length) this.engine.ui.toast(t('{names} も切りました ({name} が必要なため)', { names: dependents.map(x => t(x.module.name)).join('・'), name: t(e.module.name) }));
     const d = e.dispose;
     e.dispose = undefined;
     d();
@@ -283,7 +284,7 @@ export class Addons {
       expose,
       require: <T>(dep: string) => {
         const v = this.exposed<T>(dep);
-        if (v === undefined) throw new Error(`アドオン ${dep} が必要です (有効にしてください)`);
+        if (v === undefined) throw new Error(t('アドオン {id} が必要です (有効にしてください)', { id: dep }));
         return v;
       },
       addCommand: (name, def) => track(this.commands.add({

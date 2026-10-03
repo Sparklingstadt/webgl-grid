@@ -1,4 +1,5 @@
 import { errorText } from '../../core/errors';
+import { t } from '../../core/i18n';
 import type { History } from '../history/History';
 import type { UiChannel } from '../UiChannel';
 import type { AutosaveSession, AutosaveStore } from './autosaveStore';
@@ -78,8 +79,8 @@ export class Autosave {
   async recover() {
     const store = this.store, prev = await this.previous();
     this.dismiss();
-    if (!store || !prev) { this.ui.toast('前回の続きはありません'); return; }
-    this.ui.toast('前回の続きを開いています…', 0);
+    if (!store || !prev) { this.ui.toast(t('前回の続きはありません')); return; }
+    this.ui.toast(t('前回の続きを開いています…'), 0);
     try {
       const provided = new Map<string, File>();
       for (const [id, key] of Object.entries(prev.files)) {
@@ -91,10 +92,10 @@ export class Autosave {
         provided, pick: async m => { missing = m.length; return 'skip'; },
       }));
       this.ui.set({ projectName: prev.name });
-      this.ui.toast(missing ? `前回の続きを開きました (見つからないファイルが ${missing} 個あります)` : '前回の続きを開きました', missing ? 8000 : 4000);
+      this.ui.toast(missing ? t('前回の続きを開きました (見つからないファイルが {n} 個あります)', { n: missing }) : t('前回の続きを開きました'), missing ? 8000 : 4000);
     } catch (err) {
       console.error(err);
-      this.ui.toast(`前回の続きを開けませんでした: ${errorText(err)}`, 8000);
+      this.ui.toast(t('前回の続きを開けませんでした: {error}', { error: errorText(err) }), 8000);
     }
   }
   // 「前回の続き」の知らせを閉じる (ファイル メニューからは開ける)

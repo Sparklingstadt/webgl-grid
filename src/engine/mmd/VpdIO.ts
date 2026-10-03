@@ -1,5 +1,6 @@
 import type * as THREE from 'three';
 import { encodeShiftJis } from '../../core/sjis';
+import { t } from '../../core/i18n';
 import type { BoneValue } from '../../core/types';
 import { decodeMmdText, formatVpd, parseVpd, type VpdPose } from '../../core/vpdFormat';
 import type { Viewport } from '../render/Viewport';
@@ -26,13 +27,13 @@ export class VpdIO {
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-    this.ui.toast(`ポーズを ${a.download} として保存しました (ボーン ${pose.bones.length} 本、表情 ${pose.morphs.length} 個)`);
+    this.ui.toast(t('ポーズを {name} として保存しました (ボーン {bones} 本、表情 {morphs} 個)', { name: a.download, bones: pose.bones.length, morphs: pose.morphs.length }));
   }
 
   async load(file: File, objs: ModelObj[]) {
-    if (!objs.length) { this.ui.toast('先に .pmx のモデルを読み込んでください。'); return; }
+    if (!objs.length) { this.ui.toast(t('先に .pmx のモデルを読み込んでください。')); return; }
     const pose = parseVpd(decodeMmdText(await file.arrayBuffer()));
-    if (!pose) { this.ui.toast(`${file.name} は MMD のポーズファイル (.vpd) ではないようです`, 8000); return; }
+    if (!pose) { this.ui.toast(t('{name} は MMD のポーズファイル (.vpd) ではないようです', { name: file.name }), 8000); return; }
     let found = 0;
     for (const obj of objs) {
       const mesh = obj.model, bones: THREE.Bone[] = mesh.skeleton.bones;
@@ -54,7 +55,7 @@ export class VpdIO {
     this.viewport.startTicking();
     this.viewport.requestDraw();
     this.ui.toast(found
-      ? `${file.name} のポーズを当てました (ボーン ${pose.bones.length} 本・表情 ${pose.morphs.length} 個のうち、合ったもの ${found} 個)`
-      : `${file.name} には、このモデルのボーンや表情に合うものがありませんでした`, 6000);
+      ? t('{name} のポーズを当てました (ボーン {bones} 本・表情 {morphs} 個のうち、合ったもの {found} 個)', { name: file.name, bones: pose.bones.length, morphs: pose.morphs.length, found })
+      : t('{name} には、このモデルのボーンや表情に合うものがありませんでした', { name: file.name }), 6000);
   }
 }

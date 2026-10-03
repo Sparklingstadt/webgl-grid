@@ -1,3 +1,4 @@
+import { msg } from '../../core/i18n';
 import { num } from '../../core/normalize';
 
 // --- デフォーマ (Cinema 4D のデフォーマ): 形を曲げる・ねじる・細くする・ふくらませる ---
@@ -14,10 +15,10 @@ export interface Deformer {
 export interface Box { min: [number, number, number]; max: [number, number, number] }
 
 export const DEFORMER_KINDS: { key: DeformerKind; name: string; unit: string; min: number; max: number; step: number; def: number }[] = [
-  { key: 'bend', name: 'ベンド', unit: '°', min: -360, max: 360, step: 1, def: 90 },
-  { key: 'twist', name: 'ツイスト', unit: '°', min: -720, max: 720, step: 1, def: 90 },
-  { key: 'taper', name: 'テーパー', unit: '', min: -1, max: 2, step: 0.01, def: -0.5 },
-  { key: 'bulge', name: 'バルジ', unit: '', min: -1, max: 2, step: 0.01, def: 0.5 },
+  { key: 'bend', name: msg('ベンド'), unit: '°', min: -360, max: 360, step: 1, def: 90 },
+  { key: 'twist', name: msg('ツイスト'), unit: '°', min: -720, max: 720, step: 1, def: 90 },
+  { key: 'taper', name: msg('テーパー'), unit: '', min: -1, max: 2, step: 0.01, def: -0.5 },
+  { key: 'bulge', name: msg('バルジ'), unit: '', min: -1, max: 2, step: 0.01, def: 0.5 },
 ];
 export const newDeformer = (kind: DeformerKind): Deformer =>
   ({ kind, enabled: true, axis: 'y', amount: DEFORMER_KINDS.find(k => k.key === kind)!.def, directionDeg: 0 });

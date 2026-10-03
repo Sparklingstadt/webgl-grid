@@ -1,3 +1,4 @@
+import { msg } from '../../core/i18n';
 import type { SelInfo } from '../../engine';
 import type { AddonModule } from '../../engine/addons/Addons';
 import { isShape, type Obj } from '../../engine/types';
@@ -9,11 +10,11 @@ import { splineEffector, splineMode } from './useSpline';
 // --- MoGraph スプライン: Cinema 4D の MoSpline (とスイープ) と、スプラインに並べるクローナー・スプライン・エフェクタ ---
 const mographSpline: AddonModule = {
   id: 'mograph-spline',
-  name: 'MoGraph スプライン (MoSpline)',
+  name: msg('MoGraph スプライン (MoSpline)'),
   version: '1.0.0',
   author: 'webgl-grid',
   category: 'MoGraph',
-  description: '伸びる曲線 (シンプル・タートル (L-システム)) を管にして置く。成長で時刻に合わせて伸びる。スプライン (MoSpline・トレーサー) にそって並べるクローナーと、スプライン・エフェクタも足します。',
+  description: msg('伸びる曲線 (シンプル・タートル (L-システム)) を管にして置く。成長で時刻に合わせて伸びる。スプライン (MoSpline・トレーサー) にそって並べるクローナーと、スプライン・エフェクタも足します。'),
   enabledByDefault: true,
   requires: ['cinema4d'],
   register(api) {

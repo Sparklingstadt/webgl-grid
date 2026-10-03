@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { msg } from '../../core/i18n';
 import { num } from '../../core/normalize';
 import { shapeDef } from '../../core/shapes';
 import type { AddonApi, ObjectData } from '../../engine/addons/Addons';
@@ -56,7 +57,7 @@ export class MoText {
 
   constructor(private api: AddonApi, private c4d: Cinema4d) {
     this.settingsOf = o => (this.on ? (o.addonData?.[`${api.id}.text`] as TextSettings | undefined) ?? null : null);
-    this.data = api.addObjectData<TextSettings>({ key: 'text', label: 'テキスト', normalize: raw => normalizeText(raw as Partial<TextSettings>), apply: o => this.rebuild(o) });
+    this.data = api.addObjectData<TextSettings>({ key: 'text', label: msg('テキスト'), normalize: raw => normalizeText(raw as Partial<TextSettings>), apply: o => this.rebuild(o) });
     api.onBeforeRender(() => this.sync());
     this.offs = [
       c4d.events.on('registry', () => { for (const o of api.engine.world.objects) if (this.states.has(o)) this.place(o); }),
@@ -85,7 +86,7 @@ export class MoText {
       return;
     }
     if (this.c4d.cloner(o) || this.api.engine.addons.exposed<{ get(o: Obj): unknown }>('mograph-fracture')?.get(o)) {
-      this.problems.set(o, 'クローナー・分割にしている物は、テキストにできません');
+      this.problems.set(o, msg('クローナー・分割にしている物は、テキストにできません'));
       return;
     }
     const font = cssFont(s.font, s.weight);

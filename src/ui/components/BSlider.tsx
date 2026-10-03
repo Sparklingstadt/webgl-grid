@@ -1,4 +1,5 @@
 import { useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
+import { t } from '../../core/i18n';
 
 // Blender の数値スライダー: 暗い地に値の分だけ青い帯を引き、中に名前と値を書く。
 // 左右にドラッグで値を変える。マウスで動かさずにクリック (またはダブルクリック・Enter) すると数値を打てる。
@@ -69,7 +70,7 @@ export function BSlider({ label, value, min, max, step, digits = 2, unit = '', o
       <span className="name">{label}</span>
       <span className="val">{value.toFixed(digits)}{unit}</span>
       {editing && (
-        <input type="text" inputMode="decimal" autoFocus defaultValue={+value.toFixed(digits)} aria-label={`${label} (数値)`} spellCheck={false}
+        <input type="text" inputMode="decimal" autoFocus defaultValue={+value.toFixed(digits)} aria-label={t('{label} (数値)', { label })} spellCheck={false}
                onFocus={e => e.currentTarget.select()}
                onBlur={e => { const v = e.currentTarget.value.trim(); if (v !== '' && Number.isFinite(+v)) set(+v); setEditing(false); }}
                onKeyDown={e => {

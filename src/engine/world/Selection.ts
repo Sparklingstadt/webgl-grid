@@ -1,5 +1,6 @@
 import type * as THREE from 'three';
 import { Emitter } from '../../core/events';
+import { t } from '../../core/i18n';
 import { lightName } from '../../core/light';
 import { shapeName } from '../../core/shapes';
 import { isModel, kindOf, type ModelObj, type Obj } from '../types';
@@ -61,4 +62,4 @@ export class Selection {
   }
 }
 
-export const nameOf = (o: Obj) => (isModel(o) ? (o.model.name || 'モデル') : o.light ? lightName(o.light.type) : shapeName(o.s));
+export const nameOf = (o: Obj) => (isModel(o) ? (o.model.name || t('モデル')) : o.light ? lightName(o.light.type) : shapeName(o.s));

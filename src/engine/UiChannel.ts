@@ -4,7 +4,7 @@ import { OUTPUT_DEFAULT, type OutputSettings } from '../core/output';
 import { normalizeScene, type SceneSettings } from '../core/scene';
 import { createStore, type Store } from '../core/store';
 import type { AddonInfo } from './addons/Addons';
-import { getLang, langEvents, type Lang } from '../core/i18n';
+import { getLang, langEvents, msg, type Lang } from '../core/i18n';
 import { FX_LEVEL_DEFAULT, type FxLevel, type FxState } from './render/postfx';
 
 // --- エンジンから画面 (React) へ知らせる状態と、お知らせ ---
@@ -38,6 +38,8 @@ export interface UiState {
   recovery: { time: number; name: string | null; banner: boolean } | null; // 自動保存した前回の続き (banner: 知らせを出す)
   // 参照だけのプロジェクトを開くときに見つからないファイル (探してもらう)
   missingFiles: { project: string; files: { name: string; size?: number; source?: string }[] } | null;
+  // .pmx を読むときに見つからないテクスチャ (探してもらう)
+  missingTextures: { model: string; files: string[] } | null;
   addons: AddonInfo[];      // アドオンの一覧 (アドオンマネージャー)
   lang: Lang;               // 画面の言語
   addonsVersion: number;       // アドオンのメニュー・パネル・値が変わった
@@ -50,7 +52,7 @@ export class UiChannel {
     frame: 0, playing: false, start: 0, end: TL_DEFAULT_END, keysVersion: 0,
     fxState: { ao: false, dof: false, bloom: false, diffusion: false, color: false }, fxLevel: { ...FX_LEVEL_DEFAULT },
     toast: null, palette: null, viewInfo: '', hairHang: null, materialsVersion: 0, projectName: null,
-    output: { ...OUTPUT_DEFAULT }, rendering: null, renderResult: null, remote: 'off', missingFiles: null, history: { labels: ['最初'], index: 0 }, recovery: null, scene: normalizeScene(undefined),
+    output: { ...OUTPUT_DEFAULT }, rendering: null, renderResult: null, remote: 'off', missingFiles: null, missingTextures: null, history: { labels: [msg('最初')], index: 0 }, recovery: null, scene: normalizeScene(undefined),
     addons: [], addonsVersion: 0, lang: getLang(),
   });
   constructor() {

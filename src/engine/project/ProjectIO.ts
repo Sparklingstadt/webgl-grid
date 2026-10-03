@@ -3,6 +3,7 @@ import { animationFromJson, animationFromPoseKeys, animationToJson, isEmpty } fr
 import { matchAssets } from '../../core/assetMatch';
 import { FPS } from '../../core/constants';
 import { errorText } from '../../core/errors';
+import { t } from '../../core/i18n';
 import type { LightSettings } from '../../core/light';
 import type { Engine } from '../Engine';
 import { applyObjectData } from '../addons/registry';
@@ -26,22 +27,22 @@ export class ProjectIO {
   // 保存してダウンロードさせる。embedded: ファイルも入れた .wgp、reference: ファイルは参照だけの .wgpj
   async saveFile(storage: ProjectStorage = 'embedded') {
     const { ui } = this.engine;
-    ui.toast('プロジェクトを保存中…', 0);
+    ui.toast(t('プロジェクトを保存中…'), 0);
     try {
       const bytes = await this.save(storage);
-      const name = `${ui.state.projectName ?? 'プロジェクト'}.${PROJECT_EXT[storage]}`;
+      const name = `${ui.state.projectName ?? t('プロジェクト')}.${PROJECT_EXT[storage]}`;
       download(bytes, name, storage === 'reference' ? 'application/json' : 'application/zip');
       ui.set({ projectName: projectBaseName(name) });
-      ui.toast(`${name} を保存しました (${(bytes.length / 1024 / 1024).toFixed(1)} MB)`);
+      ui.toast(t('{name} を保存しました ({mb} MB)', { name, mb: (bytes.length / 1024 / 1024).toFixed(1) }));
     } catch (err) {
       console.error(err);
-      ui.toast(`プロジェクトを保存できませんでした: ${errorText(err)}`, 8000);
+      ui.toast(t('プロジェクトを保存できませんでした: {error}', { error: errorText(err) }), 8000);
     }
   }
   // 選ばれたファイルを開く。参照しているファイルが見つからなければ、画面で探してもらう
   async openFile(file: File) {
     const { ui } = this.engine;
-    ui.toast(`${file.name} を開いています…`, 0);
+    ui.toast(t('{name} を開いています…', { name: file.name }), 0);
     let skipped = 0;
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
@@ -50,20 +51,20 @@ export class ProjectIO {
           ui.hideToast();
           const r = await this.askMissing(file.name, missing);
           if (r === 'skip') skipped = missing.length;
-          ui.toast(`${file.name} を開いています…`, 0);
+          ui.toast(t('{name} を開いています…', { name: file.name }), 0);
           return r;
         },
       }));
       ui.set({ projectName: projectBaseName(file.name) });
       const notes = [
-        ...(skipped ? [`見つからないファイルが ${skipped} 個あります`] : []),
-        ...(missingAddons.length ? [`アドオン ${missingAddons.join('・')} のデータがあります。有効にしてから開き直すと戻ります`] : []),
+        ...(skipped ? [t('見つからないファイルが {n} 個あります', { n: skipped })] : []),
+        ...(missingAddons.length ? [t('アドオン {names} のデータがあります。有効にしてから開き直すと戻ります', { names: missingAddons.join('・') })] : []),
       ];
-      ui.toast(notes.length ? `${file.name} を開きました (${notes.join('。')})` : `${file.name} を開きました`, notes.length ? 8000 : 4000);
+      ui.toast(notes.length ? t('{name} を開きました ({notes})', { name: file.name, notes: notes.join('。') }) : t('{name} を開きました', { name: file.name }), notes.length ? 8000 : 4000);
     } catch (err) {
-      if (err instanceof ProjectCancelled) { ui.toast('プロジェクトを開くのをやめました'); return; }
+      if (err instanceof ProjectCancelled) { ui.toast(t('プロジェクトを開くのをやめました')); return; }
       console.error(err);
-      ui.toast(`${file.name} を開けませんでした: ${errorText(err)}`, 8000);
+      ui.toast(t('{name} を開けませんでした: {error}', { name: file.name, error: errorText(err) }), 8000);
     }
   }
   // 見つからないファイルの画面: 選んだファイル (フォルダ) を渡す・見つかったものだけで開く・やめる

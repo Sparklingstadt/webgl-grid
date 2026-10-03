@@ -2,6 +2,7 @@ import { channelKeys, keyFrames, type Channel, type Curve } from '../core/animat
 import type { LightSettings, LightType } from '../core/light';
 import { FPS } from '../core/constants';
 import { errorText } from '../core/errors';
+import { langEvents, t } from '../core/i18n';
 import { patchPmxMaterials } from '../core/pmxMaterials';
 import type { BoneValue } from '../core/types';
 import { Clock } from './anim/Clock';
@@ -70,7 +71,7 @@ export class Engine {
   readonly music = new Music(this.ui, () => this.clock.playing);
   // 書き出すファイルの名前の元: プロジェクトの名前、なければ選んでいるモデルの名前
   readonly output = new RenderOutput(this.viewport, this.graph, this.clock, this.music, this.ui,
-    () => this.ui.state.projectName ?? this.selection.model?.model.name ?? 'レンダー');
+    () => this.ui.state.projectName ?? this.selection.model?.model.name ?? t('レンダー'));
   readonly environment = new Environment(this.graph, this.viewport, this.ui);
   readonly effects = new Effects(this.viewport, this.ui, () => this.camera.focusPoint());
   readonly loader = new MmdLoader(this.ui, this.library, () => this.viewport.requestDraw());
@@ -84,6 +85,8 @@ export class Engine {
   constructor() {
     const { viewport, clock, motion, keyframes, music, world, selection, camera, graph, ui } = this;
     registerBuiltins(this);
+    // 言語を変えたら、エンジンが作った文 (選んでいる物の名前・ビューポート左上の文字・タイムラインの行) を作り直す
+    langEvents.on('changed', () => { selection.publish(); ui.bump('keysVersion'); viewport.requestDraw(); });
     // 毎フレームの計算の順番: 再生 → モーション → 手で動かしたボーン → 物理演算 → 落下
     for (const s of [clock, motion, this.posing, this.physics, world]) viewport.addSystem(s);
     motion.isPlaying = () => clock.playing;
@@ -125,9 +128,9 @@ export class Engine {
     // 描いたあと: 選んでいる物の情報と、ビューポート左上の文字 (Blender の「ユーザー・透視投影」と「(フレーム) 選んでいる物」)
     viewport.onRender(() => {
       selection.publish();
-      const what = camera.override ? 'カメラ' : camera.viewName || 'ユーザー';
+      const what = camera.override ? t('カメラ') : camera.viewName ? t(camera.viewName) : t('ユーザー');
       ui.set({
-        viewInfo: `${what}・透視投影\n(${clock.frame}) ${ui.state.sel?.name ?? ''}`,
+        viewInfo: `${t('{view}・透視投影', { view: what })}\n(${clock.frame}) ${ui.state.sel?.name ?? ''}`,
         hairHang: selection.model ? this.physics.hairHang(selection.model) : null,
       });
     });
@@ -139,7 +142,7 @@ export class Engine {
 
   // --- 描画先 (React の部品が canvas を用意したとき・片付けるとき) ---
   mount(canvas: HTMLCanvasElement, container: HTMLElement) {
-    if (!this.viewport.mount(canvas, container)) { this.ui.toast('WebGL2 に対応していません', 0); return; }
+    if (!this.viewport.mount(canvas, container)) { this.ui.toast(t('WebGL2 に対応していません'), 0); return; }
     this.input = new InputController(canvas, this.viewport, this.world, this.camera, this.selection, this.picker, {
       placeShape: (x, z) => this.placeShape(x, z),
       remove: obj => this.world.remove(obj),
@@ -212,8 +215,9 @@ export class Engine {
   // .pmx (とテクスチャ)・.vmd (いくつでも)・.vpd・曲をまとめて受け取る。
   // .vmd だけ・曲だけのときは、置いてあるモデル全員に付ける
   // (読み込み終わってから 1 手にする)
-  loadFiles(files: File[]) { return this.history.batch(() => this.loadFilesNow(files)); }
-  private async loadFilesNow(files: File[]) {
+  // askTextures: .pmx のテクスチャが見つからなければ、置く前に探してもらう (画面から読むとき。MCP では聞かない)
+  loadFiles(files: File[], opts: { askTextures?: boolean } = {}) { return this.history.batch(() => this.loadFilesNow(files, opts.askTextures ?? true)); }
+  private async loadFilesNow(files: File[], askTextures: boolean) {
     const { world, ui } = this;
     this.project.remember(files); // 参照だけのプロジェクトを開くときに使う
     const vmds = files.filter(f => /\.vmd$/i.test(f.name));
@@ -223,12 +227,14 @@ export class Engine {
     let targets: ModelObj[];
     if (pmx) {
       if (world.full) return;
-      const loaded = await this.loader.load(files);
+      // (フォルダごと選ばれて .pmx がいくつもあるときは、最初のもの)
+      const loaded = await this.loader.load(files, { ask: askTextures });
       if (!loaded) return;
+      const missing = (loaded.mesh.userData.missingTextureNames ?? []).length;
       const { mesh, slots } = loaded;
       if (loaded.isStage) {
         this.stage.set(mesh);
-        ui.toast(`${pmx.name} をステージとして置きました`);
+        ui.toast(t('{name} をステージとして置きました', { name: pmx.name }));
         targets = world.models; // ステージを読んだときは、モーションは置いてある人物全員に付ける
       } else {
         // ステージがあるときは、ステージの中心 (MMD で人物が立つ原点) の近くに置く
@@ -236,13 +242,13 @@ export class Engine {
         const obj = world.addModel(mesh, atStage ? 0 : this.camera.cam.tx, atStage ? 0 : this.camera.cam.tz, slots);
         this.selection.select(obj);
         await this.physics.start(obj);
-        ui.toast(`${pmx.name} を置きました`);
+        ui.toast(missing ? t('{name} を置きました (見つからないテクスチャが {n} 個あります。テクスチャの画像も一緒に選ぶと表示されます)', { name: pmx.name, n: missing }) : t('{name} を置きました', { name: pmx.name }), missing ? 8000 : 4000);
         targets = [obj];
       }
     } else if (vmds.length || song || vpd) {
       targets = world.models;
     } else {
-      ui.toast('.pmx・.vmd・.vpd・曲のどれも選ばれていません。モデルの .pmx とテクスチャ画像、モーションの .vmd、ポーズの .vpd、曲のファイルを選んでください。');
+      ui.toast(t('.pmx・.vmd・.vpd・曲のどれも選ばれていません。モデルの .pmx とテクスチャ画像、モーションの .vmd、ポーズの .vpd、曲のファイルを選んでください。'));
       return;
     }
     // ポーズ (.vpd) は、モデルを選んでいるならそのモデルに、そうでなければ対象のモデル全員に当てる
@@ -263,7 +269,7 @@ export class Engine {
       this.music.load(song);
       this.restartPlayback();
       // モーションの読み込みに失敗したときは、そのお知らせを曲のお知らせで消さない
-      if (motionOk) ui.toast(`${song.name} を再生しています`);
+      if (motionOk) ui.toast(t('{name} を再生しています', { name: song.name }));
     }
   }
   private restartPlayback() {
@@ -308,17 +314,17 @@ export class Engine {
   async exportPmx() {
     const o = this.model;
     const file: File | undefined = o?.model.userData.sourceFile;
-    if (!o || !file) { this.ui.toast('書き出す MMD モデルをクリックして選んでください。'); return; }
+    if (!o || !file) { this.ui.toast(t('書き出す MMD モデルをクリックして選んでください。')); return; }
     try {
       const sources = o.model.userData.slotSources;
       const patches = new Map(o.slots.map((id, i) => [i, toPmxValues(id ? this.library.materials.get(id) ?? null : null, sources[i])]));
       const bytes = patchPmxMaterials(await file.arrayBuffer(), patches);
       const name = `${file.name.replace(/\.pmx$/i, '')}_edited.pmx`;
       download(bytes, name);
-      this.ui.toast(`${name} を書き出しました。テクスチャを読めるよう、元の .pmx と同じフォルダに置いてください`, 6000);
+      this.ui.toast(t('{name} を書き出しました。テクスチャを読めるよう、元の .pmx と同じフォルダに置いてください', { name }), 6000);
     } catch (err) {
       console.error(err);
-      this.ui.toast(`書き出せませんでした: ${errorText(err)}`, 8000);
+      this.ui.toast(t('書き出せませんでした: {error}', { error: errorText(err) }), 8000);
     }
   }
   // 髪の形を保つ錘を外して、髪を重力で垂らす (MMD とは見た目が変わる)
@@ -330,7 +336,7 @@ export class Engine {
   }
   savePose() {
     if (this.model) this.vpd.save(this.model);
-    else this.ui.toast('ポーズを保存するモデルをクリックして選んでください。');
+    else this.ui.toast(t('ポーズを保存するモデルをクリックして選んでください。'));
   }
   // 選んでいるモデルに当てる (選んでいなければ、置いてあるモデル全員に)
   loadPoseFile(file: File) { return this.history.batch(() => this.vpd.load(file, this.model ? [this.model] : this.world.models)); }
@@ -339,14 +345,14 @@ export class Engine {
   // 選んでいるモデルの、いまのポーズと表情を、いまのフレームに記録する (I)
   insertKey() {
     const obj = this.model;
-    if (!obj) { this.ui.toast('キーフレームを打つ MMD モデルをクリックして選んでください。'); return; }
+    if (!obj) { this.ui.toast(t('キーフレームを打つ MMD モデルをクリックして選んでください。')); return; }
     const f = this.clock.frame;
     // まだ何も動かしていない (キーもない) ときは、サイドバーで選んでいるボーンに打つ
     const inf: number[] | undefined = obj.model.morphTargetInfluences;
     const nothing = !obj.pose?.size && !keyFrames(obj.anim).length && !inf?.some(v => v !== 0);
     if (nothing) {
       const sel = this.posing.boneSel(obj);
-      if (sel === undefined) { this.ui.toast('キーを打つボーンがありません。ボーンか表情を動かしてから打ってください'); return; }
+      if (sel === undefined) { this.ui.toast(t('キーを打つボーンがありません。ボーンか表情を動かしてから打ってください')); return; }
       this.keyframes.insert(obj, f, [sel]);
     } else this.keyframes.insert(obj, f);
     if (f > this.clock.end) this.clock.setRange(this.clock.start, f);
@@ -373,24 +379,24 @@ export class Engine {
     const obj = this.selection.current;
     if (this.model) {
       const m = this.model, anim = m.anim;
-      rows.push({ label: m.model.name || 'モデル', keys: keyFrames(anim), motion: m.motion?.frames ?? null, editable: true });
+      rows.push({ label: m.model.name || t('モデル'), keys: keyFrames(anim), motion: m.motion?.frames ?? null, editable: true });
       if (anim && this.keyframes.expanded) {
         const sorted = (ch: Channel) => [...channelKeys(anim, ch)!.keys()].sort((a, b) => a - b);
         const morphName = new Map(this.posing.morphs(m).map(x => [x.index, x.name]));
         for (const b of [...anim.bones.keys()].sort((a, b) => a - b)) {
           const ch: Channel = { kind: 'bone', index: b };
-          rows.push({ label: m.model.skeleton.bones[b]?.name ?? `ボーン ${b}`, keys: sorted(ch), motion: null, editable: true, channel: ch });
+          rows.push({ label: m.model.skeleton.bones[b]?.name ?? t('ボーン {n}', { n: b }), keys: sorted(ch), motion: null, editable: true, channel: ch });
         }
         for (const i of [...anim.morphs.keys()].sort((a, b) => a - b)) {
           const ch: Channel = { kind: 'morph', index: i };
-          rows.push({ label: `表情: ${morphName.get(i) ?? i}`, keys: sorted(ch), motion: null, editable: true, channel: ch });
+          rows.push({ label: t('表情: {name}', { name: morphName.get(i) ?? i }), keys: sorted(ch), motion: null, editable: true, channel: ch });
         }
       }
     } else if (obj) {
       rows.push({ label: nameOf(obj), keys: [], motion: null, editable: false });
     }
     const cam = this.motion.camera;
-    if (cam) rows.push({ label: 'カメラ', keys: [], motion: cam.motion.frames, editable: false });
+    if (cam) rows.push({ label: t('カメラ'), keys: [], motion: cam.motion.frames, editable: false });
     return rows;
   }
   // 前後のキーフレーム (選んでいるモデルのキーフレームと、モーションのキーフレーム) へ

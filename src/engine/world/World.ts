@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { t } from '../../core/i18n';
 import { Emitter } from '../../core/events';
 import { MAX_BOXES, MMD_SCALE, PALETTE } from '../../core/constants';
 import { shapeDef } from '../../core/shapes';
@@ -80,7 +81,7 @@ export class World implements System {
   // 形 s (core/shapes.ts) を (x, z) に置く。色 c を省くと、使われていない色。
   // 形ごとに、その色のマテリアルを 1 つ作ってスロットに入れる
   addShape(s: number, x: number, z: number, c = this.nextColor()): Obj {
-    const mat = this.lib.create('マテリアル', { auto: true });
+    const mat = this.lib.create(t('マテリアル'), { auto: true }); // (名前は、作ったときの言語で)
     surfaceShader(mat.tree)!.values.baseColor = [...PALETTE[c]];
     const material = this.lib.instance(mat.id);
     const def = shapeDef(s);

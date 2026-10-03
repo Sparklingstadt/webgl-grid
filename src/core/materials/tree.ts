@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { NODE_TYPES, compatible, type NodeType, type SocketDef, type SocketValue } from './nodes';
 
 // シェーダーのノードツリー (Blender のマテリアルのノード)。ノードと、ノードどうしをつなぐリンクでできている
@@ -76,11 +77,11 @@ function reaches(tree: NodeTree, start: string, target: string): boolean {
 // 出力 from を入力 to につなげるか (なぜだめかを返す。つなげるなら null)
 export function whyNotConnect(tree: NodeTree, from: SocketRef, to: SocketRef): string | null {
   const out = socketDef(tree, from, 'out'), inp = socketDef(tree, to, 'in');
-  if (!out || !inp) return 'ソケットがありません';
-  if (from.node === to.node) return '同じノードどうしはつなげません';
-  if (inp.linkable === false) return 'この入力にはつなげません';
-  if (!compatible(out.kind, inp.kind)) return 'シェーダーはシェーダーの入力にだけつなげます';
-  if (reaches(tree, to.node, from.node)) return 'つなぐと輪になります';
+  if (!out || !inp) return t('ソケットがありません');
+  if (from.node === to.node) return t('同じノードどうしはつなげません');
+  if (inp.linkable === false) return t('この入力にはつなげません');
+  if (!compatible(out.kind, inp.kind)) return t('シェーダーはシェーダーの入力にだけつなげます');
+  if (reaches(tree, to.node, from.node)) return t('つなぐと輪になります');
   return null;
 }
 // つなぐ (その入力に前からつながっていたリンクは外す)。つなげなければ false

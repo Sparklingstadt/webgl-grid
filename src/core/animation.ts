@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { DEG } from './constants';
+import { msg } from './i18n';
 import { ZERO_BONE, type BoneValue } from './types';
 
 // --- キーフレームのアニメーション (ボーンと表情のチャンネルごと) ---
@@ -9,10 +10,10 @@ import { ZERO_BONE, type BoneValue } from './types';
 export type Curve = [x1: number, y1: number, x2: number, y2: number];
 export const LINEAR: Curve = [0.25, 0.25, 0.75, 0.75];
 export const CURVE_PRESETS: { name: string; curve: Curve }[] = [
-  { name: '直線', curve: LINEAR },
-  { name: 'なめらか', curve: [0.42, 0, 0.58, 1] },
-  { name: 'ゆっくり始まる', curve: [0.42, 0, 1, 1] },
-  { name: 'ゆっくり終わる', curve: [0, 0, 0.58, 1] },
+  { name: msg('直線'), curve: LINEAR },
+  { name: msg('なめらか'), curve: [0.42, 0, 0.58, 1] },
+  { name: msg('ゆっくり始まる'), curve: [0.42, 0, 1, 1] },
+  { name: msg('ゆっくり終わる'), curve: [0, 0, 0.58, 1] },
 ];
 
 export interface BoneKey { v: BoneValue; curve: Curve }

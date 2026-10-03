@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { msg } from '../../core/i18n';
 import { int, num } from '../../core/normalize';
 import type { AddonApi, ObjectData } from '../../engine/addons/Addons';
 import { isShape, type Obj } from '../../engine/types';
@@ -50,13 +51,13 @@ export class Fracture {
     const value = (o: Obj) => (this.on ? (o.addonData?.[`${api.id}.fracture`] as FractureSettings | undefined) ?? null : null);
     this.settingsOf = value;
     this.data = api.addObjectData<FractureSettings>({
-      key: 'fracture', label: '分割', normalize: raw => normalizeFracture(raw as Partial<FractureSettings>), apply: o => this.rebuild(o),
+      key: 'fracture', label: msg('分割'), normalize: raw => normalizeFracture(raw as Partial<FractureSettings>), apply: o => this.rebuild(o),
     });
     api.onBeforeRender(() => this.sync());
     // エフェクタの種類が増減したら並べ直す。フィールドの枠も出すよう、エフェクタを Cinema 4D に知らせる
     const offReg = c4d.events.on('registry', () => { for (const o of api.engine.world.objects) if (this.states.has(o)) this.place(o); });
     const offSrc = c4d.addEffectorSource(o => value(o)?.effectors ?? null);
-    api.addMenuItem({ menu: 'object', label: '分割する / やめる (ボロノイ)', enabled: () => isShape(api.engine.selection.current), run: () => { const o = api.engine.selection.current; if (o) this.set(o, this.get(o) ? null : {}); } });
+    api.addMenuItem({ menu: 'object', label: msg('分割する / やめる (ボロノイ)'), enabled: () => isShape(api.engine.selection.current), run: () => { const o = api.engine.selection.current; if (o) this.set(o, this.get(o) ? null : {}); } });
     this.offs = [offReg, offSrc];
   }
   off() { this.on = false; for (const f of this.offs) f(); }
@@ -75,12 +76,12 @@ export class Fracture {
     this.problems.delete(o);
     const s = this.settingsOf(o), src = o.mesh;
     if (!s || !src || !isShape(o)) { if (src && !this.c4d.cloner(o)) src.visible = true; this.api.engine.viewport.requestDraw(); return; }
-    if (this.c4d.cloner(o)) { this.problems.set(o, 'クローナーにしている物は分割できません (クローナーをやめると分割します)'); return; }
+    if (this.c4d.cloner(o)) { this.problems.set(o, msg('クローナーにしている物は分割できません (クローナーをやめると分割します)')); return; }
     src.updateMatrix();
     const tris = trianglesOf(src.geometry, src.matrix);
     let pieces: Piece[] = [];
     if (s.mode === 'polyfx') pieces = polyfx(tris, Math.min(Math.max(s.count, tris.length > MAX_PIECES ? MAX_PIECES : tris.length), MAX_PIECES), s.gap);
-    else if (!convex(tris)) this.problems.set(o, 'この形は凸でないので、ボロノイ分割はできません (PolyFX は使えます)');
+    else if (!convex(tris)) this.problems.set(o, msg('この形は凸でないので、ボロノイ分割はできません (PolyFX は使えます)'));
     else pieces = voronoi(tris, voronoiSeeds(tris, s.count, s.seed, s.spread), s.gap);
     if (!pieces.length) { src.visible = true; this.api.engine.viewport.requestDraw(); return; }
     // 破片を 1 つのメッシュに

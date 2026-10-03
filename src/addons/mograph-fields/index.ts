@@ -1,3 +1,4 @@
+import { msg } from '../../core/i18n';
 import * as THREE from 'three';
 import type { AddonModule } from '../../engine/addons/Addons';
 import type { Cinema4d } from '../cinema4d/Cinema4d';
@@ -54,11 +55,11 @@ function gizmoObject(g: FieldGizmo) {
 
 const mographFields: AddonModule = {
   id: 'mograph-fields',
-  name: 'MoGraph フィールド',
+  name: msg('MoGraph フィールド'),
   version: '1.0.0',
   author: 'webgl-grid',
   category: 'MoGraph',
-  description: 'Cinema 4D のフィールド: リニア・球・ボックス・円柱・放射・ランダム・ノイズ・タイム。エフェクタの「フィールド」から足して、効く範囲を決めます (重ね方・不透明度・反転)。',
+  description: msg('Cinema 4D のフィールド: リニア・球・ボックス・円柱・放射・ランダム・ノイズ・タイム。エフェクタの「フィールド」から足して、効く範囲を決めます (重ね方・不透明度・反転)。'),
   enabledByDefault: true,
   requires: ['cinema4d'],
   register(api) {

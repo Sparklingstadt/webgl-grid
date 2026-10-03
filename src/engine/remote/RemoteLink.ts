@@ -1,4 +1,5 @@
 import { errorText } from '../../core/errors';
+import { t } from '../../core/i18n';
 import { REMOTE_PROTOCOL, REMOTE_STATUS_PATH, type RemoteHello, type RemoteRequest, type RemoteResponse } from '../../core/remote';
 import type { Engine } from '../Engine';
 import { runCommand } from './commands';
@@ -62,7 +63,7 @@ export class RemoteLink {
     if (this.port === null) return;
     if (this.retries >= REMOTE_MAX_RETRIES) {
       this.disconnect();
-      this.engine.ui.toast(`MCP サーバーにつなげませんでした (${REMOTE_MAX_RETRIES} 回つなぎ直しました)。サーバーを起動してから「ファイル > 外部から操作 (MCP) を受け付ける」を選んでください`, 10000);
+      this.engine.ui.toast(t('MCP サーバーにつなげませんでした ({n} 回つなぎ直しました)。サーバーを起動してから「ファイル > 外部から操作 (MCP) を受け付ける」を選んでください', { n: REMOTE_MAX_RETRIES }), 10000);
       return;
     }
     this.setStatus('waiting');

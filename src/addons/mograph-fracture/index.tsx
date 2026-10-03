@@ -1,3 +1,4 @@
+import { msg } from '../../core/i18n';
 import type { SelInfo } from '../../engine';
 import type { AddonModule } from '../../engine/addons/Addons';
 import type { Obj } from '../../engine/types';
@@ -8,11 +9,11 @@ import { FracturePanel } from './FracturePanel';
 // --- MoGraph 分割: 形を破片に分けて、エフェクタで動かす (Cinema 4D のボロノイ分割・PolyFX) ---
 const mographFracture: AddonModule = {
   id: 'mograph-fracture',
-  name: 'MoGraph 分割',
+  name: msg('MoGraph 分割'),
   version: '1.0.0',
   author: 'webgl-grid',
   category: 'MoGraph',
-  description: '形を破片に分け、エフェクタ (とフィールド) で動かす: ボロノイ分割 (凸な形) と PolyFX (面ごと)。サイドバーの「オブジェクト」の「分割」で使います。',
+  description: msg('形を破片に分け、エフェクタ (とフィールド) で動かす: ボロノイ分割 (凸な形) と PolyFX (面ごと)。サイドバーの「オブジェクト」の「分割」で使います。'),
   enabledByDefault: true,
   requires: ['cinema4d'],
   register(api) {
@@ -20,7 +21,7 @@ const mographFracture: AddonModule = {
     const fracture = new Fracture(api, c4d);
     api.expose(fracture);
     api.addPanel({
-      title: '分割', tab: 'object', poll: (sel: SelInfo | null) => sel?.kind === 'shape',
+      title: msg('分割'), tab: 'object', poll: (sel: SelInfo | null) => sel?.kind === 'shape',
       component: ({ sel }: { sel: SelInfo }) => <FracturePanel sel={sel} c4d={c4d} fracture={fracture} />,
     });
     const objOf = (id: unknown): Obj => {

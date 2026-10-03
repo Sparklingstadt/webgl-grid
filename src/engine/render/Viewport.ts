@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { OutlineEffect } from 'three/examples/jsm/effects/OutlineEffect.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { VIEWPORT_BG } from '../../core/constants';
+import { t } from '../../core/i18n';
 import { outputFrame, scaleFov } from '../../core/output';
 import type { SceneGraph } from './SceneGraph';
 
@@ -148,7 +149,7 @@ export class Viewport {
   // ビューポートに出している出力の枠 (outputFrame) の中が、そのまま描かれるように画角を合わせる
   beginOutput(width: number, height: number, background: THREE.ColorRepresentation) {
     const { renderer } = this;
-    if (!renderer) throw new Error('描画先がありません');
+    if (!renderer) throw new Error(t('描画先がありません'));
     this.output = { width, height, fovScale: outputFrame(this.width, this.height, width, height).fovScale };
     renderer.setClearColor(background, 1);
     this.applySize(width, height, 1);

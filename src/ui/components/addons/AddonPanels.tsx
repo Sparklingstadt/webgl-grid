@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ComponentType } from 'react';
+import { t } from '../../../core/i18n';
 import type { SelInfo } from '../../../engine';
 import type { PanelDef, PropDef } from '../../../engine/addons/registry';
 import { useEngine, useUi } from '../../EngineContext';
@@ -31,10 +32,10 @@ function AddonPanel({ panel }: { panel: PanelDef }) {
   let error: string | null = null;
   try { props = panel.props?.() ?? []; } catch (err) { error = (err as Error).message; }
   return (
-    <Panel title={panel.title}>
+    <Panel title={t(panel.title)}>
       {props.map((p, i) => <PropRow key={`${panel.key}.${i}`} prop={p} />)}
       {panel.draw && <DrawArea panel={panel} />}
-      {error && <div className="note">エラー: {error}</div>}
+      {error && <div className="note">{t('エラー: {error}', { error })}</div>}
     </Panel>
   );
 }
@@ -55,17 +56,17 @@ function PropRow({ prop: p }: { prop: PropDef }) {
   switch (p.type) {
     case 'number':
       return p.min !== undefined && p.max !== undefined
-        ? <BSlider label={p.label} value={p.get()} min={p.min} max={p.max} step={p.step ?? 0.01} digits={p.digits ?? 2} unit={p.unit ?? ''} onChange={v => p.set(v)} />
-        : <div className="color-field"><span>{p.label}</span><NumField label={p.label} value={p.get()} min={p.min} max={p.max} step={p.step ?? 1} digits={p.digits ?? 0} onCommit={v => p.set(v)} /></div>;
+        ? <BSlider label={t(p.label)} value={p.get()} min={p.min} max={p.max} step={p.step ?? 0.01} digits={p.digits ?? 2} unit={p.unit ?? ''} onChange={v => p.set(v)} />
+        : <div className="color-field"><span>{t(p.label)}</span><NumField label={t(p.label)} value={p.get()} min={p.min} max={p.max} step={p.step ?? 1} digits={p.digits ?? 0} onCommit={v => p.set(v)} /></div>;
     case 'boolean':
-      return <BCheck checked={p.get()} onChange={v => p.set(v)}>{p.label}</BCheck>;
+      return <BCheck checked={p.get()} onChange={v => p.set(v)}>{t(p.label)}</BCheck>;
     case 'select':
-      return <SelectField<string> label={p.label} value={p.get()} onChange={v => p.set(v)} options={p.options} />;
+      return <SelectField<string> label={t(p.label)} value={p.get()} onChange={v => p.set(v)} options={p.options.map(o => ({ ...o, label: t(o.label) }))} />;
     case 'color':
-      return <HexColorField label={p.label} value={p.get()} onChange={v => p.set(v)} />;
+      return <HexColorField label={t(p.label)} value={p.get()} onChange={v => p.set(v)} />;
     case 'button':
-      return <button type="button" className="bbtn" onClick={() => p.run()}>{p.label}</button>;
+      return <button type="button" className="bbtn" onClick={() => p.run()}>{t(p.label)}</button>;
     case 'text':
-      return <div className="note">{p.text}</div>;
+      return <div className="note">{t(p.text)}</div>;
   }
 }

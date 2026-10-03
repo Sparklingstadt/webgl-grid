@@ -1,4 +1,5 @@
 import { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as RPointerEvent, type ReactNode } from 'react';
+import { t } from '../../core/i18n';
 import { ADDABLE, NODE_TYPES, type NodeCategory, type NodeType, type PropDef, type SocketDef, type SocketKind } from '../../core/materials/nodes';
 import { inputLink, type ShaderNode, type SocketRef } from '../../core/materials/tree';
 import { useEngine, useUi } from '../EngineContext';
@@ -184,18 +185,18 @@ export function ShaderEditor({ typeSelect, onHover }: { typeSelect: ReactNode; o
     <>
       <div className="area-header">
         {typeSelect}
-        <Menu id="shader-add" label="追加">
+        <Menu id="shader-add" label={t('追加')}>
           {ADDABLE.map(g => [
-            <MenuLabel key={g.category}>{g.category}</MenuLabel>,
-            ...g.types.map(t => <MenuItem key={t} label={NODE_TYPES[t].label} disabled={!mat} onSelect={() => addAtCenter(t)} />),
+            <MenuLabel key={g.category}>{t(g.category)}</MenuLabel>,
+            ...g.types.map(ty => <MenuItem key={ty} label={t(NODE_TYPES[ty].label)} disabled={!mat} onSelect={() => addAtCenter(ty)} />),
           ])}
         </Menu>
-        <button type="button" className="hbtn" disabled={!mat} onClick={fit} title="ノード全体を表示 (Home)">全体を表示</button>
+        <button type="button" className="hbtn" disabled={!mat} onClick={fit} title={t('ノード全体を表示 (Home)')}>{t('全体を表示')}</button>
         <span className="spacer" />
         {sel && (
           <span className="shader-mat">
-            {mat ? <>マテリアル: <b>{mat.name}</b></> : 'マテリアルがありません'}
-            {!mat && <button type="button" className="hbtn" onClick={() => engine.materials.create()}>新規</button>}
+            {mat ? <>{t('マテリアル:')} <b>{mat.name}</b></> : t('マテリアルがありません')}
+            {!mat && <button type="button" className="hbtn" onClick={() => engine.materials.create()}>{t('新規')}</button>}
           </span>
         )}
       </div>
@@ -203,8 +204,8 @@ export function ShaderEditor({ typeSelect, onHover }: { typeSelect: ReactNode; o
            style={{ backgroundPosition: `${view.x}px ${view.y}px`, backgroundSize: `${24 * view.zoom}px ${24 * view.zoom}px` }}
            onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
            onPointerEnter={() => { hovered.current = true; onHover(true); }} onPointerLeave={() => { hovered.current = false; }}>
-        {!sel && <div className="node-empty">物をクリックして選ぶと、そのマテリアルのノードを編集できます</div>}
-        {sel && !mat && <div className="node-empty">このスロットにはマテリアルがありません。「新規」で作れます</div>}
+        {!sel && <div className="node-empty">{t('物をクリックして選ぶと、そのマテリアルのノードを編集できます')}</div>}
+        {sel && !mat && <div className="node-empty">{t('このスロットにはマテリアルがありません。「新規」で作れます')}</div>}
         <div className="node-layer" style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})` }}>
           <svg className="node-links" width="1" height="1" aria-hidden="true">
             {mat?.tree.links.map(l => {
@@ -222,39 +223,39 @@ export function ShaderEditor({ typeSelect, onHover }: { typeSelect: ReactNode; o
             const def = NODE_TYPES[n.type], p = posOf(n);
             return (
               <div key={n.id} className={`node${selected === n.id ? ' selected' : ''}`} data-node-id={n.id}
-                   style={{ left: p.x, top: p.y, width: def.width }} role="group" aria-label={`ノード ${def.label}`}>
-                <div className="node-header" style={{ background: CATEGORY_COLOR[def.category] }}>{def.label}</div>
+                   style={{ left: p.x, top: p.y, width: def.width }} role="group" aria-label={t('ノード {name}', { name: t(def.label) })}>
+                <div className="node-header" style={{ background: CATEGORY_COLOR[def.category] }}>{t(def.label)}</div>
                 <div className="node-body">
                   {rowsOf(n).map(row => (
                     <div key={`${row.kind}:${row.def.id}`} className={`node-row ${row.kind}`}>
                       {row.kind === 'out' && (
                         <>
-                          <span className="node-out-label">{row.def.label}</span>
+                          <span className="node-out-label">{t(row.def.label)}</span>
                           <span className="socket out" data-out="" data-node={n.id} data-socket={row.def.id} style={{ background: SOCKET_COLOR[row.def.kind] }}
-                                aria-label={`${def.label} の出力 ${row.def.label}`} />
+                                aria-label={t('{node} の出力 {socket}', { node: t(def.label), socket: t(row.def.label) })} />
                         </>
                       )}
                       {row.kind === 'in' && (
                         <>
                           {row.def.linkable !== false && (
                             <span className="socket in" data-in="" data-node={n.id} data-socket={row.def.id} style={{ background: SOCKET_COLOR[row.def.kind] }}
-                                  aria-label={`${def.label} の入力 ${row.def.label}`} />
+                                  aria-label={t('{node} の入力 {socket}', { node: t(def.label), socket: t(row.def.label) })} />
                           )}
                           {inputLink(mat!.tree, n.id, row.def.id)
-                            ? <span className="socket-label">{row.def.label}</span>
+                            ? <span className="socket-label">{t(row.def.label)}</span>
                             : <SocketField def={row.def} value={n.values[row.def.id]} compact onChange={v => engine.materials.setNodeValue(n.id, row.def.id, v)} />}
                         </>
                       )}
                       {row.kind === 'own' && <SocketField def={row.def} value={n.values[row.def.id]} compact onChange={v => engine.materials.setNodeValue(n.id, row.def.id, v)} />}
                       {row.kind === 'prop' && row.def.kind === 'enum' && (
-                        <BSelect label={row.def.label} value={n.props[row.def.id]} onChange={v => engine.materials.setNodeProp(n.id, row.def.id, v)}
-                                 options={row.def.options!.map(([value, label]) => ({ value, label }))} />
+                        <BSelect label={t(row.def.label)} value={n.props[row.def.id]} onChange={v => engine.materials.setNodeProp(n.id, row.def.id, v)}
+                                 options={row.def.options!.map(([value, label]) => ({ value, label: t(label) }))} />
                       )}
                       {row.kind === 'prop' && row.def.kind === 'image' && (
                         <div className="image-pick">
-                          <BSelect label="画像" value={n.props.image ?? ''} onChange={v => engine.materials.setNodeProp(n.id, 'image', v)}
-                                   options={[{ value: '', label: '(なし)' }, ...images.map(i => ({ value: i.id, label: i.name }))]} />
-                          <button type="button" className="bbtn" title="画像ファイルを開く" onClick={() => { imageFor.current = n.id; fileRef.current?.click(); }}>開く…</button>
+                          <BSelect label={t('画像')} value={n.props.image ?? ''} onChange={v => engine.materials.setNodeProp(n.id, 'image', v)}
+                                   options={[{ value: '', label: t('(なし)') }, ...images.map(i => ({ value: i.id, label: i.name }))]} />
+                          <button type="button" className="bbtn" title={t('画像ファイルを開く')} onClick={() => { imageFor.current = n.id; fileRef.current?.click(); }}>{t('開く…')}</button>
                         </div>
                       )}
                     </div>

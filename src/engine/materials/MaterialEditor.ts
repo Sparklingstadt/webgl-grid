@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { t } from '../../core/i18n';
 import type { NodeType, SocketValue } from '../../core/materials/nodes';
 import { addNode, connect, disconnect, findNode, removeNode, surfaceShader, whyNotConnect, type SocketRef } from '../../core/materials/tree';
 import type { UiChannel } from '../UiChannel';
@@ -71,7 +72,7 @@ export class MaterialEditor {
   // つなぐ。つなげなければ、その理由を返す
   connect(from: SocketRef, to: SocketRef): string | null {
     const cur = this.active();
-    if (!cur) return 'マテリアルがありません';
+    if (!cur) return t('マテリアルがありません');
     const why = whyNotConnect(cur.tree, from, to);
     if (why) return why;
     this.edit(d => { connect(d.tree, from, to); });

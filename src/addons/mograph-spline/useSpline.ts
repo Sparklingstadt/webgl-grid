@@ -1,3 +1,4 @@
+import { msg } from '../../core/i18n';
 import type { Placement } from '../cinema4d/cloner';
 import type { ClonerModeDef, EffectorDef, EffectorValue, Origin } from '../cinema4d/effectors';
 import { sampleAlong, type Polyline } from '../cinema4d/splines';
@@ -16,13 +17,13 @@ const tOf = (i: number, n: number, a: number, b: number) => (n > 1 ? a + (b - a)
 
 export function splineMode(splines: (id: number) => Polyline[]): ClonerModeDef {
   return {
-    key: 'spline', name: 'スプライン', description: 'ほかの物のスプライン (MoSpline・トレーサー) にそって並べる',
+    key: 'spline', name: msg('スプライン'), description: msg('ほかの物のスプライン (MoSpline・トレーサー) にそって並べる'),
     params: [
-      { key: 'target', label: 'スプライン', type: 'object', default: 0 },
-      { key: 'count', label: '数', type: 'number', default: 20, min: 1, step: 1 },
-      { key: 'start', label: '始め', type: 'number', default: 0, min: 0, max: 1, step: 0.05, digits: 2 },
-      { key: 'end', label: '終わり', type: 'number', default: 1, min: 0, max: 1, step: 0.05, digits: 2 },
-      { key: 'align', label: '向きに合わせる', type: 'boolean', default: true },
+      { key: 'target', label: msg('スプライン'), type: 'object', default: 0 },
+      { key: 'count', label: msg('数'), type: 'number', default: 20, min: 1, step: 1 },
+      { key: 'start', label: msg('始め'), type: 'number', default: 0, min: 0, max: 1, step: 0.05, digits: 2 },
+      { key: 'end', label: msg('終わり'), type: 'number', default: 1, min: 0, max: 1, step: 0.05, digits: 2 },
+      { key: 'align', label: msg('向きに合わせる'), type: 'boolean', default: true },
     ],
     live: true,
     layout: (q, max, origin) => {
@@ -42,13 +43,13 @@ export function splineMode(splines: (id: number) => Polyline[]): ClonerModeDef {
 
 export function splineEffector(splines: (id: number) => Polyline[]): EffectorDef {
   return {
-    key: 'spline', name: 'スプライン', description: 'クローンを、ほかの物のスプラインの上へ動かす (番号の順に、始めから終わりへ。強さはフィールドで)',
+    key: 'spline', name: msg('スプライン'), description: msg('クローンを、ほかの物のスプラインの上へ動かす (番号の順に、始めから終わりへ。強さはフィールドで)'),
     transform: false,
     params: [
-      { key: 'target', label: 'スプライン', type: 'object', default: 0 },
-      { key: 'start', label: '始め', type: 'number', default: 0, min: 0, max: 1, step: 0.05, digits: 2 },
-      { key: 'end', label: '終わり', type: 'number', default: 1, min: 0, max: 1, step: 0.05, digits: 2 },
-      { key: 'align', label: '向きに合わせる', type: 'boolean', default: true },
+      { key: 'target', label: msg('スプライン'), type: 'object', default: 0 },
+      { key: 'start', label: msg('始め'), type: 'number', default: 0, min: 0, max: 1, step: 0.05, digits: 2 },
+      { key: 'end', label: msg('終わり'), type: 'number', default: 1, min: 0, max: 1, step: 0.05, digits: 2 },
+      { key: 'align', label: msg('向きに合わせる'), type: 'boolean', default: true },
     ],
     live: true,
     applyAll: (out, _e, cs) => {

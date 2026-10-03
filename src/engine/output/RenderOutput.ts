@@ -1,6 +1,7 @@
 import type * as THREE from 'three';
 import { FPS, VIEWPORT_BG } from '../../core/constants';
 import { errorText } from '../../core/errors';
+import { t } from '../../core/i18n';
 import { VIDEO_FORMATS, frameSpan, normalizeOutput, outputFileName, type OutputSettings } from '../../core/output';
 import { download, downloadUrl } from '../io/download';
 import type { Clock } from '../anim/Clock';
@@ -10,7 +11,7 @@ import type { Viewport } from '../render/Viewport';
 import type { UiChannel } from '../UiChannel';
 
 export class RenderCancelled extends Error {
-  constructor() { super('キャンセルしました'); }
+  constructor() { super(t('キャンセルしました')); }
 }
 
 // --- レンダリング (Blender の F12 / Ctrl+F12): いまの視点から、出力の大きさで画像・動画を作る ---
@@ -39,7 +40,7 @@ export class RenderOutput {
   // --- 画面の操作 (F12 / Ctrl+F12) ---
   private canRender() {
     if (this.busy) return false;
-    if (!this.viewport.mounted) { this.ui.toast('描画先がないのでレンダリングできません'); return false; }
+    if (!this.viewport.mounted) { this.ui.toast(t('描画先がないのでレンダリングできません')); return false; }
     return true;
   }
   // いまのフレームを画像にして、保存する前に見せる (レンダー結果)
@@ -52,7 +53,7 @@ export class RenderOutput {
       this.ui.set({ renderResult: { url: URL.createObjectURL(blob), name: outputFileName(this.baseName(), 'png', this.clock.frame), width, height } });
     } catch (err) {
       console.error(err);
-      this.ui.toast(`レンダリングできませんでした: ${errorText(err)}`, 8000);
+      this.ui.toast(t('レンダリングできませんでした: {error}', { error: errorText(err) }), 8000);
     }
   }
   saveResult() {
@@ -74,11 +75,11 @@ export class RenderOutput {
       const r = await this.renderVideo();
       const name = outputFileName(this.baseName(), r.ext);
       download(r.bytes, name, r.mime);
-      this.ui.toast(`${name} を書き出しました (${r.frames} フレーム・${(r.bytes.length / 1024 / 1024).toFixed(1)} MB・${((performance.now() - t0) / 1000).toFixed(1)} 秒)`, 8000);
+      this.ui.toast(t('{name} を書き出しました ({frames} フレーム・{mb} MB・{sec} 秒)', { name, frames: r.frames, mb: (r.bytes.length / 1024 / 1024).toFixed(1), sec: ((performance.now() - t0) / 1000).toFixed(1) }), 8000);
     } catch (err) {
-      if (err instanceof RenderCancelled) { this.ui.toast('レンダリングをキャンセルしました'); return; }
+      if (err instanceof RenderCancelled) { this.ui.toast(t('レンダリングをキャンセルしました')); return; }
       console.error(err);
-      this.ui.toast(`動画を作れませんでした: ${errorText(err)}`, 10000);
+      this.ui.toast(t('動画を作れませんでした: {error}', { error: errorText(err) }), 10000);
     }
   }
 
@@ -93,7 +94,7 @@ export class RenderOutput {
     } finally {
       this.end();
     }
-    return new Promise((ok, ng) => copy.toBlob(b => (b ? ok(b) : ng(new Error('PNG を作れませんでした'))), 'image/png'));
+    return new Promise((ok, ng) => copy.toBlob(b => (b ? ok(b) : ng(new Error(t('PNG を作れませんでした')))), 'image/png'));
   }
 
   // 開始〜終了フレームを描いて、動画にする。曲があれば (設定でオンなら) 同じ範囲を入れる
@@ -108,7 +109,7 @@ export class RenderOutput {
     const supported = format.getSupportedVideoCodecs();
     const prefer = (s.format === 'mp4' ? ['avc', 'hevc', 'vp9', 'av1'] : ['vp9', 'av1', 'vp8']) as typeof supported;
     const codec = await mb.getFirstEncodableVideoCodec(prefer.filter(c => supported.includes(c)), { width: s.width, height: s.height, quality, frameRate: FPS });
-    if (!codec) throw new Error(`このブラウザでは ${fmt.name} の動画を作れません。出力の形式か大きさを変えてください`);
+    if (!codec) throw new Error(t('このブラウザでは {format} の動画を作れません。出力の形式か大きさを変えてください', { format: t(fmt.name) }));
 
     const output = new mb.Output({ format, target: new mb.BufferTarget() });
     const video = new mb.VideoSampleSource({ codec, quality, keyFrameInterval: 2 });

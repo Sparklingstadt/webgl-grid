@@ -1,3 +1,4 @@
+import { msg } from '../core/i18n';
 import type { AddonModule } from '../engine/addons/Addons';
 
 interface Settings { enabled: boolean; degPerSec: number }
@@ -6,15 +7,15 @@ interface Settings { enabled: boolean; degPerSec: number }
 // (場面の値・シーンのタブのパネル・MCP の命令を使う例)
 const turntable: AddonModule = {
   id: 'turntable',
-  name: 'ターンテーブル',
+  name: msg('ターンテーブル'),
   version: '1.0.0',
   author: 'webgl-grid',
-  category: 'カメラ',
-  description: '再生中とアニメーションのレンダリング中に、カメラを注視点のまわりで回します。設定はサイドバーの「シーン」にあります。',
+  category: msg('カメラ'),
+  description: msg('再生中とアニメーションのレンダリング中に、カメラを注視点のまわりで回します。設定はサイドバーの「シーン」にあります。'),
   register(api) {
     const { engine } = api;
     const settings = api.addSceneData<Settings>({
-      key: 'settings', label: 'ターンテーブル', default: { enabled: false, degPerSec: 30 },
+      key: 'settings', label: msg('ターンテーブル'), default: { enabled: false, degPerSec: 30 },
       normalize: raw => {
         const r = (raw ?? {}) as Partial<Settings>;
         return { enabled: !!r.enabled, degPerSec: Number.isFinite(r.degPerSec) ? Number(r.degPerSec) : 30 };
@@ -33,11 +34,11 @@ const turntable: AddonModule = {
       last = moving ? t : null;
     });
     api.addPanel({
-      title: 'ターンテーブル', tab: 'scene',
+      title: msg('ターンテーブル'), tab: 'scene',
       props: () => [
-        { type: 'boolean', label: 'カメラを回す', get: () => settings.get().enabled, set: enabled => patch({ enabled }) },
-        { type: 'number', label: '速さ', unit: '°/秒', min: -180, max: 180, step: 1, digits: 0, get: () => settings.get().degPerSec, set: degPerSec => patch({ degPerSec }) },
-        { type: 'text', text: '再生中とアニメーションのレンダリング中に回ります (カメラモーションがあるときは回しません)。' },
+        { type: 'boolean', label: msg('カメラを回す'), get: () => settings.get().enabled, set: enabled => patch({ enabled }) },
+        { type: 'number', label: msg('速さ'), unit: msg('°/秒'), min: -180, max: 180, step: 1, digits: 0, get: () => settings.get().degPerSec, set: degPerSec => patch({ degPerSec }) },
+        { type: 'text', text: msg('再生中とアニメーションのレンダリング中に回ります (カメラモーションがあるときは回しません)。') },
       ],
     });
     api.addCommand('set', {

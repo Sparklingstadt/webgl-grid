@@ -1,3 +1,4 @@
+import { msg } from '../../core/i18n';
 import type { SelInfo } from '../../engine';
 import type { AddonModule } from '../../engine/addons/Addons';
 import type { Obj } from '../../engine/types';
@@ -8,11 +9,11 @@ import { TracerPanel } from './TracerPanel';
 // --- MoGraph トレーサー: 動く物・クローン・ボーンの通った跡を、線か管にする (Cinema 4D のトレーサー) ---
 const mographTracer: AddonModule = {
   id: 'mograph-tracer',
-  name: 'MoGraph トレーサー',
+  name: msg('MoGraph トレーサー'),
   version: '1.0.0',
   author: 'webgl-grid',
   category: 'MoGraph',
-  description: '動く物 (クローン・MoText の文字) や MMD モデルのボーンの通った跡を、線か管にして残す (経路)。いまの位置どうしをつなぐこともできる (連結)。跡はスプラインとしても使えます。',
+  description: msg('動く物 (クローン・MoText の文字) や MMD モデルのボーンの通った跡を、線か管にして残す (経路)。いまの位置どうしをつなぐこともできる (連結)。跡はスプラインとしても使えます。'),
   enabledByDefault: true,
   requires: ['cinema4d'],
   register(api) {
@@ -20,7 +21,7 @@ const mographTracer: AddonModule = {
     const tracer = new Tracer(api, c4d);
     api.expose(tracer);
     api.addPanel({
-      title: 'トレーサー', tab: 'object', poll: (sel: SelInfo | null) => !!sel,
+      title: msg('トレーサー'), tab: 'object', poll: (sel: SelInfo | null) => !!sel,
       component: ({ sel }: { sel: SelInfo }) => <TracerPanel sel={sel} tracer={tracer} />,
     });
     api.addCommand('set', {

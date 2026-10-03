@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { t } from '../../core/i18n';
 
 // --- 数値の欄 (Blender の数値フィールド) ---
 // 左右にドラッグすると値が変わり、両端の ‹ › で 1 段ずつ増減、クリックすると打ち込める。
@@ -19,7 +20,7 @@ export function NumField({ value, onCommit, label, id, min, max, step = 1, digit
   const shown = draft ?? (digits ? value.toFixed(digits) : String(value));
   return (
     <div className={`bnum${editing ? ' editing' : ''}`}>
-      <button type="button" className="bnum-arrow" tabIndex={-1} aria-label={`${label}を減らす`} onClick={() => commit(value - step)}>‹</button>
+      <button type="button" className="bnum-arrow" tabIndex={-1} aria-label={t('{label}を減らす', { label })} onClick={() => commit(value - step)}>‹</button>
       <input ref={input} className="num" type="text" inputMode="decimal" role="spinbutton" id={id} aria-label={label} title={label}
              aria-valuenow={value} aria-valuemin={min} aria-valuemax={max} value={shown} autoComplete="off" spellCheck={false}
              onPointerDown={e => {
@@ -65,7 +66,7 @@ export function NumField({ value, onCommit, label, id, min, max, step = 1, digit
                  requestAnimationFrame(() => input.current?.select());
                }
              }} />
-      <button type="button" className="bnum-arrow" tabIndex={-1} aria-label={`${label}を増やす`} onClick={() => commit(value + step)}>›</button>
+      <button type="button" className="bnum-arrow" tabIndex={-1} aria-label={t('{label}を増やす', { label })} onClick={() => commit(value + step)}>›</button>
     </div>
   );
 }

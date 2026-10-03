@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { t } from '../../core/i18n';
 import { outputFrame } from '../../core/output';
 import { useUi } from '../EngineContext';
 
@@ -18,7 +19,7 @@ export function OutputFrame({ container }: { container: HTMLElement | null }) {
   if (!size || !size.w || !size.h) return null;
   const f = outputFrame(size.w, size.h, o.width, o.height);
   return (
-    <div className="output-frame" role="img" aria-label={`出力の範囲 ${o.width} × ${o.height}`}
+    <div className="output-frame" role="img" aria-label={t('出力の範囲 {w} × {h}', { w: o.width, h: o.height })}
          style={{ left: f.x, top: f.y, width: f.w, height: f.h }}>
       <span className="output-frame-size">{o.width} × {o.height}</span>
     </div>

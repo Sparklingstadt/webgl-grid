@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { DEFAULT_FOV } from '../../core/constants';
+import { msg } from '../../core/i18n';
 import type { SceneGraph } from '../render/SceneGraph';
 import type { Viewport } from '../render/Viewport';
 import type { Obj } from '../types';
@@ -18,11 +19,11 @@ export interface CameraOverride {
 
 // 決まった向きから見る (ナビゲーションギズモ・テンキー 1/3/7)
 const VIEWS: Record<string, { yaw?: number; pitch: number; name: string }> = {
-  front: { yaw: Math.PI / 2, pitch: 0.05, name: '前' },   // MMD のモデルは +Z を向いている
-  back: { yaw: -Math.PI / 2, pitch: 0.05, name: '後' },
-  right: { yaw: 0, pitch: 0.05, name: '右' },
-  left: { yaw: Math.PI, pitch: 0.05, name: '左' },
-  top: { pitch: 1.5, name: '上' },
+  front: { yaw: Math.PI / 2, pitch: 0.05, name: msg('前') },   // MMD のモデルは +Z を向いている
+  back: { yaw: -Math.PI / 2, pitch: 0.05, name: msg('後') },
+  right: { yaw: 0, pitch: 0.05, name: msg('右') },
+  left: { yaw: Math.PI, pitch: 0.05, name: msg('左') },
+  top: { pitch: 1.5, name: msg('上') },
 };
 
 // --- オービットカメラ (注視点を中心に回転 / 地面に沿って移動) と、画面上の点からのレイ ---

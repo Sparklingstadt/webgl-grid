@@ -1,3 +1,5 @@
+import { msg } from './i18n';
+
 // エンジン全体で使う定数
 
 export const FPS = 30;              // MMD のモーションと同じ 1 秒 30 フレーム
@@ -25,5 +27,5 @@ export const PALETTE: [number, number, number][] = [
   [0.90, 0.32, 0.55], // ピンク
   [0.62, 0.66, 0.72], // 灰
 ];
-export const PALETTE_NAMES = ['黄土', '赤', '青緑', '青', '紫', '緑', 'ピンク', '灰'];
+export const PALETTE_NAMES = [msg('黄土'), msg('赤'), msg('青緑'), msg('青'), msg('紫'), msg('緑'), msg('ピンク'), msg('灰')];
 export const paletteCss = (i: number) => `rgb(${PALETTE[i].map(v => Math.round(Math.pow(v, 1 / 2.2) * 255)).join(',')})`;

@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { msg, t } from '../../../core/i18n';
 import type { BoneValue } from '../../../core/types';
 import { BONE_MOVE, BONE_ROTATE } from '../../../engine';
 import { useEngine, useUi } from '../../EngineContext';
@@ -8,8 +9,8 @@ import { CurveEditor } from '../CurveEditor';
 import { Empty, NeedModel, Panel } from './Panel';
 
 // --- ボーン ---
-const ROT_ROWS: [keyof BoneValue, string][] = [['rx', '回転 X'], ['ry', '回転 Y'], ['rz', '回転 Z']];
-const MOVE_ROWS: [keyof BoneValue, string][] = [['px', '位置 X'], ['py', '位置 Y'], ['pz', '位置 Z']];
+const ROT_ROWS: [keyof BoneValue, string][] = [['rx', msg('回転 X')], ['ry', msg('回転 Y')], ['rz', msg('回転 Z')]];
+const MOVE_ROWS: [keyof BoneValue, string][] = [['px', msg('位置 X')], ['py', msg('位置 Y')], ['pz', msg('位置 Z')]];
 export function BonePage({ onLoadPose }: { onLoadPose: () => void }) {
   return <NeedModel>{id => <BoneEditor key={id} onLoadPose={onLoadPose} />}</NeedModel>;
 }
@@ -26,42 +27,42 @@ function BoneEditor({ onLoadPose }: { onLoadPose: () => void }) {
   const curve = sel === undefined ? null : engine.keyCurve({ kind: 'bone', index: sel });
   return (
     <>
-      <Panel title="ボーン">
-        {sel === undefined || !v ? <Empty>手で動かせるボーンがありません</Empty> : (
+      <Panel title={t('ボーン')}>
+        {sel === undefined || !v ? <Empty>{t('手で動かせるボーンがありません')}</Empty> : (
           <>
-            <BSelect label="動かすボーン" value={sel} onChange={v => engine.setBoneSel(v)}
+            <BSelect label={t('動かすボーン')} value={sel} onChange={v => engine.setBoneSel(v)}
                      options={groups.map(g => ({ group: g.label, options: g.bones.map(b => ({ value: b.index, label: b.name })) }))} />
-            <div className="note">{engine.boneNote(sel)}</div>
+            <div className="note">{t(engine.boneNote(sel))}</div>
             {(flags & BONE_ROTATE) !== 0 && ROT_ROWS.map(([k, label]) => (
-              <BSlider key={k} label={label} value={v[k]} min={-180} max={180} step={1} digits={0} unit="°" onChange={x => engine.setBone(sel, k, x)} />
+              <BSlider key={k} label={t(label)} value={v[k]} min={-180} max={180} step={1} digits={0} unit="°" onChange={x => engine.setBone(sel, k, x)} />
             ))}
             {(flags & BONE_MOVE) !== 0 && MOVE_ROWS.map(([k, label]) => (
-              <BSlider key={k} label={label} value={v[k]} min={-20} max={20} step={0.1} digits={1} onChange={x => engine.setBone(sel, k, x)} />
+              <BSlider key={k} label={t(label)} value={v[k]} min={-20} max={20} step={0.1} digits={1} onChange={x => engine.setBone(sel, k, x)} />
             ))}
           </>
         )}
         <div className="row">
           {sel !== undefined && (
-            <button type="button" className="bbtn" onClick={() => engine.insertBoneKey(sel)} title="このボーンだけに、いまのフレームのキーを打つ" aria-label="◆ このボーンにキー">◆ このボーン</button>
+            <button type="button" className="bbtn" onClick={() => engine.insertBoneKey(sel)} title={t('このボーンだけに、いまのフレームのキーを打つ')} aria-label={t('◆ このボーンにキー')}>{t('◆ このボーン')}</button>
           )}
-          <button type="button" className="bbtn" onClick={() => engine.resetPose()}>ポーズを戻す</button>
+          <button type="button" className="bbtn" onClick={() => engine.resetPose()}>{t('ポーズを戻す')}</button>
         </div>
       </Panel>
       {sel !== undefined && (
-        <Panel title="補間曲線">
+        <Panel title={t('補間曲線')}>
           {curve ? (
             <>
-              <div className="note">フレーム {frame} のキーへの、前のキーからの進み方 (回転と位置)</div>
-              <CurveEditor label="補間曲線" curve={curve} onChange={c => engine.setKeyCurve({ kind: 'bone', index: sel }, c)} />
-              <button type="button" className="bbtn" onClick={() => engine.deleteKeyHere({ kind: 'bone', index: sel })}>このキーを消す</button>
+              <div className="note">{t('フレーム {frame} のキーへの、前のキーからの進み方 (回転と位置)', { frame })}</div>
+              <CurveEditor label={t('補間曲線')} curve={curve} onChange={c => engine.setKeyCurve({ kind: 'bone', index: sel }, c)} />
+              <button type="button" className="bbtn" onClick={() => engine.deleteKeyHere({ kind: 'bone', index: sel })}>{t('このキーを消す')}</button>
             </>
-          ) : <Empty>このボーンには、フレーム {frame} のキーがありません。タイムラインの「チャンネル」で ◆ を押すと、そのキーへ移ります</Empty>}
+          ) : <Empty>{t('このボーンには、フレーム {frame} のキーがありません。タイムラインの「チャンネル」で ◆ を押すと、そのキーへ移ります', { frame })}</Empty>}
         </Panel>
       )}
-      <Panel title="ポーズファイル (.vpd)">
+      <Panel title={t('ポーズファイル (.vpd)')}>
         <div className="row">
-          <button type="button" className="bbtn" onClick={() => engine.savePose()}>保存</button>
-          <button type="button" className="bbtn" onClick={onLoadPose}>読み込む…</button>
+          <button type="button" className="bbtn" onClick={() => engine.savePose()}>{t('保存')}</button>
+          <button type="button" className="bbtn" onClick={onLoadPose}>{t('読み込む…')}</button>
         </div>
       </Panel>
     </>

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { msg } from '../../core/i18n';
 import type { AddonModule } from '../../engine/addons/Addons';
 import type { Cinema4d } from '../cinema4d/Cinema4d';
 import { MAX_DELAY_FRAMES } from '../cinema4d/cloner';
@@ -22,17 +23,17 @@ const N = (v: unknown) => Number(v ?? 0);
 
 export const makeEffectors = (deps: EffectorDeps = NO_DEPS): EffectorDef[] => [
   {
-    key: 'plain', name: 'プレーン', description: '全部のクローンに、同じだけ位置・回転・大きさを足す',
+    key: 'plain', name: msg('プレーン'), description: msg('全部のクローンに、同じだけ位置・回転・大きさを足す'),
   },
   {
-    key: 'step', name: 'ステップ', description: '最初のクローンの 0 から最後のクローンの値まで、だんだん強くする',
+    key: 'step', name: msg('ステップ'), description: msg('最初のクローンの 0 から最後のクローンの値まで、だんだん強くする'),
     defaults: { scale: 1.5 },
     strength: c => (c.count > 1 ? c.index / (c.count - 1) : 0),
   },
   {
-    key: 'random', name: 'ランダム', description: 'クローンごとに、位置・回転・大きさをばらつかせる (同じシードなら同じばらつき)',
+    key: 'random', name: msg('ランダム'), description: msg('クローンごとに、位置・回転・大きさをばらつかせる (同じシードなら同じばらつき)'),
     defaults: { position: [0.5, 0, 0.5], rotationDeg: 30 },
-    params: [{ key: 'seed', label: 'シード', type: 'number', default: 1, min: 0, step: 1 }],
+    params: [{ key: 'seed', label: msg('シード'), type: 'number', default: 1, min: 0, step: 1 }],
     // 軸ごとに -1〜1 の強さ (大きさは 0〜1)
     apply: (p, e, c) => {
       const f = c.field, r = () => (c.random() * 2 - 1) * f;
@@ -43,12 +44,12 @@ export const makeEffectors = (deps: EffectorDeps = NO_DEPS): EffectorDef[] => [
     },
   },
   {
-    key: 'formula', name: 'フォーミュラ', description: '式で強さを決める (Cinema 4D と同じ変数: t 時刻・f 周波数・id 番号・count 数・x y z 位置・rnd 乱数。三角関数は度)',
+    key: 'formula', name: msg('フォーミュラ'), description: msg('式で強さを決める (Cinema 4D と同じ変数: t 時刻・f 周波数・id 番号・count 数・x y z 位置・rnd 乱数。三角関数は度)'),
     defaults: { position: [0, 0.5, 0] },
     params: [
-      { key: 'expression', label: '式', type: 'text', default: 'sin((t*f + id/count*w)*360)', hint: 'sin((t*f + id/count*w)*360)' },
-      { key: 'frequency', label: '周波数 f', type: 'number', default: 1, min: 0, step: 0.1, digits: 2, unit: 'Hz' },
-      { key: 'waves', label: '波の数 w', type: 'number', default: 1, step: 0.1, digits: 2 },
+      { key: 'expression', label: msg('式'), type: 'text', default: 'sin((t*f + id/count*w)*360)', hint: 'sin((t*f + id/count*w)*360)' },
+      { key: 'frequency', label: msg('周波数 f'), type: 'number', default: 1, min: 0, step: 0.1, digits: 2, unit: 'Hz' },
+      { key: 'waves', label: msg('波の数 w'), type: 'number', default: 1, step: 0.1, digits: 2 },
     ],
     live: true,
     check: e => formula(String(e.params.expression ?? 'sin((t*f + id/count*w)*360)')).error,
@@ -58,17 +59,17 @@ export const makeEffectors = (deps: EffectorDeps = NO_DEPS): EffectorDef[] => [
     }),
   },
   {
-    key: 'time', name: 'タイム', description: '時刻 (秒) に合わせて強くする (1 秒で値のぶんだけ。再生すると動く)',
+    key: 'time', name: msg('タイム'), description: msg('時刻 (秒) に合わせて強くする (1 秒で値のぶんだけ。再生すると動く)'),
     defaults: { rotationDeg: 90 },
     live: true,
     strength: c => c.time,
   },
   {
-    key: 'target', name: 'ターゲット', description: 'クローンを、決めた場所 (地面の X・Z) へ向ける',
+    key: 'target', name: msg('ターゲット'), description: msg('クローンを、決めた場所 (地面の X・Z) へ向ける'),
     transform: false,
     params: [
-      { key: 'x', label: 'ターゲット X', type: 'number', default: 0, step: 0.5, digits: 1 },
-      { key: 'z', label: 'ターゲット Z', type: 'number', default: 5, step: 0.5, digits: 1 },
+      { key: 'x', label: msg('ターゲット X'), type: 'number', default: 0, step: 0.5, digits: 1 },
+      { key: 'z', label: msg('ターゲット Z'), type: 'number', default: 5, step: 0.5, digits: 1 },
     ],
     live: true, // (クローナーを動かすと、向きも変わる)
     apply: (p, _e, c) => {
@@ -83,29 +84,29 @@ export const makeEffectors = (deps: EffectorDeps = NO_DEPS): EffectorDef[] => [
     },
   },
   {
-    key: 'delay', name: 'ディレイ', description: 'MMD モデルのクローンを、1 つごとに遅らせて動かす',
+    key: 'delay', name: msg('ディレイ'), description: msg('MMD モデルのクローンを、1 つごとに遅らせて動かす'),
     transform: false,
-    params: [{ key: 'frames', label: '遅れ', type: 'number', default: 5, min: 0, max: MAX_DELAY_FRAMES, step: 1, unit: 'フレーム' }],
-    note: isModel => (isModel ? 'ディレイは、再生すると効きます (元のモデルの動きを覚えて、遅れて写す)' : 'ディレイは MMD モデルのクローナーで効きます'),
+    params: [{ key: 'frames', label: msg('遅れ'), type: 'number', default: 5, min: 0, max: MAX_DELAY_FRAMES, step: 1, unit: msg('フレーム') }],
+    note: isModel => (isModel ? msg('ディレイは、再生すると効きます (元のモデルの動きを覚えて、遅れて写す)') : msg('ディレイは MMD モデルのクローナーで効きます')),
     apply: (p, _e, c) => { p.delay += Number(c.params.frames) * c.index * c.field; },
   },
   {
-    key: 'shader', name: 'シェーダー', description: 'ノイズの模様で強さを決める (場所でなめらかに変わる。速さを付けると流れる)',
+    key: 'shader', name: msg('シェーダー'), description: msg('ノイズの模様で強さを決める (場所でなめらかに変わる。速さを付けると流れる)'),
     defaults: { position: [0, 0.5, 0] },
     params: [
-      { key: 'size', label: '大きさ', type: 'number', default: 2, min: 0.01, step: 0.25, digits: 2 },
-      { key: 'speed', label: '速さ', type: 'number', default: 0.5, step: 0.1, digits: 2 },
-      { key: 'seed', label: 'シード', type: 'number', default: 1, min: 0, step: 1 },
+      { key: 'size', label: msg('大きさ'), type: 'number', default: 2, min: 0.01, step: 0.25, digits: 2 },
+      { key: 'speed', label: msg('速さ'), type: 'number', default: 0.5, step: 0.1, digits: 2 },
+      { key: 'seed', label: msg('シード'), type: 'number', default: 1, min: 0, step: 1 },
     ],
     live: true,
     strength: c => { const s = N(c.params.size) || 1, t = N(c.params.speed) * c.time; return noise3(c.world.x / s + t, c.world.y / s, c.world.z / s - t * 0.5, N(c.params.seed)); },
   },
   {
-    key: 'pushapart', name: 'プッシュアパート', description: '近すぎるクローンどうしを、半径の距離まで押し離す',
+    key: 'pushapart', name: msg('プッシュアパート'), description: msg('近すぎるクローンどうしを、半径の距離まで押し離す'),
     transform: false,
     params: [
-      { key: 'radius', label: '半径', type: 'number', default: 1, min: 0, step: 0.1, digits: 2 },
-      { key: 'iterations', label: 'くり返し', type: 'number', default: 8, min: 1, max: 50, step: 1 },
+      { key: 'radius', label: msg('半径'), type: 'number', default: 1, min: 0, step: 0.1, digits: 2 },
+      { key: 'iterations', label: msg('くり返し'), type: 'number', default: 8, min: 1, max: 50, step: 1 },
     ],
     applyAll: (out, _e, cs) => {
       const r = N(cs[0]?.params.radius), it = Math.min(Math.max(Math.round(N(cs[0]?.params.iterations)), 1), 50);
@@ -126,8 +127,8 @@ export const makeEffectors = (deps: EffectorDeps = NO_DEPS): EffectorDef[] => [
     },
   },
   {
-    key: 'volume', name: 'ボリューム', description: '選んだ物の中 (その物の箱の中) にあるクローンだけに効く',
-    params: [{ key: 'target', label: '物', type: 'object', default: 0 }],
+    key: 'volume', name: msg('ボリューム'), description: msg('選んだ物の中 (その物の箱の中) にあるクローンだけに効く'),
+    params: [{ key: 'target', label: msg('物'), type: 'object', default: 0 }],
     defaults: { scale: 0.5 },
     live: true,
     applyAll: (out, e, cs) => {
@@ -140,9 +141,9 @@ export const makeEffectors = (deps: EffectorDeps = NO_DEPS): EffectorDef[] => [
     },
   },
   {
-    key: 'inheritance', name: '継承', description: 'ほかのクローナーのクローンの置き場所・向き・大きさへ近づける (番号ごと)',
+    key: 'inheritance', name: msg('継承'), description: msg('ほかのクローナーのクローンの置き場所・向き・大きさへ近づける (番号ごと)'),
     transform: false,
-    params: [{ key: 'target', label: 'クローナー', type: 'object', default: 0 }],
+    params: [{ key: 'target', label: msg('クローナー'), type: 'object', default: 0 }],
     live: true,
     applyAll: (out, _e, cs) => {
       const from = deps.worldLayout(N(cs[0]?.params.target));
@@ -161,25 +162,25 @@ export const makeEffectors = (deps: EffectorDeps = NO_DEPS): EffectorDef[] => [
     },
   },
   {
-    key: 'sound', name: 'サウンド', description: '読み込んだ曲の大きさで強さを決める (クローンごとに低い音から高い音の帯を受け持つか、全体の大きさ)',
+    key: 'sound', name: msg('サウンド'), description: msg('読み込んだ曲の大きさで強さを決める (クローンごとに低い音から高い音の帯を受け持つか、全体の大きさ)'),
     defaults: { position: [0, 1, 0] },
     params: [
-      { key: 'mode', label: '受け持ち', type: 'select', default: 'bands', options: [{ value: 'bands', label: 'クローンごとに帯域' }, { value: 'all', label: '全体の大きさ' }] },
-      { key: 'gain', label: '強さ', type: 'number', default: 1, min: 0, step: 0.1, digits: 2 },
+      { key: 'mode', label: msg('受け持ち'), type: 'select', default: 'bands', options: [{ value: 'bands', label: msg('クローンごとに帯域') }, { value: 'all', label: msg('全体の大きさ') }] },
+      { key: 'gain', label: msg('強さ'), type: 'number', default: 1, min: 0, step: 0.1, digits: 2 },
     ],
     live: true,
-    note: () => (deps.hasSound() ? '' : 'サウンドは、曲を読み込むと効きます (ファイル > MMD を読み込む… で曲を選ぶ)'),
+    note: () => (deps.hasSound() ? '' : msg('サウンドは、曲を読み込むと効きます (ファイル > MMD を読み込む… で曲を選ぶ)')),
     strength: c => N(c.params.gain) * (c.params.mode === 'all' ? deps.sound(c.time) : deps.sound(c.time, Math.min(Math.floor(c.index * BANDS / Math.max(c.count, 1)), BANDS - 1))),
   },
 ];
 export const EFFECTORS = makeEffectors();
 const mograph: AddonModule = {
   id: 'mograph',
-  name: 'MoGraph エフェクタ',
+  name: msg('MoGraph エフェクタ'),
   version: '1.0.0',
   author: 'webgl-grid',
   category: 'MoGraph',
-  description: 'Cinema 4D のエフェクタ: プレーン・ステップ・ランダム・フォーミュラ (式)・タイム・ターゲット・ディレイ・シェーダー・プッシュアパート・ボリューム・継承・サウンド。クローナーのパネルの「エフェクタ」から足します。',
+  description: msg('Cinema 4D のエフェクタ: プレーン・ステップ・ランダム・フォーミュラ (式)・タイム・ターゲット・ディレイ・シェーダー・プッシュアパート・ボリューム・継承・サウンド。クローナーのパネルの「エフェクタ」から足します。'),
   enabledByDefault: true,
   requires: ['cinema4d'],
   register(api) {

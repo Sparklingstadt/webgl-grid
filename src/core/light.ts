@@ -1,3 +1,4 @@
+import { msg, t } from './i18n';
 import { bool, hex, num, oneOf } from './normalize';
 
 // --- ライトのオブジェクト (Blender のライト): ポイント・サン・スポット・エリア ---
@@ -26,11 +27,11 @@ export interface LightSettings {
 }
 // Blender の日本語の表示と同じ名前
 export const LIGHT_TYPES: { key: LightType; name: string }[] = [
-  { key: 'point', name: 'ポイント' }, { key: 'sun', name: 'サン' }, { key: 'spot', name: 'スポット' }, { key: 'area', name: 'エリア' },
+  { key: 'point', name: msg('ポイント') }, { key: 'sun', name: msg('サン') }, { key: 'spot', name: msg('スポット') }, { key: 'area', name: msg('エリア') },
 ];
-export const AREA_SHAPES: { key: AreaShape; name: string }[] = [{ key: 'square', name: '正方形' }, { key: 'rectangle', name: '長方形' }];
+export const AREA_SHAPES: { key: AreaShape; name: string }[] = [{ key: 'square', name: msg('正方形') }, { key: 'rectangle', name: msg('長方形') }];
 export const LIGHT_KIND = 12; // 物の種類の番号 (形・モデルと重ならない)
-export const lightName = (type: LightType) => LIGHT_TYPES.find(t => t.key === type)?.name ?? 'ライト'; // 物の名前も Blender と同じ
+export const lightName = (type: LightType) => { const d = LIGHT_TYPES.find(l => l.key === type); return d ? t(d.name) : t('ライト'); }; // 物の名前も Blender と同じ
 
 export const lightDefault = (type: LightType): LightSettings => ({
   type, color: '#ffffff', power: { point: 400, sun: 1000, spot: 1000, area: 20 }[type], strength: 3, radius: 0.1, angleDeg: 0.526,
