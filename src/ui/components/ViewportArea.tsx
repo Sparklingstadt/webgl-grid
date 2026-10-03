@@ -4,6 +4,7 @@ import { LIGHT_TYPES } from '../../core/light';
 import { SHAPES } from '../../core/shapes';
 import { useEngine, useUi } from '../EngineContext';
 import { AddonMenuItems } from './addons/AddonMenuItems';
+import { BSelect } from './controls/BSelect';
 import { Gizmo } from './Gizmo';
 import { Menu, MenuItem, MenuLabel, MenuSep } from './Menu';
 import { Sidebar, type SideTab } from './sidebar/Sidebar';
@@ -22,6 +23,8 @@ export function ViewportArea(props: {
   const engine = useEngine();
   const { camera } = engine;
   const mode = useUi(s => s.mode);
+  const poseMode = useUi(s => s.poseMode);
+  const poseTool = useUi(s => s.poseTool);
   const canAdd = useUi(s => s.canAdd);
   const sel = useUi(s => s.sel);
   const viewInfo = useUi(s => s.viewInfo);
@@ -58,6 +61,11 @@ export function ViewportArea(props: {
           <MenuItem label={t('MMD モデル…')} disabled={!canAdd} onSelect={props.onOpenFiles} />
           <AddonMenuItems menu="add" />
         </Menu>
+        {sel?.kind === 'model' && (
+          <BSelect<'object' | 'pose'> label={t('モード')} className="mode-select" value={poseMode ? 'pose' : 'object'}
+                                      onChange={v => engine.pose.setActive(v === 'pose')}
+                                      options={[{ value: 'object', label: t('オブジェクトモード') }, { value: 'pose', label: t('ポーズモード') }]} />
+        )}
         <Menu id="object" label={t('オブジェクト')}>
           <MenuItem label={t('削除')} kbd="X" disabled={!sel} onSelect={() => engine.deleteSelected()} />
           <MenuItem label={t('選択を解除')} kbd="Alt A" disabled={!sel} onSelect={() => engine.select(null)} />
@@ -80,6 +88,12 @@ export function ViewportArea(props: {
               <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2v16M2 10h16M10 2 7.5 4.5M10 2l2.5 2.5M10 18l-2.5-2.5M10 18l2.5-2.5M2 10l2.5-2.5M2 10l2.5 2.5M18 10l-2.5-2.5M18 10l-2.5 2.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
             </button>
           </div>
+          {poseMode && (
+            <div className="tools pose-tools" role="group" aria-label={t('ボーンの操作')}>
+              <button type="button" aria-pressed={poseTool === 'rotate'} title={t('回す (R): ギズモでボーンを回す')} aria-label={t('ボーンを回す')} onClick={() => engine.pose.setTool('rotate')}>R</button>
+              <button type="button" aria-pressed={poseTool === 'translate'} title={t('動かす (G): 動かせるボーン (IK・センターなど) をギズモで動かす')} aria-label={t('ボーンを動かす')} onClick={() => engine.pose.setTool('translate')}>G</button>
+            </div>
+          )}
           <div className="view-info" aria-live="off">{viewInfo}</div>
           <RecoverBanner />
           <div className="nav">

@@ -368,3 +368,6 @@ details.sub > summary { cursor: pointer; color: var(--dim); font-size: 11px; pad
 .topbar .lang-select + .title { margin-left: 8px; }
 .drop-hint { position: fixed; inset: 8px; z-index: 70; display: flex; align-items: center; justify-content: center; pointer-events: none;
              border: 2px dashed var(--accent); border-radius: 8px; background: rgba(20, 30, 50, 0.55); color: var(--text); font-size: 15px; }
+.area-header .mode-select { width: auto; flex: 0 0 auto; max-width: 150px; }
+.pose-tools { top: 84px; }
+.pose-tools button { font-weight: 700; font-size: 12px; }

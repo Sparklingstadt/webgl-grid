@@ -83,6 +83,37 @@ export class Posing implements System {
     this.viewport.startTicking();
     this.changed();
   }
+  // ボーンの値をまとめて変える (ビューポートのギズモから)
+  setBoneValue(obj: ModelObj, i: number, v: BoneValue) {
+    obj.pose ??= new Map();
+    obj.pose.set(i, { ...v });
+    this.solve(obj);
+    this.viewport.startTicking();
+    this.changed();
+  }
+
+  // --- IK (オン・オフ。オフにすると、つながった骨を FK で直接回せる) ---
+  // IK の一覧 (ターゲットのボーンの番号と名前)
+  iks(obj: ModelObj): { target: number; name: string; enabled: boolean }[] {
+    const all: { target: number }[] = obj.model.geometry.userData.MMD?.iks ?? [];
+    return all.map(ik => ({ target: ik.target, name: obj.model.skeleton.bones[ik.target]?.name ?? String(ik.target), enabled: !obj.ikOff?.has(ik.target) }));
+  }
+  setIkEnabled(obj: ModelObj, target: number, on: boolean) {
+    obj.ikOff ??= new Set();
+    if (on) obj.ikOff.delete(target); else obj.ikOff.add(target);
+    this.applyIkSwitch(obj);
+    this.solve(obj);
+    this.changed();
+  }
+  // IK の計算 (手で動かすときと、モーションの再生のとき) に、オンの IK だけを渡す
+  applyIkSwitch(obj: ModelObj) {
+    const all: { target: number }[] = obj.model.geometry.userData.MMD?.iks ?? [];
+    const on = all.filter(ik => !obj.ikOff?.has(ik.target));
+    if (obj.solvers) obj.solvers.ik.iks = on;
+    const solver = this.motion.helper?.objects.get(obj.model)?.ikSolver;
+    if (solver) solver.iks = on;
+  }
+
   resetPose(obj: ModelObj) {
     obj.pose?.clear();
     this.solve(obj);
@@ -117,6 +148,7 @@ export class Posing implements System {
     if (!obj.solvers) {
       const [helper, { CCDIKSolver }] = await Promise.all([this.motion.ensureHelper(), import('../../vendor/three-mmd/CCDIKSolver.js')]);
       obj.solvers = { ik: new CCDIKSolver(mesh, mesh.geometry.userData.MMD.iks), grant: helper.createGrantSolver(mesh) };
+      this.applyIkSwitch(obj);
     }
     mesh.updateMatrixWorld(true);
     obj.solvers!.ik.update();

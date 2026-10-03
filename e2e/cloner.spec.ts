@@ -189,12 +189,15 @@ test('MoGraph フィールド: エフェクタに球のフィールドを足す�
   await page.getByRole('button', { name: 'プレーンに球のフィールドを足す' }).click();
   // 球 (中心 0, 1, 0・半径 2・内側 0.5) の中のクローン (x = 0, 1.5) だけ持ち上がる (端に近いほど弱い)
   await expect.poll(ys).toEqual([1, 0.1, 0, 0, 0]);
-  const wires = () => page.evaluate(() => { let n = 0; (window as Win).engine.graph.scene.traverse((o: Win) => { if (o.userData.editorOnly && o.isLine && o.visible) n++; }); return n; });
+  // (描かれる = 自分と親が全部見えている)
+  await page.evaluate(() => { (window as Win).shown = (o: Win) => { for (let v = o; v; v = v.parent) if (!v.visible) return false; return true; }; });
+  const wires = () => page.evaluate(() => { const { shown } = window as Win; let n = 0; (window as Win).engine.graph.scene.traverse((o: Win) => { if (o.userData.editorOnly && o.isLine && shown(o)) n++; }); return n; });
   await expect.poll(wires).toBeGreaterThan(0);
   const during = await page.evaluate(() => {
     const { engine } = window as Win;
     let seen = -1;
-    const off = engine.viewport.onRender(() => { if (engine.output.active) { seen = 0; engine.graph.scene.traverse((o: Win) => { if (o.userData.editorOnly && o.isLine && o.visible) seen++; }); } });
+    const { shown } = window as Win;
+    const off = engine.viewport.onRender(() => { if (engine.output.active) { seen = 0; engine.graph.scene.traverse((o: Win) => { if (o.userData.editorOnly && o.isLine && shown(o)) seen++; }); } });
     return engine.output.renderPng().then(() => { off(); return seen; });
   });
   expect(during).toBe(0);

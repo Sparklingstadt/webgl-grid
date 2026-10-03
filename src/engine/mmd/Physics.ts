@@ -34,7 +34,7 @@ interface Entry {
 const MMD_GRAVITY = 9.8 * 10; // MMD の重力 (モデルの単位で)
 const INERTIA = 0.3;          // 運ぶ・落ちるときの揺れの強さ
 const ROT_INERTIA = 0.5;      // 回すときの揺れの強さ
-const _p = new THREE.Vector3(), _v = new THREE.Vector3(), _a = new THREE.Vector3();
+const _p = new THREE.Vector3(), _v = new THREE.Vector3(), _a = new THREE.Vector3(), _q = new THREE.Quaternion();
 
 // MMDPhysics は、剛体を「拡大縮小していないモデル自身の座標」(親から外し、大きさ 1) で扱う。
 // update() は拡大縮小されたモデルを自分でそう直すが、直したあとの行列を戻さないので、描画を挟まずに続けて呼ぶ
@@ -86,6 +86,68 @@ export class Physics implements System {
 
   constructor(private world: World, private viewport: Viewport, private ui: UiChannel) {
     world.events.on('removed', obj => this.stop(obj));
+    viewport.onBeforeRender(() => this.updateRigs());
+  }
+
+  // --- 剛体と関節 (ジョイント) を、モデルに重ねて表示する (Blender のワイヤーフレームのように。レンダリングには写らない) ---
+  //   ボーン追従の剛体は赤、物理演算は緑、物理 + ボーン位置合わせは青、関節は黄色
+  private rigs = new Map<Obj, THREE.Group>();
+  rigShown(obj: Obj | null | undefined) { return !!obj && this.rigs.has(obj); }
+  hasRig(obj: Obj | null | undefined) { return !!obj && this.entries.some(p => p.obj === obj); }
+  showRig(obj: Obj, on: boolean) {
+    const old = this.rigs.get(obj);
+    if (old) { old.parent?.remove(old); old.traverse(o => { (o as THREE.Mesh).geometry?.dispose(); ((o as THREE.Mesh).material as THREE.Material | undefined)?.dispose(); }); this.rigs.delete(obj); }
+    const p = this.entries.find(e => e.obj === obj);
+    if (on && p) {
+      const group = new THREE.Group();
+      group.name = '__physics_rig';
+      const mat = (color: number) => new THREE.MeshBasicMaterial({ color, wireframe: true, depthTest: false, transparent: true, opacity: 0.45 });
+      const mats = [mat(0xff8080), mat(0x80ff80), mat(0x8090ff)];
+      for (const b of p.physics.bodies) {
+        const q = b.params;
+        const g = q.shapeType === 0 ? new THREE.SphereGeometry(q.width, 12, 6) : q.shapeType === 1 ? new THREE.BoxGeometry(q.width * 2, q.height * 2, q.depth * 2)
+          : new THREE.CapsuleGeometry(q.width, q.height, 4, 10);
+        const m = new THREE.Mesh(g, mats[q.type] ?? mats[1]);
+        m.userData.body = b;
+        group.add(m);
+      }
+      const jointGeo = new THREE.OctahedronGeometry(0.25), jointMat = new THREE.MeshBasicMaterial({ color: 0xffd84a, depthTest: false });
+      for (const c of p.physics.constraints) {
+        if (typeof c.constraint?.getFrameOffsetA !== 'function') continue;
+        const m = new THREE.Mesh(jointGeo, jointMat);
+        m.userData.joint = c;
+        group.add(m);
+      }
+      group.traverse(o => { o.userData.editorOnly = true; o.renderOrder = 18; o.raycast = () => {}; });
+      obj.model.add(group);
+      this.rigs.set(obj, group);
+    }
+    this.ui.set({ rigShown: this.rigShown(obj) });
+    this.viewport.requestDraw();
+  }
+  // 剛体の今の位置へ (物理演算の座標 = 拡大縮小を外したモデルの置き場所 → モデル自身の座標)
+  private updateRigs() {
+    for (const [obj, group] of this.rigs) {
+      if (!this.entries.some(e => e.obj === obj)) { this.showRig(obj, false); continue; }
+      const mesh = obj.model;
+      const inv = new THREE.Matrix4().compose(mesh.position, mesh.quaternion, new THREE.Vector3(1, 1, 1)).invert();
+      const invQ = new THREE.Quaternion().setFromRotationMatrix(inv);
+      const place = (o: THREE.Object3D, tr: Any) => {
+        const org = tr.getOrigin(), rot = tr.getRotation();
+        o.position.set(org.x(), org.y(), org.z()).applyMatrix4(inv);
+        o.quaternion.copy(invQ).multiply(_q.set(rot.x(), rot.y(), rot.z(), rot.w()));
+      };
+      for (const o of group.children) {
+        if (o.userData.body) place(o, o.userData.body.body.getCenterOfMassTransform());
+        else if (o.userData.joint) {
+          // 関節の場面での位置 = 剛体 A の今の位置 × 関節の A から見た位置
+          const c = o.userData.joint, a = c.bodyA.body.getCenterOfMassTransform(), f = c.constraint.getFrameOffsetA();
+          const org = f.getOrigin(), ra = a.getRotation(), oa = a.getOrigin();
+          _p.set(org.x(), org.y(), org.z()).applyQuaternion(_q.set(ra.x(), ra.y(), ra.z(), ra.w())).add(_v.set(oa.x(), oa.y(), oa.z()));
+          o.position.copy(_p).applyMatrix4(inv);
+        }
+      }
+    }
   }
 
   async start(obj: ModelObj) {
@@ -149,6 +211,7 @@ export class Physics implements System {
     this.viewport.startTicking();
   }
   stop(obj: Obj) {
+    if (this.rigs.has(obj)) this.showRig(obj, false);
     const i = this.entries.findIndex(p => p.obj === obj);
     if (i >= 0) this.entries.splice(i, 1); // Ammo 側の後片付けの API はないので、参照を外すだけ
   }

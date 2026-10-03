@@ -16,6 +16,7 @@ import { toPmxValues } from './materials/toPmx';
 import { MmdLoader } from './mmd/MmdLoader';
 import { Motion } from './mmd/Motion';
 import { Physics } from './mmd/Physics';
+import { PoseEditor } from './mmd/PoseEditor';
 import { Posing } from './mmd/Posing';
 import { Stage } from './mmd/Stage';
 import { VpdIO } from './mmd/VpdIO';
@@ -66,6 +67,7 @@ export class Engine {
   readonly stage = new Stage(this.graph, this.viewport, this.library);
   readonly motion = new Motion(this.world, this.physics, this.stage, this.camera, this.ui);
   readonly posing = new Posing(this.world, this.physics, this.motion, this.viewport, this.ui);
+  readonly pose = new PoseEditor(this.graph, this.viewport, this.selection, this.posing, this.physics, this.ui); // ポーズモード (ボーンをビューポートで動かす)
   readonly clock = new Clock();
   readonly keyframes = new Keyframes(this.world, this.posing, this.viewport, this.ui);
   readonly music = new Music(this.ui, () => this.clock.playing);
@@ -111,7 +113,7 @@ export class Engine {
     clock.events.on('change', () => ui.set({ frame: clock.frame, playing: clock.playing, start: clock.start, end: clock.end }));
     music.events.on('loaded', () => this.fitEndToContent());
     music.events.on('playing', () => viewport.startTicking());
-    selection.events.on('changed', () => { keyframes.clearSelection(); ui.bump('materialsVersion'); });
+    selection.events.on('changed', () => { keyframes.clearSelection(); ui.bump('materialsVersion'); ui.set({ rigShown: this.physics.rigShown(selection.model) }); });
     this.library.events.on('changed', () => { ui.bump('materialsVersion'); viewport.requestDraw(); });
 
     // 描く前: カメラ・物の位置・掴んでいる物の明るさ・選択の輪郭線・影の範囲
@@ -143,14 +145,21 @@ export class Engine {
   // --- 描画先 (React の部品が canvas を用意したとき・片付けるとき) ---
   mount(canvas: HTMLCanvasElement, container: HTMLElement) {
     if (!this.viewport.mount(canvas, container)) { this.ui.toast(t('WebGL2 に対応していません'), 0); return; }
+    this.pose.mount(canvas); // (ギズモは、ほかの操作より先にポインターを受け取る)
     this.input = new InputController(canvas, this.viewport, this.world, this.camera, this.selection, this.picker, {
       placeShape: (x, z) => this.placeShape(x, z),
+      pose: {
+        active: () => this.pose.active,
+        busy: () => this.pose.busy,
+        pick: (x, y) => { const b = this.pose.pickBone(x, y); if (b === null) return false; this.pose.selectBone(b); return true; },
+      },
       remove: obj => this.world.remove(obj),
       userGesture: () => this.music.resume(), // 自動再生を止められていた曲は、画面を触ったときに再生する
     });
     this.effects.restore();
   }
   unmount() {
+    this.pose.unmount();
     this.input?.dispose();
     this.input = null;
     this.effects.reset();
@@ -256,6 +265,7 @@ export class Engine {
     let motionOk = true;
     if (vmds.length) {
       motionOk = await this.motion.load(vmds, targets);
+      for (const m of targets) this.posing.applyIkSwitch(m); // (切った IK は、モーションの再生でも切っておく)
       if (motionOk) {
         // 終了フレームをモーション (と曲) の長さに合わせ、ダンス・カメラ・曲を最初からそろえて再生する
         this.fitEndToContent();
@@ -328,6 +338,18 @@ export class Engine {
     }
   }
   // 髪の形を保つ錘を外して、髪を重力で垂らす (MMD とは見た目が変わる)
+  // --- ポーズモード・IK・剛体と関節 ---
+  togglePoseMode() { this.pose.setActive(!this.pose.active); }
+  iks() { return this.model ? this.posing.iks(this.model) : []; }
+  setIkEnabled(target: number, on: boolean) { if (this.model) this.posing.setIkEnabled(this.model, target, on); }
+  showRig(on: boolean) { if (this.model) this.physics.showRig(this.model, on); }
+  // ポーズモードの I: 選んでいるボーンにキーを打つ
+  insertSelectedBoneKey() {
+    const m = this.model, b = m ? this.posing.boneSel(m) : undefined;
+    if (b === undefined) { this.insertKey(); return; }
+    this.insertBoneKey(b);
+  }
+
   setHairHang(on: boolean) {
     if (!this.model) return;
     this.physics.setHairHang(this.model, on);

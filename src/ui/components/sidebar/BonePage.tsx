@@ -4,6 +4,7 @@ import type { BoneValue } from '../../../core/types';
 import { BONE_MOVE, BONE_ROTATE } from '../../../engine';
 import { useEngine, useUi } from '../../EngineContext';
 import { BSlider } from '../BSlider';
+import { BCheck } from '../controls/BCheck';
 import { BSelect } from '../controls/BSelect';
 import { CurveEditor } from '../CurveEditor';
 import { Empty, NeedModel, Panel } from './Panel';
@@ -59,6 +60,7 @@ function BoneEditor({ onLoadPose }: { onLoadPose: () => void }) {
           ) : <Empty>{t('このボーンには、フレーム {frame} のキーがありません。タイムラインの「チャンネル」で ◆ を押すと、そのキーへ移ります', { frame })}</Empty>}
         </Panel>
       )}
+      <IkPanel />
       <Panel title={t('ポーズファイル (.vpd)')}>
         <div className="row">
           <button type="button" className="bbtn" onClick={() => engine.savePose()}>{t('保存')}</button>
@@ -66,5 +68,21 @@ function BoneEditor({ onLoadPose }: { onLoadPose: () => void }) {
         </div>
       </Panel>
     </>
+  );
+}
+
+// IK (オン・オフ)。オフにすると、つながった骨 (足など) を FK で直接回せる
+function IkPanel() {
+  const engine = useEngine();
+  useUi(s => s.values);
+  const poseMode = useUi(s => s.poseMode);
+  const iks = engine.iks();
+  return (
+    <Panel title="IK">
+      {!iks.length ? <Empty>{t('このモデルには IK がありません')}</Empty> : iks.map(ik => (
+        <BCheck key={ik.target} checked={ik.enabled} onChange={on => engine.setIkEnabled(ik.target, on)}>{ik.name}</BCheck>
+      ))}
+      <div className="note">{t('オフにすると、IK でつながった骨を FK (回転) で直接動かせます。')}{poseMode ? '' : t('ビューポートで動かすには、ポーズモード (Tab) にします。')}</div>
+    </Panel>
   );
 }

@@ -30,6 +30,7 @@ export interface Obj {
   pose?: Map<number, BoneValue>;      // 手で動かしたボーン
   anim?: Animation | null;            // キーフレーム (ボーン・表情のチャンネルごと)
   solvers?: { ik: Any; grant: Any };  // IK と付与の計算
+  ikOff?: Set<number>;                // 切った IK (ターゲットのボーンの番号)
   boneSel?: number;                   // サイドバーで選んでいるボーン
   slots: (string | null)[];           // マテリアルスロット (マテリアルの id。なしは null)
   activeSlot?: number;                // サイドバーで選んでいるスロット

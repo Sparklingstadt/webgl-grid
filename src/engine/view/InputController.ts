@@ -31,6 +31,8 @@ export interface InputActions {
   placeShape(x: number, z: number): boolean; // 地面の長押しで形を置く
   remove(obj: Obj): void;
   userGesture(): void;                       // 画面を触った (自動再生を止められた曲を鳴らす)
+  // ポーズモード: そのあいだは物を選ばず・運ばず・消さない。関節を押したらボーンを選ぶ。ギズモを触っているあいだはカメラも動かさない
+  pose?: { active(): boolean; busy(): boolean; pick(x: number, y: number): boolean };
 }
 
 export class InputController {
@@ -97,6 +99,8 @@ export class InputController {
     const { camera, world } = this;
     this.actions.userGesture();
     this.picker.close(); // パレットの外を触ったら閉じる
+    const pose = this.actions.pose;
+    if (pose?.active() && !this.drag && (pose.busy() || pose.pick(e.clientX, e.clientY))) return;
     // 前のドラッグの「離した」が届いていなかったら (同じポインターがまた押された・マウスなのに 2 本目)、それは終わらせる
     if (this.drag && (this.drag.id === e.pointerId || e.pointerType === 'mouse')) {
       this.pointers.clear();
@@ -124,7 +128,7 @@ export class InputController {
     const d: Drag = this.drag = { id: e.pointerId, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY };
     // 形を掴んだら、掴んだ点の高さの水平面に沿って動かす
     const ray = camera.screenRay(e.clientX, e.clientY);
-    const picked = camera.pick(ray);
+    const picked = this.actions.pose?.active() ? null : camera.pick(ray);
     if (picked) {
       const { obj, t } = picked;
       const hy = ray.ro[1] + ray.rd[1] * t;
@@ -252,6 +256,7 @@ export class InputController {
   // スマホで形をタップしたときは、色のパレットも出す。
   // ダブルクリック・ダブルタップ (削除) と区別するため、パレットは少し待ってから出す
   private onClick = (e: MouseEvent) => {
+    if (this.actions.pose?.active()) return;
     if (this.wasDragged || e.detail > 1 || performance.now() < this.ignoreClicksUntil) return;
     const picked = this.camera.pick(this.camera.screenRay(e.clientX, e.clientY));
     this.selection.select(picked?.obj ?? null);
@@ -268,12 +273,13 @@ export class InputController {
   }
   // ダブルクリックした物を削除 (タッチはブラウザによって dblclick が来ないので、下のダブルタップで扱う)
   private onDblClick = (e: MouseEvent) => {
-    if (this.lastPointerType === 'touch') return;
+    if (this.lastPointerType === 'touch' || this.actions.pose?.active()) return;
     const picked = this.camera.pick(this.camera.screenRay(e.clientX, e.clientY));
     if (picked) this.removeAt(picked.obj, e.clientX, e.clientY);
   };
   // 同じ物を素早く2回タップしたら削除
   private handleTap(e: PointerEvent) {
+    if (this.actions.pose?.active()) return;
     const picked = this.camera.pick(this.camera.screenRay(e.clientX, e.clientY));
     const now = performance.now();
     const last = this.lastTap;

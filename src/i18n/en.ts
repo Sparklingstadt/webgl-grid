@@ -833,5 +833,18 @@ const dict: Dictionary = {
   "テクスチャのフォルダを選ぶ": "Choose Texture Folder",
   "テクスチャの画像を選ぶ": "Choose Texture Images",
   "MMD をフォルダごと読み込む…": "Import MMD Folder…",
+  "ポーズモードは、MMD モデルを選んでから使います": "Select an MMD model to use Pose Mode",
+  "オブジェクトモード": "Object Mode",
+  "ポーズモード": "Pose Mode",
+  "ボーンの操作": "Bone Tools",
+  "回す (R): ギズモでボーンを回す": "Rotate (R): rotate the bone with the gizmo",
+  "ボーンを回す": "Rotate Bone",
+  "動かす (G): 動かせるボーン (IK・センターなど) をギズモで動かす": "Move (G): move a movable bone (IK, center, etc.) with the gizmo",
+  "ボーンを動かす": "Move Bone",
+  "このモデルには IK がありません": "This model has no IK",
+  "オフにすると、IK でつながった骨を FK (回転) で直接動かせます。": "Turn it off to pose the bones of that IK chain directly with FK (rotation). ",
+  "ビューポートで動かすには、ポーズモード (Tab) にします。": "To pose in the viewport, switch to Pose Mode (Tab).",
+  "剛体と関節を表示": "Show Rigid Bodies and Joints",
+  "物理演算の剛体 (赤: ボーン追従・緑: 物理・青: 物理 + 位置合わせ) と関節 (黄) を重ねて表示します (レンダリングには写りません)": "Overlays the physics rigid bodies (red: follow bone, green: physics, blue: physics + bone alignment) and joints (yellow). Not rendered.",
 };
 export default dict;

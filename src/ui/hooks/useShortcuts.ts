@@ -63,10 +63,20 @@ export function useShortcuts(engine: Engine, actions: {
         case 'ArrowDown': e.preventDefault(); engine.jumpKey(-1); break;
         case 'KeyI':
           e.preventDefault();
-          if (e.altKey) engine.deleteKeyHere(); else engine.insertKey();
+          if (e.altKey) engine.deleteKeyHere(); else if (engine.pose.active) engine.insertSelectedBoneKey(); else engine.insertKey();
           break;
         case 'KeyX': case 'Delete':
-          if (!(hoverTl && engine.deleteSelectedKeys())) engine.deleteSelected();
+          if (!(hoverTl && engine.deleteSelectedKeys()) && !engine.pose.active) engine.deleteSelected(); // (ポーズモードでは物を消さない)
+          break;
+        // ポーズモード (Blender と同じ): Tab で切り替え、R 回す・G 動かす、Alt+R・Alt+G で戻す
+        case 'Tab':
+          if (engine.selection.model || engine.pose.active) { e.preventDefault(); engine.togglePoseMode(); }
+          break;
+        case 'KeyR':
+          if (engine.pose.active) { e.preventDefault(); if (e.altKey) engine.pose.resetSelected('rotate'); else engine.pose.setTool('rotate'); }
+          break;
+        case 'KeyG':
+          if (engine.pose.active) { e.preventDefault(); if (e.altKey) engine.pose.resetSelected('translate'); else engine.pose.setTool('translate'); }
           break;
         case 'KeyA':
           if (e.shiftKey) { e.preventDefault(); a.openAddMenu(); } else if (e.altKey) { e.preventDefault(); engine.select(null); }
