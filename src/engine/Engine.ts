@@ -1,17 +1,13 @@
-import * as THREE from 'three';
 import { FPS, SHAPE_NAMES } from '../core/constants';
-import { outputFileName, type OutputSettings } from '../core/output';
+import { errorText } from '../core/errors';
+import { patchPmxMaterials } from '../core/pmxMaterials';
 import type { BoneValue } from '../core/types';
 import { Clock } from './anim/Clock';
 import { Keyframes } from './anim/Keyframes';
 import { Music } from './anim/Music';
-import type { NodeType, SocketValue } from '../core/materials/nodes';
-import { addNode, connect, disconnect, findNode, removeNode, surfaceShader, whyNotConnect, type SocketRef } from '../core/materials/tree';
-import { patchPmxMaterials } from '../core/pmxMaterials';
-import { convertMmdMesh } from './materials/fromMmd';
-import { MaterialLibrary, type MaterialData, type MaterialOutline, type MaterialSettings } from './materials/MaterialLibrary';
-import { PROJECT_EXT, ProjectCancelled, ProjectIO, type ProjectStorage } from './project/ProjectIO';
-import { RemoteLink } from './remote/RemoteLink';
+import { download } from './io/download';
+import { MaterialEditor } from './materials/MaterialEditor';
+import { MaterialLibrary } from './materials/MaterialLibrary';
 import { toPmxValues } from './materials/toPmx';
 import { MmdLoader } from './mmd/MmdLoader';
 import { Motion } from './mmd/Motion';
@@ -19,7 +15,9 @@ import { Physics } from './mmd/Physics';
 import { Posing } from './mmd/Posing';
 import { Stage } from './mmd/Stage';
 import { VpdIO } from './mmd/VpdIO';
-import { RenderCancelled, RenderOutput } from './output/RenderOutput';
+import { RenderOutput } from './output/RenderOutput';
+import { ProjectIO } from './project/ProjectIO';
+import { RemoteLink } from './remote/RemoteLink';
 import { Effects } from './render/Effects';
 import { SceneGraph } from './render/SceneGraph';
 import { Viewport } from './render/Viewport';
@@ -47,6 +45,7 @@ export class Engine {
   readonly library = new MaterialLibrary();
   readonly world = new World(this.graph, this.viewport, this.ui, this.library);
   readonly selection = new Selection(this.world, this.ui);
+  readonly materials = new MaterialEditor(this.library, this.world, this.selection, this.ui);
   readonly picker = new ColorPicker(this.world, this.viewport, this.ui);
   readonly camera = new CameraController(this.graph, this.viewport, this.ui, this.world);
   readonly physics = new Physics(this.world, this.viewport, this.ui);
@@ -56,9 +55,11 @@ export class Engine {
   readonly clock = new Clock();
   readonly keyframes = new Keyframes(this.world, this.posing, this.viewport, this.ui);
   readonly music = new Music(this.ui, () => this.clock.playing);
-  readonly output = new RenderOutput(this.viewport, this.graph, this.clock, this.music, this.ui);
+  // 書き出すファイルの名前の元: プロジェクトの名前、なければ選んでいるモデルの名前
+  readonly output = new RenderOutput(this.viewport, this.graph, this.clock, this.music, this.ui,
+    () => this.ui.state.projectName ?? this.selection.model?.model.name ?? 'レンダー');
   readonly effects = new Effects(this.viewport, this.ui, () => this.camera.focusPoint());
-  readonly loader = new MmdLoader(this.ui, () => this.viewport.requestDraw());
+  readonly loader = new MmdLoader(this.ui, this.library, () => this.viewport.requestDraw());
   readonly vpd = new VpdIO(this.posing, this.viewport, this.ui);
   readonly project = new ProjectIO(this);
   readonly remote = new RemoteLink(this);
@@ -185,10 +186,10 @@ export class Engine {
     let targets: ModelObj[];
     if (pmx) {
       if (world.full) return;
-      const mesh = await this.loader.loadPmx(files);
-      if (!mesh) return;
-      const slots = convertMmdMesh(mesh, this.library); // 材質はプリンシプル BSDF のマテリアルに変換する
-      if (Stage.isStage(mesh, pmx.name)) {
+      const loaded = await this.loader.load(files);
+      if (!loaded) return;
+      const { mesh, slots } = loaded;
+      if (loaded.isStage) {
         this.stage.set(mesh);
         ui.toast(`${pmx.name} をステージとして置きました`);
         targets = world.models; // ステージを読んだときは、モーションは置いてある人物全員に付ける
@@ -264,190 +265,6 @@ export class Engine {
   boneNote(i: number) { return this.model ? this.posing.boneNote(this.model, i) : ''; }
   setBone(i: number, key: keyof BoneValue, v: number) { if (this.model) this.posing.setBone(this.model, i, key, v); }
   resetPose() { if (this.model) this.posing.resetPose(this.model); }
-  // --- マテリアル (選んでいる物のマテリアルスロット。Blender の「マテリアル」プロパティとシェーダーエディター) ---
-  slots(): { index: number; id: string | null; name: string }[] {
-    const o = this.selection.current;
-    return o ? o.slots.map((id, index) => ({ index, id, name: (id && this.library.materials.get(id)?.name) || '' })) : [];
-  }
-  activeSlot() {
-    const o = this.selection.current;
-    return o ? Math.min(o.activeSlot ?? 0, Math.max(o.slots.length - 1, 0)) : 0;
-  }
-  setActiveSlot(i: number) {
-    const o = this.selection.current;
-    if (!o) return;
-    o.activeSlot = i;
-    this.ui.bump('materialsVersion');
-  }
-  // 選んでいるスロットのマテリアル
-  activeMaterial(): MaterialData | null {
-    const id = this.selection.current?.slots[this.activeSlot()];
-    return (id && this.library.materials.get(id)) || null;
-  }
-  materialList() { return this.library.list(); }
-  // 選んでいるスロットに、マテリアル id を入れる (null で外す)
-  assignMaterial(id: string | null) {
-    const o = this.selection.current;
-    if (!o) return;
-    this.world.setSlot(o, this.activeSlot(), id);
-    this.ui.bump('materialsVersion');
-  }
-  newMaterial() { this.assignMaterial(this.library.create().id); }
-  // 選んでいるスロットのマテリアルを複製して、そのスロットに入れる (Blender の「新規マテリアル」ボタン)
-  duplicateMaterial() {
-    const cur = this.activeMaterial();
-    if (!cur) { this.newMaterial(); return; }
-    const copy = this.library.duplicate(cur.id);
-    if (copy) this.assignMaterial(copy.id);
-  }
-  renameMaterial(name: string) { const cur = this.activeMaterial(); if (cur) this.library.rename(cur.id, name); }
-  private editMaterial(fn: (data: MaterialData) => void) { const cur = this.activeMaterial(); if (cur) this.library.edit(cur.id, fn); }
-  setMaterialSettings(patch: Partial<MaterialSettings>) { this.editMaterial(d => Object.assign(d.settings, patch)); }
-  setMaterialOutline(patch: Partial<MaterialOutline>) { this.editMaterial(d => Object.assign(d.outline, patch)); }
-  // ノード (選んでいるスロットのマテリアルの)
-  setNodeValue(node: string, socket: string, value: SocketValue) {
-    this.editMaterial(d => { const n = findNode(d.tree, node); if (n) n.values[socket] = value; });
-  }
-  setNodeProp(node: string, prop: string, value: string) {
-    this.editMaterial(d => { const n = findNode(d.tree, node); if (n) n.props[prop] = value; });
-  }
-  addShaderNode(type: NodeType, x: number, y: number) {
-    let id: string | null = null;
-    this.editMaterial(d => { id = addNode(d.tree, type, x, y).id; });
-    return id;
-  }
-  removeShaderNode(node: string) { this.editMaterial(d => { removeNode(d.tree, node); }); }
-  moveShaderNode(node: string, x: number, y: number) {
-    this.editMaterial(d => { const n = findNode(d.tree, node); if (n) Object.assign(n, { x, y }); });
-  }
-  // つなぐ。つなげなければ、その理由を返す
-  connectNodes(from: SocketRef, to: SocketRef): string | null {
-    const cur = this.activeMaterial();
-    if (!cur) return 'マテリアルがありません';
-    const why = whyNotConnect(cur.tree, from, to);
-    if (why) return why;
-    this.editMaterial(d => { connect(d.tree, from, to); });
-    return null;
-  }
-  disconnectNode(to: SocketRef) { this.editMaterial(d => { disconnect(d.tree, to); }); }
-  // プリンシプル BSDF (サーフェス) の、つながっている入力の相手
-  surfaceShader() { const cur = this.activeMaterial(); return cur ? surfaceShader(cur.tree) : null; }
-  images() { return [...this.library.images.values()].map(i => ({ id: i.id, name: i.name })); }
-  // 画像ファイルを読み込んで、画像として登録する (MMD のモデルに使うときは、MMD と同じく上下を反転しない)
-  async openImage(file: File, flipY = !this.selection.model): Promise<string> {
-    const url = URL.createObjectURL(file);
-    try {
-      const texture = await new THREE.TextureLoader().loadAsync(url);
-      texture.colorSpace = THREE.SRGBColorSpace;
-      texture.flipY = flipY;
-      texture.name = file.name;
-      return this.library.addImage(file.name, texture, file).id;
-    } finally {
-      URL.revokeObjectURL(url);
-    }
-  }
-  // --- プロジェクト (.wgp) ---
-  // いまの場面 (モデル・配置・マテリアル・ポーズ・キーフレーム・モーション・曲・視点・タイムライン) を保存する
-  // embedded: ファイルも入れた .wgp、reference: ファイルは参照だけの .wgpj
-  async saveProject(storage: ProjectStorage = 'embedded') {
-    this.ui.toast('プロジェクトを保存中…', 0);
-    try {
-      const bytes = await this.project.save(storage);
-      const name = `${this.ui.state.projectName ?? 'プロジェクト'}.${PROJECT_EXT[storage]}`;
-      download(bytes, name, storage === 'reference' ? 'application/json' : 'application/zip');
-      this.ui.set({ projectName: projectBaseName(name) });
-      this.ui.toast(`${name} を保存しました (${(bytes.length / 1024 / 1024).toFixed(1)} MB)`);
-    } catch (err) {
-      console.error(err);
-      this.ui.toast(`プロジェクトを保存できませんでした: ${(err as Error)?.message ?? err}`, 8000);
-    }
-  }
-  async openProject(file: File) {
-    this.ui.toast(`${file.name} を開いています…`, 0);
-    let skipped = 0;
-    try {
-      await this.project.open(new Uint8Array(await file.arrayBuffer()), {
-        // 参照しているファイルが見つからなければ、画面で探してもらう
-        pick: async missing => {
-          this.ui.hideToast();
-          const r = await this.askMissingFiles(file.name, missing);
-          if (r === 'skip') skipped = missing.length;
-          this.ui.toast(`${file.name} を開いています…`, 0);
-          return r;
-        },
-      });
-      this.ui.set({ projectName: projectBaseName(file.name) });
-      this.ui.toast(skipped ? `${file.name} を開きました (見つからないファイルが ${skipped} 個あります)` : `${file.name} を開きました`, skipped ? 8000 : 4000);
-    } catch (err) {
-      if (err instanceof ProjectCancelled) { this.ui.toast('プロジェクトを開くのをやめました'); return; }
-      console.error(err);
-      this.ui.toast(`${file.name} を開けませんでした: ${(err as Error)?.message ?? err}`, 8000);
-    }
-  }
-
-  // 見つからないファイルの画面: 選んだファイル (フォルダ) を渡す・見つかったものだけで開く・やめる
-  private missingAnswer: ((r: File[] | 'skip' | 'cancel') => void) | null = null;
-  private askMissingFiles(project: string, missing: { name: string; size?: number; source?: string }[]) {
-    this.ui.set({ missingFiles: { project, files: missing.map(({ name, size, source }) => ({ name, size, source })) } });
-    return new Promise<File[] | 'skip' | 'cancel'>(ok => { this.missingAnswer = ok; });
-  }
-  answerMissingFiles(r: File[] | 'skip' | 'cancel') {
-    const answer = this.missingAnswer;
-    this.missingAnswer = null;
-    this.ui.set({ missingFiles: null });
-    answer?.(r);
-  }
-
-  // --- レンダリング (Blender の F12 / Ctrl+F12) ---
-  setOutput(patch: Partial<OutputSettings>) { this.output.set(patch); }
-  // 書き出すファイルの名前の元: プロジェクトの名前、なければ選んでいるモデルの名前
-  private renderBaseName() { return this.ui.state.projectName ?? this.model?.model.name ?? 'レンダー'; }
-  private canRender() {
-    if (this.output.busy) return false;
-    if (!this.viewport.mounted) { this.ui.toast('描画先がないのでレンダリングできません'); return false; }
-    return true;
-  }
-  // いまのフレームを画像にして、保存する前に見せる
-  async renderImage() {
-    if (!this.canRender()) return;
-    try {
-      const blob = await this.output.renderImage();
-      this.closeRenderResult();
-      const { width, height } = this.output.settings;
-      this.ui.set({ renderResult: { url: URL.createObjectURL(blob), name: outputFileName(this.renderBaseName(), 'png', this.clock.frame), width, height } });
-    } catch (err) {
-      console.error(err);
-      this.ui.toast(`レンダリングできませんでした: ${(err as Error)?.message ?? err}`, 8000);
-    }
-  }
-  saveRenderResult() {
-    const r = this.ui.state.renderResult;
-    if (r) downloadUrl(r.url, r.name);
-  }
-  closeRenderResult() {
-    const r = this.ui.state.renderResult;
-    if (!r) return;
-    URL.revokeObjectURL(r.url);
-    this.ui.set({ renderResult: null });
-  }
-  // 開始〜終了フレームを動画にして保存する
-  async renderAnimation() {
-    if (!this.canRender()) return;
-    this.closeRenderResult();
-    const t0 = performance.now();
-    try {
-      const r = await this.output.renderAnimation();
-      const name = outputFileName(this.renderBaseName(), r.ext);
-      download(r.bytes, name, r.mime);
-      this.ui.toast(`${name} を書き出しました (${r.frames} フレーム・${(r.bytes.length / 1024 / 1024).toFixed(1)} MB・${((performance.now() - t0) / 1000).toFixed(1)} 秒)`, 8000);
-    } catch (err) {
-      if (err instanceof RenderCancelled) { this.ui.toast('レンダリングをキャンセルしました'); return; }
-      console.error(err);
-      this.ui.toast(`動画を作れませんでした: ${(err as Error)?.message ?? err}`, 10000);
-    }
-  }
-  cancelRender() { this.output.cancel(); }
-
   // マテリアルを変えた .pmx を書き出す (MMD で表せる範囲。ほかの部分は元の .pmx のまま)
   async exportPmx() {
     const o = this.model;
@@ -462,7 +279,7 @@ export class Engine {
       this.ui.toast(`${name} を書き出しました。テクスチャを読めるよう、元の .pmx と同じフォルダに置いてください`, 6000);
     } catch (err) {
       console.error(err);
-      this.ui.toast(`書き出せませんでした: ${(err as Error)?.message ?? err}`, 8000);
+      this.ui.toast(`書き出せませんでした: ${errorText(err)}`, 8000);
     }
   }
   // 髪の形を保つ錘を外して、髪を重力で垂らす (MMD とは見た目が変わる)
@@ -514,19 +331,4 @@ export class Engine {
     const next = dir > 0 ? Math.min(...all.filter(k => k > f)) : Math.max(...all.filter(k => k < f));
     if (Number.isFinite(next)) this.clock.seekFrame(next, 10);
   }
-}
-
-// バイト列をファイルとしてダウンロードさせる
-const projectBaseName = (name: string) => name.replace(/\.wgpj?$/i, '');
-
-function download(bytes: Uint8Array, name: string, type = '') {
-  const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type }));
-  downloadUrl(url, name);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-function downloadUrl(href: string, name: string) {
-  const a = Object.assign(document.createElement('a'), { href, download: name });
-  document.body.append(a);
-  a.click();
-  a.remove();
 }

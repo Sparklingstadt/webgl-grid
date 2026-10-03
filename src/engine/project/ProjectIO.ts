@@ -1,105 +1,78 @@
-import { strFromU8, strToU8, unzip, zip, type AsyncZippable } from 'fflate';
+import { strFromU8 } from 'fflate';
 import { matchAssets } from '../../core/assetMatch';
 import { FPS } from '../../core/constants';
-import { normalizeOutput, type OutputSettings } from '../../core/output';
-import type { NodeTree } from '../../core/materials/tree';
-import type { BoneValue } from '../../core/types';
+import { errorText } from '../../core/errors';
+import { normalizeOutput } from '../../core/output';
 import type { Engine } from '../Engine';
-import { convertMmdMesh } from '../materials/fromMmd';
-import type { MaterialOutline, MaterialSettings, MmdSource } from '../materials/MaterialLibrary';
+import { download } from '../io/download';
 import type { Any, ModelObj, Obj } from '../types';
+import {
+  PROJECT_EXT, PROJECT_FORMAT, PROJECT_VERSION, ProjectCancelled, parseData, projectBaseName, readEmbedded, writeEmbedded, writeReference,
+  type PickMissing, type ProjectData, type ProjectStorage, type SavedAsset, type SavedImage, type SavedMaterial, type SavedObject,
+} from './format';
 
-// --- プロジェクトの保存と読み込み ---
-// 2 つの形式がある。中身 (project.json: 場面の状態) は同じで、読み込んだファイル (モデル・テクスチャ・モーション・曲) の持ち方が違う
-//   .wgp  … ZIP。ファイルそのもの (assets/) も入れる。これだけで同じ場面を開き直せる
-//   .wgpj … JSON だけ。ファイルは名前・大きさ (と分かれば元のパス) で参照するだけなので小さい。
-//            開くときに、参照しているファイルを探す (同じページで読んだもの → 選んでもらう)
-export const PROJECT_FORMAT = 'webgl-grid-project';
-export const PROJECT_VERSION = 1;
-export type ProjectStorage = 'embedded' | 'reference';
-export const PROJECT_EXT: Record<ProjectStorage, string> = { embedded: 'wgp', reference: 'wgpj' };
+export { PROJECT_EXT, ProjectCancelled, projectBaseName, type ProjectData, type ProjectStorage } from './format';
 
-type Pose = [number, BoneValue][];
-// path: ZIP の中の場所 (.wgp)。source: 元のファイルの場所 (MCP で読んだときなど、分かるときだけ)。
-// relative: プロジェクトのファイルから見た元のファイルの場所 (MCP サーバーが保存するときに付ける)
-export interface SavedAsset { id: string; name: string; type: string; size?: number; path?: string; source?: string; relative?: string }
-// 参照だけのプロジェクトを開くとき、見つからないファイルを探してもらう。
-// 選ばれたファイル / 'skip' (見つかったものだけで開く) / 'cancel' (開くのをやめる)
-export type PickMissing = (missing: SavedAsset[]) => Promise<File[] | 'skip' | 'cancel'>;
-export class ProjectCancelled extends Error { constructor() { super('開くのをやめました'); } }
-interface SavedObject {
-  kind: 'shape' | 'model';
-  s: number; x: number; y: number; z: number; r: number; c: number;
-  slots: (string | null)[];
-  activeSlot?: number;
-  // MMD モデルだけ
-  files?: string[];
-  pose?: Pose;
-  morphs?: number[] | null;
-  keys?: [number, { pose: Pose; morphs: number[] | null }][];
-  hairHang?: boolean;
-  motion?: string | null;
-  boneSel?: number;
-}
-interface SavedImage {
-  id: string;
-  name: string;
-  from: { object: number | 'stage'; index: number } | { asset: string; flipY: boolean };
-}
-interface SavedMaterial { id: string; name: string; tree: NodeTree; settings: MaterialSettings; outline: MaterialOutline; mmd?: MmdSource }
-export interface ProjectData {
-  format: typeof PROJECT_FORMAT;
-  version: number;
-  storage?: ProjectStorage; // なければ embedded
-  assets: SavedAsset[];
-  objects: SavedObject[];
-  stage: { files: string[] } | null;
-  materials: SavedMaterial[];
-  images: SavedImage[];
-  camera: { yaw: number; pitch: number; dist: number; tx: number; ty: number; tz: number; fov: number; mode: 'orbit' | 'pan'; viewName: string };
-  cameraMotion: string | null;
-  music: string | null;
-  timeline: { start: number; end: number; frame: number };
-  selected: number | null;
-  output?: OutputSettings; // 出力 (レンダリングの大きさ・形式)。古いプロジェクトにはない
-}
-
-function parseData(json: string): ProjectData {
-  let data: ProjectData;
-  try { data = JSON.parse(json); } catch { throw new Error('プロジェクトのファイルではありません'); }
-  if (data?.format !== PROJECT_FORMAT) throw new Error('プロジェクトのファイルではありません');
-  if (data.version > PROJECT_VERSION) throw new Error('このプロジェクトは新しい版で保存されています');
-  return data;
-}
-// .wgp: ZIP の中のファイルを取り出す
-async function readEmbedded(bytes: Uint8Array) {
-  let entries: Record<string, Uint8Array>;
-  try { entries = await unzipAsync(bytes); } catch { throw new Error('プロジェクトのファイル (.wgp / .wgpj) ではありません'); }
-  const json = entries['project.json'];
-  if (!json) throw new Error('プロジェクトのファイル (.wgp) ではありません (project.json がありません)');
-  const data = parseData(strFromU8(json));
-  const files = new Map<string, File>();
-  for (const a of data.assets) {
-    const body = a.path ? entries[a.path] : undefined;
-    if (!body) continue;
-    const f = new File([body as BlobPart], a.name, { type: a.type });
-    if (a.source) Object.defineProperty(f, 'sourcePath', { value: a.source }); // 元の場所を引き継ぐ (参照だけで保存し直すとき)
-    files.set(a.id, f);
-  }
-  return { data, files };
-}
-
-const zipAsync = (files: AsyncZippable) => new Promise<Uint8Array>((ok, ng) => zip(files, { level: 6 }, (err, data) => (err ? ng(err) : ok(data))));
-const unzipAsync = (data: Uint8Array) => new Promise<Record<string, Uint8Array>>((ok, ng) => unzip(data, (err, files) => (err ? ng(err) : ok(files))));
-// 画像・曲はもう圧縮されているので、縮めずにそのまま入れる (速い)
-const STORED = /\.(png|jpe?g|gif|webp|mp3|m4a|aac|ogg|oga|opus|flac)$/i;
-
+// --- プロジェクト: 場面とプロジェクトのデータ (format.ts) の行き来と、保存・開く画面の操作 ---
 export class ProjectIO {
   // このページで読み込んだファイル (名前と大きさ → File)。参照だけのプロジェクトを開くとき、まずここから探す
   private known = new Map<string, File>();
 
   constructor(private engine: Engine) {}
 
+  // --- 画面の操作 ---
+  // 保存してダウンロードさせる。embedded: ファイルも入れた .wgp、reference: ファイルは参照だけの .wgpj
+  async saveFile(storage: ProjectStorage = 'embedded') {
+    const { ui } = this.engine;
+    ui.toast('プロジェクトを保存中…', 0);
+    try {
+      const bytes = await this.save(storage);
+      const name = `${ui.state.projectName ?? 'プロジェクト'}.${PROJECT_EXT[storage]}`;
+      download(bytes, name, storage === 'reference' ? 'application/json' : 'application/zip');
+      ui.set({ projectName: projectBaseName(name) });
+      ui.toast(`${name} を保存しました (${(bytes.length / 1024 / 1024).toFixed(1)} MB)`);
+    } catch (err) {
+      console.error(err);
+      ui.toast(`プロジェクトを保存できませんでした: ${errorText(err)}`, 8000);
+    }
+  }
+  // 選ばれたファイルを開く。参照しているファイルが見つからなければ、画面で探してもらう
+  async openFile(file: File) {
+    const { ui } = this.engine;
+    ui.toast(`${file.name} を開いています…`, 0);
+    let skipped = 0;
+    try {
+      await this.open(new Uint8Array(await file.arrayBuffer()), {
+        pick: async missing => {
+          ui.hideToast();
+          const r = await this.askMissing(file.name, missing);
+          if (r === 'skip') skipped = missing.length;
+          ui.toast(`${file.name} を開いています…`, 0);
+          return r;
+        },
+      });
+      ui.set({ projectName: projectBaseName(file.name) });
+      ui.toast(skipped ? `${file.name} を開きました (見つからないファイルが ${skipped} 個あります)` : `${file.name} を開きました`, skipped ? 8000 : 4000);
+    } catch (err) {
+      if (err instanceof ProjectCancelled) { ui.toast('プロジェクトを開くのをやめました'); return; }
+      console.error(err);
+      ui.toast(`${file.name} を開けませんでした: ${errorText(err)}`, 8000);
+    }
+  }
+  // 見つからないファイルの画面: 選んだファイル (フォルダ) を渡す・見つかったものだけで開く・やめる
+  private missingAnswer: ((r: File[] | 'skip' | 'cancel') => void) | null = null;
+  private askMissing(project: string, missing: SavedAsset[]) {
+    this.engine.ui.set({ missingFiles: { project, files: missing.map(({ name, size, source }) => ({ name, size, source })) } });
+    return new Promise<File[] | 'skip' | 'cancel'>(ok => { this.missingAnswer = ok; });
+  }
+  answerMissing(r: File[] | 'skip' | 'cancel') {
+    const answer = this.missingAnswer;
+    this.missingAnswer = null;
+    this.engine.ui.set({ missingFiles: null });
+    answer?.(r);
+  }
+
+  // --- データ ---
   remember(files: File[]) {
     for (const f of files) this.known.set(`${f.name.normalize('NFC')}\0${f.size}`, f);
   }
@@ -164,13 +137,7 @@ export class ProjectIO {
       output: { ...e.output.settings },
     };
     data.assets = [...assets.values()];
-    if (storage === 'reference') return strToU8(JSON.stringify(data, null, 1));
-    const files: AsyncZippable = { 'project.json': strToU8(JSON.stringify(data, null, 1)) };
-    for (const [f, a] of assets) {
-      const bytes = new Uint8Array(await f.arrayBuffer());
-      files[a.path!] = STORED.test(f.name) ? [bytes, { level: 0 }] : bytes;
-    }
-    return zipAsync(files);
+    return storage === 'reference' ? writeReference(data) : writeEmbedded(data, assets);
   }
 
   // .wgpj: 参照しているファイルを、渡されたもの → このページで読んだもの → 選んでもらったもの、の順に探す
@@ -199,6 +166,7 @@ export class ProjectIO {
     const { data, files } = bytes[0] === 0x7b /* { */ ? await this.readReference(bytes, opts) : await readEmbedded(bytes);
     this.remember([...files.values()]);
     const fileOf = (id: string | null | undefined) => (id ? files.get(id) ?? null : null);
+    const filesOf = (ids: string[] | undefined) => (ids ?? []).map(fileOf).filter((f): f is File => !!f);
 
     // まっさらにする
     e.resetAll();
@@ -207,8 +175,8 @@ export class ProjectIO {
 
     // ステージと物 (保存した順。積み重ねの高さも戻す)
     if (data.stage) {
-      const mesh = await e.loader.loadPmx(data.stage.files.map(fileOf).filter((f): f is File => !!f));
-      if (mesh) { convertMmdMesh(mesh, lib); e.stage.set(mesh); }
+      const loaded = await e.loader.load(filesOf(data.stage.files));
+      if (loaded) e.stage.set(loaded.mesh);
     }
     const objs: (Obj | null)[] = [];
     for (const so of data.objects) {
@@ -216,11 +184,8 @@ export class ProjectIO {
       if (so.kind === 'shape') {
         obj = e.world.addShape(so.s, so.x, so.z, so.c);
       } else {
-        const mesh = await e.loader.loadPmx((so.files ?? []).map(fileOf).filter((f): f is File => !!f));
-        if (mesh) {
-          const slots = convertMmdMesh(mesh, lib);
-          obj = e.world.addModel(mesh, so.x, so.z, slots);
-        }
+        const loaded = await e.loader.load(filesOf(so.files));
+        if (loaded) obj = e.world.addModel(loaded.mesh, so.x, so.z, loaded.slots);
       }
       if (obj) Object.assign(obj, { x: so.x, z: so.z, r: so.r, y: so.y, py: so.y, vy: 0, activeSlot: so.activeSlot });
       objs.push(obj);
@@ -233,7 +198,7 @@ export class ProjectIO {
       const f = img.from;
       if ('asset' in f) {
         const file = fileOf(f.asset);
-        if (file) imageId.set(img.id, await e.openImage(file, f.flipY));
+        if (file) imageId.set(img.id, await e.materials.openImage(file, f.flipY));
       } else {
         const holder = f.object === 'stage' ? e.stage.model : (objs[f.object] as ModelObj | null)?.model;
         const id = holder?.userData.convertedImages?.[f.index];

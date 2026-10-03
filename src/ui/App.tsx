@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { MenuContext } from './components/Menu';
-import { MissingFiles, Palette, RenderProgress, RenderResult, Toast } from './components/Overlays';
+import { MissingFiles, RenderProgress, RenderResult } from './components/Dialogs';
+import { Palette, Toast } from './components/Overlays';
 import type { SideTab } from './components/sidebar/Sidebar';
 import { BottomArea, type BottomEditor } from './components/BottomArea';
 import { TopBar } from './components/TopBar';
@@ -92,7 +93,7 @@ export default function App() {
              onChange={e => {
                const f = e.currentTarget.files?.[0];
                e.currentTarget.value = '';
-               if (f) engine.openProject(f);
+               if (f) engine.project.openFile(f);
              }} />
       <input type="file" ref={poseInput} accept=".vpd" hidden
              onChange={e => {

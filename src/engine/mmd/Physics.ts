@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { errorText } from '../../core/errors';
 import { findHairWeights } from '../../core/hairWeights';
 import type { System, Viewport } from '../render/Viewport';
 import type { Any, ModelObj, Obj } from '../types';
@@ -113,7 +114,7 @@ export class Physics implements System {
       this.viewport.startTicking();
     } catch (err) {
       console.error(err);
-      this.ui.toast(`物理演算を開始できませんでした: ${(err as Error)?.message ?? err}`, 8000);
+      this.ui.toast(`物理演算を開始できませんでした: ${errorText(err)}`, 8000);
     }
   }
   // 髪を重力で垂らしているか。髪の形を保つ錘がない (か物理演算がない) モデルは null

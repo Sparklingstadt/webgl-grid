@@ -6,6 +6,7 @@ import type { OutputSettings } from '../../core/output';
 import { fromBase64, toBase64, type RemoteFile } from '../../core/remote';
 import type { BoneValue } from '../../core/types';
 import type { Engine } from '../Engine';
+import { projectBaseName } from '../project/ProjectIO';
 import type { FxKey, FxLevel } from '../render/postfx';
 import { isModel, type Any, type ModelObj, type Obj } from '../types';
 
@@ -247,14 +248,14 @@ export const COMMANDS: Record<string, Command> = {
     if (p?.enabled !== undefined) await e.effects.set(k, !!p.enabled);
     return { enabled: e.ui.state.fxState, levels: e.ui.state.fxLevel };
   },
-  set_output: (e, p) => { e.setOutput((p ?? {}) as Partial<OutputSettings>); return e.output.settings; },
+  set_output: (e, p) => { e.output.set((p ?? {}) as Partial<OutputSettings>); return e.output.settings; },
   render_image: async (e, p) => {
     if (p?.frame !== undefined) e.clock.seekFrame(Number(p.frame));
-    const blob = await e.output.renderImage();
+    const blob = await e.output.renderPng();
     return { png: await blobToBase64(blob), width: e.output.settings.width, height: e.output.settings.height, frame: e.clock.frame };
   },
   render_animation: async e => {
-    const r = await e.output.renderAnimation();
+    const r = await e.output.renderVideo();
     return { data: toBase64(r.bytes), ext: r.ext, mime: r.mime, codec: r.codec, frames: r.frames };
   },
 
@@ -274,7 +275,7 @@ export const COMMANDS: Record<string, Command> = {
         throw new Error(`参照しているファイルが見つかりません: ${skipped.join('、')}`);
       },
     });
-    if (p?.name) e.ui.set({ projectName: String(p.name).replace(/\.wgpj?$/i, '') });
+    if (p?.name) e.ui.set({ projectName: projectBaseName(String(p.name)) });
     return { missing: skipped, ...sceneState(e) };
   },
 };

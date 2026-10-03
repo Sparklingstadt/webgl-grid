@@ -1,5 +1,6 @@
 import type * as THREE from 'three';
 import { VIEWPORT_BG } from '../../core/constants';
+import { errorText } from '../../core/errors';
 import type { UiChannel } from '../UiChannel';
 import { FX_KEYS, FX_LEVEL_DEFAULT, applyFxLevels, createPostFx, type FxKey, type FxLevel, type FxState, type PostFx } from './postfx';
 import type { Viewport } from './Viewport';
@@ -62,7 +63,7 @@ export class Effects {
         this.ui.hideToast();
       } catch (err) {
         console.error(err);
-        this.ui.toast(`効果を読み込めませんでした: ${(err as Error)?.message ?? err}`, 8000);
+        this.ui.toast(`効果を読み込めませんでした: ${errorText(err)}`, 8000);
       }
     }
     this.viewport.requestDraw();

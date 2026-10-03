@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { DEFAULT_FOV, FPS, MMD_SCALE } from '../../core/constants';
+import { errorText } from '../../core/errors';
 import type { System } from '../render/Viewport';
 import type { Any, ModelObj, MotionInfo, Obj } from '../types';
 import type { UiChannel } from '../UiChannel';
@@ -88,7 +89,7 @@ export class Motion implements System {
       return true;
     } catch (err) {
       console.error(err);
-      this.ui.toast(`${label} を読み込めませんでした: ${(err as Error)?.message ?? err}`, 8000);
+      this.ui.toast(`${label} を読み込めませんでした: ${errorText(err)}`, 8000);
       return false;
     }
   }

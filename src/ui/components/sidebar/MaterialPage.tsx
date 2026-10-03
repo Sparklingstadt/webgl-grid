@@ -15,33 +15,33 @@ export function MaterialPage({ onOpenShaderEditor }: { onOpenShaderEditor: () =>
   useUi(s => s.materialsVersion);
   const sel = useUi(s => s.sel);
   if (!sel) return <Panel title="マテリアル"><Empty>物をクリックして選ぶと、そのマテリアルを編集できます。</Empty></Panel>;
-  const slots = engine.slots();
-  const active = engine.activeSlot();
-  const mat = engine.activeMaterial();
-  const list = engine.materialList();
+  const slots = engine.materials.slots();
+  const active = engine.materials.activeSlot();
+  const mat = engine.materials.active();
+  const list = engine.materials.list();
   return (
     <>
       <Panel title="マテリアルスロット">
         <ul className="mat-list" role="listbox" aria-label="マテリアルスロット">
           {slots.map(s => (
             <li key={s.index} role="option" aria-selected={s.index === active}>
-              <button type="button" className="mat-name" onClick={() => engine.setActiveSlot(s.index)}>
+              <button type="button" className="mat-name" onClick={() => engine.materials.setActiveSlot(s.index)}>
                 <span className="mat-ball" aria-hidden="true" />{s.name || '(なし)'}
               </button>
             </li>
           ))}
         </ul>
         <div className="mat-block">
-          <BSelect label="スロットのマテリアル" value={mat?.id ?? ''} onChange={v => engine.assignMaterial(v || null)}
+          <BSelect label="スロットのマテリアル" value={mat?.id ?? ''} onChange={v => engine.materials.assign(v || null)}
                    options={[{ value: '', label: '(なし)' }, ...list.map(m => ({ value: m.id, label: m.users > 1 ? `${m.name} (${m.users})` : m.users === 0 ? `0 ${m.name}` : m.name }))]} />
-          {mat && <TextField label="マテリアルの名前" value={mat.name} onCommit={name => engine.renameMaterial(name)} />}
+          {mat && <TextField label="マテリアルの名前" value={mat.name} onCommit={name => engine.materials.rename(name)} />}
         </div>
         <div className="row">
-          <button type="button" className="bbtn" onClick={() => engine.newMaterial()}>新規</button>
-          <button type="button" className="bbtn" disabled={!mat} onClick={() => engine.duplicateMaterial()}>複製</button>
-          <button type="button" className="bbtn" disabled={!mat} onClick={() => engine.assignMaterial(null)}>外す</button>
+          <button type="button" className="bbtn" onClick={() => engine.materials.create()}>新規</button>
+          <button type="button" className="bbtn" disabled={!mat} onClick={() => engine.materials.duplicate()}>複製</button>
+          <button type="button" className="bbtn" disabled={!mat} onClick={() => engine.materials.assign(null)}>外す</button>
         </div>
-        {mat && (engine.materialList().find(m => m.id === mat.id)?.users ?? 0) > 1 && (
+        {mat && (engine.materials.list().find(m => m.id === mat.id)?.users ?? 0) > 1 && (
           <div className="note">このマテリアルはほかの物とも共有しています。変えると、共有しているすべての物が変わります (「複製」で別にできます)</div>
         )}
       </Panel>
@@ -50,17 +50,17 @@ export function MaterialPage({ onOpenShaderEditor }: { onOpenShaderEditor: () =>
         <Panel title="設定">
           <div className="color-field">
             <span>ブレンド</span>
-            <BSelect label="ブレンドモード" value={mat.settings.blend} onChange={blend => engine.setMaterialSettings({ blend })}
+            <BSelect label="ブレンドモード" value={mat.settings.blend} onChange={blend => engine.materials.setSettings({ blend })}
                      options={[{ value: 'opaque', label: '不透明' }, { value: 'blend', label: 'アルファブレンド' }, { value: 'clip', label: 'アルファクリップ' }] as const} />
           </div>
-          <BCheck checked={mat.settings.backfaceCulling} onChange={backfaceCulling => engine.setMaterialSettings({ backfaceCulling })}>裏面を表示しない</BCheck>
+          <BCheck checked={mat.settings.backfaceCulling} onChange={backfaceCulling => engine.materials.setSettings({ backfaceCulling })}>裏面を表示しない</BCheck>
         </Panel>
       )}
       {mat && (
         <Panel title="輪郭線 (MMD)">
-          <BCheck checked={mat.outline.enabled} onChange={enabled => engine.setMaterialOutline({ enabled })}>輪郭線を付ける</BCheck>
-          <ColorField label="色" value={mat.outline.color} onChange={color => engine.setMaterialOutline({ color })} />
-          <BSlider label="太さ" value={mat.outline.size} min={0} max={3} step={0.05} onChange={size => engine.setMaterialOutline({ size })} />
+          <BCheck checked={mat.outline.enabled} onChange={enabled => engine.materials.setOutline({ enabled })}>輪郭線を付ける</BCheck>
+          <ColorField label="色" value={mat.outline.color} onChange={color => engine.materials.setOutline({ color })} />
+          <BSlider label="太さ" value={mat.outline.size} min={0} max={3} step={0.05} onChange={size => engine.materials.setOutline({ size })} />
           <div className="note">選んでいるあいだは、選択を示すオレンジの輪郭線で表示されます</div>
         </Panel>
       )}
@@ -77,8 +77,8 @@ export function MaterialPage({ onOpenShaderEditor }: { onOpenShaderEditor: () =>
 // サーフェス: マテリアル出力につながっているプリンシプル BSDF の入力 (つながっている入力は、相手のノードの名前)
 function Surface({ onOpenShaderEditor }: { onOpenShaderEditor: () => void }) {
   const engine = useEngine();
-  const mat = engine.activeMaterial()!;
-  const bsdf = engine.surfaceShader();
+  const mat = engine.materials.active()!;
+  const bsdf = engine.materials.surfaceShader();
   return (
     <Panel title="サーフェス">
       {!bsdf ? (
@@ -98,7 +98,7 @@ function Surface({ onOpenShaderEditor }: { onOpenShaderEditor: () => void }) {
               );
             }
             if (def.noValue) return null;
-            return <SocketField key={def.id} def={def} value={bsdf.values[def.id]} onChange={v => engine.setNodeValue(bsdf.id, def.id, v)} />;
+            return <SocketField key={def.id} def={def} value={bsdf.values[def.id]} onChange={v => engine.materials.setNodeValue(bsdf.id, def.id, v)} />;
           })}
         </>
       )}

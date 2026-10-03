@@ -1,5 +1,7 @@
 import { FPS, VIEWPORT_BG } from '../../core/constants';
-import { VIDEO_FORMATS, frameSpan, normalizeOutput, type OutputSettings } from '../../core/output';
+import { errorText } from '../../core/errors';
+import { VIDEO_FORMATS, frameSpan, normalizeOutput, outputFileName, type OutputSettings } from '../../core/output';
+import { download, downloadUrl } from '../io/download';
 import type { Clock } from '../anim/Clock';
 import type { Music } from '../anim/Music';
 import type { SceneGraph } from '../render/SceneGraph';
@@ -13,13 +15,16 @@ export class RenderCancelled extends Error {
 // --- レンダリング (Blender の F12 / Ctrl+F12): いまの視点から、出力の大きさで画像・動画を作る ---
 // 描くときは、編集用の表示 (地面のグリッド・選択の輪郭線) を隠す。
 // 動画は、再生と同じようにタイムラインを 1 フレーム (1/30 秒) ずつ進めて描き (物理演算も同じ間隔で進む)、
-// WebCodecs で圧縮して MP4 / WebM にまとめる (mediabunny)。処理の速さに関係なく、コマ落ちしない
+// WebCodecs で圧縮して MP4 / WebM にまとめる (mediabunny)。処理の速さに関係なく、コマ落ちしない。
+// renderPng / renderVideo はデータを返すだけ (MCP からも使う)。renderImage / renderAnimation は画面の操作 (結果を見せる・保存する)
 export class RenderOutput {
   settings: OutputSettings = normalizeOutput(undefined);
   active = false; // 描いている最中 (編集用の表示を隠す)
   private cancelled = false;
 
-  constructor(private viewport: Viewport, private graph: SceneGraph, private clock: Clock, private music: Music, private ui: UiChannel) {
+  // baseName: 書き出すファイルの名前の元
+  constructor(private viewport: Viewport, private graph: SceneGraph, private clock: Clock, private music: Music, private ui: UiChannel,
+              private baseName: () => string) {
     ui.set({ output: { ...this.settings } });
   }
 
@@ -30,8 +35,55 @@ export class RenderOutput {
   get busy() { return !!this.ui.state.rendering; }
   cancel() { this.cancelled = true; }
 
+  // --- 画面の操作 (F12 / Ctrl+F12) ---
+  private canRender() {
+    if (this.busy) return false;
+    if (!this.viewport.mounted) { this.ui.toast('描画先がないのでレンダリングできません'); return false; }
+    return true;
+  }
+  // いまのフレームを画像にして、保存する前に見せる (レンダー結果)
+  async renderImage() {
+    if (!this.canRender()) return;
+    try {
+      const blob = await this.renderPng();
+      this.closeResult();
+      const { width, height } = this.settings;
+      this.ui.set({ renderResult: { url: URL.createObjectURL(blob), name: outputFileName(this.baseName(), 'png', this.clock.frame), width, height } });
+    } catch (err) {
+      console.error(err);
+      this.ui.toast(`レンダリングできませんでした: ${errorText(err)}`, 8000);
+    }
+  }
+  saveResult() {
+    const r = this.ui.state.renderResult;
+    if (r) downloadUrl(r.url, r.name);
+  }
+  closeResult() {
+    const r = this.ui.state.renderResult;
+    if (!r) return;
+    URL.revokeObjectURL(r.url);
+    this.ui.set({ renderResult: null });
+  }
+  // 開始〜終了フレームを動画にして保存する
+  async renderAnimation() {
+    if (!this.canRender()) return;
+    this.closeResult();
+    const t0 = performance.now();
+    try {
+      const r = await this.renderVideo();
+      const name = outputFileName(this.baseName(), r.ext);
+      download(r.bytes, name, r.mime);
+      this.ui.toast(`${name} を書き出しました (${r.frames} フレーム・${(r.bytes.length / 1024 / 1024).toFixed(1)} MB・${((performance.now() - t0) / 1000).toFixed(1)} 秒)`, 8000);
+    } catch (err) {
+      if (err instanceof RenderCancelled) { this.ui.toast('レンダリングをキャンセルしました'); return; }
+      console.error(err);
+      this.ui.toast(`動画を作れませんでした: ${errorText(err)}`, 10000);
+    }
+  }
+
+  // --- データを作る ---
   // いまのフレームを 1 枚描いて、PNG にする
-  async renderImage(): Promise<Blob> {
+  async renderPng(): Promise<Blob> {
     const { width, height } = this.settings;
     const copy = document.createElement('canvas');
     copy.width = width;
@@ -48,7 +100,7 @@ export class RenderOutput {
   }
 
   // 開始〜終了フレームを描いて、動画にする。曲があれば (設定でオンなら) 同じ範囲を入れる
-  async renderAnimation(): Promise<{ bytes: Uint8Array; ext: string; mime: string; codec: string; frames: number }> {
+  async renderVideo(): Promise<{ bytes: Uint8Array; ext: string; mime: string; codec: string; frames: number }> {
     const mb = await import('mediabunny');
     const s = this.settings, { clock } = this;
     const { start, end } = clock;

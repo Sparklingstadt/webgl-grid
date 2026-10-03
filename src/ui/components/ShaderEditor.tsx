@@ -1,5 +1,5 @@
 import { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as RPointerEvent, type ReactNode } from 'react';
-import { ADDABLE, NODE_TYPES, type NodeCategory, type PropDef, type SocketDef, type SocketKind } from '../../core/materials/nodes';
+import { ADDABLE, NODE_TYPES, type NodeCategory, type NodeType, type PropDef, type SocketDef, type SocketKind } from '../../core/materials/nodes';
 import { inputLink, type ShaderNode, type SocketRef } from '../../core/materials/tree';
 import { useEngine, useUi } from '../EngineContext';
 import { BSelect } from './controls/BSelect';
@@ -47,7 +47,7 @@ export function ShaderEditor({ typeSelect, onHover }: { typeSelect: ReactNode; o
   const engine = useEngine();
   useUi(s => s.materialsVersion);
   const sel = useUi(s => s.sel);
-  const mat = engine.activeMaterial();
+  const mat = engine.materials.active();
   const menu = useContext(MenuContext);
   const [view, setView] = useState({ x: 0, y: 0, zoom: 1 });
   const [selected, setSelected] = useState<string | null>(null);
@@ -62,7 +62,7 @@ export function ShaderEditor({ typeSelect, onHover }: { typeSelect: ReactNode; o
 
   // ノードがちょうど入るように表示する
   const fit = useCallback(() => {
-    const el = canvasRef.current, m = engine.activeMaterial();
+    const el = canvasRef.current, m = engine.materials.active();
     if (!el || !m?.tree.nodes.length) return;
     const xs = m.tree.nodes.flatMap(n => [n.x, n.x + NODE_TYPES[n.type].width]);
     const ys = m.tree.nodes.flatMap(n => [n.y, n.y + HEADER + PAD * 2 + rowsOf(n).length * ROW]);
@@ -97,7 +97,7 @@ export function ShaderEditor({ typeSelect, onHover }: { typeSelect: ReactNode; o
     const onKey = (e: KeyboardEvent) => {
       if (!hovered.current || (e.target as HTMLElement).closest('input, select, textarea, .bslider')) return;
       if ((e.code === 'KeyX' || e.code === 'Delete') && selected) {
-        engine.removeShaderNode(selected);
+        engine.materials.removeNode(selected);
         setSelected(null);
       } else if (e.code === 'KeyA' && e.shiftKey) {
         e.preventDefault();
@@ -121,7 +121,7 @@ export function ShaderEditor({ typeSelect, onHover }: { typeSelect: ReactNode; o
       // つながっている入力から引き抜く: 外して、つながっていた出力からの線をドラッグする
       const link = inputLink(mat.tree, inp.dataset.node!, inp.dataset.socket!);
       if (!link) return;
-      engine.disconnectNode(link.to);
+      engine.materials.disconnect(link.to);
       drag.current = { kind: 'link', from: link.from };
     } else if (t.closest('.node-header')) {
       const id = t.closest<HTMLElement>('[data-node-id]')!.dataset.nodeId!;
@@ -150,28 +150,28 @@ export function ShaderEditor({ typeSelect, onHover }: { typeSelect: ReactNode; o
   const onPointerUp = (e: RPointerEvent) => {
     const d = drag.current;
     drag.current = null;
-    if (d?.kind === 'move' && live.node) engine.moveShaderNode(live.node.id, live.node.x, live.node.y);
+    if (d?.kind === 'move' && live.node) engine.materials.moveNode(live.node.id, live.node.x, live.node.y);
     if (d?.kind === 'link') {
       const inp = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>('[data-in]');
       if (inp) {
-        const why = engine.connectNodes(d.from, { node: inp.dataset.node!, socket: inp.dataset.socket! });
+        const why = engine.materials.connect(d.from, { node: inp.dataset.node!, socket: inp.dataset.socket! });
         if (why) engine.ui.toast(why, 2500);
       }
     }
     setLive({});
   };
 
-  const addAtCenter = (type: Parameters<typeof engine.addShaderNode>[0]) => {
+  const addAtCenter = (type: NodeType) => {
     const el = canvasRef.current!;
     const p = toLocal(el.getBoundingClientRect().left + el.clientWidth / 2, el.getBoundingClientRect().top + el.clientHeight / 2);
-    const id = engine.addShaderNode(type, Math.round(p.x - NODE_TYPES[type].width / 2), Math.round(p.y - 40));
+    const id = engine.materials.addNode(type, Math.round(p.x - NODE_TYPES[type].width / 2), Math.round(p.y - 40));
     if (id) setSelected(id);
   };
 
   const nodes = mat?.tree.nodes ?? [];
   const posOf = (n: ShaderNode) => (live.node?.id === n.id ? live.node : n);
   const byId = new Map(nodes.map(n => [n.id, n]));
-  const images = engine.images();
+  const images = engine.materials.images();
 
   return (
     <>
@@ -188,7 +188,7 @@ export function ShaderEditor({ typeSelect, onHover }: { typeSelect: ReactNode; o
         {sel && (
           <span className="shader-mat">
             {mat ? <>マテリアル: <b>{mat.name}</b></> : 'マテリアルがありません'}
-            {!mat && <button type="button" className="hbtn" onClick={() => engine.newMaterial()}>新規</button>}
+            {!mat && <button type="button" className="hbtn" onClick={() => engine.materials.create()}>新規</button>}
           </span>
         )}
       </div>
@@ -235,17 +235,17 @@ export function ShaderEditor({ typeSelect, onHover }: { typeSelect: ReactNode; o
                           )}
                           {inputLink(mat!.tree, n.id, row.def.id)
                             ? <span className="socket-label">{row.def.label}</span>
-                            : <SocketField def={row.def} value={n.values[row.def.id]} compact onChange={v => engine.setNodeValue(n.id, row.def.id, v)} />}
+                            : <SocketField def={row.def} value={n.values[row.def.id]} compact onChange={v => engine.materials.setNodeValue(n.id, row.def.id, v)} />}
                         </>
                       )}
-                      {row.kind === 'own' && <SocketField def={row.def} value={n.values[row.def.id]} compact onChange={v => engine.setNodeValue(n.id, row.def.id, v)} />}
+                      {row.kind === 'own' && <SocketField def={row.def} value={n.values[row.def.id]} compact onChange={v => engine.materials.setNodeValue(n.id, row.def.id, v)} />}
                       {row.kind === 'prop' && row.def.kind === 'enum' && (
-                        <BSelect label={row.def.label} value={n.props[row.def.id]} onChange={v => engine.setNodeProp(n.id, row.def.id, v)}
+                        <BSelect label={row.def.label} value={n.props[row.def.id]} onChange={v => engine.materials.setNodeProp(n.id, row.def.id, v)}
                                  options={row.def.options!.map(([value, label]) => ({ value, label }))} />
                       )}
                       {row.kind === 'prop' && row.def.kind === 'image' && (
                         <div className="image-pick">
-                          <BSelect label="画像" value={n.props.image ?? ''} onChange={v => engine.setNodeProp(n.id, 'image', v)}
+                          <BSelect label="画像" value={n.props.image ?? ''} onChange={v => engine.materials.setNodeProp(n.id, 'image', v)}
                                    options={[{ value: '', label: '(なし)' }, ...images.map(i => ({ value: i.id, label: i.name }))]} />
                           <button type="button" className="bbtn" title="画像ファイルを開く" onClick={() => { imageFor.current = n.id; fileRef.current?.click(); }}>開く…</button>
                         </div>
@@ -262,7 +262,7 @@ export function ShaderEditor({ typeSelect, onHover }: { typeSelect: ReactNode; o
              onChange={async e => {
                const f = e.currentTarget.files?.[0], node = imageFor.current;
                e.currentTarget.value = '';
-               if (f && node) engine.setNodeProp(node, 'image', await engine.openImage(f));
+               if (f && node) engine.materials.setNodeProp(node, 'image', await engine.materials.openImage(f));
              }} />
     </>
   );

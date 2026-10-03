@@ -53,9 +53,9 @@ async function buildScene(page: Page) {
     // 立方体のマテリアルを変え、その上に球を積む
     const cube = engine.world.objects[0];
     engine.select(cube);
-    engine.renameMaterial('木');
-    engine.setNodeValue(engine.surfaceShader().id, 'baseColor', [1, 0, 0]);
-    engine.setMaterialOutline({ enabled: true });
+    engine.materials.rename('木');
+    engine.materials.setNodeValue(engine.materials.surfaceShader().id, 'baseColor', [1, 0, 0]);
+    engine.materials.setOutline({ enabled: true });
     engine.addShape(1);
     engine.placeShape(cube.x, cube.z);
     // 視点とタイムライン

@@ -199,6 +199,7 @@ src/
     output.ts               出力の設定 (解像度・形式・ファイル名)
     hsv.ts                  色選びの色の変換 (HSV・16 進)
     assetMatch.ts           参照だけのプロジェクトのファイルの対応づけ (名前と大きさ)
+    errors.ts               エラーをお知らせの文にする
     remote.ts               外部からの操作 (MCP) の約束事 (ページと MCP サーバーの両方で使う)
     hairWeights.ts          髪の形を保つ錘の見つけ方
     pmxMaterials.ts         .pmx の材質の書き換え
@@ -214,14 +215,15 @@ src/
     view/                   CameraController (カメラ・レイ・視点)・InputController (マウス・タッチ)
     anim/                   Clock (タイムライン)・Keyframes (キーフレーム)・Music (曲)
     mmd/                    MmdLoader・Physics・Stage・Motion (ダンスとカメラ)・Posing (表情とボーン)・VpdIO
-    materials/              MaterialLibrary (マテリアルと画像・three.js の材質への反映)・fromMmd (MMD の材質の変換)・toPmx (.pmx の値に戻す)
-    project/                ProjectIO (プロジェクト .wgp の保存と読み込み)
+    materials/              MaterialLibrary (マテリアルと画像・three.js の材質への反映)・MaterialEditor (選んでいる物のマテリアルの編集)・fromMmd (MMD の材質の変換)・toPmx (.pmx の値に戻す)
+    project/                ProjectIO (場面とプロジェクトの行き来・保存と開く操作)・format (.wgp / .wgpj の形式)
+    io/                     download (ファイルとしてダウンロードさせる)
     output/                 RenderOutput (画像・動画のレンダリング)
     remote/                 RemoteLink (MCP サーバーとのつながり)・commands (外から使える操作)
   ui/                       React の画面
     App.tsx, EngineContext.tsx, styles.css
-    components/             TopBar, Menu, ViewportArea, Gizmo, Timeline, BSlider, NumField, Overlays, sidebar/
-    components/controls/    アプリ独自の入力部品 (BSelect・BCheck・ColorPicker・Popover)
+    components/             TopBar, Menu, ViewportArea, Gizmo, Timeline, BSlider, NumField, Overlays (お知らせ・パレット), Dialogs (レンダリング・ファイルを探す窓), sidebar/
+    components/controls/    アプリ独自の入力部品 (BSelect・BCheck・BProgress・ColorPicker・Popover)
     hooks/useShortcuts.ts   キーボードショートカット
 mcp/                        MCP サーバー (server: ツール・bridge: ページとの WebSocket・files: ファイルの読み書き・appServer: dist/ を配る)
 e2e/                        e2e テスト (Playwright) と、テスト用 PMX を組み立てる fixtures/pmx.ts

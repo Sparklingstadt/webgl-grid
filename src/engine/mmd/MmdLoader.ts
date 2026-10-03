@@ -1,6 +1,13 @@
 import * as THREE from 'three';
+import { errorText } from '../../core/errors';
+import { convertMmdMesh } from '../materials/fromMmd';
+import type { MaterialLibrary } from '../materials/MaterialLibrary';
 import type { Any } from '../types';
 import type { UiChannel } from '../UiChannel';
+import { Stage } from './Stage';
+
+// 読み込んだモデル: メッシュ・マテリアルスロット (マテリアルの id)・ステージか
+export interface LoadedModel { mesh: Any; slots: string[]; isStage: boolean }
 
 // MMDLoader は大きいので、初めて使うときに読み込む
 let mmdLoaderModule: Promise<typeof import('three/examples/jsm/loaders/MMDLoader.js')> | null = null;
@@ -11,11 +18,18 @@ const fileKey = (path: string) => decodeURIComponent(path).replace(/\\/g, '/').s
 
 // --- MMD モデル (.pmx) をメッシュにする ---
 // .pmx とテクスチャ画像をまとめて選んでもらい、ブラウザの中だけで読む (どこにも送らない)。
-// 置く場所 (人物かステージか) は呼ぶ側が決める
+// 材質はプリンシプル BSDF のマテリアルに変換する。置く場所 (人物かステージか) は呼ぶ側が決める
 export class MmdLoader {
-  constructor(private ui: UiChannel, private onProgress: () => void) {}
+  constructor(private ui: UiChannel, private library: MaterialLibrary, private onProgress: () => void) {}
 
-  async loadPmx(files: File[]): Promise<Any | null> {
+  async load(files: File[]): Promise<LoadedModel | null> {
+    const mesh = await this.loadMesh(files);
+    if (!mesh) return null;
+    const slots = convertMmdMesh(mesh, this.library);
+    return { mesh, slots, isStage: Stage.isStage(mesh, mesh.userData.fileName) };
+  }
+
+  private async loadMesh(files: File[]): Promise<Any | null> {
     const pmx = files.find(f => /\.pmx$/i.test(f.name));
     if (!pmx) { this.ui.toast('.pmx ファイルが選ばれていません。モデルの .pmx とテクスチャ画像をまとめて選んでください。'); return null; }
     this.ui.toast(`${pmx.name} を読み込み中…`, 0);
@@ -66,7 +80,7 @@ export class MmdLoader {
       return mesh;
     } catch (err) {
       console.error(err);
-      this.ui.toast(`${pmx.name} を読み込めませんでした: ${(err as Error)?.message ?? err}`, 8000);
+      this.ui.toast(`${pmx.name} を読み込めませんでした: ${errorText(err)}`, 8000);
       return null;
     }
   }

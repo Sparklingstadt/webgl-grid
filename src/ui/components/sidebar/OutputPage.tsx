@@ -22,12 +22,12 @@ export function OutputPage() {
         <div className="prop">
           <label htmlFor="out-preset">プリセット</label>
           <BSelect id="out-preset" label="解像度のプリセット" value={preset} placeholder="カスタム"
-                   onChange={i => { const p = RESOLUTION_PRESETS[i]; if (p) engine.setOutput({ width: p.width, height: p.height }); }}
+                   onChange={i => { const p = RESOLUTION_PRESETS[i]; if (p) engine.output.set({ width: p.width, height: p.height }); }}
                    options={RESOLUTION_PRESETS.map((p, i) => ({ value: i, label: p.name }))} />
           <label htmlFor="out-w">解像度 X</label>
-          <NumField id="out-w" label="解像度 X" value={o.width} min={16} step={2} onCommit={v => engine.setOutput({ width: v })} />
+          <NumField id="out-w" label="解像度 X" value={o.width} min={16} step={2} onCommit={v => engine.output.set({ width: v })} />
           <label htmlFor="out-h">Y</label>
-          <NumField id="out-h" label="解像度 Y" value={o.height} min={16} step={2} onCommit={v => engine.setOutput({ height: v })} />
+          <NumField id="out-h" label="解像度 Y" value={o.height} min={16} step={2} onCommit={v => engine.output.set({ height: v })} />
         </div>
         <div className="note">いまの視点から、この大きさで描きます。縦の見える範囲はビューポートと同じで、縦横比が違うと横の範囲が変わります。地面のグリッドと選択の輪郭線は描きません</div>
       </Panel>
@@ -44,18 +44,18 @@ export function OutputPage() {
       <Panel title="動画">
         <div className="prop">
           <label htmlFor="out-format">形式</label>
-          <BSelect<VideoFormat> id="out-format" label="動画の形式" value={o.format} onChange={format => engine.setOutput({ format })}
+          <BSelect<VideoFormat> id="out-format" label="動画の形式" value={o.format} onChange={format => engine.output.set({ format })}
                    options={VIDEO_FORMATS.map(f => ({ value: f.key, label: f.name }))} />
           <label htmlFor="out-quality">画質</label>
-          <BSelect<VideoQuality> id="out-quality" label="動画の画質" value={o.quality} onChange={quality => engine.setOutput({ quality })}
+          <BSelect<VideoQuality> id="out-quality" label="動画の画質" value={o.quality} onChange={quality => engine.output.set({ quality })}
                    options={VIDEO_QUALITIES.map(q => ({ value: q.key, label: q.name }))} />
         </div>
-        <BCheck checked={o.audio} onChange={audio => engine.setOutput({ audio })}>曲を入れる{hasMusic ? '' : ' (曲を読み込んでいません)'}</BCheck>
+        <BCheck checked={o.audio} onChange={audio => engine.output.set({ audio })}>曲を入れる{hasMusic ? '' : ' (曲を読み込んでいません)'}</BCheck>
         <div className="note">ブラウザの中で 1 フレームずつ描いて圧縮するので、重い場面でもコマ落ちしません。MP4 を作れないブラウザでは WebM を選んでください</div>
       </Panel>
       <div className="row">
-        <button type="button" className="bbtn" disabled={busy} onClick={() => engine.renderImage()}>画像をレンダリング (F12)</button>
-        <button type="button" className="bbtn" disabled={busy} onClick={() => engine.renderAnimation()}>アニメーションをレンダリング (Ctrl F12)</button>
+        <button type="button" className="bbtn" disabled={busy} onClick={() => engine.output.renderImage()}>画像をレンダリング (F12)</button>
+        <button type="button" className="bbtn" disabled={busy} onClick={() => engine.output.renderAnimation()}>アニメーションをレンダリング (Ctrl F12)</button>
       </div>
     </>
   );

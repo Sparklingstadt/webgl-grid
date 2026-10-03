@@ -57,7 +57,7 @@ test('レンダー > アニメーションをレンダリング で、開始〜�
     engine.clock.setRange(0, 14);
     engine.clock.seekFrame(7);
     const ok = await VideoEncoder.isConfigSupported({ codec: 'avc1.42001f', width: 320, height: 240 }).then(r => !!r.supported, () => false);
-    engine.setOutput({ width: 320, height: 240, format: ok ? 'mp4' : 'webm' });
+    engine.output.set({ width: 320, height: 240, format: ok ? 'mp4' : 'webm' });
     return ok ? 'mp4' : 'webm';
   });
   await page.getByRole('button', { name: 'レンダー' }).click();

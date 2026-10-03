@@ -67,9 +67,9 @@ describe('物のマテリアルスロット (Engine)', () => {
     const e = new Engine();
     const cube = e.world.objects[0];
     e.select(cube);
-    expect(e.slots()).toMatchObject([{ index: 0, name: 'マテリアル' }]);
+    expect(e.materials.slots()).toMatchObject([{ index: 0, name: 'マテリアル' }]);
     e.setObjColor(3);
-    expect(surfaceShader(e.activeMaterial()!.tree)!.values.baseColor).toEqual([0.18, 0.32, 0.85]);
+    expect(surfaceShader(e.materials.active()!.tree)!.values.baseColor).toEqual([0.18, 0.32, 0.85]);
   });
 
   it('新規・複製・外す・ほかのマテリアルを入れる (共有)', () => {
@@ -77,26 +77,26 @@ describe('物のマテリアルスロット (Engine)', () => {
     e.addShape(0);
     const [a, b] = e.world.objects;
     e.select(a);
-    const shared = e.activeMaterial()!;
-    e.renameMaterial('共有');
+    const shared = e.materials.active()!;
+    e.materials.rename('共有');
     e.select(b);
-    e.assignMaterial(shared.id);
+    e.materials.assign(shared.id);
     expect(e.library.users(shared.id)).toBe(2);
     expect((b.mesh!.material as THREE.Material).userData.materialId).toBe(shared.id);
-    e.duplicateMaterial();
-    expect(e.activeMaterial()!.name).toBe('共有.001');
+    e.materials.duplicate();
+    expect(e.materials.active()!.name).toBe('共有.001');
     expect(e.library.users(shared.id)).toBe(1);
-    e.assignMaterial(null);
-    expect(e.slots()[0].id).toBeNull();
-    e.newMaterial();
-    expect(e.activeMaterial()!.name).toMatch(/^マテリアル/);
+    e.materials.assign(null);
+    expect(e.materials.slots()[0].id).toBeNull();
+    e.materials.create();
+    expect(e.materials.active()!.name).toMatch(/^マテリアル/);
   });
 
   it('物を消すと材質を返し、選択中はオレンジの輪郭線を付ける', () => {
     const e = new Engine();
     const cube = e.world.objects[0];
     e.select(cube);
-    e.renameMaterial('残す'); // 手を入れたので、使う物がなくなっても残る
+    e.materials.rename('残す'); // 手を入れたので、使う物がなくなっても残る
     const id = cube.slots[0]!;
     e.selection.syncOutlines(e.world.objects);
     expect((cube.mesh!.material as THREE.Material).userData.outlineParameters).toMatchObject({ visible: true, color: [1, 0.35, 0.02] });

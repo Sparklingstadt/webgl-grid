@@ -1,3 +1,4 @@
+import { errorText } from '../../core/errors';
 import { REMOTE_PROTOCOL, type RemoteHello, type RemoteRequest, type RemoteResponse } from '../../core/remote';
 import type { Engine } from '../Engine';
 import { runCommand } from './commands';
@@ -64,7 +65,7 @@ export class RemoteLink {
     try {
       res = { id: req.id, result: (await runCommand(this.engine, req.method, req.params)) ?? null };
     } catch (err) {
-      res = { id: req.id, error: (err as Error)?.message ?? String(err) };
+      res = { id: req.id, error: errorText(err) };
     }
     if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(res));
   }

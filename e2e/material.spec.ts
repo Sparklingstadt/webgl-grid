@@ -5,7 +5,7 @@ import { choose, loadTestModel, open, screenPosOf, setColor, type Win } from './
 
 // マテリアル (Blender と同じ仕組み): スロット・マテリアルの共有・プリンシプル BSDF・シェーダーエディター・.pmx の書き出し
 const active = (page: Page) => page.evaluate(() => {
-  const m = (window as Win).engine.activeMaterial();
+  const m = (window as Win).engine.materials.active();
   if (!m) return null;
   return { id: m.id, name: m.name, nodes: m.tree.nodes.map((n: { type: string }) => n.type),
            links: m.tree.links.map((l: { from: { socket: string }; to: { socket: string } }) => `${l.from.socket}->${l.to.socket}`) };
@@ -28,14 +28,14 @@ test('形のマテリアル: 名前・ベースカラー・新規・ほかの物
   await setColor(page, 'ベースカラー', '#ff0000');
   expect(await page.evaluate(() => {
     const { engine } = window as Win;
-    return engine.surfaceShader().values.baseColor.map((v: number) => +v.toFixed(3));
+    return engine.materials.surfaceShader().values.baseColor.map((v: number) => +v.toFixed(3));
   })).toEqual([1, 0, 0]);
   // 立方体をもう 1 つ置いて、同じマテリアルを入れる (共有)
   await page.getByRole('button', { name: '追加' }).click();
   await page.getByRole('menuitem', { name: '立方体' }).click();
   await choose(page, 'スロットのマテリアル', '木');
   await expect(page.getByText('ほかの物とも共有しています')).toBeVisible();
-  expect(await page.evaluate(() => { const { engine } = window as Win; return engine.library.users(engine.activeMaterial().id); })).toBe(2);
+  expect(await page.evaluate(() => { const { engine } = window as Win; return engine.library.users(engine.materials.active().id); })).toBe(2);
   // 新規: 新しいマテリアルに替わり、木は 1 つの物だけに戻る
   await page.getByRole('button', { name: '新規', exact: true }).click();
   expect((await active(page))!.name).toMatch(/^マテリアル/);
