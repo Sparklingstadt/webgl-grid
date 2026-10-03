@@ -388,7 +388,21 @@ function rayPlane({ ro, rd }, h) {
 }
 
 let drag = null;
-const LONG_PRESS_MS = 400; // スマホで立方体を掴むまでの長押し時間
+const LONG_PRESS_MS = 400; // スマホで立方体を掴む・置くまでの長押し時間
+// 長押しが成立したことを振動で知らせる (ブラウザは、まだ一度も操作されていないページからの振動を拒否する)
+const buzz = () => { if (navigator.userActivation?.hasBeenActive ?? true) navigator.vibrate?.(15); };
+// 指定した地面の位置に立方体を置く。ほかの立方体と重なればその上に積む。少し上から落として置く
+function placeBox(x, z) {
+  if (boxes.length >= MAX_BOXES) return false;
+  const b = makeBox(x, z, nextColor());
+  boxes.push(b);
+  settle();
+  b.py = b.y + 1.5;
+  b.vy = 0;
+  startFall();
+  updateAddButton();
+  return true;
+}
 const pointers = new Map(); // 画面に触れている指 (マウス) の位置
 
 // b とその上に載っている立方体を、b を軸にまとめて回すための情報
@@ -457,12 +471,25 @@ canvas.addEventListener('pointerdown', e => {
           d.pending = null;
           d.grabbed = true;
           grab();
-          // ブラウザは、まだ一度も操作されていないページからの振動を拒否する
-          if (navigator.userActivation?.hasBeenActive ?? true) navigator.vibrate?.(15);
+          buzz();
         }, LONG_PRESS_MS),
       };
     } else {
       grab();
+    }
+  } else if (e.pointerType === 'touch' && !e.shiftKey) {
+    // スマホで何もない地面を長押ししたら、そこに立方体を置く
+    const ground = rayPlane(ray, 0);
+    if (ground) {
+      const d = drag;
+      d.pending = {
+        timer: setTimeout(() => {
+          d.pending = null;
+          d.grabbed = true; // 離したときにタップ扱いにしない
+          d.placed = true;  // 置いたあとは、その指を離すまで何もしない
+          if (placeBox(ground[0], ground[1])) buzz();
+        }, LONG_PRESS_MS),
+      };
     }
   }
   canvas.classList.add('dragging');
@@ -492,7 +519,7 @@ canvas.addEventListener('pointermove', e => {
     drag.pinch.last = d;
     return;
   }
-  if (e.pointerId !== drag.id) return; // 2本目の指の動きは、ひねり・ピンチ以外では使わない
+  if (e.pointerId !== drag.id || drag.placed) return; // 2本目の指の動きは、ひねり・ピンチ以外では使わない
   if (drag.pending) {
     // 長押しになる前に指が動いたら、立方体は掴まずにカメラの操作にする
     if (Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) <= 10) return;
