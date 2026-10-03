@@ -62,14 +62,15 @@ describe('MoGraph エフェクタ', () => {
   it('Cinema 4D が必要: 一緒に最初から有効。Cinema 4D を切ると一緒に切れ、有効にすると Cinema 4D も有効になる', async () => {
     const { e, c4d } = await engineWithC4d();
     expect(e.addons.isEnabled('mograph')).toBe(true);
-    expect(c4d.effectors.list().map(d => d.key)).toEqual(['plain', 'step', 'random', 'formula', 'time', 'target', 'delay', 'shader', 'pushapart', 'volume', 'inheritance', 'sound']);
+    expect(c4d.effectors.list().filter(d => EFFECTORS.includes(d) || EFFECTORS.some(x => x.key === d.key)).map(d => d.key)).toEqual(['plain', 'step', 'random', 'formula', 'time', 'target', 'delay', 'shader', 'pushapart', 'volume', 'inheritance', 'sound']);
+    expect(c4d.effectors.has('spline')).toBe(true); // (MoGraph スプラインのアドオンが足す)
     // エフェクタを切っても、クローナーの設定は残る (かからないだけ)
     e.select(e.world.objects[0]);
     c4d.setCloner({ mode: 'linear', count: 2, effectors: [eff('plain', { position: [0, 2, 0] })] });
     const y = () => e.world.objects[0].node.getObjectByName('__clones')!.children[0].position.y;
     expect(y()).toBe(2);
     e.addons.disable('mograph');
-    expect(c4d.effectors.list()).toEqual([]);
+    expect(c4d.effectors.list().map(d => d.key)).toEqual(['spline']); // (MoGraph スプラインのものだけ残る)
     expect(y()).toBe(0);
     expect(c4d.cloner(e.world.objects[0])!.effectors).toHaveLength(1);
     await e.addons.enable('mograph');
