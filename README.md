@@ -93,8 +93,10 @@ Cinema 4D の MoGraph を、組み込みのアドオンで再現しています�
 | **MoGraph 配置** | クローナーの並べ方: ハニカム・オブジェクト |
 | **MoGraph 分割** | ボロノイ分割・PolyFX |
 | **MoGraph テキスト (MoText)** | 厚みのある文字を、文字・単語・行ごとにエフェクタで動かす |
+| **MoGraph スプライン (MoSpline)** | 伸びる曲線 (シンプル・タートル) と、スプラインに並べるクローナー・スプライン・エフェクタ |
+| **MoGraph トレーサー** | 動く物・クローン・ボーンの通った跡 (経路) と、いまの位置どうしの連結 |
 
-MoGraph エフェクタ・フィールド・配置・分割・テキストは Cinema 4D アドオンが必要です（有効にすると一緒に有効になり、Cinema 4D を切ると一緒に切れます）。トレーサー・MoSpline・MoExtrude・キャッシュはまだありません。
+MoGraph のアドオンは、どれも Cinema 4D アドオンが必要です（有効にすると一緒に有効になり、Cinema 4D を切ると一緒に切れます）。MoExtrude・キャッシュはまだありません。
 
 ### クローナー
 
@@ -140,6 +142,24 @@ MoGraph エフェクタ・フィールド・配置・分割・テキストは Ci
 - **ボロノイ分割**: 形の中のランダムな点（数・シード・散らばり: 一様・中心に寄せる・外に寄せる）で、破片に分ける。凸な形だけ（トーラス・チューブは PolyFX で）
 - **PolyFX**: 面（三角形）ごとの破片にする
 - すき間で破片を縮められます。破片は 1 つのメッシュにまとめて描くので、多くても重くなりません（200 個まで）。デフォーマで変えた形も分けます
+
+### MoSpline（MoGraph スプライン）
+
+「追加 > MoSpline」で置くか、形を選んで「MoSpline にする」と、伸びる曲線を管にして置きます（Cinema 4D の MoSpline とスイープ）。
+
+- **シンプル**: 長さ・分割数・曲がり・ねじれで、くるくる巻いた線
+- **タートル**: L-システム（前提と規則を書き換え、亀が歩いた跡）。見本: 木・草・立体の木・コッホ曲線。`F` 進む・`+` `-` 曲がる・`&` `^` 上下・`\` `/` ひねる・`[` `]` 枝
+- 始め・終わり（見せる範囲）・**成長**（時刻に合わせて伸びる）・太さ（始めと先。0 で線）
+- クローナーの並べ方 **スプライン**（MoSpline・トレーサーの曲線にそって並べる）と、**スプライン・エフェクタ**（クローンを曲線の上へ）も足します
+
+### トレーサー（MoGraph トレーサー）
+
+物を選んで「トレーサー」の「跡を残す」にチェックを入れると、通った跡を線か管にして残します（レンダリングにも写ります）。
+
+- **経路**: フレームごとの位置を覚えて、決めたフレーム数だけ跡を残す（再生・動画のレンダリングで伸びる。別のフレームへ飛ぶと取り直す）。古い方ほど細い
+- **連結**: いまの位置どうしを順につなぐ（閉じることもできる）
+- 跡を取るもの: 物（クローナーならクローンごと・MoText なら文字ごと）か、MMD モデルの**ボーン**（名前で。例: `右手首、左手首`）
+- 跡はスプラインとして、スプラインに並べるクローナーなどでも使えます
 
 ### テキスト（MoGraph テキスト・MoText）
 
@@ -296,7 +316,7 @@ MCP クライアント ⇄ (stdio) ⇄ MCP サーバー (mcp/server.ts) ⇄ (Web
 | --- | --- |
 | つながり | `app_status`、`open_app` |
 | 場面を見る | `get_state`（物の一覧と id・位置・マテリアル、タイムライン、視点、効果、出力）、`screenshot`（ビューポートの画像） |
-| 物 | `add_shape`、`select`、`set_object`（位置・向き・色）、`delete_object`、`reset_scene`、`set_cloner`・`bake_cloner`（クローナー）、`set_deformers`（デフォーマ）、`set_fracture`（分割）、`set_motext`（MoText。この 5 つは MoGraph のアドオンの命令） |
+| 物 | `add_shape`、`select`、`set_object`（位置・向き・色）、`delete_object`、`reset_scene`、`set_cloner`・`bake_cloner`（クローナー）、`set_deformers`（デフォーマ）、`set_fracture`（分割）、`set_motext`（MoText。この 5 つは MoGraph のアドオンの命令）。MoSpline・トレーサーは `run_command`（`mograph-spline.set`・`mograph-tracer.set`） |
 | ファイル | `load_files`（手元のパスの .pmx・.vmd・.vpd・曲。.pmx を渡すと同じフォルダのテクスチャも送る） |
 | アニメーション | `timeline`（フレーム・範囲・再生）、`insert_keyframe`、`delete_keyframe`、`list_bones`、`set_bone`、`reset_pose`、`list_morphs`、`set_morph`、`set_hair_hang` |
 | 見た目 | `set_camera`、`list_materials`、`set_material`（プリンシプル BSDF の値・設定・輪郭線・名前）、`set_effect`、`set_scene`（空・床・太陽）、`add_light`・`set_light`（ライト） |
@@ -402,11 +422,13 @@ src/
     hooks/useShortcuts.ts   キーボードショートカット
     components/addons/      アドオンのパネル・メニューの項目・アドオンマネージャー
   addons/                   組み込みのアドオン (ターンテーブル・ふわふわ・ランダムに散らす)
-    cinema4d/               Cinema 4D アドオン: cloner (並べ方)・effectors (エフェクタ・フィールド・並べ方の登録口と、かける順・MoGraph 選択)・noise・MoGraphFields (エフェクタの欄)・deform (変形と法線)・Cloners・Deformers (three.js に当てる)・Cinema4d (設定と命令)・パネル
+    cinema4d/               Cinema 4D アドオン: splines (スプラインと管 (スイープ))・cloner (並べ方)・effectors (エフェクタ・フィールド・並べ方の登録口と、かける順・MoGraph 選択)・noise・MoGraphFields (エフェクタの欄)・deform (変形と法線)・Cloners・Deformers (three.js に当てる)・Cinema4d (設定と命令)・パネル
     mograph/                MoGraph エフェクタ (Cinema 4D アドオンが必要): エフェクタの種類・expr (フォーミュラの式を読む)・sound (曲の大きさを調べる)
     mograph-fields/         MoGraph フィールド: フィールドの種類と、ビューポートの枠
     mograph-modes/          MoGraph 配置: クローナーの並べ方 (ハニカム・オブジェクト)
     mograph-fracture/       MoGraph 分割: voronoi (形を切る計算)・Fracture (破片のメッシュ)・パネル
+    mograph-spline/         MoGraph スプライン (MoSpline): generate (シンプル・L-システムのタートル)・MoSpline・useSpline (スプラインに並べる・スプライン・エフェクタ)
+    mograph-tracer/         MoGraph トレーサー: Tracer (跡を覚えて線・管にする)・パネル
     mograph-text/           MoGraph テキスト (MoText): contours (文字の輪郭をなぞる)・glyphs (フォントで描いて厚みを付ける)・layout (並べ方)・MoText・パネル
 src/vendor/three-mmd/        three.js r171 から取り込んだ MMD 用の部品 (MMDLoader・MMDAnimationHelper・MMDPhysics・CCDIKSolver など)
 public/libs/                物理演算の Ammo.js (WebAssembly)
