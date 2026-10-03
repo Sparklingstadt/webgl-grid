@@ -1,5 +1,6 @@
 import { channelKeys, keyFrames, type Channel, type Curve } from '../core/animation';
 import { MAX_CLONES, clonerLayout, normalizeCloner, type ClonerSettings } from '../core/cloner';
+import { normalizeDeformers, type Deformer } from '../core/deform';
 import { FPS, MAX_BOXES, SHAPE_NAMES } from '../core/constants';
 import { errorText } from '../core/errors';
 import { patchPmxMaterials } from '../core/pmxMaterials';
@@ -30,6 +31,7 @@ import { UiChannel } from './UiChannel';
 import { CameraController } from './view/CameraController';
 import { InputController } from './view/InputController';
 import { Cloners } from './world/Cloners';
+import { Deformers } from './world/Deformers';
 import { ColorPicker } from './world/ColorPicker';
 import { Selection } from './world/Selection';
 import { World } from './world/World';
@@ -51,6 +53,7 @@ export class Engine {
   readonly world = new World(this.graph, this.viewport, this.ui, this.library);
   readonly selection = new Selection(this.world, this.ui);
   readonly cloners = new Cloners(this.world, this.viewport, () => this.clock.frame);
+  readonly deformers = new Deformers(this.cloners, this.viewport);
   readonly materials = new MaterialEditor(this.library, this.world, this.selection, this.ui);
   readonly picker = new ColorPicker(this.world, this.viewport, this.ui);
   readonly camera = new CameraController(this.graph, this.viewport, this.ui, this.world);
@@ -67,7 +70,7 @@ export class Engine {
   readonly effects = new Effects(this.viewport, this.ui, () => this.camera.focusPoint());
   readonly loader = new MmdLoader(this.ui, this.library, () => this.viewport.requestDraw());
   readonly vpd = new VpdIO(this.posing, this.viewport, this.ui);
-  readonly history = new History(this.world, this.library, this.physics, this.motion, this.posing, this.keyframes, this.clock, this.selection, this.viewport, this.ui, this.cloners);
+  readonly history = new History(this.world, this.library, this.physics, this.motion, this.posing, this.keyframes, this.clock, this.selection, this.viewport, this.ui, this.cloners, this.deformers);
   readonly project = new ProjectIO(this);
   readonly autosave = new Autosave(this.project, this.history, this.ui);
   readonly remote = new RemoteLink(this);
@@ -184,6 +187,13 @@ export class Engine {
     this.cloners.set(o, next);
     this.selection.publish();
   }
+  // 選んでいる物のデフォーマを入れ替える (空でやめる)
+  setDeformers(list: Deformer[]) {
+    const o = this.selection.current;
+    if (!o) return;
+    this.deformers.set(o, normalizeDeformers(list));
+    this.selection.publish();
+  }
   // クローンを、1 つずつの物にする (Cinema 4D の「現在の状態をオブジェクト化」)。形だけ。マテリアルは元の物と共有する
   bakeCloner() {
     const o = this.selection.current;
@@ -198,7 +208,10 @@ export class Engine {
     this.cloners.set(o, null);
     layout.forEach((p, i) => {
       const obj = i === 0 ? o : this.world.addShape(o.s, 0, 0, o.c);
-      if (i > 0) this.world.setSlot(obj, 0, slot);
+      if (i > 0) {
+        this.world.setSlot(obj, 0, slot);
+        if (o.deformers) this.deformers.set(obj, structuredClone(o.deformers)); // デフォーマも同じに
+      }
       [obj.x, obj.z] = at(p);
       obj.r = r + p.ry;
     });

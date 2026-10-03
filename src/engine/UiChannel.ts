@@ -1,4 +1,5 @@
 import type { ClonerSettings } from '../core/cloner';
+import type { Deformer } from '../core/deform';
 import { TL_DEFAULT_END } from '../core/constants';
 import { OUTPUT_DEFAULT, type OutputSettings } from '../core/output';
 import { createStore, type Store } from '../core/store';
@@ -10,6 +11,7 @@ export interface SelInfo {
   id: number; kind: 'shape' | 'model'; name: string; c: number;
   x: number; y: number; z: number; r: number; animated: boolean;
   cloner: ClonerSettings | null; // クローナーの設定 (なければ普通の物)
+  deformers: Deformer[] | null;  // デフォーマ
 }
 export interface UiState {
   mode: 'orbit' | 'pan';

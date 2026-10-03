@@ -3,6 +3,7 @@ import { useEngine, useUi } from '../../EngineContext';
 import { BCheck } from '../controls/BCheck';
 import { NumField } from '../NumField';
 import { ClonerPanel } from './ClonerPanel';
+import { DeformerPanel } from './DeformerPanel';
 import { Empty, Panel } from './Panel';
 
 // --- オブジェクト: 選んでいる物の名前・位置・向き・色 ---
@@ -44,6 +45,7 @@ export function ObjectPage() {
           <div className="note">{sel.animated ? 'VMD モーションを再生中です。タイムラインで動かせます。' : 'モーションはありません。ファイル > MMD を読み込む… で .vmd を選ぶと付きます。'}</div>
         </Panel>
       )}
+      <DeformerPanel sel={sel} />
       <ClonerPanel sel={sel} />
       <button type="button" className="bbtn" onClick={() => engine.deleteSelected()}>削除 (X)</button>
     </>

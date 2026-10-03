@@ -122,7 +122,12 @@ export class World implements System {
     this.viewport.requestDraw();
   }
   // 消した物の形状を片付ける
-  dispose(obj: Obj) { if (obj.s === 3) disposeModel(obj.node); }
+  dispose(obj: Obj) {
+    const mesh: THREE.Mesh | undefined = obj.s === 3 ? obj.model : obj.mesh;
+    const base: THREE.BufferGeometry | undefined = mesh?.userData.baseGeometry; // デフォーマで変形する前の形
+    if (obj.s === 3) { disposeModel(obj.node); base?.dispose(); }
+    else if (base) mesh!.geometry.dispose(); // 形は共有なので、変形した写しだけ捨てる
+  }
   // 消した物を、objects の index 番目に置き直す (元に戻すとき)。材質はスロットのマテリアルから作り直す
   restore(obj: Obj, index: number) {
     if (this.has(obj)) return;

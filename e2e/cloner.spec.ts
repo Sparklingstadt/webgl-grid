@@ -124,3 +124,22 @@ test('エフェクタ: ステップで 1 つずつ大きく、ディレイで MM
   expect(Math.abs(spread[1])).toBeGreaterThan(Math.abs(spread[2]));
   expect(errors).toEqual([]);
 });
+
+test('デフォーマ: サイドバーで足すと形が変わり、外すと戻る', async ({ page }) => {
+  const errors = await open(page);
+  const p = await screenPosOf(page, 0);
+  await page.mouse.click(p.x, p.y);
+  const topWidth = () => page.evaluate(() => {
+    const g = (window as Win).engine.world.objects[0].mesh.geometry;
+    const pos = g.attributes.position;
+    let w = 0;
+    for (let i = 0; i < pos.count; i++) if (pos.getY(i) > 0.99) w = Math.max(w, Math.abs(pos.getX(i)));
+    return +w.toFixed(2);
+  });
+  expect(await topWidth()).toBe(0.5);
+  await page.getByRole('button', { name: '+ テーパー' }).click(); // 既定: -0.5 (上が半分)
+  await expect.poll(topWidth).toBe(0.25);
+  await page.getByRole('button', { name: 'テーパーを外す' }).click();
+  await expect.poll(topWidth).toBe(0.5);
+  expect(errors).toEqual([]);
+});

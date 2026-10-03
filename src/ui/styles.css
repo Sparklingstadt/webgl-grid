@@ -341,3 +341,5 @@ details.sub > summary { cursor: pointer; color: var(--dim); font-size: 11px; pad
 .effector-title { display: flex; align-items: center; justify-content: space-between; }
 .effectors > .row { display: flex; flex-wrap: wrap; gap: 3px; }
 .effectors > .row .bbtn { flex: 1 1 auto; }
+.deformer-add { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
+.deformer-add .bbtn { flex: 1 1 auto; }

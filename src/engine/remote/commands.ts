@@ -65,6 +65,7 @@ export function sceneState(e: Engine) {
         : { color: PALETTE_NAMES[o.c] }),
       materials: o.slots.map(id => (id ? lib.materials.get(id)?.name ?? null : null)),
       cloner: o.cloner ?? null,
+      deformers: o.deformers ?? [],
     })),
     stage: e.stage.model?.name ?? null,
     music: e.music.file?.name ?? null,
@@ -133,6 +134,13 @@ export const COMMANDS: Record<string, Command> = {
     const { id: _id, off, ...patch } = p ?? {};
     e.setCloner(off ? null : patch);
     return { id: obj.id, cloner: obj.cloner ?? null, clones: e.cloners.count(obj) };
+  },
+  // デフォーマ: 並びごと入れ替える (空でやめる)
+  set_deformers: (e, p) => {
+    const obj = objOf(e, p?.id);
+    e.select(obj);
+    e.setDeformers(p?.deformers ?? []);
+    return { id: obj.id, deformers: obj.deformers ?? [] };
   },
   bake_cloner: (e, p) => {
     const obj = objOf(e, p?.id);

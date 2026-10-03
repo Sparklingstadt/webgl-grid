@@ -29,6 +29,7 @@ core/    純粋な計算とデータ (three.js の数学ライブラリは使っ
 | 物 | `World` | 置いた物の一覧・作成・削除・積み重ね・落下 (`System`)・マテリアルスロット | SceneGraph, Viewport, UiChannel, MaterialLibrary |
 | | `Selection` | 選択・選択中の輪郭線 | World, UiChannel |
 | | `Cloners` | クローナー: 物の node の子にクローンを並べ (`core/cloner.ts`)、描く前に材質と、MMD モデルなら骨・表情を元の物から写す | World, Viewport |
+| | `Deformers` | デフォーマ: 物の形の、位置と法線を変形した写しを作って差し替える (`core/deform.ts`)。元の形は `userData.baseGeometry` | Cloners, Viewport |
 | | `ColorPicker` | スマホの色のパレット | World, Viewport, UiChannel |
 | 視点と入力 | `CameraController` | オービットカメラ・レイ・決まった向き・カメラを外から動かすもの (`CameraOverride`) | SceneGraph, Viewport, UiChannel, World |
 | | `InputController` | ビューポートのマウス・タッチ操作 | 上のものと、`InputActions` (Engine が渡す) |

@@ -96,6 +96,13 @@ forward('set_cloner', 'クローナー (Cinema 4D のクローナー): 物を直
     scale: z.number().positive().optional(), frames: z.number().min(0).optional(),
   })).optional().describe('エフェクタ (上から順にかける。渡すと並びごと入れ替える)。plain: 全部に同じだけ / step: 最初の 0 から最後の値まで / delay: MMD モデルのクローンを 1 つごとに frames フレーム遅らせる'),
 });
+forward('set_deformers', 'デフォーマ (Cinema 4D のデフォーマ): 物を曲げる・ねじる・細くする・ふくらませる。上から順にかける。並びごと入れ替える (空でやめる)。MMD モデルはボーンで動かす前の形にかける', {
+  id, deformers: z.array(z.object({
+    kind: z.enum(['bend', 'twist', 'taper', 'bulge']), enabled: z.boolean().optional(), axis: z.enum(['x', 'y', 'z']).optional(),
+    amount: z.number().optional().describe('ベンド・ツイスト: 角度 (度)、テーパー・バルジ: 強さ (0 でそのまま。テーパー -0.5 で上が半分)'),
+    directionDeg: z.number().optional().describe('ベンド: 曲げる向き (度)'),
+  })),
+});
 forward('bake_cloner', '形のクローナーのクローンを、1 つずつの物にする (Cinema 4D の「現在の状態をオブジェクト化」)', { id });
 forward('reset_scene', '最初の状態 (立方体 1 個) に戻す', {});
 

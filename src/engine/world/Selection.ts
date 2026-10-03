@@ -35,8 +35,8 @@ export class Selection {
     const prev = this.ui.state.sel;
     const name = nameOf(o);
     if (prev && prev.id === o.id && prev.x === o.x && prev.y === o.y && prev.z === o.z && prev.r === o.r &&
-        prev.c === o.c && prev.animated === !!o.animated && prev.name === name && prev.cloner === (o.cloner ?? null)) return;
-    this.ui.set({ sel: { id: o.id, kind: o.s === 3 ? 'model' : 'shape', name, c: o.c, x: o.x, y: o.y, z: o.z, r: o.r, animated: !!o.animated, cloner: o.cloner ?? null } });
+        prev.c === o.c && prev.animated === !!o.animated && prev.name === name && prev.cloner === (o.cloner ?? null) && prev.deformers === (o.deformers ?? null)) return;
+    this.ui.set({ sel: { id: o.id, kind: o.s === 3 ? 'model' : 'shape', name, c: o.c, x: o.x, y: o.y, z: o.z, r: o.r, animated: !!o.animated, cloner: o.cloner ?? null, deformers: o.deformers ?? null } });
   }
 
   // 描く前: 輪郭線 (OutlineEffect) の設定を、マテリアルの輪郭線 (outlineBase) から作る。
