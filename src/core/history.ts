@@ -12,6 +12,7 @@ export interface ObjState {
   morphs?: number[];
   anim?: AnimationJson | null;
   hairHang?: boolean | null;
+  ikOff?: number[];       // 切った IK (ターゲットのボーンの番号)
   motion?: string | null; // モーションのファイルの名前 (変わったかを見分けるため)
 }
 export interface SceneState { objects: ObjState[]; materials: unknown[]; range: [number, number]; data: Record<string, unknown> } // data: 場面の値
@@ -37,6 +38,7 @@ export function describeChange(prev: SceneState, next: SceneState, labels: Chang
   if (changed('pose')) return msg('ポーズ');
   if (changed('morphs')) return msg('表情');
   if (changed('hairHang')) return msg('髪を重力で垂らす');
+  if (changed('ikOff')) return msg('IK');
   if (changed('motion')) return msg('モーション');
   if (prev.range.join() !== next.range.join()) return msg('フレーム範囲');
   for (const [key, label] of labels.sceneData) if (differ(prev.data[key], next.data[key])) return label;

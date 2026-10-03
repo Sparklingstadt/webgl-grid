@@ -972,5 +972,6 @@ const dict: Dictionary = {
   "ステージ": "舞台",
   "ステージ: {name}": "舞台：{name}",
   "ステージを外す": "移除舞台",
+  "IK": "IK",
 };
 export default dict;

@@ -38,6 +38,7 @@ export interface SavedObject {
   anim?: AnimationJson | null; // キーフレーム (チャンネルごと。版 2 から)
   keys?: [number, { pose: Pose; morphs: number[] | null }][]; // 版 1 のキーフレーム (フレームごとのポーズ全体。開くときに変換する)
   hairHang?: boolean;
+  ikOff?: number[]; // 切った IK (ターゲットのボーンの番号)
   motion?: string | string[] | null; // 付けた .vmd (いくつかなら並び。まとめて 1 つの動きにする)
   boneSel?: number;
 }

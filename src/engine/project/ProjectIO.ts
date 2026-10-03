@@ -124,6 +124,7 @@ export class ProjectIO {
         morphs: inf ? Array.from(inf) : null,
         anim: isEmpty(o.anim) ? null : animationToJson(o.anim!),
         hairHang: e.physics.hairHang(o) ?? false,
+        ...(o.ikOff?.size ? { ikOff: [...o.ikOff].sort((a, b) => a - b) } : {}),
         motion: !o.motionFiles?.length ? null : o.motionFiles.length === 1 ? asset(o.motionFiles[0]) : o.motionFiles.map(asset),
         boneSel: o.boneSel,
       };
@@ -258,6 +259,7 @@ export class ProjectIO {
       m.anim = so.anim ? animationFromJson(so.anim) : so.keys?.length ? animationFromPoseKeys(so.keys) : null; // (版 1 は変換する)
       m.boneSel = so.boneSel;
       if (so.hairHang) e.physics.setHairHang(m, true);
+      if (so.ikOff?.length) m.ikOff = new Set(so.ikOff);
       e.posing.solve(m);
     });
 
@@ -270,6 +272,7 @@ export class ProjectIO {
       byMotion.set(key, { ids, targets: [...(byMotion.get(key)?.targets ?? []), obj] });
     });
     for (const { ids, targets } of byMotion.values()) { const fs = filesOf(ids); if (fs.length) await e.motion.load(fs, targets); }
+    for (const m of e.world.models) { e.posing.applyIkSwitch(m); void e.posing.solve(m); } // (切った IK は、モーションの再生でも切ったまま)
     const camFile = fileOf(data.cameraMotion);
     if (camFile) await e.motion.load([camFile], []);
     const song = fileOf(data.music);

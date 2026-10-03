@@ -147,6 +147,7 @@ export class History {
       if (!o.animated && inf) st.morphs = Array.from(inf).map((v, m) => (anim?.morphs.has(m) ? 0 : v));
       st.anim = isEmpty(anim) ? null : animationToJson(anim!);
       st.hairHang = this.physics.hairHang(o);
+      st.ikOff = [...(o.ikOff ?? [])].sort((a, b) => a - b);
       st.motion = o.motionFiles?.map(f => f.name).join('\0') || null;
       if (o.motionFiles?.length) motionFiles.set(o.id, o.motionFiles);
       return st;
@@ -200,6 +201,8 @@ export class History {
         const obj = world.find(st.id);
         if (!obj || !isModel(obj)) continue;
         if (st.hairHang !== undefined && st.hairHang !== null) this.physics.setHairHang(obj, st.hairHang);
+        obj.ikOff = new Set(st.ikOff ?? []);
+        this.posing.applyIkSwitch(obj);
         void this.posing.solve(obj);
       }
       this.keyframes.applyAll(this.clock.t, true);

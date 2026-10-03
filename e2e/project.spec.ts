@@ -120,6 +120,27 @@ test('体と表情に分かれた .vmd をまとめて付けたモデルも、�
   await expect.poll(motionOf, { timeout: 30_000 }).toEqual([['テスト.vmd', '表情.vmd'], true, true]);
 });
 
+test('IK のオン・オフは元に戻せ、保存して開き直しても切ったまま', async ({ page }) => {
+  test.setTimeout(60_000);
+  await open(page, { cube: false });
+  await loadTestModel(page);
+  const ikOff = () => page.evaluate(() => [...((window as Win).engine.world.models[0]?.ikOff ?? [])]);
+  await page.evaluate(() => { const { engine } = window as Win; engine.posing.setIkEnabled(engine.world.models[0], 1, false); engine.history.checkpoint(); });
+  expect(await ikOff()).toEqual([1]);
+  expect(await page.evaluate(() => (window as Win).engine.ui.state.history.labels.at(-1))).toBe('IK');
+  await page.keyboard.press('Control+z');
+  await expect.poll(ikOff).toEqual([]);
+  await page.keyboard.press('Control+Shift+z');
+  await expect.poll(ikOff).toEqual([1]);
+  await page.getByRole('button', { name: 'ファイル' }).click();
+  const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('menuitem', { name: 'プロジェクトを保存' }).click()]);
+  const bytes = await readFile((await download.path())!);
+  expect(JSON.parse(strFromU8(unzipSync(new Uint8Array(bytes))['project.json'])).objects[0].ikOff).toEqual([1]);
+  await open(page, { cube: false });
+  await page.locator('input[type=file][accept=".wgp,.wgpj"]').setInputFiles({ name: 'プロジェクト.wgp', mimeType: 'application/zip', buffer: bytes });
+  await expect.poll(ikOff, { timeout: 30_000 }).toEqual([1]);
+});
+
 test('プロジェクトでないファイルは開かず、今の場面はそのまま', async ({ page }) => {
   await open(page);
   await page.locator('input[type=file][accept=".wgp,.wgpj"]').setInputFiles({ name: 'ちがう.wgp', mimeType: 'application/octet-stream', buffer: Buffer.from('not a zip') });
