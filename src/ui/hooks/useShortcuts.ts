@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import type { Engine } from '../../engine';
+import { requestRename } from '../components/sidebar/Outliner';
 
 export type Area = 'view' | 'timeline' | 'shader' | null;
 
@@ -9,6 +10,7 @@ export function useShortcuts(engine: Engine, actions: {
   openAddMenu: () => void;
   closeMenus: () => boolean; // 開いていたメニューを閉じたら true
   toggleSide: () => void;
+  showSide: () => void; // サイドバーを開く (閉じていれば)
   openFiles: () => void;
   openProject: () => void;
   openAddons: () => void;
@@ -83,6 +85,18 @@ export function useShortcuts(engine: Engine, actions: {
           break;
         case 'KeyN':
           a.toggleSide();
+          break;
+        // 隠す (Blender と同じ): H 選んでいる物、Shift+H ほかの物、Alt+H 全部見せる
+        case 'KeyH':
+          if (engine.pose.active) break;
+          e.preventDefault();
+          if (e.altKey) engine.revealAll(); else engine.hideSelected(e.shiftKey);
+          break;
+        case 'F2':
+          e.preventDefault();
+          if (!engine.ui.state.sel) break;
+          a.showSide();
+          requestRename(); // (アウトライナーで名前を変える)
           break;
         case 'Home':
           e.preventDefault();

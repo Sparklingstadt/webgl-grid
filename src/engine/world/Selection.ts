@@ -62,4 +62,6 @@ export class Selection {
   }
 }
 
-export const nameOf = (o: Obj) => (isModel(o) ? (o.model.name || t('モデル')) : o.light ? lightName(o.light.type) : shapeName(o.s));
+// 物の名前: 付けた名前か、種類の名前 (モデルは .pmx の中の名前)
+export const kindName = (o: Obj) => (isModel(o) ? (o.model.name || t('モデル')) : o.light ? lightName(o.light.type) : shapeName(o.s));
+export const nameOf = (o: Obj) => o.name || kindName(o);

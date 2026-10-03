@@ -81,9 +81,12 @@ forward('add_shape', '形を置いて選ぶ。x, z を省くと画面の中央�
   color: z.union([z.number().int().min(0).max(7), z.string()]).optional().describe('0〜7 か色の名前 (黄土・赤・青緑・青・紫・緑・ピンク・灰)'),
 });
 forward('select', '物を選ぶ (id を省くと選択を解除)', { id });
-forward('set_object', '物の位置・向き・色を変える (重なる位置なら上に積まれる)', {
+forward('set_object', '物の位置・向き・色・名前・表示を変える (重なる位置なら上に積まれる)', {
   id, x: z.number().optional(), z: z.number().optional(), rotationDeg: z.number().optional().describe('縦軸まわりの回転 (度)'),
   color: z.union([z.number().int().min(0).max(7), z.string()]).optional(),
+  name: z.string().nullable().optional().describe('名前 (空・null で種類の名前に戻す)'),
+  hidden: z.boolean().optional().describe('ビューポートで隠す (Blender の目のアイコン。レンダリングには写る)'),
+  hideRender: z.boolean().optional().describe('レンダリングに写さない (Blender のカメラのアイコン)'),
 });
 forward('delete_object', '物を消す', { id });
 const vec3 = z.array(z.number()).length(3);

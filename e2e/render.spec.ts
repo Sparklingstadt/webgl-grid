@@ -111,7 +111,7 @@ test('ビューポートに出力の枠を出し、枠の中に見えている�
   expect(boxes.view[2]).toBeGreaterThan(boxes.view[0]); // 立方体が写っている
   boxes.render.forEach((v, i) => expect(v).toBeCloseTo(boxes.view[i], 1));
   // ビュー メニューで隠せる
-  await page.getByRole('button', { name: 'ビュー' }).click();
+  await page.getByRole('button', { name: 'ビュー', exact: true }).click();
   await page.getByRole('menuitem', { name: '出力の範囲を隠す' }).click();
   await expect(frame).toHaveCount(0);
   expect(errors).toEqual([]);

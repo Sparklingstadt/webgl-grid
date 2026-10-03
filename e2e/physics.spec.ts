@@ -80,6 +80,6 @@ test('「髪を重力で垂らす」で、髪の錘を外して垂らし、オ�
 test('髪の形を保つ錘がないモデルには、スイッチを出さない', async ({ page }) => {
   await open(page);
   await loadTestModel(page); // 剛体のないモデル
-  await expect(page.locator('.prop')).toContainText('テスト人形');
+  await expect(page.locator('#obj-name')).toHaveValue('テスト人形');
   await expect(page.getByRole('checkbox', { name: '髪を重力で垂らす' })).toHaveCount(0);
 });

@@ -42,6 +42,30 @@ describe('History', () => {
     expect([cube.x, cube.c, cube.r]).toEqual([3, 1, Math.PI / 2]);
   });
 
+  it('名前・ビューポートで隠す・レンダリングに写さないを、それぞれ 1 手にして戻す。隠すと選択が外れ、クリックで選べない', async () => {
+    const e = new Engine();
+    const cube = e.world.objects[0];
+    e.select(cube);
+    e.renameObj(cube, '  箱  '); step(e);
+    expect(e.ui.state.sel?.name).toBe('箱');
+    e.setVisibility(cube, { hideRender: true }); step(e);
+    e.hideSelected(); step(e);
+    expect([cube.hidden, cube.node.visible, e.selection.current]).toEqual([true, false, null]);
+    expect(e.camera.pick({ ro: [0, 0.5, 5], rd: [0, 0, -1] })).toBeNull();
+    expect(e.ui.state.history.labels).toEqual(['最初', '名前', 'レンダリングに写さない', 'ビューポートで隠す']);
+    await e.history.undo();
+    expect([cube.hidden, cube.node.visible]).toEqual([undefined, true]);
+    expect(e.camera.pick({ ro: [0, 0.5, 5], rd: [0, 0, -1] })?.obj).toBe(cube);
+    await e.history.undo();
+    expect(cube.hideRender).toBeUndefined();
+    await e.history.undo();
+    expect(cube.name).toBeUndefined();
+    await e.history.jump(3);
+    expect([cube.name, cube.hideRender, cube.hidden]).toEqual(['箱', true, true]);
+    e.revealAll();
+    expect(cube.hidden).toBeUndefined();
+  });
+
   it('消した物を戻すと、元の並び順と積み重ねに戻る', async () => {
     const e = new Engine();
     e.addShape(0);

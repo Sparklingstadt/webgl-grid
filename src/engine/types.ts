@@ -37,6 +37,9 @@ export interface Obj {
   light?: LightSettings | null;       // ライト (ライトのオブジェクトだけ)
   addonData?: Record<string, unknown>; // アドオンの、物ごとの値 ("アドオンの id.名前" → 値)
   highlighted?: boolean;              // 掴んでいるので明るくしている
+  name?: string;                      // 付けた名前 (なしは種類の名前。アウトライナー・サイドバーで変える)
+  hidden?: boolean;                   // ビューポートで隠す (Blender の目のアイコン。レンダリングには写る)
+  hideRender?: boolean;               // レンダリングに写さない (Blender のカメラのアイコン)
 }
 export type ModelObj = Obj & { model: Any };
 export const isModel = (o: Obj | null | undefined): o is ModelObj => o?.s === MODEL_KIND;

@@ -43,6 +43,10 @@ import { World } from './world/World';
 // タイムラインに並べる行: 選んでいる物 (モデルならキーフレームとモーション)・そのチャンネル (広げたとき) と、カメラモーション
 export interface TlRow { label: string; keys: number[]; motion: Int32Array | null; editable: boolean; channel?: Channel }
 
+const MAX_NAME = 64;
+// ビューポート (rendering: レンダリング) に写すか
+const shownIn = (o: Obj, rendering: boolean) => !(rendering ? o.hideRender : o.hidden);
+
 const isAudio = (f: File) => f.type.startsWith('audio/') || /\.(mp3|wav|ogg|oga|m4a|aac|flac|opus)$/i.test(f.name);
 
 // --- エンジン: 各部を組み立ててつなぎ、画面 (React) に操作の窓口を出す ---
@@ -113,6 +117,8 @@ export class Engine {
     clock.events.on('change', () => ui.set({ frame: clock.frame, playing: clock.playing, start: clock.start, end: clock.end }));
     music.events.on('loaded', () => this.fitEndToContent());
     music.events.on('playing', () => viewport.startTicking());
+    // 置いた物が増えた・減った (アウトライナーを描き直す)
+    for (const ev of ['added', 'removed'] as const) world.events.on(ev, () => ui.bump('sceneVersion'));
     selection.events.on('changed', () => { keyframes.clearSelection(); ui.bump('materialsVersion'); ui.set({ rigShown: this.physics.rigShown(selection.model) }); });
     this.library.events.on('changed', () => { ui.bump('materialsVersion'); viewport.requestDraw(); });
 
@@ -123,7 +129,10 @@ export class Engine {
       // (レンダリング中は、掴んでいる物の明るさと選択の輪郭線を出さない)
       const rendering = this.output.active;
       const held = rendering ? null : this.input?.held ?? this.picker.target;
-      for (const o of world.objects) world.setHighlight(o, !!held && o === held);
+      for (const o of world.objects) {
+        world.setHighlight(o, !!held && o === held);
+        o.node.visible = shownIn(o, rendering);
+      }
       selection.syncOutlines(world.objects, rendering);
       graph.aimShadows(camera.cam.tx, camera.cam.tz, camera.cam.dist);
     });
@@ -211,6 +220,41 @@ export class Engine {
     if (!o?.light) return;
     this.lights.set(o, patch);
     this.selection.publish();
+  }
+
+  // --- 名前・表示 (アウトライナー・サイドバー・H / Alt+H) ---
+  // 名前を付ける (空・null で種類の名前に戻す)
+  renameObj(obj: Obj, name: string | null) {
+    const n = name?.trim().slice(0, MAX_NAME) || undefined;
+    if (obj.name === n) return;
+    obj.name = n;
+    this.objChanged();
+  }
+  // ビューポートで隠す・レンダリングに写さない (Blender の目とカメラのアイコン)。隠した物は選択を外す
+  setVisibility(obj: Obj, patch: { hidden?: boolean; hideRender?: boolean }) {
+    let changed = false;
+    for (const k of ['hidden', 'hideRender'] as const) {
+      if (patch[k] === undefined || !!obj[k] === patch[k]) continue;
+      obj[k] = patch[k] || undefined;
+      changed = true;
+    }
+    if (!changed) return;
+    obj.node.visible = shownIn(obj, false); // (すぐにクリックで選べなくなるよう、描く前にも合わせる)
+    if (obj.hidden && this.selection.current === obj) this.selection.select(null);
+    this.objChanged();
+  }
+  // H: 選んでいる物を隠す、Shift+H: ほかを隠す、Alt+H: 全部見せる
+  hideSelected(others = false) {
+    const cur = this.selection.current;
+    if (!cur) return;
+    for (const o of [...this.world.objects]) if ((o === cur) !== others) this.setVisibility(o, { hidden: true });
+  }
+  revealAll() { for (const o of this.world.objects) this.setVisibility(o, { hidden: false }); }
+  private objChanged() {
+    this.ui.bump('sceneVersion');
+    this.selection.publish();
+    this.history.soon();
+    this.viewport.requestDraw();
   }
 
   setObjColor(c: number) {
@@ -404,7 +448,7 @@ export class Engine {
     const obj = this.selection.current;
     if (this.model) {
       const m = this.model, anim = m.anim;
-      rows.push({ label: m.model.name || t('モデル'), keys: keyFrames(anim), motion: m.motion?.frames ?? null, editable: true });
+      rows.push({ label: nameOf(m), keys: keyFrames(anim), motion: m.motion?.frames ?? null, editable: true });
       if (anim && this.keyframes.expanded) {
         const sorted = (ch: Channel) => [...channelKeys(anim, ch)!.keys()].sort((a, b) => a - b);
         const morphName = new Map(this.posing.morphs(m).map(x => [x.index, x.name]));

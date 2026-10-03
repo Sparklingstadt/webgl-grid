@@ -11,6 +11,11 @@ export function registerBuiltins(e: Engine) {
   // 物ごとの値
   // ライトは、ライトの物だけ (なしにはできない)
   objectData.add({ key: 'light', label: msg('ライト'), get: o => o.light, set: (o, v) => { if (v && o.light) e.lights.set(o, v); }, normalize: raw => normalizeLight(raw as never) });
+  // 名前・表示 (アウトライナー)
+  objectData.add({ key: 'name', label: msg('名前'), get: o => o.name ?? null, set: (o, v) => e.renameObj(o, v), normalize: raw => (typeof raw === 'string' && raw.trim() ? raw.trim().slice(0, 64) : null) });
+  const flag = (raw: unknown) => (raw === true ? true : null);
+  objectData.add({ key: 'hidden', label: msg('ビューポートで隠す'), get: o => o.hidden ?? null, set: (o, v) => e.setVisibility(o, { hidden: !!v }), normalize: flag });
+  objectData.add({ key: 'hideRender', label: msg('レンダリングに写さない'), get: o => o.hideRender ?? null, set: (o, v) => e.setVisibility(o, { hideRender: !!v }), normalize: flag });
   // 場面の値
   sceneData.add({
     key: 'scene', label: msg('シーン'), history: true,

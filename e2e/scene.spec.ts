@@ -24,7 +24,7 @@ test.describe('ビューポート', () => {
     await expect(page.getByRole('menu')).toHaveCount(0); // 選んだらメニューは閉じる
     expect(await page.evaluate(() => (window as Win).engine.world.objects.length)).toBe(2);
     await expect.poll(async () => (await uiState(page)).sel?.name).toBe('トーラス');
-    await expect(page.locator('.prop')).toContainText('トーラス');
+    await expect(page.locator('#obj-name')).toHaveValue('トーラス');
   });
 
   test('Shift+A で追加メニューが開き、Esc で閉じる', async ({ page }) => {

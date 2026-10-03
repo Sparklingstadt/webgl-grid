@@ -101,6 +101,7 @@ export default function App() {
     openAddMenu: () => setOpenMenu('add'),
     closeMenus: () => { const was = !!openMenuRef.current; setOpenMenu(null); return was; },
     toggleSide,
+    showSide: () => setSideOpen(true),
     openFiles,
     openProject,
     openAddons: () => setManagerOpen(true),

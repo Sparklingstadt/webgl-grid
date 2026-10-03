@@ -14,6 +14,13 @@ describe('外部からの命令', () => {
     s = await runCommand(e, 'get_state', {}) as typeof s;
     expect(s.objects.find(o => o.id === 1)).toMatchObject({ color: '緑' });
     expect(Math.max(...s.objects.map(o => o.position[1]))).toBeGreaterThan(0); // 同じ場所なので、どちらかが上に積まれた
+    await runCommand(e, 'set_object', { id: 1, name: '台', hidden: true, hideRender: true });
+    s = await runCommand(e, 'get_state', {}) as typeof s;
+    expect(s.objects.find(o => o.id === 1)).toMatchObject({ name: '台', hidden: true, hideRender: true });
+    await runCommand(e, 'set_object', { id: 1, name: null, hidden: false });
+    s = await runCommand(e, 'get_state', {}) as typeof s;
+    expect(s.objects.find(o => o.id === 1)).toMatchObject({ name: '立方体', hideRender: true });
+    expect(s.objects.find(o => o.id === 1)).not.toHaveProperty('hidden');
     await runCommand(e, 'delete_object', { id });
     expect(e.world.objects.map(o => o.id)).toEqual([1]);
   });

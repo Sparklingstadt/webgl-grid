@@ -11,6 +11,7 @@ import { Sidebar, type SideTab } from './sidebar/Sidebar';
 import { OutputFrame, useShowFrame } from './OutputFrame';
 import { ModelPicker } from './ModelPicker';
 import { RecoverBanner } from './Overlays';
+import { requestRename } from './sidebar/Outliner';
 
 // 3D ビューポート: 見出し (ビュー・追加・オブジェクトのメニュー)、左のツールバー、左上の文字、
 // 右上のナビゲーションギズモ、右のサイドバー
@@ -70,6 +71,11 @@ export function ViewportArea(props: {
         <Menu id="object" label={t('オブジェクト')}>
           <MenuItem label={t('削除')} kbd="X" disabled={!sel} onSelect={() => engine.deleteSelected()} />
           <MenuItem label={t('選択を解除')} kbd="Alt A" disabled={!sel} onSelect={() => engine.select(null)} />
+          <MenuItem label={t('名前を変更')} kbd="F2" disabled={!sel} onSelect={() => { if (!props.sideOpen) props.toggleSide(); requestRename(); }} />
+          <MenuSep />
+          <MenuItem label={t('選択物を隠す')} kbd="H" disabled={!sel} onSelect={() => engine.hideSelected()} />
+          <MenuItem label={t('ほかを隠す')} kbd="Shift H" disabled={!sel} onSelect={() => engine.hideSelected(true)} />
+          <MenuItem label={t('すべて表示')} kbd="Alt H" onSelect={() => engine.revealAll()} />
           <MenuSep />
           <MenuItem label={t('キーフレームを挿入')} kbd="I" disabled={sel?.kind !== 'model'} onSelect={() => engine.insertKey()} />
           <AddonMenuItems menu="object" />

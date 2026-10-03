@@ -166,7 +166,7 @@ export class CameraController {
     const { raycaster } = this;
     raycaster.ray.origin.fromArray(ro);
     raycaster.ray.direction.fromArray(rd);
-    const nodes = this.world.objects.map(b => b.node);
+    const nodes = this.world.objects.filter(b => !b.hidden).map(b => b.node); // (隠した物は選べない)
     // 置き直した直後 (まだ描いていない) でも当たるよう、位置を最新にしてから調べる (描くときにも同じ計算をする)
     for (const n of nodes) n.updateMatrixWorld();
     const hit = raycaster.intersectObjects(nodes, true)[0];

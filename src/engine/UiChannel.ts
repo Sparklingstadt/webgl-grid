@@ -47,8 +47,9 @@ export interface UiState {
   rigShown: boolean;        // 物理演算の剛体と関節を表示している (選んでいるモデル)
   modelPicker: boolean;     // models フォルダのモデルの一覧を出している
   addonsVersion: number;       // アドオンのメニュー・パネル・値が変わった
+  sceneVersion: number;        // 置いた物 (増減・名前・表示) が変わった (アウトライナー)
 }
-type Version = 'modelVersion' | 'values' | 'keysVersion' | 'materialsVersion' | 'addonsVersion';
+type Version = 'modelVersion' | 'values' | 'keysVersion' | 'materialsVersion' | 'addonsVersion' | 'sceneVersion';
 
 export class UiChannel {
   readonly store: Store<UiState> = createStore<UiState>({
@@ -57,7 +58,7 @@ export class UiChannel {
     fxState: { ao: false, dof: false, bloom: false, diffusion: false, color: false }, fxLevel: { ...FX_LEVEL_DEFAULT },
     toast: null, palette: null, viewInfo: '', hairHang: null, materialsVersion: 0, projectName: null,
     output: { ...OUTPUT_DEFAULT }, rendering: null, renderResult: null, remote: 'off', missingFiles: null, missingTextures: null, history: { labels: [msg('最初')], index: 0 }, recovery: null, scene: normalizeScene(undefined),
-    addons: [], addonsVersion: 0, lang: getLang(), poseMode: false, poseTool: 'rotate', rigShown: false, modelPicker: false,
+    addons: [], addonsVersion: 0, lang: getLang(), poseMode: false, poseTool: 'rotate', rigShown: false, modelPicker: false, sceneVersion: 0,
   });
   constructor() {
     langEvents.on('changed', lang => this.set({ lang }));

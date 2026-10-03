@@ -1,5 +1,6 @@
 import { PALETTE, PALETTE_NAMES, paletteCss } from '../../../core/constants';
 import { t } from '../../../core/i18n';
+import { kindName } from '../../../engine/world/Selection';
 import { useEngine, useUi } from '../../EngineContext';
 import { BCheck } from '../controls/BCheck';
 import { NumField } from '../NumField';
@@ -19,7 +20,10 @@ export function ObjectPage() {
     <>
       <Panel title={t('オブジェクト')}>
         <div className="prop">
-          <label>{t('名前')}</label><span>{t(sel.name)}</span>
+          <label htmlFor="obj-name">{t('名前')}</label>
+          <input id="obj-name" className="text-field" key={`${sel.id}:${sel.name}`} defaultValue={sel.name} maxLength={64}
+                 onBlur={e => { const o = engine.selection.current; if (o) engine.renameObj(o, e.currentTarget.value.trim() === kindName(o) ? null : e.currentTarget.value); }}
+                 onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); else if (e.key === 'Escape') { e.currentTarget.value = sel.name; e.currentTarget.blur(); } }} />
           <label htmlFor="obj-x">{t('位置 X')}</label><NumField id="obj-x" label={t('位置 X')} value={+sel.x.toFixed(2)} digits={2} step={0.1} onCommit={v => engine.setObjProp('x', v)} />
           <label>{t('位置 Y')}</label><span className="note">{t('{y} (積み重ねで決まる)', { y: sel.y.toFixed(2) })}</span>
           <label htmlFor="obj-z">{t('位置 Z')}</label><NumField id="obj-z" label={t('位置 Z')} value={+sel.z.toFixed(2)} digits={2} step={0.1} onCommit={v => engine.setObjProp('z', v)} />

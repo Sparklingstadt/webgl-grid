@@ -16,7 +16,7 @@ test.describe('MMD モデル', () => {
     const errors = await open(page);
     await loadTestModel(page);
     expect((await uiState(page)).sel?.kind).toBe('model');
-    await expect(page.locator('.prop')).toContainText('テスト人形');
+    await expect(page.locator('#obj-name')).toHaveValue('テスト人形');
     await expect(page.locator('.view-info')).toHaveText(/テスト人形/);
     expect(errors).toEqual([]);
     expect(warnings).toEqual([]); // (取り込んだ MMD の部品が「外される予定」の警告を出さない)

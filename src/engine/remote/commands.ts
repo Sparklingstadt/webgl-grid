@@ -59,6 +59,8 @@ export function sceneState(e: Engine) {
       id: o.id,
       kind: kindOf(o),
       name: nameOf(o),
+      ...(o.hidden ? { hidden: true } : {}),
+      ...(o.hideRender ? { hideRender: true } : {}),
       ...(o.light ? { light: o.light } : {}),
       position: [r3(o.x), r3(o.y), r3(o.z)],
       rotationDeg: r3(o.r * DEG),
@@ -126,6 +128,8 @@ export const COMMANDS: Record<string, Command> = {
       if (isModel(obj)) throw new Error('MMD モデルの色は set_material で変えます');
       e.world.setShapeColor(obj, colorIndex(p.color));
     }
+    if (p.name !== undefined) e.renameObj(obj, p.name === null ? null : String(p.name));
+    if (p.hidden !== undefined || p.hideRender !== undefined) e.setVisibility(obj, { hidden: p.hidden === undefined ? undefined : !!p.hidden, hideRender: p.hideRender === undefined ? undefined : !!p.hideRender });
     e.world.settle();
     e.selection.publish();
     e.viewport.requestDraw();
