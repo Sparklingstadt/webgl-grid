@@ -272,6 +272,18 @@ button.ol-twist[aria-expanded="true"]::before { border-left-color: transparent; 
 .area-resizer.vertical { cursor: ew-resize; }
 .area-resizer:hover { background: #3a3a3a; }
 
+/* --- エリアの最大化 (Ctrl+Space): そのエリアだけを、上のバーと状態バーのあいだいっぱいに出す --- */
+#app.max-view { grid-template-columns: minmax(0, 1fr) 0 0; grid-template-rows: 28px minmax(0, 1fr) 0 0 22px; }
+#app.max-view > :is(.sidebar, .area-resizer, .bottom) { display: none; }
+#app.max-bottom { grid-template-rows: 28px 0 0 minmax(0, 1fr) 22px; }
+#app.max-bottom > :is(.grid-view, .sidebar, .area-resizer) { display: none; }
+#app:is(.max-outliner, .max-props) { grid-template-columns: 0 0 minmax(0, 1fr); grid-template-rows: 28px minmax(0, 1fr) 0 0 22px; }
+#app:is(.max-outliner, .max-props) > :is(.grid-view, .area-resizer, .bottom) { display: none; }
+#app:is(.max-outliner, .max-props) > .sidebar { position: static; width: auto; box-shadow: none; }
+#app.max-outliner .sidebar > :is(.props, .area-resizer) { display: none; }
+#app.max-outliner .outliner { flex: 1; height: auto !important; max-height: none; }
+#app.max-props .sidebar > :is(.outliner, .area-resizer) { display: none; }
+
 /* --- 状態バー (Blender のいちばん下) --- */
 .statusbar { display: flex; align-items: center; gap: 14px; padding: 0 8px; margin: 0 -2px; background: var(--topbar); color: var(--dim); font-size: 11px;
              white-space: nowrap; overflow: hidden; user-select: none; }

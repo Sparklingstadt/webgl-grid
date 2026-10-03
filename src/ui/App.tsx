@@ -19,7 +19,8 @@ const isNarrow = () => matchMedia(NARROW).matches;
 
 // Blender 風の画面全体 (Blender の「レイアウト」のワークスペース):
 // 上のバー (メニュー・ワークスペース)、3D ビューポート、右の列 (アウトライナー・プロパティ)、下の領域 (タイムライン / シェーダーエディター)、状態バー。
-// 領域の境目はドラッグで動かせる
+// 領域の境目はドラッグで動かせる。Ctrl+Space で、マウスが乗っているエリアだけを大きく出す (もう一度で戻す)
+type MaxArea = 'view' | 'bottom' | 'outliner' | 'props';
 export default function App() {
   const engine = useEngine();
   useUi(s => s.lang); // (言語を変えたら、画面を全部描き直す)
@@ -37,6 +38,8 @@ export default function App() {
   const [bottomH, setBottomH] = useState(() => (isNarrow() ? 168 : 150)); // 下の領域の高さ (px)。境目をドラッグで変える
   const [sideW, setSideW] = useState(() => { try { return Number(localStorage.getItem('webgl-grid.sideW')) || 320; } catch { return 320; } }); // 右の列の幅
   const [workspace, setWorkspace] = useState<Workspace>('layout');
+  // 最大化しているエリア (Ctrl+Space。もう一度で戻す)
+  const [maxArea, setMaxArea] = useState<MaxArea | null>(null);
   // シェーダーエディターにしたときは、ノードが見える高さまで広げる (Blender の「シェーディング」のように)
   const showEditor = useCallback((e: BottomEditor) => {
     setBottom(e);
@@ -47,6 +50,15 @@ export default function App() {
   const managerRef = useRef(managerOpen);
   useLayoutEffect(() => { managerRef.current = managerOpen; }, [managerOpen]);
   const hoverArea = useRef<Area>(null);
+  const setHover = (a: Area) => { hoverArea.current = a; }; // (マウスが乗っているエリア: X・Home・Ctrl+Space の働きを変える)
+  const toggleMax = (area?: MaxArea) => {
+    if (maxArea) { setMaxArea(null); return; }
+    const h = hoverArea.current;
+    const next: MaxArea = area ?? (h === 'timeline' || h === 'shader' ? 'bottom' : h === 'outliner' || h === 'props' ? h : 'view');
+    if (next === 'outliner' || next === 'props') setSideOpen(true);
+    if (next === 'bottom') setTlOpen(true);
+    setMaxArea(next);
+  };
   const pmxInput = useRef<HTMLInputElement>(null);
   const poseInput = useRef<HTMLInputElement>(null);
   const openFiles = useCallback(() => pmxInput.current?.click(), []);
@@ -132,6 +144,7 @@ export default function App() {
     closeMenus: () => { const was = !!openMenuRef.current; setOpenMenu(null); return was; },
     toggleN: () => setNOpen(o => !o),
     toggleTools,
+    toggleMax: () => toggleMax(),
     showSide: () => setSideOpen(true),
     openFiles,
     openProject,
@@ -142,12 +155,13 @@ export default function App() {
 
   return (
     <MenuContext.Provider value={{ open: openMenu, setOpen: setOpenMenu }}>
-      <div id="app" className={[!sideOpen && 'side-hidden', !tlOpen && 'tl-hidden'].filter(Boolean).join(' ')}
+      <div id="app" className={[!sideOpen && 'side-hidden', !tlOpen && 'tl-hidden', maxArea && `max-${maxArea}`].filter(Boolean).join(' ')}
            style={{ '--tl-h': `${bottomH}px`, '--side-w': `${sideW}px` } as React.CSSProperties}>
         <TopBar onOpenFiles={openFiles} onOpenFolder={openFolder} onLoadPose={openPose} onOpenProject={openProject} onOpenAddons={() => setManagerOpen(true)}
                 onOpenOutput={() => showTab('output')} workspace={workspace} setWorkspace={goWorkspace} />
-        <div className="grid-view" onPointerEnter={() => { hoverArea.current = 'view'; }}>
-          <ViewportArea sideOpen={sideOpen} toggleSide={toggleSide} nOpen={nOpen} toggleN={() => setNOpen(o => !o)} toolsOpen={toolsOpen} toggleTools={toggleTools} tlOpen={tlOpen} toggleTl={() => setTlOpen(o => !o)}
+        <div className="grid-view" onPointerEnter={() => setHover('view')}>
+          <ViewportArea sideOpen={sideOpen} toggleSide={toggleSide} nOpen={nOpen} toggleN={() => setNOpen(o => !o)} toolsOpen={toolsOpen} toggleTools={toggleTools}
+                        maximized={maxArea === 'view'} toggleMax={() => toggleMax('view')} tlOpen={tlOpen} toggleTl={() => setTlOpen(o => !o)}
                         onOpenFiles={openFiles} showTab={showTab}
                         onViewportPointerDown={() => { if (isNarrow()) setSideOpen(false); }} />
         </div>
@@ -159,12 +173,12 @@ export default function App() {
                  drag(e, dx => { w = Math.min(Math.max(w0 - dx, 220), innerWidth - 320); setSideW(w); },
                       () => { try { localStorage.setItem('webgl-grid.sideW', String(w)); } catch { /* (保存できなくても使える) */ } });
                }} />
-          <Sidebar tab={sideTab} setTab={setSideTab} onLoadPose={openPose} onOpenShaderEditor={() => showEditor('shader')} />
+          <Sidebar tab={sideTab} setTab={setSideTab} onLoadPose={openPose} onOpenShaderEditor={() => showEditor('shader')} onHover={setHover} />
         </>}
         <div className="area-resizer" role="separator" aria-orientation="horizontal" aria-label={t('下の領域の高さ')}
              onPointerDown={e => { const h0 = bottomH; drag(e, (_, dy) => setBottomH(Math.min(Math.max(h0 - dy, 60), innerHeight - 160))); }} />
-        <BottomArea editor={bottom} setEditor={showEditor} open={tlOpen} onHover={a => { hoverArea.current = a; }} />
-        <StatusBar />
+        <BottomArea editor={bottom} setEditor={showEditor} open={tlOpen} onHover={setHover} />
+        <StatusBar maximized={!!maxArea} />
       </div>
       <Toast />
       <Palette />

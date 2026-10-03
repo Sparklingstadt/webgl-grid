@@ -925,5 +925,8 @@ const dict: Dictionary = {
   "ツールバーを出す": "Show Toolbar",
   "ツールバーを隠す": "Hide Toolbar",
   "ツールバー": "Toolbar",
+  "エリアを最大化": "Toggle Maximize Area",
+  "エリアを元に戻す": "Restore Area",
+  "エリアを最大化 / 元に戻す": "Maximize / Restore Area",
 };
 export default dict;

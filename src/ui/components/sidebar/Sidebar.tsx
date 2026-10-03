@@ -39,7 +39,9 @@ const SIZE_KEY = 'webgl-grid.sidebar';
 const loadSize = () => { try { return Number(JSON.parse(localStorage.getItem(SIZE_KEY) ?? '{}').outliner) || 0; } catch { return 0; } };
 const saveSize = (outliner: number) => { try { localStorage.setItem(SIZE_KEY, JSON.stringify({ outliner })); } catch { /* (保存できなくても使える) */ } };
 
-export function Sidebar({ tab, setTab, onLoadPose, onOpenShaderEditor }: { tab: SideTab; setTab: (t: SideTab) => void; onLoadPose: () => void; onOpenShaderEditor: () => void }) {
+export function Sidebar({ tab, setTab, onLoadPose, onOpenShaderEditor, onHover }: {
+  tab: SideTab; setTab: (t: SideTab) => void; onLoadPose: () => void; onOpenShaderEditor: () => void; onHover?: (area: 'outliner' | 'props') => void;
+}) {
   const engine = useEngine();
   const sel = useUi(s => s.sel);
   useUi(s => s.addonsVersion);
@@ -62,9 +64,9 @@ export function Sidebar({ tab, setTab, onLoadPose, onOpenShaderEditor }: { tab: 
   };
   return (
     <aside className="sidebar" id="side-column" aria-label={t('アウトライナーとプロパティ')} ref={col}>
-      <Outliner onPickBone={() => setTab('bone')} style={{ height: olH }} />
+      <Outliner onPickBone={() => setTab('bone')} style={{ height: olH }} onHover={() => onHover?.('outliner')} />
       <div className="area-resizer horizontal" role="separator" aria-orientation="horizontal" aria-label={t('アウトライナーの高さ')} onPointerDown={resize} />
-      <section className="area props" aria-label={t('プロパティ')}>
+      <section className="area props" aria-label={t('プロパティ')} onPointerEnter={() => onHover?.('props')}>
         <div className="area-header">
           <Icon name="properties" className="editor-type" />
           <span className="props-path">

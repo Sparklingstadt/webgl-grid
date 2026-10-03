@@ -61,7 +61,7 @@ function bonesOf(engine: Engine, o: ModelObj) {
   return bones.flatMap((b, i) => (ok.has(i) ? [{ i, name: b.name, depth: Math.min(depth(b), 12) }] : []));
 }
 
-export function Outliner({ onPickBone, style }: { onPickBone: () => void; style?: CSSProperties }) {
+export function Outliner({ onPickBone, style, onHover }: { onPickBone: () => void; style?: CSSProperties; onHover?: () => void }) {
   const engine = useEngine();
   const sel = useUi(s => s.sel);
   useUi(s => s.sceneVersion);
@@ -160,7 +160,7 @@ export function Outliner({ onPickBone, style }: { onPickBone: () => void; style?
   const menuObj = menu ? engine.world.find(menu.id) : null;
 
   return (
-    <section className="area outliner" aria-label={t('アウトライナー')} style={style}>
+    <section className="area outliner" aria-label={t('アウトライナー')} style={style} onPointerEnter={onHover}>
       <div className="area-header">
         <EditorIcon name="outliner" className="editor-type" />
         <input type="search" className="ol-filter" placeholder={t('絞り込み')} aria-label={t('アウトライナーを絞り込む')} value={filter} onChange={e => setFilter(e.target.value)} />

@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef } from 'react';
 import type { Engine } from '../../engine';
 import { requestRename } from '../components/sidebar/Outliner';
 
-export type Area = 'view' | 'timeline' | 'shader' | null;
+export type Area = 'view' | 'timeline' | 'shader' | 'outliner' | 'props' | null;
 
 // Blender 風のキーボードショートカット。X と Home は、マウスが乗っている領域 (ビューポート / タイムライン) で働きが変わる
 export function useShortcuts(engine: Engine, actions: {
@@ -11,6 +11,7 @@ export function useShortcuts(engine: Engine, actions: {
   closeMenus: () => boolean; // 開いていたメニューを閉じたら true
   toggleN: () => void;   // ビューポートのサイドバー (N パネル)
   toggleTools: () => void; // ビューポートのツールバー (T)
+  toggleMax: () => void;   // マウスが乗っているエリアを最大化する・戻す (Ctrl+Space)
   showSide: () => void; // 右の列 (アウトライナー・プロパティ) を開く (閉じていれば)
   openFiles: () => void;
   openProject: () => void;
@@ -49,6 +50,8 @@ export function useShortcuts(engine: Engine, actions: {
         if (e.code === 'KeyY' || e.shiftKey) void engine.history.redo(); else void engine.history.undo();
         return;
       }
+      // Ctrl+Space: マウスが乗っているエリアを最大化する・戻す (Blender と同じ)
+      if (e.ctrlKey && e.code === 'Space') { e.preventDefault(); a.toggleMax(); return; }
       if ((e.ctrlKey || e.metaKey) && e.code === 'KeyS') { e.preventDefault(); engine.project.saveFile(e.altKey ? 'reference' : 'embedded'); return; }
       if (e.ctrlKey || e.metaKey) return;
       const hoverTl = a.hoverArea.current === 'timeline';

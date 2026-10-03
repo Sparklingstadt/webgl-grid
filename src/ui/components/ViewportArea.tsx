@@ -18,7 +18,7 @@ import { requestRename } from './sidebar/Outliner';
 // 3D ビューポート (Blender の 3D ビューポート): 見出し (エディターの種類・モード・ビュー・追加・オブジェクトのメニュー)、
 // 左のツールバー、左上の文字、右上のナビゲーションギズモ
 export function ViewportArea(props: {
-  sideOpen: boolean; toggleSide: () => void; nOpen: boolean; toggleN: () => void; toolsOpen: boolean; toggleTools: () => void; tlOpen: boolean; toggleTl: () => void;
+  sideOpen: boolean; toggleSide: () => void; nOpen: boolean; toggleN: () => void; toolsOpen: boolean; toggleTools: () => void; maximized: boolean; toggleMax: () => void; tlOpen: boolean; toggleTl: () => void;
   onOpenFiles: () => void; onViewportPointerDown: () => void; showTab: (tab: SideTab) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -59,6 +59,8 @@ export function ViewportArea(props: {
           <MenuItem label={props.sideOpen ? t('アウトライナーとプロパティを隠す') : t('アウトライナーとプロパティを出す')} onSelect={props.toggleSide} />
           <MenuItem label={props.tlOpen ? t('タイムラインをたたむ') : t('タイムラインを広げる')} onSelect={props.toggleTl} />
           <MenuItem label={showFrame ? t('出力の範囲を隠す') : t('出力の範囲を表示')} onSelect={() => setShowFrame(!showFrame)} />
+          <MenuSep />
+          <MenuItem label={props.maximized ? t('エリアを元に戻す') : t('エリアを最大化')} kbd="Ctrl Space" onSelect={props.toggleMax} />
           <AddonMenuItems menu="view" />
         </Menu>
         <Menu id="add" label={t('追加')}>

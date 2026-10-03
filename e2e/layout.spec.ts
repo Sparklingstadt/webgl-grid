@@ -62,3 +62,42 @@ test('T でビューポートのツールバーを隠し・出す。開け閉め
   await page.getByRole('menuitem', { name: 'ツールバーを出す' }).click();
   await expect(tools).toBeVisible();
 });
+
+test('Ctrl+Space で、マウスが乗っているエリアを最大化し、もう一度で戻す', async ({ page }) => {
+  await open(page);
+  const view = page.getByRole('region', { name: '3D ビューポート' });
+  const outliner = page.getByRole('region', { name: 'アウトライナー' });
+  const props = page.getByRole('region', { name: 'プロパティ' });
+  const timeline = page.getByRole('region', { name: 'タイムライン' });
+  const width = async () => (await view.boundingBox())!.width;
+  const w0 = await width();
+  // 3D ビューポート
+  await page.locator('canvas#c').hover();
+  await page.keyboard.press('Control+Space');
+  await expect(outliner).toBeHidden();
+  await expect(timeline).toBeHidden();
+  await expect(page.getByRole('contentinfo', { name: '状態バー' })).toContainText('エリアを元に戻す');
+  expect(await width()).toBeGreaterThan(w0 + 200);
+  await page.keyboard.press('Control+Space');
+  await expect(outliner).toBeVisible();
+  await expect(timeline).toBeVisible();
+  // アウトライナー: プロパティとビューポートを隠して、いっぱいに
+  await outliner.hover();
+  await page.keyboard.press('Control+Space');
+  await expect(props).toBeHidden();
+  await expect(view).toBeHidden();
+  expect((await outliner.boundingBox())!.height).toBeGreaterThan(400);
+  await page.keyboard.press('Control+Space');
+  // タイムライン
+  await timeline.hover();
+  await page.keyboard.press('Control+Space');
+  await expect(view).toBeHidden();
+  await expect(outliner).toBeHidden();
+  expect((await timeline.boundingBox())!.height).toBeGreaterThan(400);
+  await page.keyboard.press('Control+Space');
+  await expect(view).toBeVisible();
+  // ビューのメニューからも
+  await page.getByRole('button', { name: 'ビュー', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'エリアを最大化' }).click();
+  await expect(timeline).toBeHidden();
+});

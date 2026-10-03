@@ -75,7 +75,7 @@ export function TopBar({ onOpenFiles, onOpenFolder, onLoadPose, onOpenProject, o
           [msg('再生 / 停止'), 'Space'], [msg('キーフレームを挿入'), 'I'], [msg('いまのキーフレームを削除'), 'Alt I'],
           [msg('前 / 次のキーフレーム'), '↓ ↑'], [msg('前 / 次のフレーム'), '← →'], [msg('最初 / 最後のフレーム'), 'Shift ← →'],
           [msg('選んだ物 (タイムライン上ではキー) を削除'), 'X'], [msg('選択を解除'), 'Alt A'], [msg('名前を変更'), 'F2'], [msg('隠す / ほかを隠す / すべて表示'), 'H / Shift H / Alt H'], [msg('追加メニュー'), 'Shift A'], [msg('元に戻す / やり直す'), 'Ctrl Z / Ctrl Shift Z'], [msg('画像 / アニメーションをレンダリング'), 'F12 / Ctrl F12'], [msg('アドオンマネージャー'), 'Ctrl ,'],
-          [msg('前・右・上から見る'), msg('テンキー 1 3 7')], [msg('視点を戻す (タイムライン上では全体を表示)'), 'Home'], [msg('ツールバー'), 'T'], [msg('サイドバー'), 'N'],
+          [msg('前・右・上から見る'), msg('テンキー 1 3 7')], [msg('視点を戻す (タイムライン上では全体を表示)'), 'Home'], [msg('ツールバー'), 'T'], [msg('エリアを最大化 / 元に戻す'), 'Ctrl Space'], [msg('サイドバー'), 'N'],
           [msg('シェーダーエディター: ノードを追加 / 消す / 全体を表示'), 'Shift A / X / Home'],
         ].map(([label, kbd]) => <MenuItem key={label} label={t(label)} kbd={t(kbd)} disabled />)}
       </Menu>
