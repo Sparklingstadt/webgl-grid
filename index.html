@@ -78,6 +78,7 @@
 </div>
 <script type="module">
 import * as THREE from 'three';
+import { OutlineEffect } from 'three/addons/effects/OutlineEffect.js';
 
 const canvas = document.getElementById('c');
 let renderer;
@@ -90,6 +91,11 @@ try {
 renderer.setClearColor(0x000000, 0); // 背景は CSS のグラデーションを見せる
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+// MMD モデルの輪郭線。太さ・色・表示の有無は、MMDLoader が .pmx の材質から読んで
+// material.userData.outlineParameters に入れてくれる。それ以外の物は noOutline() で輪郭線を付けない
+// (userData は材質ごとに書き込むので、毎回新しいオブジェクトを渡す)
+const outline = new OutlineEffect(renderer);
+const noOutline = () => ({ outlineParameters: { visible: false } });
 
 const scene = new THREE.Scene();
 // 以前のシェーダーと同じ画角 (画面の高さに対して焦点距離 1.6)
@@ -111,6 +117,7 @@ const grid = new THREE.Mesh(
   new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
+    userData: noOutline(),
     vertexShader: `
       varying vec3 vWorld;
       void main() {
@@ -144,7 +151,7 @@ const grid = new THREE.Mesh(
 // 地面に落ちる影 (グリッドの上に重ねる)
 const shadowPlane = new THREE.Mesh(
   new THREE.PlaneGeometry(2000, 2000).rotateX(-Math.PI / 2),
-  new THREE.ShadowMaterial({ opacity: 0.55, depthWrite: false }),
+  new THREE.ShadowMaterial({ opacity: 0.55, depthWrite: false, userData: noOutline() }),
 );
 shadowPlane.receiveShadow = true;
 shadowPlane.position.y = 0.0005;
@@ -260,7 +267,7 @@ function makeNode(obj, object3d) {
 }
 function makeBox(x, z, c, s = 0) {
   const obj = { x, y: 0, z, c, s, r: 0, py: 0, vy: 0, h: SHAPE_HEIGHT[s], hx: 0.5, hz: 0.5 };
-  const mesh = new THREE.Mesh(SHAPE_GEOMETRY[s], new THREE.MeshLambertMaterial({ flatShading: s === 2 }));
+  const mesh = new THREE.Mesh(SHAPE_GEOMETRY[s], new THREE.MeshLambertMaterial({ flatShading: s === 2, userData: noOutline() }));
   obj.mesh = mesh;
   return makeNode(obj, mesh);
 }
@@ -833,7 +840,7 @@ function render() {
   sun.position.copy(sun.target.position).addScaledVector(LIGHT, 40);
   Object.assign(sun.shadow.camera, { left: -span, right: span, top: span, bottom: -span, near: 1, far: 100 });
   sun.shadow.camera.updateProjectionMatrix();
-  renderer.render(scene, camera);
+  outline.render(scene, camera);
 }
 
 function resize() {
