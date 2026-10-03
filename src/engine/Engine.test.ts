@@ -90,6 +90,33 @@ describe('Engine (描画なし)', () => {
     expect(e.selection.list).toEqual([]);
   });
 
+  it('カメラ: いまの視点に置き、テンキー 0 でそこから見る。レンダリングのあいだは場面のカメラ。キーも打てる', () => {
+    const e = engineWithCube();
+    e.camera.update();
+    const pos = e.camera.camera.position.clone();
+    const cam = e.addCamera()!;
+    expect([cam.x, cam.z, cam.camera!.height]).toEqual([pos.x, pos.z, pos.y].map(v => expect.closeTo(v, 5)));
+    expect(e.ui.state.sel).toMatchObject({ kind: 'camera', name: 'カメラ' });
+    expect(e.world.objects[0].y).toBe(0); // (カメラは積み重ねに加わらない)
+    // テンキー 0: カメラから見ると、視点がカメラの位置になる
+    e.toggleCameraView();
+    expect(e.viewingCamera).toBe(true);
+    e.camera.update();
+    expect(e.camera.camera.position.distanceTo(new THREE.Vector3(cam.x, cam.py, cam.z))).toBeLessThan(1e-6);
+    e.toggleCameraView();
+    expect(e.viewingCamera).toBe(false);
+    // レンダリングのあいだだけ、場面のカメラ
+    e.output.hooks.begin!();
+    expect(e.camera.override).not.toBeNull();
+    e.output.hooks.end!();
+    expect(e.camera.override).toBeNull();
+    // 設定・キー (位置・回転。大きさはない)
+    e.setCamera({ fov: 60, tiltDeg: 20 });
+    expect(cam.camera).toMatchObject({ fov: 60, tiltDeg: 20 });
+    e.insertKey();
+    expect([...cam.anim!.props.keys()]).toEqual([0, 1, 2]);
+  });
+
   it('上から見る・視点を戻す', () => {
     const e = engineWithCube();
     e.camera.snapView('top');

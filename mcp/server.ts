@@ -143,6 +143,11 @@ const lightSettings = {
 };
 forward('add_light', 'ライト (Blender のライト) を置いて選ぶ。向きは set_object の rotationDeg', { type: lightType.optional(), x: z.number().optional(), z: z.number().optional(), ...lightSettings });
 forward('set_light', 'ライトの設定を変える (渡したところだけ)', { id, type: lightType.optional(), ...lightSettings });
+const cameraSettings = {
+  fov: z.number().optional().describe('縦の視野角 (度)'), height: z.number().optional().describe('高さ (m)'), tiltDeg: z.number().optional().describe('下向きの傾き (度)'),
+};
+forward('add_camera', 'カメラ (Blender のカメラ) を置いて選ぶ。省いた値は、いまのビューポートの視点に合わせる。置いてあれば、レンダリングはいちばん上のカメラから撮る', { x: z.number().optional(), z: z.number().optional(), rotationDeg: z.number().optional().describe('向き (度。0 で -Z を向く)'), ...cameraSettings });
+forward('set_camera_object', 'カメラの物の設定を変える (渡したところだけ。ビューポートの視点は set_camera)', { id, ...cameraSettings });
 forward('list_addons', 'アドオン (Blender のアドオン) の一覧と、有効かどうか', {});
 forward('set_addon', 'アドオンを有効にする・切る (有効にしたものは、次に開いたときも有効)', { id: z.string().describe('アドオンの id (list_addons)'), enabled: z.boolean() });
 forward('list_commands', '有効なアドオンが足した命令の一覧 (名前・説明・引数)。run_command で使う', {});

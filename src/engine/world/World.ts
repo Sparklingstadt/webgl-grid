@@ -3,6 +3,7 @@ import { t } from '../../core/i18n';
 import { Emitter } from '../../core/events';
 import { MAX_BOXES, MMD_SCALE, PALETTE } from '../../core/constants';
 import { shapeDef } from '../../core/shapes';
+import { CAMERA_KIND, type CameraSettings } from '../../core/camera';
 import { LIGHT_KIND, type LightSettings } from '../../core/light';
 import { freeSpot, radiusOf, settleHeights, stackFrom } from '../../core/stacking';
 import { surfaceShader } from '../../core/materials/tree';
@@ -118,8 +119,14 @@ export class World implements System {
     holder.traverse(o => { o.castShadow = false; o.receiveShadow = false; }); // (目印は影を落とさない)
     return obj;
   }
-  // 積み重ねに加わる物 (ライトは除く)
-  private get stackables() { return this.objects.filter(o => !o.light); }
+  // カメラ (中身の目印は Cameras が作る)。ライトと同じく、高さは自分で決め、積み重ねには加わらない
+  addCamera(holder: THREE.Object3D, x: number, z: number, camera: CameraSettings): Obj {
+    const obj = this.add({ x, y: camera.height, z, c: -1, s: CAMERA_KIND, r: 0, py: camera.height, vy: 0, h: 0, hx: 0.15, hz: 0.15, slots: [], camera }, holder);
+    holder.traverse(o => { o.castShadow = false; o.receiveShadow = false; });
+    return obj;
+  }
+  // 積み重ねに加わる物 (ライト・カメラは除く)
+  private get stackables() { return this.objects.filter(o => !o.light && !o.camera); }
 
   // MMD モデル (材質はマテリアルに変換したもの。slots はそのマテリアル) を、(cx, cz) に近い空いている場所に置く
   addModel(mesh: Any, cx: number, cz: number, slots: string[]): ModelObj {
@@ -200,17 +207,17 @@ export class World implements System {
   findFreeSpot(rad: number, cx: number, cz: number) { return freeSpot(this.objects, rad, Math.round(cx), Math.round(cz)); }
 
   // --- 積み重ね ---
-  stackFrom(b: Obj) { return b.light ? [b] : stackFrom(this.stackables, b); }
+  stackFrom(b: Obj) { return b.light || b.camera ? [b] : stackFrom(this.stackables, b); }
   // 重力: 下にあるものから順に、足場の一番高い所まで落とす (exclude は動かさない)
   settle(exclude: Obj[] = []) {
     settleHeights(this.stackables, exclude);
-    for (const o of this.objects) if (o.light) { o.y = o.py = o.light.height; o.vy = 0; } // ライトは決めた高さ
+    for (const o of this.objects) { const h = o.light?.height ?? o.camera?.height; if (h !== undefined) { o.y = o.py = h; o.vy = 0; } } // ライト・カメラは決めた高さ
     this.startFall();
   }
   // 置いた物を、少し上から落として着地させる
   dropIn(b: Obj) {
     this.settle();
-    if (b.light) return;
+    if (b.light || b.camera) return;
     b.py = b.y + 1.5;
     b.vy = 0;
     this.startFall();

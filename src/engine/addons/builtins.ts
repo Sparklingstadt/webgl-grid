@@ -1,4 +1,5 @@
 import { msg } from '../../core/i18n';
+import { normalizeCamera } from '../../core/camera';
 import { normalizeLight } from '../../core/light';
 import { normalizeOutput } from '../../core/output';
 import { normalizeScene } from '../../core/scene';
@@ -10,6 +11,7 @@ export function registerBuiltins(e: Engine) {
   const { objectData, sceneData, commands } = e.addons;
   // 物ごとの値
   // ライトは、ライトの物だけ (なしにはできない)
+  objectData.add({ key: 'camera', label: msg('カメラ'), get: o => o.camera, set: (o, v) => { if (v && o.camera) e.cameras.set(o, v); }, normalize: raw => normalizeCamera(raw as never) });
   objectData.add({ key: 'light', label: msg('ライト'), get: o => o.light, set: (o, v) => { if (v && o.light) e.lights.set(o, v); }, normalize: raw => normalizeLight(raw as never) });
   // 名前・表示 (アウトライナー)
   objectData.add({ key: 'name', label: msg('名前'), get: o => o.name ?? null, set: (o, v) => e.renameObj(o, v), normalize: raw => (typeof raw === 'string' && raw.trim() ? raw.trim().slice(0, 64) : null) });

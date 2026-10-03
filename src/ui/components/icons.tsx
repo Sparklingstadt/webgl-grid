@@ -20,6 +20,8 @@ const ICONS: Record<string, ReactNode> = {
   bone: <path d="M8 2 11 6 8 14 5 6zM5 6h6" stroke="#7fcf7f" strokeLinejoin="round" />,
   // ライトのデータ (緑の電球)
   light: <><path d="M5.5 9.5a4 4 0 1 1 5 0c-.6.5-.9 1.2-.9 2h-3.2c0-.8-.3-1.5-.9-2z" stroke="#7fcf7f" /><path d="M6.5 14h3" stroke="#7fcf7f" /></>,
+  // カメラのデータ (緑のカメラ)
+  cameraData: <path d="M2.5 5h7.5v6H2.5z M10 7.5 13.5 5v6L10 8.5" stroke="#7fcf7f" strokeLinejoin="round" />,
   // マテリアル (赤い球)
   material: <><circle cx="8" cy="8" r="5.5" fill="#c0505a" stroke="#e07080" /><circle cx="6.3" cy="6.3" r="1.4" fill="#f3b0b8" stroke="none" /></>,
   // アドオンが足したタブ (パズル)

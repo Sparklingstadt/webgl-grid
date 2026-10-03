@@ -5,6 +5,7 @@ import { useEngine, useUi } from '../../EngineContext';
 import { AddonPanels } from '../addons/AddonPanels';
 import { Icon, type IconName } from '../icons';
 import { BonePage } from './BonePage';
+import { CameraPage } from './CameraPage';
 import { FxPage } from './FxPage';
 import { LightPage } from './LightPanel';
 import { MaterialPage } from './MaterialPage';
@@ -28,12 +29,13 @@ const TABS: TabDef[] = [
   { key: 'output', label: msg('出力'), icon: 'output', group: 'scene' },
   { key: 'scene', label: msg('シーン'), icon: 'world', group: 'scene' },
   { key: 'object', label: msg('オブジェクト'), icon: 'object', group: 'object' },
-  { key: 'modifier', label: msg('モディファイアー'), icon: 'modifier', group: 'object', when: s => !!s && s.kind !== 'light' },
+  { key: 'modifier', label: msg('モディファイアー'), icon: 'modifier', group: 'object', when: s => !!s && (s.kind === 'shape' || s.kind === 'model') },
   { key: 'physics', label: msg('物理演算'), icon: 'physics', group: 'object', when: isModel },
   { key: 'morph', label: msg('表情'), icon: 'shapekey', group: 'object', when: isModel },
   { key: 'bone', label: msg('ボーン'), icon: 'bone', group: 'object', when: isModel },
   { key: 'light', label: msg('ライト'), icon: 'light', group: 'object', when: s => s?.kind === 'light' },
-  { key: 'material', label: msg('マテリアル'), icon: 'material', group: 'object', when: s => !!s && s.kind !== 'light' },
+  { key: 'cameradata', label: msg('カメラ'), icon: 'cameraData', group: 'object', when: s => s?.kind === 'camera' },
+  { key: 'material', label: msg('マテリアル'), icon: 'material', group: 'object', when: s => !!s && (s.kind === 'shape' || s.kind === 'model') },
 ];
 const SIZE_KEY = 'webgl-grid.sidebar';
 const loadSize = () => { try { return Number(JSON.parse(localStorage.getItem(SIZE_KEY) ?? '{}').outliner) || 0; } catch { return 0; } };
@@ -90,13 +92,14 @@ export function Sidebar({ tab, setTab, onLoadPose, onOpenShaderEditor, onHover }
             {shown === 'modifier' && <ModifierPage />}
             {shown === 'physics' && <PhysicsPage />}
             {shown === 'light' && <LightPage />}
+            {shown === 'cameradata' && <CameraPage />}
             {shown === 'material' && <MaterialPage onOpenShaderEditor={onOpenShaderEditor} />}
             {shown === 'morph' && <MorphPage />}
             {shown === 'bone' && <BonePage onLoadPose={onLoadPose} />}
             {shown === 'scene' && <ScenePage />}
             {shown === 'fx' && <FxPage />}
             {shown === 'output' && <OutputPage />}
-            {!['object', 'modifier', 'physics', 'light'].includes(shown) && <AddonPanels tab={shown} />}
+            {!['object', 'modifier', 'physics', 'light', 'cameradata'].includes(shown) && <AddonPanels tab={shown} />}
           </div>
         </div>
       </section>

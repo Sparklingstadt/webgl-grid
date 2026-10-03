@@ -63,6 +63,7 @@ export function sceneState(e: Engine) {
       ...(o.hidden ? { hidden: true } : {}),
       ...(o.hideRender ? { hideRender: true } : {}),
       ...(o.light ? { light: o.light } : {}),
+      ...(o.camera ? { camera: o.camera, sceneCamera: o === e.cameras.scene } : {}),
       position: [r3(o.x), r3(o.y), r3(o.z)],
       rotationDeg: r3(o.r * DEG),
       ...(o.scale ? { scale: r3(o.scale) } : {}),
@@ -152,6 +153,21 @@ export const COMMANDS: Record<string, Command> = {
     if (!obj) throw new Error('これ以上置けません');
     if (x !== undefined || z !== undefined) COMMANDS.set_object(e, { id: obj.id, x, z });
     return { id: obj.id, light: obj.light };
+  },
+  add_camera: (e, p) => {
+    const { x, z, rotationDeg, ...settings } = p ?? {};
+    const obj = e.addCamera(settings);
+    if (!obj) throw new Error('これ以上置けません');
+    if (x !== undefined || z !== undefined || rotationDeg !== undefined) COMMANDS.set_object(e, { id: obj.id, x, z, rotationDeg });
+    return { id: obj.id, camera: obj.camera };
+  },
+  set_camera_object: (e, p) => {
+    const obj = objOf(e, p?.id);
+    if (!obj.camera) throw new Error(`id ${obj.id} はカメラではありません`);
+    e.select(obj);
+    const { id: _id, ...patch } = p ?? {};
+    e.setCamera(patch);
+    return { id: obj.id, camera: obj.camera };
   },
   set_light: (e, p) => {
     const obj = objOf(e, p?.id);

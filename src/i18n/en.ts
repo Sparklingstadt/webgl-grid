@@ -958,5 +958,13 @@ const dict: Dictionary = {
   "物を選ぶと、キーフレームとモーションがここに並びます": "Select an object to see its keyframes and motion here",
   "曲線ごとに -1〜1 にそろえて描く": "Draw each curve scaled to -1..1",
   "正規化": "Normalize",
+  "このカメラが場面のカメラです。レンダリング (F12) はここから撮ります。": "This is the scene camera. Renders (F12) are taken from here.",
+  "カメラがありません。追加 > カメラ で置いてください": "There is no camera. Place one with Add > Camera",
+  "カメラを選ぶと、ここで視野角・高さ・傾きを変えられます。": "Select a camera to change its field of view, height, and tilt here.",
+  "テンキー 0": "Numpad 0",
+  "向きは物の回転 (G・R・オブジェクトのタブ) で変えます。": "Change its direction with the object rotation (G, R, Object tab).",
+  "場面のカメラから見る (テンキー 0)": "View from the Scene Camera (Numpad 0)",
+  "場面のカメラから見る": "View from the Scene Camera",
+  "場面のカメラは、アウトライナーでいちばん上のカメラです (ドラッグで並べ替えると変わります)。": "The scene camera is the topmost camera in the Outliner (reorder by dragging to change it).",
 };
 export default dict;

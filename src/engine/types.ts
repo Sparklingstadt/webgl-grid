@@ -1,5 +1,6 @@
 import type * as THREE from 'three';
 import type { Animation } from '../core/animation';
+import type { CameraSettings } from '../core/camera';
 import type { LightSettings } from '../core/light';
 import { MODEL_KIND } from '../core/shapes';
 import type { BoneValue } from '../core/types';
@@ -35,6 +36,7 @@ export interface Obj {
   slots: (string | null)[];           // マテリアルスロット (マテリアルの id。なしは null)
   activeSlot?: number;                // サイドバーで選んでいるスロット
   light?: LightSettings | null;       // ライト (ライトのオブジェクトだけ)
+  camera?: CameraSettings | null;     // カメラ (カメラのオブジェクトだけ)
   addonData?: Record<string, unknown>; // アドオンの、物ごとの値 ("アドオンの id.名前" → 値)
   highlighted?: boolean;              // 掴んでいるので明るくしている
   name?: string;                      // 付けた名前 (なしは種類の名前。アウトライナー・サイドバーで変える)
@@ -45,7 +47,7 @@ export interface Obj {
 export type ModelObj = Obj & { model: Any };
 export const isModel = (o: Obj | null | undefined): o is ModelObj => o?.s === MODEL_KIND;
 // 物の種類 (画面・プロジェクト・MCP で使う名前)
-export type ObjKind = 'shape' | 'model' | 'light';
-export const kindOf = (o: Obj): ObjKind => (o.light ? 'light' : isModel(o) ? 'model' : 'shape');
+export type ObjKind = 'shape' | 'model' | 'light' | 'camera';
+export const kindOf = (o: Obj): ObjKind => (o.light ? 'light' : o.camera ? 'camera' : isModel(o) ? 'model' : 'shape');
 // 形 (ライトでも MMD モデルでもない物)
 export const isShape = (o: Obj | null | undefined): o is Obj => !!o && kindOf(o) === 'shape';

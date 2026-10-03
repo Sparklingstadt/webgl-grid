@@ -58,6 +58,7 @@ export function ViewportArea(props: {
           <MenuItem label={t('右から見る')} kbd={t('テンキー 3')} onSelect={() => camera.snapView('right')} />
           <MenuItem label={t('上から見る')} kbd={t('テンキー 7')} onSelect={() => camera.snapView('top')} />
           <MenuItem label={t('視点を戻す')} kbd="Home" onSelect={() => camera.resetView()} />
+          <MenuItem label={t('場面のカメラから見る')} kbd={t('テンキー 0')} onSelect={() => engine.toggleCameraView()} />
           <MenuSep />
           <MenuItem label={props.toolsOpen ? t('ツールバーを隠す') : t('ツールバーを出す')} kbd="T" onSelect={props.toggleTools} />
           <MenuItem label={props.nOpen ? t('サイドバーを隠す') : t('サイドバーを出す')} kbd="N" onSelect={props.toggleN} />
@@ -82,6 +83,9 @@ export function ViewportArea(props: {
           <MenuSep />
           <MenuLabel>{t('ライト')}</MenuLabel>
           {LIGHT_TYPES.map(l => <MenuItem key={l.key} label={t(l.name)} disabled={!canAdd} onSelect={() => { engine.addLight(l.key); props.showTab('light'); }} />)}
+          <MenuSep />
+          <MenuLabel>{t('カメラ')}</MenuLabel>
+          <MenuItem label={t('カメラ')} disabled={!canAdd} onSelect={() => { engine.addCamera(); props.showTab('cameradata'); }} />
           <MenuSep />
           <MenuItem label={t('MMD モデル…')} disabled={!canAdd} onSelect={props.onOpenFiles} />
           <AddonMenuItems menu="add" />

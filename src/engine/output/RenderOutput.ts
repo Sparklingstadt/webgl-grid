@@ -22,6 +22,7 @@ export class RenderCancelled extends Error {
 export class RenderOutput {
   settings: OutputSettings = normalizeOutput(undefined);
   active = false; // 描いている最中 (編集用の表示を隠す)
+  hooks: { begin?: () => void; end?: () => void } = {}; // 描く前・描いたあと (場面のカメラに切り替える・戻す)
   private cancelled = false;
 
   // baseName: 書き出すファイルの名前の元
@@ -189,6 +190,7 @@ export class RenderOutput {
   private begin() {
     const { width, height } = this.settings;
     this.active = true;
+    this.hooks.begin?.();
     this.gridWas = this.graph.grid.visible;
     this.graph.grid.visible = false;
     // ライトの目印など、ビューポートだけの物も描かない
@@ -201,6 +203,7 @@ export class RenderOutput {
   private hidden: THREE.Object3D[] = [];
   private end() {
     this.active = false;
+    this.hooks.end?.();
     this.graph.grid.visible = this.gridWas;
     for (const o of this.hidden) o.visible = true;
     this.hidden = [];

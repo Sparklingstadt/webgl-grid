@@ -1,6 +1,7 @@
 import { animationFromJson, animationToJson, channelKeys, isEmpty, keyFrames, PROPS, type Channel, type Curve } from '../core/animation';
 import { radiusOf } from '../core/stacking';
 import { applyObjectData } from './addons/registry';
+import { cameraAim, type CameraSettings } from '../core/camera';
 import type { LightSettings, LightType } from '../core/light';
 import { FPS } from '../core/constants';
 import { SONG_FILE } from '../core/models';
@@ -36,10 +37,11 @@ import { SceneGraph } from './render/SceneGraph';
 import { Viewport } from './render/Viewport';
 import { isModel, isShape, type ModelObj, type Obj } from './types';
 import { UiChannel } from './UiChannel';
-import { CameraController } from './view/CameraController';
+import { CameraController, type CameraOverride } from './view/CameraController';
 import { InputController } from './view/InputController';
 import { TransformTool } from './view/TransformTool';
 import { Lights } from './world/Lights';
+import { Cameras } from './world/Cameras';
 import { nameOf } from './world/Selection';
 import { ColorPicker } from './world/ColorPicker';
 import { Selection } from './world/Selection';
@@ -69,6 +71,7 @@ export class Engine {
   readonly world = new World(this.graph, this.viewport, this.ui, this.library);
   readonly selection = new Selection(this.world, this.ui);
   readonly lights = new Lights(this.world, this.viewport);
+  readonly cameras = new Cameras(this.world, this.viewport);
   readonly materials = new MaterialEditor(this.library, this.world, this.selection, this.ui);
   readonly picker = new ColorPicker(this.world, this.viewport, this.ui);
   readonly camera = new CameraController(this.graph, this.viewport, this.ui, this.world);
@@ -97,6 +100,21 @@ export class Engine {
   constructor() {
     const { viewport, clock, motion, keyframes, music, world, selection, camera, graph, ui } = this;
     registerBuiltins(this);
+    // レンダリングは、カメラのモーションがなければ、場面のカメラ (置いたカメラのいちばん上) から撮る
+    let rendering: { saved: CameraOverride | null } | null = null;
+    this.output.hooks = {
+      begin: () => {
+        const scene = this.cameras.scene, cur = this.camera.override;
+        if (!scene || (cur && cur !== this.cameraView)) return;
+        rendering = { saved: cur };
+        this.camera.setOverride(this.cameras.view(scene, () => {}));
+      },
+      end: () => {
+        if (!rendering) return;
+        this.camera.setOverride(rendering.saved);
+        rendering = null;
+      },
+    };
     // 言語を変えたら、エンジンが作った文 (選んでいる物の名前・ビューポート左上の文字・タイムラインの行) を作り直す
     langEvents.on('changed', () => { selection.publish(); ui.bump('keysVersion'); viewport.requestDraw(); });
     // 毎フレームの計算の順番: 再生 → モーション → 手で動かしたボーン → 物理演算 → 落下
@@ -140,6 +158,7 @@ export class Engine {
         o.node.visible = shownIn(o, rendering);
       }
       selection.syncOutlines(world.objects, rendering);
+      this.cameras.sync(o => selection.isSelected(o), selection.current);
       graph.aimShadows(camera.cam.tx, camera.cam.tz, camera.cam.dist);
     });
     // 描いたあと: 選んでいる物の情報と、ビューポート左上の文字 (Blender の「ユーザー・透視投影」と「(フレーム) 選んでいる物」)
@@ -283,6 +302,38 @@ export class Engine {
     this.viewport.requestDraw();
     return obj;
   }
+  // --- カメラ (Blender のカメラ) ---
+  // いまのビューポートの視点 (位置・向き・視野角) に置いて選ぶ (Blender の「ビューに揃える」)
+  addCamera(settings: Partial<CameraSettings> = {}) {
+    if (this.world.full) return null;
+    this.camera.update();
+    const cam = this.camera.camera, dir = new THREE.Vector3();
+    cam.getWorldDirection(dir);
+    const { r, tiltDeg } = cameraAim(dir.x, dir.y, dir.z);
+    const obj = this.cameras.add({ fov: cam.fov, height: Math.max(cam.position.y, 0.05), tiltDeg, ...settings }, cam.position.x, cam.position.z, r);
+    this.selection.select(obj);
+    this.viewport.requestDraw();
+    return obj;
+  }
+  setCamera(patch: Partial<CameraSettings>) {
+    const o = this.selection.current;
+    if (!o?.camera) return;
+    this.cameras.set(o, patch);
+    this.selection.publish();
+    this.history.soon();
+  }
+  // テンキー 0: 場面のカメラから見る・やめる (自分で視点を動かしてもやめる)
+  private cameraView: CameraOverride | null = null;
+  get viewingCamera() { return !!this.cameraView && this.camera.override === this.cameraView; }
+  toggleCameraView() {
+    if (this.viewingCamera) { this.camera.releaseOverride(true); return; }
+    const scene = this.cameras.scene;
+    if (!scene) { this.ui.toast(t('カメラがありません。追加 > カメラ で置いてください')); return; }
+    if (this.camera.override) this.camera.releaseOverride(false);
+    this.cameraView = this.cameras.view(scene, () => { this.cameraView = null; });
+    this.camera.setOverride(this.cameraView);
+  }
+
   setLight(patch: Partial<LightSettings>) {
     const o = this.selection.current;
     if (!o?.light) return;
@@ -336,6 +387,8 @@ export class Engine {
         obj = m;
       } else if (src.light) {
         obj = this.lights.add({ ...src.light }, x, z);
+      } else if (src.camera) {
+        obj = this.cameras.add({ ...src.camera }, x, z, src.r);
       } else {
         obj = this.world.addShape(src.s, x, z, src.c);
         src.slots.forEach((id, i) => this.world.setSlot(obj, i, id));
@@ -343,7 +396,7 @@ export class Engine {
       obj.r = src.r;
       // 物ごとの値 (表示・アドオンの値。名前は下で番号を付ける)
       for (const d of this.addons.objectData.list()) {
-        if (d.key === 'name' || d.key === 'light') continue;
+        if (d.key === 'name' || d.key === 'light' || d.key === 'camera') continue;
         const v = d.get(src);
         if (v !== undefined && v !== null) applyObjectData(d, obj, structuredClone(v));
       }

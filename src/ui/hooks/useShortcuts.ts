@@ -62,6 +62,7 @@ export function useShortcuts(engine: Engine, actions: {
       if (a.hoverArea.current === 'shader' && ['KeyX', 'Delete', 'KeyA', 'Home'].includes(e.code)) return;
       // 文字のキーは、配列や Alt で変わる e.key ではなく、キーの位置 (e.code) で見る
       switch (e.code) {
+        case 'Numpad0': engine.toggleCameraView(); break; // 場面のカメラから見る・やめる
         case 'Numpad1': engine.camera.snapView('front'); break;
         case 'Numpad3': engine.camera.snapView('right'); break;
         case 'Numpad7': engine.camera.snapView('top'); break;

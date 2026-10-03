@@ -51,7 +51,7 @@ button, input, select { font: inherit; color: inherit; }
 .hbtn[aria-pressed="true"] { background: var(--accent); }
 .menu { position: relative; }
 .menu-pop {
-  position: absolute; left: 0; top: calc(100% + 2px); z-index: 30; min-width: 220px; padding: 4px;
+  position: fixed; z-index: 30; min-width: 220px; padding: 4px; overflow-y: auto; box-sizing: border-box;
   background: var(--menu); border: 1px solid #2c2c2c; border-radius: 6px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
 }
 .menu-pop[hidden] { display: none; }
@@ -158,6 +158,7 @@ button.ol-twist[aria-expanded="true"]::before { border-left-color: transparent; 
 .ol-shape { color: #ffa94d; }
 .ol-model { color: #8fd18f; }
 .ol-light { color: #ffe37a; }
+.ol-camera { color: #9fd0ff; }
 .ol-bone { color: #b8c7e0; }
 .ol-bone .ol-icon { color: #9db3d6; }
 .ol-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

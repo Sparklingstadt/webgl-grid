@@ -4,6 +4,7 @@ import { matchAssets } from '../../core/assetMatch';
 import { FPS } from '../../core/constants';
 import { errorText } from '../../core/errors';
 import { t } from '../../core/i18n';
+import type { CameraSettings } from '../../core/camera';
 import type { LightSettings } from '../../core/light';
 import type { Engine } from '../Engine';
 import { applyObjectData } from '../addons/registry';
@@ -203,6 +204,8 @@ export class ProjectIO {
       let obj: Obj | null = null;
       if (so.kind === 'light') {
         obj = e.lights.add((so.light ?? {}) as Partial<LightSettings>, so.x, so.z);
+      } else if (so.kind === 'camera') {
+        obj = e.cameras.add((so.camera ?? {}) as Partial<CameraSettings>, so.x, so.z, so.r);
       } else if (so.kind === 'shape') {
         obj = e.world.addShape(so.s, so.x, so.z, so.c);
       } else {

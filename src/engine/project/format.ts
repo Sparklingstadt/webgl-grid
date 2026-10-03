@@ -24,7 +24,7 @@ export interface SavedAsset { id: string; name: string; type: string; size?: num
 export type PickMissing = (missing: SavedAsset[]) => Promise<File[] | 'skip' | 'cancel'>;
 export class ProjectCancelled extends Error { constructor() { super(t('開くのをやめました')); } }
 export interface SavedObject {
-  kind: 'shape' | 'model' | 'light';
+  kind: 'shape' | 'model' | 'light' | 'camera';
   s: number; x: number; y: number; z: number; r: number; c: number;
   slots: (string | null)[];
   activeSlot?: number;

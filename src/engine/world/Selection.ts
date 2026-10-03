@@ -72,8 +72,8 @@ export class Selection {
     const prev = this.ui.state.sel;
     const name = nameOf(o);
     if (prev && prev.id === o.id && prev.x === o.x && prev.y === o.y && prev.z === o.z && prev.r === o.r &&
-        prev.c === o.c && prev.scale === (o.scale ?? 1) && prev.animated === !!o.animated && prev.name === name && prev.light === (o.light ?? null)) return;
-    this.ui.set({ sel: { id: o.id, kind: kindOf(o), name, c: o.c, x: o.x, y: o.y, z: o.z, r: o.r, scale: o.scale ?? 1, animated: !!o.animated, light: o.light ?? null } });
+        prev.c === o.c && prev.scale === (o.scale ?? 1) && prev.animated === !!o.animated && prev.name === name && prev.light === (o.light ?? null) && prev.camera === (o.camera ?? null)) return;
+    this.ui.set({ sel: { id: o.id, kind: kindOf(o), name, c: o.c, x: o.x, y: o.y, z: o.z, r: o.r, scale: o.scale ?? 1, animated: !!o.animated, light: o.light ?? null, camera: o.camera ?? null } });
   }
 
   // 描く前: 輪郭線 (OutlineEffect) の設定を、マテリアルの輪郭線 (outlineBase) から作る。
@@ -98,5 +98,5 @@ export class Selection {
 }
 
 // 物の名前: 付けた名前か、種類の名前 (モデルは .pmx の中の名前)
-export const kindName = (o: Obj) => (isModel(o) ? (o.model.name || t('モデル')) : o.light ? lightName(o.light.type) : shapeName(o.s));
+export const kindName = (o: Obj) => (isModel(o) ? (o.model.name || t('モデル')) : o.light ? lightName(o.light.type) : o.camera ? t('カメラ') : shapeName(o.s));
 export const nameOf = (o: Obj) => o.name || kindName(o);

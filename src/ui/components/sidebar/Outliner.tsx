@@ -18,6 +18,7 @@ const ICON: Record<ObjKind | 'bone', ReactNode> = {
   model: <><circle cx="8" cy="4" r="2.2" /><path d="M3.5 14.5c0-3.5 2-5.5 4.5-5.5s4.5 2 4.5 5.5" /></>,
   light: <><path d="M5.5 9.5a4 4 0 1 1 5 0c-.6.5-.9 1.2-.9 2h-3.2c0-.8-.3-1.5-.9-2z" /><path d="M6.5 14h3" /></>,
   bone: <path d="M8 2 11 6 8 14 5 6z M5 6h6" />,
+  camera: <path d="M2.5 5h7v6h-7z M9.5 7.5 13.5 5v6l-4-2.5" />,
 };
 const Icon = ({ kind }: { kind: ObjKind | 'bone' }) => (
   <svg className={`ol-icon ol-${kind}`} viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round">{ICON[kind]}</svg>
