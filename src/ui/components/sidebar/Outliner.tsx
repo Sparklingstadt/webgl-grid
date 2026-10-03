@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { t } from '../../../core/i18n';
 import type { Engine } from '../../../engine';
 import { isModel, kindOf, type ModelObj, type Obj, type ObjKind } from '../../../engine/types';
@@ -10,7 +10,8 @@ import { MenuItem, MenuSep } from '../Menu';
 // --- アウトライナー (Blender のアウトライナー): 場面に置いた物を一覧にして、選ぶ・名前を変える・隠す・消す ---
 // クリックで選ぶ、ダブルクリック (F2) で名前を変える、目のアイコンでビューポートで隠す、カメラのアイコンでレンダリングに写さない、
 // 右クリックでメニュー。MMD モデルは広げるとボーンが並び、押すとそのボーンを選んでボーンのタブを開く。
-// キーボード: ↑↓ で選ぶ物を変える、→← で広げる・閉じる、H / Shift+H / Alt+H で隠す・見せる、X で消す
+// ドラッグで並べ替える (マウスは行のどこでも、指は種類のアイコンをつかんで。Esc でやめる)。
+// キーボード: ↑↓ で選ぶ物を変える、Alt+↑↓ で並べ替える、→← で広げる・閉じる、H / Shift+H / Alt+H で隠す・見せる、X で消す
 const ICON: Record<ObjKind | 'bone', ReactNode> = {
   shape: <path d="M8 1.5 13.5 4.5v7L8 14.5 2.5 11.5v-7z M8 1.5v6.5 M2.5 4.5 8 8l5.5-3.5" />,
   model: <><circle cx="8" cy="4" r="2.2" /><path d="M3.5 14.5c0-3.5 2-5.5 4.5-5.5s4.5 2 4.5 5.5" /></>,
@@ -36,6 +37,19 @@ const Camera = ({ off }: { off: boolean }) => (
 let renameRequested = false;
 export function requestRename() { renameRequested = true; dispatchEvent(new Event('outliner-rename')); }
 
+// ドラッグで指している所: 行 (上の段の物) の上半分なら前、下半分なら後ろ。一覧の外なら、いちばん近い行
+interface Drop { target: number; where: 'before' | 'after' }
+function dropAt(rows: Map<number, HTMLElement>, y: number): Drop | null {
+  let best: Drop | null = null, dist = Infinity;
+  for (const [id, li] of rows) {
+    const r = (li.firstElementChild as HTMLElement | null)?.getBoundingClientRect();
+    if (!r) continue;
+    const mid = (r.top + r.bottom) / 2, d = y < r.top ? r.top - y : y > r.bottom ? y - r.bottom : 0;
+    if (d < dist) { dist = d; best = { target: id, where: y < mid ? 'before' : 'after' }; }
+  }
+  return best;
+}
+
 // ボーンの並び: ボーンのタブに出るもの (動かせるもの) を、.pmx の順に、親子の深さを付けて
 interface BoneNode { name: string; parent: BoneNode | null; isBone?: boolean }
 function bonesOf(engine: Engine, o: ModelObj) {
@@ -58,6 +72,9 @@ export function Outliner({ onPickBone }: { onPickBone: () => void }) {
   const [renaming, setRenaming] = useState<number | null>(null);
   const [menu, setMenu] = useState<{ id: number; anchor: HTMLElement } | null>(null);
   const rows = useRef(new Map<number, HTMLElement>());
+  const tree = useRef<HTMLUListElement>(null);
+  const [drag, setDrag] = useState<Drop & { id: number } | null>(null);
+  const dragged = useRef(false); // (ドラッグを終えたときのクリックでは選ばない)
   const objects = engine.world.objects;
   const q = filter.trim().toLowerCase();
   const match = (s: string) => !q || s.toLowerCase().includes(q);
@@ -83,14 +100,53 @@ export function Outliner({ onPickBone }: { onPickBone: () => void }) {
 
   const toggle = (id: number, on = !expanded.has(id)) => setExpanded(prev => { const s = new Set(prev); if (on) s.add(id); else s.delete(id); return s; });
   const select = (o: Obj) => { engine.select(o); rows.current.get(o.id)?.focus(); };
+  const move = (o: Obj, target: Obj, where: Drop['where']) => {
+    engine.moveObject(o, target, where);
+    requestAnimationFrame(() => rows.current.get(o.id)?.focus()); // (並べ直した行に、フォーカスを戻す)
+  };
+  // ドラッグ: 4px 動いたら始め、指している行の上半分なら前、下半分なら後ろに入れる。一覧の端では送る
+  const startDrag = (e: ReactPointerEvent, o: Obj) => {
+    const el = e.target as HTMLElement;
+    if (e.button !== 0 || renaming !== null || el.closest('button, input')) return;
+    if (e.pointerType === 'touch' && !el.closest('.ol-icon')) return; // (指は、行のほかの所ではスクロール)
+    const x0 = e.clientX, y0 = e.clientY;
+    let last: Drop | null = null;
+    const onMove = (ev: PointerEvent) => {
+      if (!last && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 4) return;
+      ev.preventDefault();
+      const box = tree.current?.getBoundingClientRect();
+      if (box && ev.clientY < box.top + 16) tree.current!.scrollTop -= 8;
+      else if (box && ev.clientY > box.bottom - 16) tree.current!.scrollTop += 8;
+      last = dropAt(rows.current, ev.clientY) ?? last ?? { target: o.id, where: 'before' };
+      setDrag({ id: o.id, ...last });
+    };
+    const end = (apply: boolean) => {
+      removeEventListener('pointermove', onMove);
+      removeEventListener('pointerup', onUp);
+      removeEventListener('pointercancel', onCancel);
+      removeEventListener('keydown', onEsc, true);
+      setDrag(null);
+      if (!last) return;
+      dragged.current = true;
+      setTimeout(() => { dragged.current = false; });
+      const target = engine.world.find(last.target);
+      if (apply && target) move(o, target, last.where);
+    };
+    const onUp = () => end(true), onCancel = () => end(false);
+    const onEsc = (ev: globalThis.KeyboardEvent) => { if (ev.key === 'Escape' && last) { ev.stopPropagation(); end(false); } };
+    addEventListener('pointermove', onMove);
+    addEventListener('pointerup', onUp);
+    addEventListener('pointercancel', onCancel);
+    addEventListener('keydown', onEsc, true);
+  };
   const pickBone = (o: ModelObj, i: number) => { engine.select(o); engine.setBoneSel(i); onPickBone(); };
   const onKey = (e: KeyboardEvent, o: Obj) => {
     const list = shown.map(x => x.o), at = list.indexOf(o);
     const go = (i: number) => { const next = list[Math.min(Math.max(i, 0), list.length - 1)]; if (next) select(next); };
     let used = true;
     switch (e.key) {
-      case 'ArrowDown': go(at + 1); break;
-      case 'ArrowUp': go(at - 1); break;
+      case 'ArrowDown': if (e.altKey) { if (list[at + 1]) move(o, list[at + 1], 'after'); } else go(at + 1); break;
+      case 'ArrowUp': if (e.altKey) { if (list[at - 1]) move(o, list[at - 1], 'before'); } else go(at - 1); break;
       case 'Home': go(0); break;
       case 'End': go(list.length - 1); break;
       case 'ArrowRight': if (isModel(o)) toggle(o.id, true); break;
@@ -110,7 +166,7 @@ export function Outliner({ onPickBone }: { onPickBone: () => void }) {
         {open && <input type="search" className="ol-filter" placeholder={t('絞り込み')} aria-label={t('アウトライナーを絞り込む')} value={filter} onChange={e => setFilter(e.target.value)} />}
       </div>
       {open && (
-        <ul className="ol-tree" role="tree" aria-label={t('シーンの物')}>
+        <ul className={`ol-tree${drag ? ' dragging' : ''}`} role="tree" aria-label={t('シーンの物')} ref={tree}>
           {!shown.length && <li className="ol-empty" role="none">{objects.length ? t('合う物がありません') : t('何も置いていません')}</li>}
           {shown.map(({ o, bones }) => {
             const name = nameOf(o), active = sel?.id === o.id, model = isModel(o);
@@ -119,8 +175,9 @@ export function Outliner({ onPickBone }: { onPickBone: () => void }) {
               <li key={o.id} role="treeitem" aria-level={1} aria-selected={active} aria-expanded={model ? isOpen : undefined} aria-label={name}
                   tabIndex={active || (!sel && o === shown[0].o) ? 0 : -1} ref={el => { if (el) rows.current.set(o.id, el); else rows.current.delete(o.id); }}
                   onKeyDown={e => { if (e.target === e.currentTarget) onKey(e, o); }}>
-                <div className={`ol-row${active ? ' active' : ''}${o.hidden ? ' hidden' : ''}`}
-                     onClick={() => select(o)} onDoubleClick={() => setRenaming(o.id)}
+                <div className={`ol-row${active ? ' active' : ''}${o.hidden ? ' hidden' : ''}${drag?.id === o.id ? ' drag-source' : ''}${drag && drag.target === o.id && drag.id !== o.id ? ` drop-${drag.where}` : ''}`}
+                     onPointerDown={e => startDrag(e, o)}
+                     onClick={() => { if (!dragged.current) select(o); }} onDoubleClick={() => setRenaming(o.id)}
                      onContextMenu={e => { e.preventDefault(); select(o); setMenu({ id: o.id, anchor: e.currentTarget }); }}>
                   {model
                     ? <button type="button" className="ol-twist" tabIndex={-1} aria-label={isOpen ? t('ボーンを閉じる') : t('ボーンを開く')} aria-expanded={isOpen}

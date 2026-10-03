@@ -99,6 +99,11 @@ canvas#c.over-box { cursor: pointer; }
 .ol-row.active { background: #334d80; }
 .ol-row.active .ol-name { color: var(--select); }
 .ol-row.hidden .ol-name, .ol-row.hidden .ol-icon { opacity: 0.45; }
+.ol-tree.dragging, .ol-tree.dragging .ol-row { cursor: grabbing; }
+.ol-row.drag-source { opacity: 0.5; }
+.ol-row.drop-before { box-shadow: inset 0 2px 0 var(--accent); }
+.ol-row.drop-after { box-shadow: inset 0 -2px 0 var(--accent); }
+.ol-tree > li > .ol-row .ol-icon { touch-action: none; } /* (指でアイコンをつかむと並べ替え) */
 .ol-twist { flex: none; width: 14px; height: 14px; padding: 0; background: none; border: 0; cursor: pointer; display: grid; place-items: center; }
 button.ol-twist::before { content: ""; border: 4px solid transparent; border-left: 5px solid var(--dim); margin-left: 4px; }
 button.ol-twist[aria-expanded="true"]::before { border-left-color: transparent; border-top: 5px solid var(--dim); margin: 4px 0 0; }

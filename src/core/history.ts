@@ -24,6 +24,7 @@ export function describeChange(prev: SceneState, next: SceneState, labels: Chang
   const ids = new Set(next.objects.map(o => o.id));
   if (next.objects.some(o => !before.has(o.id))) return msg('追加');
   if (prev.objects.some(o => !ids.has(o.id))) return msg('削除');
+  if (prev.objects.map(o => o.id).join() !== next.objects.map(o => o.id).join()) return msg('並べ替え');
   const pairs = next.objects.map(o => [before.get(o.id)!, o] as const);
   const changed = (k: keyof ObjState) => pairs.some(([a, b]) => JSON.stringify(a[k]) !== JSON.stringify(b[k]));
   const differ = (a: unknown, b: unknown) => JSON.stringify(a ?? null) !== JSON.stringify(b ?? null);

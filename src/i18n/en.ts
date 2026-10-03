@@ -878,5 +878,6 @@ const dict: Dictionary = {
   "レンダリングに写す": "Enable in Renders",
   "隠す / ほかを隠す / すべて表示": "Hide / Hide Unselected / Reveal All",
   "選択物を隠す": "Hide Selected",
+  "並べ替え": "Reorder",
 };
 export default dict;

@@ -250,6 +250,21 @@ export class Engine {
     for (const o of [...this.world.objects]) if ((o === cur) !== others) this.setVisibility(o, { hidden: true });
   }
   revealAll() { for (const o of this.world.objects) this.setVisibility(o, { hidden: false }); }
+  // 並べ替え (アウトライナーでドラッグ): obj を target の前 (後) に。並びは一覧の順で、積み重ねは変えない
+  moveObject(obj: Obj, target: Obj, where: 'before' | 'after') {
+    if (obj === target) return;
+    const ids = this.world.objects.filter(o => o !== obj).map(o => o.id);
+    const at = ids.indexOf(target.id);
+    if (at < 0) return;
+    ids.splice(where === 'before' ? at : at + 1, 0, obj.id);
+    this.setOrder(ids);
+  }
+  // ids の順に並べる (ない物は後ろに、元の順で)
+  setOrder(ids: number[]) {
+    const before = this.world.objects.map(o => o.id).join();
+    this.world.reorder(ids);
+    if (this.world.objects.map(o => o.id).join() !== before) this.objChanged();
+  }
   private objChanged() {
     this.ui.bump('sceneVersion');
     this.selection.publish();

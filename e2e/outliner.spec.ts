@@ -102,3 +102,46 @@ test('MMD モデルを広げるとボーンが並び、押すとボーンのタ�
   await page.keyboard.press('Enter');
   await expect(item(page, 'テスト人形')).toBeVisible();
 });
+
+test('ドラッグで並べ替える (Esc でやめる・Alt+↑↓ でも)。元に戻せる', async ({ page }) => {
+  await open(page);
+  for (const shape of ['トーラス', '三角錐']) {
+    await page.getByRole('button', { name: '追加' }).click();
+    await page.getByRole('menuitem', { name: shape }).click();
+  }
+  await page.waitForTimeout(200); // (置いたのを 1 手に積んでから)
+  const names = () => tree(page).getByRole('treeitem').allTextContents();
+  const order = async () => { const n = await names(); return [n.indexOf('トーラス'), n.indexOf('三角錐')]; };
+  const ids = () => page.evaluate(() => (window as Win).engine.world.objects.map((o: { id: number }) => o.id));
+  const before = await ids();
+  // 三角錐を、トーラスの行の上半分へドラッグすると、トーラスの前に入る
+  const drag = async (from: string, to: string, frac: number) => {
+    const a = (await row(page, from).boundingBox())!, b = (await row(page, to).boundingBox())!;
+    await page.mouse.move(a.x + 40, a.y + a.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(a.x + 40, a.y + a.height / 2 - 6, { steps: 2 });
+    await page.mouse.move(b.x + 40, b.y + b.height * frac, { steps: 4 });
+  };
+  await drag('三角錐', 'トーラス', 0.25);
+  await expect(row(page, 'トーラス')).toHaveClass(/drop-before/);
+  await page.mouse.up();
+  await expect.poll(order).toEqual([expect.any(Number), expect.any(Number)]);
+  const [t1, c1] = await order();
+  expect(c1).toBe(t1 - 1);
+  expect((await uiState(page)).sel?.name).toBe('三角錐'); // (ドラッグでは選び直さない)
+  await expect.poll(() => page.evaluate(() => (window as Win).engine.ui.state.history.labels.at(-1))).toBe('並べ替え');
+  // Esc でやめると、並びは変わらない
+  const now = await ids();
+  await drag('三角錐', 'トーラス', 0.75);
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
+  expect(await ids()).toEqual(now);
+  // 元に戻すと、元の並び
+  await page.keyboard.press('Control+z');
+  await expect.poll(ids).toEqual(before);
+  // Alt+↑ で 1 つ前へ
+  await row(page, '三角錐').click();
+  await page.keyboard.press('Alt+ArrowUp');
+  await expect.poll(async () => { const [t, c] = await order(); return c - t; }).toBe(-1);
+  await expect(item(page, '三角錐')).toBeFocused();
+});

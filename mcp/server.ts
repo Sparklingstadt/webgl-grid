@@ -89,6 +89,7 @@ forward('set_object', '物の位置・向き・色・名前・表示を変える
   hideRender: z.boolean().optional().describe('レンダリングに写さない (Blender のカメラのアイコン)'),
 });
 forward('delete_object', '物を消す', { id });
+forward('reorder_objects', '物の並び (アウトライナーの順) を変える。ids の順に先頭から並べ、書いていない物はその後ろに元の順で', { ids: z.array(z.number().int()) });
 const vec3 = z.array(z.number()).length(3);
 const paramRecord = z.record(z.string(), z.union([z.number(), z.boolean(), z.string()]));
 const effectorList = z.array(z.object({

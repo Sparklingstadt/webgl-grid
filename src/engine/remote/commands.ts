@@ -151,6 +151,12 @@ export const COMMANDS: Record<string, Command> = {
     e.setLight(patch);
     return { id: obj.id, light: obj.light };
   },
+  reorder_objects: (e, p) => {
+    const ids = (p?.ids ?? []) as number[];
+    for (const id of ids) objOf(e, id);
+    e.setOrder(ids);
+    return { order: e.world.objects.map(o => o.id) };
+  },
   delete_object: (e, p) => { e.world.remove(objOf(e, p?.id)); return { ok: true }; },
   reset_scene: e => { e.resetAll(); return { ok: true }; },
 

@@ -203,7 +203,7 @@ export class History {
       world.settle();
       if (this.selection.current && !world.has(this.selection.current)) this.selection.select(null);
       this.selection.publish();
-      for (const k of ['modelVersion', 'keysVersion', 'materialsVersion', 'values'] as const) this.ui.bump(k);
+      for (const k of ['modelVersion', 'keysVersion', 'materialsVersion', 'values', 'sceneVersion'] as const) this.ui.bump(k);
       this.viewport.requestDraw();
     } finally {
       this.restoring = false;

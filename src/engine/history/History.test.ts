@@ -66,6 +66,19 @@ describe('History', () => {
     expect(cube.hidden).toBeUndefined();
   });
 
+  it('並べ替え (アウトライナー) を 1 手にして戻す', async () => {
+    const e = new Engine();
+    e.addShape(1); e.addShape(2); step(e);
+    const [a, b, c] = e.world.objects;
+    e.moveObject(c, a, 'before'); step(e);
+    expect(e.world.objects).toEqual([c, a, b]);
+    e.moveObject(c, b, 'after'); step(e);
+    expect(e.world.objects).toEqual([a, b, c]);
+    expect(e.ui.state.history.labels.slice(-2)).toEqual(['並べ替え', '並べ替え']);
+    await e.history.undo();
+    expect(e.world.objects).toEqual([c, a, b]);
+  });
+
   it('消した物を戻すと、元の並び順と積み重ねに戻る', async () => {
     const e = new Engine();
     e.addShape(0);
