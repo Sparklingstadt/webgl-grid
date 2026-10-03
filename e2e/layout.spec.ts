@@ -46,3 +46,19 @@ test('ワークスペース: シェーディングでシェーダーエディタ
   await expect(page.getByRole('region', { name: 'タイムライン' })).toBeVisible();
   await expect(page.getByRole('contentinfo', { name: '状態バー' })).toContainText('立方体 | オブジェクト 1/1 | フレーム 0');
 });
+
+test('T でビューポートのツールバーを隠し・出す。開け閉めは開き直しても覚えている', async ({ page }) => {
+  await open(page);
+  const tools = page.getByRole('group', { name: 'カメラの操作' });
+  await expect(tools).toBeVisible();
+  await page.locator('canvas#c').hover();
+  await page.keyboard.press('t');
+  await expect(tools).toHaveCount(0);
+  await expect(page.locator('.viewport')).toHaveClass(/tools-hidden/);
+  await open(page);
+  await expect(tools).toHaveCount(0);
+  // ビューのメニューからも出せる
+  await page.getByRole('button', { name: 'ビュー', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'ツールバーを出す' }).click();
+  await expect(tools).toBeVisible();
+});

@@ -922,5 +922,8 @@ const dict: Dictionary = {
   "回転 (サイドバー)": "Rotation (Sidebar)",
   "視点": "Viewpoint",
   "視野角": "Field of View",
+  "ツールバーを出す": "Show Toolbar",
+  "ツールバーを隠す": "Hide Toolbar",
+  "ツールバー": "Toolbar",
 };
 export default dict;

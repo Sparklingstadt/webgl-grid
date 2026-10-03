@@ -10,6 +10,7 @@ export function useShortcuts(engine: Engine, actions: {
   openAddMenu: () => void;
   closeMenus: () => boolean; // 開いていたメニューを閉じたら true
   toggleN: () => void;   // ビューポートのサイドバー (N パネル)
+  toggleTools: () => void; // ビューポートのツールバー (T)
   showSide: () => void; // 右の列 (アウトライナー・プロパティ) を開く (閉じていれば)
   openFiles: () => void;
   openProject: () => void;
@@ -85,6 +86,9 @@ export function useShortcuts(engine: Engine, actions: {
           break;
         case 'KeyN':
           a.toggleN();
+          break;
+        case 'KeyT':
+          a.toggleTools();
           break;
         // 隠す (Blender と同じ): H 選んでいる物、Shift+H ほかの物、Alt+H 全部見せる
         case 'KeyH':

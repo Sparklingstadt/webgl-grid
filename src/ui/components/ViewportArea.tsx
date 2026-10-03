@@ -18,7 +18,7 @@ import { requestRename } from './sidebar/Outliner';
 // 3D ビューポート (Blender の 3D ビューポート): 見出し (エディターの種類・モード・ビュー・追加・オブジェクトのメニュー)、
 // 左のツールバー、左上の文字、右上のナビゲーションギズモ
 export function ViewportArea(props: {
-  sideOpen: boolean; toggleSide: () => void; nOpen: boolean; toggleN: () => void; tlOpen: boolean; toggleTl: () => void;
+  sideOpen: boolean; toggleSide: () => void; nOpen: boolean; toggleN: () => void; toolsOpen: boolean; toggleTools: () => void; tlOpen: boolean; toggleTl: () => void;
   onOpenFiles: () => void; onViewportPointerDown: () => void; showTab: (tab: SideTab) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -54,6 +54,7 @@ export function ViewportArea(props: {
           <MenuItem label={t('上から見る')} kbd={t('テンキー 7')} onSelect={() => camera.snapView('top')} />
           <MenuItem label={t('視点を戻す')} kbd="Home" onSelect={() => camera.resetView()} />
           <MenuSep />
+          <MenuItem label={props.toolsOpen ? t('ツールバーを隠す') : t('ツールバーを出す')} kbd="T" onSelect={props.toggleTools} />
           <MenuItem label={props.nOpen ? t('サイドバーを隠す') : t('サイドバーを出す')} kbd="N" onSelect={props.toggleN} />
           <MenuItem label={props.sideOpen ? t('アウトライナーとプロパティを隠す') : t('アウトライナーとプロパティを出す')} onSelect={props.toggleSide} />
           <MenuItem label={props.tlOpen ? t('タイムラインをたたむ') : t('タイムラインを広げる')} onSelect={props.toggleTl} />
@@ -86,18 +87,18 @@ export function ViewportArea(props: {
         <button type="button" className="hbtn" aria-pressed={props.sideOpen} aria-controls="side-column" title={t('アウトライナーとプロパティ')} onClick={props.toggleSide}>{t('プロパティ')}</button>
       </div>
       <div className="view-body">
-        <div className={`viewport${props.nOpen ? ' n-open' : ''}`} ref={el => { viewportRef.current = el; setViewportEl(el); }} onPointerDown={props.onViewportPointerDown}>
+        <div className={`viewport${props.nOpen ? ' n-open' : ''}${props.toolsOpen ? '' : ' tools-hidden'}`} ref={el => { viewportRef.current = el; setViewportEl(el); }} onPointerDown={props.onViewportPointerDown}>
           <canvas id="c" ref={canvasRef} />
           {showFrame && <OutputFrame container={viewportEl} />}
-          <div className="tools" role="group" aria-label={t('カメラの操作')}>
+          {props.toolsOpen && <div className="tools" role="group" aria-label={t('カメラの操作')}>
             <button type="button" aria-pressed={mode === 'orbit'} title={t('回転: ドラッグで注視点のまわりを回る')} aria-label={t('回転')} onClick={() => camera.setMode('orbit')}>
               <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16.5 10a6.5 6.5 0 1 1-2-4.7" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /><path d="M15.5 2.5v3.6h-3.6" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
             </button>
             <button type="button" aria-pressed={mode === 'pan'} title={t('移動: ドラッグで地面に沿って動く')} aria-label={t('移動')} onClick={() => camera.setMode('pan')}>
               <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2v16M2 10h16M10 2 7.5 4.5M10 2l2.5 2.5M10 18l-2.5-2.5M10 18l2.5-2.5M2 10l2.5-2.5M2 10l2.5 2.5M18 10l-2.5-2.5M18 10l-2.5 2.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
             </button>
-          </div>
-          {poseMode && (
+          </div>}
+          {poseMode && props.toolsOpen && (
             <div className="tools pose-tools" role="group" aria-label={t('ボーンの操作')}>
               <button type="button" aria-pressed={poseTool === 'rotate'} title={t('回す (R): ギズモでボーンを回す')} aria-label={t('ボーンを回す')} onClick={() => engine.pose.setTool('rotate')}>R</button>
               <button type="button" aria-pressed={poseTool === 'translate'} title={t('動かす (G): 動かせるボーン (IK・センターなど) をギズモで動かす')} aria-label={t('ボーンを動かす')} onClick={() => engine.pose.setTool('translate')}>G</button>
