@@ -1,13 +1,11 @@
 import { strFromU8 } from 'fflate';
 import { animationFromJson, animationFromPoseKeys, animationToJson, isEmpty } from '../../core/animation';
 import { matchAssets } from '../../core/assetMatch';
-import { normalizeCloner } from '../../core/cloner';
-import { normalizeDeformers } from '../../core/deform';
 import { FPS } from '../../core/constants';
 import { errorText } from '../../core/errors';
-import { normalizeOutput } from '../../core/output';
-import { normalizeScene } from '../../core/scene';
+import type { LightSettings } from '../../core/light';
 import type { Engine } from '../Engine';
+import { applyTrait } from '../extend/Registry';
 import { download } from '../io/download';
 import type { Any, ModelObj, Obj } from '../types';
 import {
@@ -108,7 +106,8 @@ export class ProjectIO {
     };
     const filesOf = (mesh: Any): string[] => [...(mesh.userData.usedFiles ?? [mesh.userData.sourceFile])].map(asset);
     const objects: SavedObject[] = e.world.objects.map(o => {
-      const base: SavedObject = { kind: o.light ? 'light' : o.s === 3 ? 'model' : 'shape', s: o.s, x: o.x, y: o.y, z: o.z, r: o.r, c: o.c, slots: [...o.slots], activeSlot: o.activeSlot, cloner: o.cloner ?? null, deformers: o.deformers ?? null, light: o.light ?? null };
+      const base: SavedObject = { kind: o.light ? 'light' : o.s === 3 ? 'model' : 'shape', s: o.s, x: o.x, y: o.y, z: o.z, r: o.r, c: o.c, slots: [...o.slots], activeSlot: o.activeSlot };
+      for (const t of e.ext.traits.list()) base[t.key] = t.get(o) ?? null; // 物ごとの設定 (クローナー・デフォーマ・ライト・アドオンのもの)
       if (o.s !== 3) return base;
       const inf: number[] | undefined = o.model.morphTargetInfluences;
       return {
@@ -149,9 +148,8 @@ export class ProjectIO {
       music: e.music.file ? asset(e.music.file) : null,
       timeline: { start: e.clock.start, end: e.clock.end, frame: e.clock.frame },
       selected: cur ? e.world.objects.indexOf(cur) : null,
-      output: { ...e.output.settings },
-      scene: structuredClone(e.environment.settings),
     };
+    for (const p of e.ext.parts.list()) data[p.key] = structuredClone(p.save()); // 場面の設定 (シーン・出力・アドオンのもの)
     data.assets = [...assets.values()];
     return { data, assets };
   }
@@ -198,7 +196,7 @@ export class ProjectIO {
     for (const so of data.objects) {
       let obj: Obj | null = null;
       if (so.kind === 'light') {
-        obj = e.lights.add(so.light ?? {}, so.x, so.z);
+        obj = e.lights.add((so.light ?? {}) as Partial<LightSettings>, so.x, so.z);
       } else if (so.kind === 'shape') {
         obj = e.world.addShape(so.s, so.x, so.z, so.c);
       } else {
@@ -231,9 +229,9 @@ export class ProjectIO {
     }
     data.objects.forEach((so, i) => {
       const obj = objs[i];
-      if (obj) so.slots.forEach((id, k) => e.world.setSlot(obj, k, id ? matId.get(id) ?? null : null));
-      if (obj && so.deformers?.length) e.deformers.set(obj, normalizeDeformers(so.deformers)); // デフォーマ
-      if (obj && so.cloner) e.cloners.set(obj, normalizeCloner(so.cloner)); // クローナー
+      if (!obj) return;
+      so.slots.forEach((id, k) => e.world.setSlot(obj, k, id ? matId.get(id) ?? null : null));
+      for (const t of e.ext.traits.list()) applyTrait(t, obj, so[t.key]); // 物ごとの設定
     });
     // 作り直すときに変換したマテリアル (もう使っていない) を片付けてから、保存した名前に戻す
     for (const id of [...lib.materials.keys()]) if (![...matId.values()].includes(id)) lib.remove(id);
@@ -273,8 +271,7 @@ export class ProjectIO {
     e.clock.setRange(data.timeline.start, data.timeline.end);
     e.clock.setPlaying(false);
     e.clock.seek(data.timeline.frame / FPS);
-    e.output.set(normalizeOutput(data.output));
-    e.environment.replace(normalizeScene(data.scene));
+    for (const p of e.ext.parts.list()) p.load(data[p.key] as never);
     e.history.reset(); // 開いた状態から、元に戻す履歴を始める
     e.select(data.selected !== null ? objs[data.selected] ?? null : null);
     e.world.settle();

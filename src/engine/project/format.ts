@@ -1,11 +1,6 @@
 import { strFromU8, strToU8, unzip, zip, type AsyncZippable } from 'fflate';
 import type { AnimationJson } from '../../core/animation';
-import type { ClonerSettings } from '../../core/cloner';
-import type { Deformer } from '../../core/deform';
-import type { LightSettings } from '../../core/light';
 import type { NodeTree } from '../../core/materials/tree';
-import type { OutputSettings } from '../../core/output';
-import type { SceneSettings } from '../../core/scene';
 import type { BoneValue } from '../../core/types';
 import type { MaterialOutline, MaterialSettings, MmdSource } from '../materials/MaterialLibrary';
 
@@ -32,9 +27,9 @@ export interface SavedObject {
   s: number; x: number; y: number; z: number; r: number; c: number;
   slots: (string | null)[];
   activeSlot?: number;
-  cloner?: ClonerSettings | null; // クローナー
-  deformers?: Deformer[] | null;  // デフォーマ
-  light?: LightSettings | null;   // ライト
+  // ほかに、物ごとの設定 (拡張の登録先の traits) を、その key で入れる: cloner (クローナー)・deformers (デフォーマ)・light (ライト)、
+  // アドオンのものは "アドオンの id.名前"
+  [trait: string]: unknown;
   // MMD モデルだけ
   files?: string[];
   pose?: Pose;
@@ -65,8 +60,9 @@ export interface ProjectData {
   music: string | null;
   timeline: { start: number; end: number; frame: number };
   selected: number | null;
-  output?: OutputSettings; // 出力 (レンダリングの大きさ・形式)。古いプロジェクトにはない
-  scene?: SceneSettings;   // シーンの設定 (空・床・太陽)。古いプロジェクトにはない
+  // ほかに、場面の設定 (拡張の登録先の parts) を、その key で入れる: output (出力)・scene (シーン)。古いプロジェクトにはない。
+  // アドオンのものは "アドオンの id.名前"
+  [part: string]: unknown;
 }
 
 export const projectBaseName = (name: string) => name.replace(/\.wgpj?$/i, '');

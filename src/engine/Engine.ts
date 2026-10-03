@@ -24,6 +24,8 @@ import { RenderOutput } from './output/RenderOutput';
 import { Autosave } from './project/Autosave';
 import { ProjectIO } from './project/ProjectIO';
 import { RemoteLink } from './remote/RemoteLink';
+import { registerBuiltins } from './extend/builtins';
+import { Extensions } from './extend/Registry';
 import { Effects } from './render/Effects';
 import { Environment } from './render/Environment';
 import { SceneGraph } from './render/SceneGraph';
@@ -50,6 +52,7 @@ const isAudio = (f: File) => f.type.startsWith('audio/') || /\.(mp3|wav|ogg|oga|
 // 複数の部分にまたがる操作 (ファイルの読み込み・選んでいるモデルの編集など) は、ここに書く。
 // 1 つの部分で済む操作は、画面から直接その部分を呼んでよい (engine.clock.togglePlay() など)
 export class Engine {
+  readonly ext = new Extensions(); // 物の設定・場面の設定・外から使える操作の登録先 (組み込みもアドオンも)
   readonly ui = new UiChannel();
   readonly graph = new SceneGraph();
   readonly viewport = new Viewport(this.graph);
@@ -76,7 +79,7 @@ export class Engine {
   readonly effects = new Effects(this.viewport, this.ui, () => this.camera.focusPoint());
   readonly loader = new MmdLoader(this.ui, this.library, () => this.viewport.requestDraw());
   readonly vpd = new VpdIO(this.posing, this.viewport, this.ui);
-  readonly history = new History(this.world, this.library, this.physics, this.motion, this.posing, this.keyframes, this.clock, this.selection, this.viewport, this.ui, this.cloners, this.deformers, this.environment, this.lights);
+  readonly history = new History(this.world, this.library, this.physics, this.motion, this.posing, this.keyframes, this.clock, this.selection, this.viewport, this.ui, this.ext);
   readonly project = new ProjectIO(this);
   readonly autosave = new Autosave(this.project, this.history, this.ui);
   readonly remote = new RemoteLink(this);
@@ -84,6 +87,7 @@ export class Engine {
 
   constructor() {
     const { viewport, clock, motion, keyframes, music, world, selection, camera, graph, ui } = this;
+    registerBuiltins(this);
     // 毎フレームの計算の順番: 再生 → モーション → 手で動かしたボーン → 物理演算 → 落下
     for (const s of [clock, motion, this.posing, this.physics, world]) viewport.addSystem(s);
     motion.isPlaying = () => clock.playing;
@@ -193,7 +197,7 @@ export class Engine {
     this.cloners.set(o, next);
     this.selection.publish();
   }
-  // --- ライト (Cinema 4D のライト) ---
+  // --- ライト (Blender のライト) ---
   // 画面中央の近くに置いて選ぶ
   addLight(type: LightType, settings: Partial<LightSettings> = {}) {
     if (this.world.full) return null;
@@ -328,7 +332,7 @@ export class Engine {
     this.stage.clear();
     this.world.addShape(0, 0, 0, 0);
     this.clock.reset();
-    this.environment.reset();
+    for (const p of this.ext.parts.list()) p.reset?.();
     this.history.reset(); // 新しく始めるので、元に戻す履歴も消す
     this.viewport.requestDraw();
   }

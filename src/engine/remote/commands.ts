@@ -331,8 +331,9 @@ export const COMMANDS: Record<string, Command> = {
 };
 
 // 1 つの命令を実行する (知らない名前はエラー)
+// (組み込みの命令と、アドオンが登録した命令。拡張の登録先から引く)
 export async function runCommand(e: Engine, method: string, params: unknown) {
-  const cmd = Object.hasOwn(COMMANDS, method) ? COMMANDS[method] : null;
+  const cmd = e.ext.commands.get(method);
   if (!cmd) throw new Error(`知らない命令です: ${method}`);
-  return await cmd(e, params);
+  return await cmd.run(e, params);
 }

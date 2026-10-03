@@ -2,11 +2,7 @@ import { Emitter } from '../../core/events';
 import { animationFromJson, animationToJson, isEmpty } from '../../core/animation';
 import { describeChange, type ObjState, type SceneState } from '../../core/history';
 import type { Clock } from '../anim/Clock';
-import type { Cloners } from '../world/Cloners';
-import type { Deformers } from '../world/Deformers';
-import type { Lights } from '../world/Lights';
-import type { Environment } from '../render/Environment';
-import type { SceneSettings } from '../../core/scene';
+import { applyTrait, same, type Extensions } from '../extend/Registry';
 import type { Keyframes } from '../anim/Keyframes';
 import type { MaterialData, MaterialLibrary } from '../materials/MaterialLibrary';
 import type { Motion } from '../mmd/Motion';
@@ -40,11 +36,13 @@ export class History {
 
   constructor(private world: World, private library: MaterialLibrary, private physics: Physics, private motion: Motion,
               private posing: Posing, private keyframes: Keyframes, private clock: Clock, private selection: Selection,
-              private viewport: Viewport, private ui: UiChannel, private cloners: Cloners, private deformers: Deformers, private environment: Environment, private lights: Lights) {
+              private viewport: Viewport, private ui: UiChannel, private ext: Extensions) {
     world.keepRemoved = true;
     world.events.on('removed', obj => { this.removed.set(obj.id, obj); this.soon(); });
     world.events.on('added', () => this.soon());
     library.events.on('changed', () => this.soon());
+    // 登録 (アドオン) が増減したら、いまの写しを取り直す (増えた設定を、変化と数えない)
+    for (const r of [ext.traits, ext.parts]) r.events.on('changed', () => this.rebase());
     this.reset();
   }
 
@@ -59,6 +57,11 @@ export class History {
     this.index = 0;
     this.collect();
     this.publish();
+  }
+
+  private rebase() {
+    const cur = this.steps[this.index];
+    if (cur && !this.restoring) this.steps[this.index] = this.capture(cur.label);
   }
 
   // ひと区切りついたら写しを取る (少し待って、続けて起きた変化をまとめる)。押さえているあいだは待つ
@@ -95,7 +98,8 @@ export class History {
     const cur = this.steps[this.index];
     const next = this.capture('');
     if (next.sig === cur.sig) return;
-    next.label = describeChange(cur.state, next.state);
+    const pairs = <T extends { key: string; label: string }>(l: T[]) => l.map(x => [x.key, x.label] as [string, string]);
+    next.label = describeChange(cur.state, next.state, { traits: pairs(this.ext.traits.list()), parts: pairs(this.historyParts) });
     this.steps.splice(this.index + 1, Infinity, next);
     if (this.steps.length > MAX_STEPS) this.steps.splice(0, this.steps.length - MAX_STEPS);
     this.index = this.steps.length - 1;
@@ -127,7 +131,9 @@ export class History {
   private capture(label: string): Step {
     const motionFiles = new Map<number, File>();
     const objects: ObjState[] = this.world.objects.map(o => {
-      const st: ObjState = { id: o.id, s: o.s, x: o.x, y: o.y, z: o.z, r: o.r, c: o.c, slots: [...o.slots], cloner: o.cloner ? structuredClone(o.cloner) : null, deformers: o.deformers ? structuredClone(o.deformers) : null, light: o.light ? { ...o.light } : null };
+      const traits: Record<string, unknown> = {};
+      for (const t of this.ext.traits.list()) { const v = t.get(o); if (v !== undefined && v !== null) traits[t.key] = structuredClone(v); }
+      const st: ObjState = { id: o.id, s: o.s, x: o.x, y: o.y, z: o.z, r: o.r, c: o.c, slots: [...o.slots], traits };
       if (!isModel(o)) return st;
       // キーのあるボーン・表情の値は、いまのフレームで決まるので入れない
       const anim = o.anim;
@@ -140,7 +146,8 @@ export class History {
       if (o.motionFile) motionFiles.set(o.id, o.motionFile);
       return st;
     });
-    const state: SceneState = { objects, materials: this.library.snapshot(), range: [this.clock.start, this.clock.end], scene: structuredClone(this.environment.settings) };
+    const parts = Object.fromEntries(this.historyParts.map(p => [p.key, structuredClone(p.save())]));
+    const state: SceneState = { objects, materials: this.library.snapshot(), range: [this.clock.start, this.clock.end], parts };
     return { state, sig: JSON.stringify(state), label, motionFiles };
   }
 
@@ -168,9 +175,7 @@ export class History {
         if (!obj) continue;
         Object.assign(obj, { x: st.x, y: st.y, py: st.y, vy: 0, z: st.z, r: st.r, c: st.c });
         st.slots.forEach((id, k) => { if (obj.slots[k] !== id) world.setSlot(obj, k, id); });
-        if (st.light && JSON.stringify(obj.light) !== JSON.stringify(st.light)) this.lights.set(obj, st.light);
-        if (JSON.stringify(obj.deformers ?? null) !== JSON.stringify(st.deformers ?? null)) this.deformers.set(obj, st.deformers ? structuredClone(st.deformers) : []);
-        if (JSON.stringify(obj.cloner ?? null) !== JSON.stringify(st.cloner ?? null)) this.cloners.set(obj, st.cloner ? structuredClone(st.cloner) : null);
+        for (const t of this.ext.traits.list()) applyTrait(t, obj, st.traits[t.key]);
         if (!isModel(obj)) continue;
         obj.anim = st.anim ? animationFromJson(st.anim) : null;
         if (st.pose) obj.pose = new Map(st.pose.map(([b, v]) => [b, { ...v }]));
@@ -179,7 +184,7 @@ export class History {
       }
       library.prune(new Set(state.materials.map(m => (m as MaterialData).id)));
       this.clock.setRange(state.range[0], state.range[1]);
-      if (state.scene && JSON.stringify(state.scene) !== JSON.stringify(this.environment.settings)) this.environment.replace(state.scene as SceneSettings);
+      for (const p of this.historyParts) if (p.key in state.parts && !same(p.save(), state.parts[p.key])) p.load(structuredClone(state.parts[p.key]));
       // 置き直したモデルは、物理演算とモーションを付け直す
       for (const obj of back) {
         await this.physics.start(obj);
@@ -214,6 +219,8 @@ export class History {
       this.removed.delete(id);
     }
   }
+
+  private get historyParts() { return this.ext.parts.list().filter(p => p.history); }
 
   private publish() {
     this.ui.set({ history: { labels: this.steps.map(s => s.label), index: this.index } });

@@ -284,6 +284,7 @@ src/
   engine/                   three.js の実行部 (クラスごと)
     Engine.ts               組み立てと、画面への窓口
     UiChannel.ts            画面に知らせる状態とお知らせ
+    extend/                 Registry (拡張の登録先: 物ごとの設定・場面の設定・外から使える操作。元に戻す・プロジェクト・MCP はここを順に扱う)・builtins (組み込みの機能の登録)
     render/                 SceneGraph (場面)・Viewport (描画先と描画ループ)・Environment (空・床・太陽)・Effects, postfx (MME 風の後処理)
     world/                  World (置いた物・積み重ね・落下)・Selection (選択)・ColorPicker (パレット)・Cloners (クローナー)・Deformers (デフォーマ)・Lights (ライト)
     view/                   CameraController (カメラ・レイ・視点)・InputController (マウス・タッチ)
