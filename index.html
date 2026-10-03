@@ -273,6 +273,7 @@ function makeBox(x, z, c, s = 0) {
 }
 function removeObject(obj) {
   scene.remove(obj.node);
+  stopPhysics(obj);
   if (obj.s === 3) {
     // モデルは形状・材質・テクスチャを片付ける
     obj.node.traverse(o => {
@@ -766,7 +767,8 @@ async function loadPmx(files) {
     mmdLoaderModule ??= await import('three/addons/loaders/MMDLoader.js');
     const loader = new mmdLoaderModule.MMDLoader(manager);
     const mesh = await new Promise((resolve, reject) => loader.load(MODEL_URL, resolve, undefined, reject));
-    addModel(mesh);
+    const obj = addModel(mesh);
+    await startPhysics(obj, mesh);
     toast(`${pmx.name} を置きました`);
   } catch (err) {
     console.error(err);
@@ -804,6 +806,98 @@ function addModel(mesh) {
   mesh.traverse(o => { if (o.isMesh) o.raycast = () => {}; });
   boxes.push(obj);
   dropIn(obj);
+  return obj;
+}
+
+// --- MMD の物理演算 (髪やスカートの揺れ) ---
+// 物理エンジン Ammo.js (WebAssembly 版) は大きいので、剛体を持つモデルを初めて読んだときに取りに行く
+const AMMO_URL = 'https://cdn.jsdelivr.net/npm/three@0.171.0/examples/jsm/libs/ammo.wasm.js';
+let ammoReady = null;
+function loadAmmo() {
+  ammoReady ??= new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = AMMO_URL;
+    script.onload = () => window.Ammo().then(lib => { window.Ammo = lib; resolve(lib); }, reject);
+    script.onerror = () => reject(new Error('Ammo.js を読み込めませんでした'));
+    document.head.append(script);
+  });
+  return ammoReady;
+}
+let MMDPhysics = null;
+const physicsList = []; // { obj, physics, prev, vel, acc, gravity }
+const MMD_GRAVITY = 9.8 * 10; // MMD の重力 (モデルの単位で)
+const INERTIA = 0.3;          // 運ぶ・落ちるときの揺れの強さ
+async function startPhysics(obj, mesh) {
+  const mmd = mesh.geometry.userData.MMD;
+  if (!mmd?.rigidBodies?.length) return; // 剛体のないモデルは動かさない
+  try {
+    const Ammo = await loadAmmo();
+    MMDPhysics ??= (await import('three/addons/animation/MMDPhysics.js')).MMDPhysics;
+    if (!boxes.includes(obj)) return; // 読み込み中に消された
+    // MMDPhysics は、拡大縮小していないモデル自身の座標で剛体を作る。
+    // update() のときと同じように、いったん親から外して大きさを 1 に戻してから作る
+    const parent = mesh.parent, scale = mesh.scale.clone();
+    mesh.parent = null;
+    mesh.scale.set(1, 1, 1);
+    mesh.updateMatrixWorld(true);
+    let physics;
+    try {
+      physics = new MMDPhysics(mesh, mmd.rigidBodies, mmd.constraints);
+    } finally {
+      mesh.parent = parent;
+      mesh.scale.copy(scale);
+      obj.node.updateMatrixWorld(true);
+    }
+    physics.warmup(60); // 最初の姿勢になじませる
+    physicsList.push({
+      obj, physics, scale: 1 / mesh.scale.x,
+      prev: null, vel: new THREE.Vector3(), acc: new THREE.Vector3(),
+      gravity: new Ammo.btVector3(0, -MMD_GRAVITY, 0), // 毎フレーム作り直すと Ammo のメモリが増え続けるので使い回す
+    });
+    startTicking();
+  } catch (err) {
+    console.error(err);
+    toast(`物理演算を開始できませんでした: ${err?.message ?? err}`, 8000);
+  }
+}
+function stopPhysics(obj) {
+  const i = physicsList.findIndex(p => p.obj === obj);
+  if (i >= 0) physicsList.splice(i, 1); // Ammo 側の後片付けの API はないので、参照を外すだけ
+}
+// 物理演算のあるモデルがあるあいだは、毎フレーム計算して描き直す
+let ticking = false, tickLast = 0;
+function startTicking() {
+  if (ticking) return;
+  ticking = true;
+  tickLast = 0;
+  requestAnimationFrame(tick);
+}
+const _p = new THREE.Vector3(), _v = new THREE.Vector3(), _a = new THREE.Vector3();
+function tick(now) {
+  if (!physicsList.length) { ticking = false; return; }
+  const dt = tickLast ? Math.min(Math.max(now - tickLast, 0) / 1000, 1 / 20) : 1 / 60;
+  tickLast = now;
+  for (const p of physicsList) {
+    // モデルの動きの加速度を「見かけの重力」として足す (運ぶと髪がなびき、落ちると浮く)。
+    // MMDPhysics はモデル自身の座標で計算するので、置き場所の動きはこうしないと伝わらない
+    const o = p.obj;
+    _p.set(o.x, o.py, o.z);
+    if (p.prev && dt > 0) {
+      _v.subVectors(_p, p.prev).divideScalar(dt);
+      _a.subVectors(_v, p.vel).divideScalar(dt);
+      p.vel.copy(_v);
+      p.acc.lerp(_a, 0.25); // 急な変化はならす
+    }
+    p.prev = (p.prev ?? new THREE.Vector3()).copy(_p);
+    // ワールドの加速度を、モデルの向き・単位に直す
+    const a = _a.copy(p.acc).applyAxisAngle(THREE.Object3D.DEFAULT_UP, -o.r).multiplyScalar(p.scale * INERTIA);
+    a.clampLength(0, MMD_GRAVITY * 2);
+    p.gravity.setValue(-a.x, -MMD_GRAVITY - a.y, -a.z);
+    p.physics.world.setGravity(p.gravity);
+    p.physics.update(dt);
+  }
+  render();
+  requestAnimationFrame(tick);
 }
 
 // --- 描画 ---
@@ -821,7 +915,7 @@ function setHighlight(obj, on) {
       if (!m.emissive) continue;
       m.userData.baseEmissive ??= m.emissive.clone();
       m.emissive.copy(m.userData.baseEmissive);
-      if (on) m.emissive.addScalar(0.3);
+      if (on) m.emissive.addScalar(obj.s === 3 ? 0.12 : 0.3); // トゥーン調のモデルは明るくなりやすいので控えめに
     }
   });
 }
@@ -856,7 +950,7 @@ resize();
 // 動作確認用: ?debug を付けて開いたときだけ、中の状態をコンソールから触れるようにする
 if (new URLSearchParams(location.search).has('debug')) {
   Object.assign(window, { THREE, renderer, scene, camera, boxes, cam, makeBox, settle, pickBox, screenRay, rayPlane,
-    loadPmx, getDrag: () => drag, paletteEl, swatches, pointers });
+    loadPmx, getDrag: () => drag, paletteEl, swatches, pointers, physicsList, outline });
 }
 </script>
 </body>
