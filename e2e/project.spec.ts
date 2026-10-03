@@ -40,6 +40,8 @@ const PMX = Buffer.from(makePmx('テスト人形', { physics: true }));
 async function buildScene(page: Page) {
   await loadTestModel(page, [{ name: 'テスト.vmd', mimeType: 'application/octet-stream', buffer: VMD }], { physics: true });
   await expect.poll(() => page.evaluate(() => (window as Win).engine.physics.entries.length), { timeout: 30_000 }).toBe(1);
+  // (モーションを付け終わると再生が始まるので、付け終わるのを待ってから止める。遅いと、止めたあとに再生が始まっていた)
+  await expect.poll(() => page.evaluate(() => !!(window as Win).engine.world.models[0]?.animated), { timeout: 30_000 }).toBe(true);
   await page.evaluate(() => {
     const { engine } = window as Win;
     const model = engine.selection.current;
@@ -168,7 +170,7 @@ test('ファイルは参照だけ (.wgpj) で保存し、開くときに足り�
 
   // 同じページで開き直すときは、読み込んだファイルを覚えているので、そのまま開ける
   await page.locator('input[type=file][accept=".wgp,.wgpj"]').setInputFiles(wgpj);
-  await expect.poll(async () => (await uiState(page)).toast).toBe('プロジェクト.wgpj を開きました');
+  await expect.poll(async () => (await uiState(page)).toast, { timeout: 30_000 }).toBe('プロジェクト.wgpj を開きました');
   expect(await snapshot(page)).toEqual(before);
 
   // まっさらなページでは、足りないファイルを聞かれる。違う名前のファイルを選んでも対応づかず、もう一度聞かれる

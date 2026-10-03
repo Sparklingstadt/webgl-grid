@@ -31,7 +31,8 @@ test('編集して開き直すと、前回の続き (モデル・キーフレー
   const banner = page.getByRole('region', { name: '前回の続き' });
   await expect(banner).toBeVisible();
   await banner.getByRole('button', { name: '開く' }).click();
-  await expect.poll(async () => (await page.evaluate(() => (window as Win).engine.ui.state.toast?.text))).toBe('前回の続きを開きました');
+  // (モデルの読み込み・物理演算の準備は、遅いマシン (CI) では数秒かかる)
+  await expect.poll(async () => (await page.evaluate(() => (window as Win).engine.ui.state.toast?.text)), { timeout: 30_000 }).toBe('前回の続きを開きました');
   expect(await scene(page)).toEqual(before);
   await expect(banner).toHaveCount(0);
   // ファイル メニューからも開ける
