@@ -225,8 +225,11 @@ export class Engine {
   // .vmd だけ・曲だけのときは、置いてあるモデル全員に付ける
   // (読み込み終わってから 1 手にする)
   // askTextures: .pmx のテクスチャが見つからなければ、置く前に探してもらう (画面から読むとき。MCP では聞かない)
-  loadFiles(files: File[], opts: { askTextures?: boolean } = {}) { return this.history.batch(() => this.loadFilesNow(files, opts.askTextures ?? true)); }
-  private async loadFilesNow(files: File[], askTextures: boolean) {
+  // toSelected: .vmd・.vpd・曲だけのとき、選んでいるモデルがあればそれだけに付ける (なければ全員)
+  loadFiles(files: File[], opts: { askTextures?: boolean; toSelected?: boolean } = {}) {
+    return this.history.batch(() => this.loadFilesNow(files, opts.askTextures ?? true, opts.toSelected ?? false));
+  }
+  private async loadFilesNow(files: File[], askTextures: boolean, toSelected: boolean) {
     const { world, ui } = this;
     this.project.remember(files); // 参照だけのプロジェクトを開くときに使う
     const vmds = files.filter(f => /\.vmd$/i.test(f.name));
@@ -255,7 +258,7 @@ export class Engine {
         targets = [obj];
       }
     } else if (vmds.length || song || vpd) {
-      targets = world.models;
+      targets = toSelected && this.selection.model ? [this.selection.model] : world.models;
     } else {
       ui.toast(t('.pmx・.vmd・.vpd・曲のどれも選ばれていません。モデルの .pmx とテクスチャ画像、モーションの .vmd、ポーズの .vpd、曲のファイルを選んでください。'));
       return;

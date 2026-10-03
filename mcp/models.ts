@@ -3,7 +3,7 @@ import { readdir, stat } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { MODEL_TEXTURE_FILE, MODELS_FILE_PATH, MODELS_PATH, type ModelFolderEntry } from '../src/core/models.ts';
+import { MODEL_TEXTURE_FILE, MODELS_FILE_PATH, MODELS_PATH, type ModelFolderEntry, type ModelsListing, type MotionFolderEntry } from '../src/core/models.ts';
 
 // --- models/ フォルダ (ユーザーの PMX モデル置き場) の一覧とファイルを、アプリに渡す ---
 // Vite の開発サーバー・プレビュー (vite.config.ts) と、MCP サーバーがアプリを配るとき (appServer.ts) に使う。
@@ -24,9 +24,10 @@ async function walk(dir: string, rel: string, out: { rel: string; size: number }
   }
 }
 
-// モデルの一覧: models/ の直下のフォルダごとに、中の .pmx をモデルにする (テクスチャはそのフォルダの画像)
-export async function listModels(dir = modelsDir()): Promise<ModelFolderEntry[]> {
-  const out: ModelFolderEntry[] = [];
+// モデルとモーションの一覧: models/ の直下のフォルダごとに、中の .pmx をモデルにする (テクスチャはそのフォルダの画像)。
+// モーション (.vmd) は、どこにあっても並べる
+export async function listModels(dir = modelsDir()): Promise<ModelsListing> {
+  const out: ModelFolderEntry[] = [], motions: MotionFolderEntry[] = [];
   const top = await readdir(dir, { withFileTypes: true }).catch(() => []);
   const groups: [string, { rel: string; size: number }[]][] = [];
   const loose: { rel: string; size: number }[] = [];
@@ -42,8 +43,14 @@ export async function listModels(dir = modelsDir()): Promise<ModelFolderEntry[]>
     for (const pmx of files.filter(f => /\.pmx$/i.test(f.rel))) {
       out.push({ name: path.basename(pmx.rel, path.extname(pmx.rel)), folder, pmx: pmx.rel, files: tex.map(f => f.rel), size: pmx.size + texSize });
     }
+    for (const v of files.filter(f => /\.vmd$/i.test(f.rel))) {
+      motions.push({ name: path.basename(v.rel, path.extname(v.rel)), folder: path.posix.dirname(v.rel) === '.' ? '' : path.posix.dirname(v.rel), path: v.rel, size: v.size });
+    }
   }
-  return out.sort((a, b) => a.folder.localeCompare(b.folder) || a.pmx.localeCompare(b.pmx));
+  return {
+    models: out.sort((a, b) => a.folder.localeCompare(b.folder) || a.pmx.localeCompare(b.pmx)),
+    motions: motions.sort((a, b) => a.folder.localeCompare(b.folder) || a.path.localeCompare(b.path)),
+  };
 }
 
 // models/ の中のファイルの、本当の場所 (外を指していれば null)
@@ -66,7 +73,7 @@ export async function answerModels(req: IncomingMessage, res: ServerResponse) {
   }
   if (p.endsWith(MODELS_PATH)) {
     res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
-    res.end(JSON.stringify({ models: await listModels() }));
+    res.end(JSON.stringify(await listModels()));
     return true;
   }
   return false;

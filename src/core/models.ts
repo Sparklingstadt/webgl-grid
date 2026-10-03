@@ -10,5 +10,13 @@ export interface ModelFolderEntry {
   files: string[];    // 一緒に読むファイル (テクスチャなど。.pmx は含まない)
   size: number;       // .pmx とファイルの大きさの合計 (バイト)
 }
+// モーション (.vmd。ダンス・カメラ)。models/ の中ならどこにあってもよい
+export interface MotionFolderEntry {
+  name: string;   // ファイル名から
+  folder: string; // models/ から見たフォルダ
+  path: string;   // models/ から見た場所
+  size: number;
+}
+export interface ModelsListing { models: ModelFolderEntry[]; motions: MotionFolderEntry[] }
 // 一緒に読むファイル (テクスチャ)。モーション・曲は、勝手に付けないよう入れない
 export const MODEL_TEXTURE_FILE = /\.(png|jpe?g|bmp|tga|gif|webp|spa|sph|dds)$/i;

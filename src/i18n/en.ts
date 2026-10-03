@@ -852,5 +852,9 @@ const dict: Dictionary = {
   "{name} を読み込み中… ({done} / {total})": "Loading {name}… ({done} / {total})",
   "テクスチャ {n} 枚": "{n} textures",
   "モデルの一覧": "Model List",
+  "モデルを置いてから選ぶと、モデルに付けます (カメラのモーションは、いつでもカメラに)": "Place a model first and the motion is applied to it (camera motions always go to the camera)",
+  "モーションの一覧": "Motion List",
+  "置いてあるモデル全員に付けます (モデルを選ぶと、そのモデルだけに)": "Applies to every placed model (select a model to apply it to that one only)",
+  "選んでいる {name} に付けます": "Applies to the selected {name}",
 };
 export default dict;

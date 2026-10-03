@@ -3,30 +3,36 @@ import path from 'node:path';
 import { MODELS_DIR } from '../playwright.config';
 import { expect, test } from './fixtures/test';
 import { makePmx } from './fixtures/pmx';
+import { makeVmd } from './fixtures/vmd';
 import { type Win } from './helpers';
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==', 'base64');
 
-test('起動したとき、models フォルダのモデルを一覧から選ぶと、テクスチャ付きで読み込む', async ({ page }) => {
+test('起動したとき、models フォルダのモデルとモーションを一覧から選ぶと、テクスチャ付きで読み込み、モーションを付ける', async ({ page }) => {
   // テスト用の models フォルダに、モデル (と、別のフォルダのテクスチャ) を置く
   const dir = path.join(MODELS_DIR, 'フォルダ人形');
   await rm(MODELS_DIR, { recursive: true, force: true });
   await mkdir(path.join(dir, 'tex'), { recursive: true });
   await writeFile(path.join(dir, 'フォルダ人形.pmx'), makePmx('フォルダ人形', { texture: 'tex\\body.png' }));
   await writeFile(path.join(dir, 'tex', 'body.png'), PNG);
-  await writeFile(path.join(dir, '踊り.vmd'), 'not used'); // (モーションは勝手に付けない)
+  // モーション: モデルのフォルダの中と、別のフォルダに (モデルを読み込むときは、勝手に付けない)
+  const vmd = Buffer.from(makeVmd([{ bone: 'センター', frame: 0, pos: [0, 0, 0] }, { bone: 'センター', frame: 30, pos: [0, 0, 6] }]));
+  await writeFile(path.join(dir, '踊り.vmd'), vmd);
+  await mkdir(path.join(MODELS_DIR, 'モーション'), { recursive: true });
+  await writeFile(path.join(MODELS_DIR, 'モーション', '歩く.vmd'), vmd);
   try {
     const errors: string[] = [];
     page.on('pageerror', e => errors.push(String(e)));
     await page.goto('/?debug');
     const picker = page.getByRole('region', { name: 'models フォルダのモデル' });
     await expect(picker).toBeVisible();
-    await expect(picker.getByRole('button', { name: /フォルダ人形/ })).toContainText('テクスチャ 1 枚');
+    await expect(picker.getByRole('list', { name: 'モデルの一覧' }).getByRole('button', { name: /フォルダ人形/ })).toContainText('テクスチャ 1 枚');
     // (サーバーは、models フォルダの外のファイルを渡さない)
     expect((await page.request.get('__models/file?path=../../package.json')).status()).toBe(404);
-    await picker.getByRole('button', { name: /フォルダ人形/ }).click();
-    await expect(picker).toBeHidden();
+    await expect(picker.getByRole('list', { name: 'モーションの一覧' }).getByRole('button')).toHaveText([/踊り/, /歩く/]); // (フォルダの名前の順)
+    await picker.getByRole('list', { name: 'モデルの一覧' }).getByRole('button', { name: /フォルダ人形/ }).click();
     await expect.poll(() => page.evaluate(() => (window as Win).engine.world.models.length)).toBe(1);
+    await expect(picker).toBeVisible(); // (続けてモーションを選べるよう、閉じない)
     // テクスチャは見つかったので、探す窓は出ない
     await expect(page.getByRole('dialog', { name: 'テクスチャを探す' })).toHaveCount(0);
     expect(await page.evaluate(() => {
@@ -34,7 +40,13 @@ test('起動したとき、models フォルダのモデルを一覧から選ぶ�
       const m = engine.world.models[0];
       return [m.model.name, m.animated ?? false, engine.library.materials.get(m.slots[0]).tree.nodes.filter((n: Win) => n.type === 'image').length];
     })).toEqual(['フォルダ人形', false, 1]);
-    // ファイル > models フォルダから読み込む… でも開ける
+    // モーションを選ぶと、選んでいるモデルに付く
+    await expect(picker).toContainText('選んでいる フォルダ人形 に付けます');
+    await picker.getByRole('button', { name: /歩く/ }).click();
+    await expect.poll(() => page.evaluate(() => (window as Win).engine.world.models[0].animated)).toBe(true);
+    // 閉じて、ファイル > models フォルダから読み込む… でも開ける
+    await picker.getByRole('button', { name: '閉じる' }).click();
+    await expect(picker).toBeHidden();
     await page.getByRole('button', { name: 'ファイル' }).click();
     await page.getByRole('menuitem', { name: 'models フォルダから読み込む…' }).click();
     await expect(picker).toBeVisible();
