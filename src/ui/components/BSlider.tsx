@@ -69,9 +69,9 @@ export function BSlider({ label, value, min, max, step, digits = 2, unit = '', o
       <span className="name">{label}</span>
       <span className="val">{value.toFixed(digits)}{unit}</span>
       {editing && (
-        <input type="number" autoFocus defaultValue={+value.toFixed(digits)} step={step}
+        <input type="text" inputMode="decimal" autoFocus defaultValue={+value.toFixed(digits)} aria-label={`${label} (数値)`} spellCheck={false}
                onFocus={e => e.currentTarget.select()}
-               onBlur={e => { set(+e.currentTarget.value); setEditing(false); }}
+               onBlur={e => { const v = e.currentTarget.value.trim(); if (v !== '' && Number.isFinite(+v)) set(+v); setEditing(false); }}
                onKeyDown={e => {
                  e.stopPropagation();
                  if (e.key === 'Enter') e.currentTarget.blur();

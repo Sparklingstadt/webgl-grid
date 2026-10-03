@@ -2,6 +2,8 @@ import { NODE_TYPES } from '../../../core/materials/nodes';
 import { findNode, inputLink } from '../../../core/materials/tree';
 import { useEngine, useUi } from '../../EngineContext';
 import { BSlider } from '../BSlider';
+import { BCheck } from '../controls/BCheck';
+import { BSelect } from '../controls/BSelect';
 import { ColorField, SocketField, TextField } from '../fields';
 import { Empty, Panel } from './Panel';
 
@@ -30,10 +32,8 @@ export function MaterialPage({ onOpenShaderEditor }: { onOpenShaderEditor: () =>
           ))}
         </ul>
         <div className="mat-block">
-          <select className="bselect" aria-label="スロットのマテリアル" value={mat?.id ?? ''} onChange={e => engine.assignMaterial(e.currentTarget.value || null)}>
-            <option value="">(なし)</option>
-            {list.map(m => <option key={m.id} value={m.id}>{m.users > 1 ? `${m.name} (${m.users})` : m.users === 0 ? `0 ${m.name}` : m.name}</option>)}
-          </select>
+          <BSelect label="スロットのマテリアル" value={mat?.id ?? ''} onChange={v => engine.assignMaterial(v || null)}
+                   options={[{ value: '', label: '(なし)' }, ...list.map(m => ({ value: m.id, label: m.users > 1 ? `${m.name} (${m.users})` : m.users === 0 ? `0 ${m.name}` : m.name }))]} />
           {mat && <TextField label="マテリアルの名前" value={mat.name} onCommit={name => engine.renameMaterial(name)} />}
         </div>
         <div className="row">
@@ -48,29 +48,17 @@ export function MaterialPage({ onOpenShaderEditor }: { onOpenShaderEditor: () =>
       {mat && <Surface onOpenShaderEditor={onOpenShaderEditor} />}
       {mat && (
         <Panel title="設定">
-          <label className="color-field">
+          <div className="color-field">
             <span>ブレンド</span>
-            <select className="bselect" aria-label="ブレンドモード" value={mat.settings.blend}
-                    onChange={e => engine.setMaterialSettings({ blend: e.currentTarget.value as typeof mat.settings.blend })}>
-              <option value="opaque">不透明</option>
-              <option value="blend">アルファブレンド</option>
-              <option value="clip">アルファクリップ</option>
-            </select>
-          </label>
-          <label className="check">
-            <input type="checkbox" aria-label="裏面を表示しない" checked={mat.settings.backfaceCulling}
-                   onChange={e => engine.setMaterialSettings({ backfaceCulling: e.currentTarget.checked })} />
-            裏面を表示しない
-          </label>
+            <BSelect label="ブレンドモード" value={mat.settings.blend} onChange={blend => engine.setMaterialSettings({ blend })}
+                     options={[{ value: 'opaque', label: '不透明' }, { value: 'blend', label: 'アルファブレンド' }, { value: 'clip', label: 'アルファクリップ' }] as const} />
+          </div>
+          <BCheck checked={mat.settings.backfaceCulling} onChange={backfaceCulling => engine.setMaterialSettings({ backfaceCulling })}>裏面を表示しない</BCheck>
         </Panel>
       )}
       {mat && (
         <Panel title="輪郭線 (MMD)">
-          <label className="check">
-            <input type="checkbox" aria-label="輪郭線を付ける" checked={mat.outline.enabled}
-                   onChange={e => engine.setMaterialOutline({ enabled: e.currentTarget.checked })} />
-            輪郭線を付ける
-          </label>
+          <BCheck checked={mat.outline.enabled} onChange={enabled => engine.setMaterialOutline({ enabled })}>輪郭線を付ける</BCheck>
           <ColorField label="色" value={mat.outline.color} onChange={color => engine.setMaterialOutline({ color })} />
           <BSlider label="太さ" value={mat.outline.size} min={0} max={3} step={0.05} onChange={size => engine.setMaterialOutline({ size })} />
           <div className="note">選んでいるあいだは、選択を示すオレンジの輪郭線で表示されます</div>

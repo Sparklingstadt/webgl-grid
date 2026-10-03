@@ -1,6 +1,7 @@
 import type { FxKey, FxLevel } from '../../../engine';
 import { useEngine, useUi } from '../../EngineContext';
 import { BSlider } from '../BSlider';
+import { BCheck } from '../controls/BCheck';
 import { Panel } from './Panel';
 
 // --- 効果 (MME 風) ---
@@ -24,8 +25,7 @@ export function FxPage() {
       <div className="note" style={{ padding: '2px 2px 6px' }}>MME 風の効果。オフの効果のスライダーを動かすとオンになります。設定はブラウザに保存されます</div>
       {FX_ROWS.map(row => (
         <Panel key={row.key} title={row.title}
-               head={<input type="checkbox" checked={state[row.key]} aria-label={`${row.title}を使う`}
-                            onClick={e => e.stopPropagation()} onChange={e => engine.effects.set(row.key, e.currentTarget.checked)} />}>
+               head={<BCheck checked={state[row.key]} label={`${row.title}を使う`} onChange={on => engine.effects.set(row.key, on)} />}>
           {row.sliders.map(s => (
             <BSlider key={s.k} label={s.label} value={level[s.k]} min={s.min} max={s.max} step={s.step} off={!state[row.key]}
                      onChange={v => engine.effects.setLevel(s.k, v)} />

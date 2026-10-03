@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef } from 'react';
 import { PALETTE, PALETTE_NAMES, paletteCss } from '../../core/constants';
 import { useEngine, useUi } from '../EngineContext';
+import { BProgress } from './controls/BCheck';
 
 // 画面上部のお知らせ (読み込み中・エラーなど)
 export function Toast() {
@@ -42,7 +43,7 @@ export function RenderProgress() {
     <div className="modal-back">
       <div className="modal" role="dialog" aria-modal="true" aria-label="レンダリング中">
         <div className="modal-title">アニメーションをレンダリング中…</div>
-        <progress max={r.total} value={r.done} aria-label="レンダリングの進み具合" />
+        <BProgress max={r.total} value={r.done} label="レンダリングの進み具合" />
         <div className="note">{r.done} / {r.total} フレーム ({pct}%)</div>
         <div className="row"><button type="button" className="bbtn" onClick={() => engine.cancelRender()}>キャンセル (Esc)</button></div>
       </div>

@@ -37,6 +37,20 @@ export async function emptySpot(page: Page) {
   return { x: r.x + 80, y: r.y + r.height * 0.25 };
 }
 
+// 選択肢 (アプリ独自のドロップダウン) を開いて選ぶ
+export async function choose(page: Page, name: string, option: string) {
+  await page.getByRole('combobox', { name, exact: true }).click();
+  await page.getByRole('listbox', { name, exact: true }).getByRole('option', { name: option, exact: true }).click();
+}
+// 色の欄を押して色選びの窓を開き、16 進で色を決める (Enter で窓が閉じる)
+export async function setColor(page: Page, name: string, hex: string) {
+  await page.getByRole('button', { name, exact: true }).first().click();
+  const field = page.getByRole('textbox', { name: `${name} (16 進)` });
+  await field.fill(hex);
+  await field.press('Enter');
+  await expect(field).toHaveCount(0);
+}
+
 // テスト用の PMX モデルを、ファイル > MMD を読み込む… と同じ入力欄から読み込む
 export async function loadTestModel(page: Page, extra: { name: string; mimeType: string; buffer: Buffer }[] = [], opts: { physics?: boolean } = {}) {
   await page.locator('input[type=file][multiple]').setInputFiles([

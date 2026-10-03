@@ -29,6 +29,9 @@ export function useShortcuts(engine: Engine, actions: {
       // スライダーは、自分で使う矢印キーと Enter だけを譲る (動かした直後に I でキーフレームを打てるように)
       if (t.closest('input, select, textarea, [contenteditable]')) return;
       if (t.closest('.bslider') && /^(Arrow|Enter$)/.test(e.key)) return;
+      // ボタン (選択肢・チェックなど) に入っているときは、Space と Enter はそのボタンを押す
+      if (t.closest('button, [role="slider"]') && (e.key === ' ' || e.key === 'Enter')) return;
+      if (t.closest('.popover')) return; // 色選びなどの窓の中
       if ((e.ctrlKey || e.metaKey) && e.code === 'KeyO') { e.preventDefault(); if (e.shiftKey) a.openProject(); else a.openFiles(); return; }
       if ((e.ctrlKey || e.metaKey) && e.code === 'KeyS') { e.preventDefault(); engine.saveProject(e.altKey ? 'reference' : 'embedded'); return; }
       if (e.ctrlKey || e.metaKey) return;

@@ -1,6 +1,6 @@
 import { expect, test } from './fixtures/test';
 import { readFile } from 'node:fs/promises';
-import { loadTestModel, open, uiState, type Win } from './helpers';
+import { choose, loadTestModel, open, uiState, type Win } from './helpers';
 
 // MMD モデル: 読み込み・表情・ボーン・キーフレーム・ポーズファイル (テスト用に組み立てた小さな PMX を使う)
 const rightArmRz = (page: import('@playwright/test').Page) => page.evaluate(() => {
@@ -38,8 +38,10 @@ test.describe('MMD モデル', () => {
     await loadTestModel(page);
     await page.getByRole('tab', { name: 'ボーン' }).click();
     const select = page.getByRole('combobox', { name: '動かすボーン' });
-    await expect(select.locator('option')).toHaveText(['センター', '右腕']);
-    await select.selectOption({ label: '右腕' });
+    await select.click();
+    await expect(page.getByRole('listbox', { name: '動かすボーン' }).getByRole('option')).toHaveText(['センター', '右腕']);
+    await page.getByRole('option', { name: '右腕', exact: true }).click();
+    await expect(select).toHaveText('右腕');
     // 右腕は回転だけ (位置のスライダーはない)
     await expect(page.getByRole('slider', { name: '位置 X' })).toHaveCount(0);
     await page.getByRole('slider', { name: '回転 Z' }).focus();
@@ -51,7 +53,7 @@ test.describe('MMD モデル', () => {
     await open(page);
     await loadTestModel(page);
     await page.getByRole('tab', { name: 'ボーン' }).click();
-    await page.getByRole('combobox', { name: '動かすボーン' }).selectOption({ label: '右腕' });
+    await choose(page, '動かすボーン', '右腕');
     const rz = page.getByRole('slider', { name: '回転 Z' });
     const frameField = page.getByRole('spinbutton', { name: 'いまのフレーム' });
     // フレーム 0 で 0°、フレーム 30 で 60°
@@ -80,7 +82,7 @@ test.describe('MMD モデル', () => {
     await open(page);
     await loadTestModel(page);
     await page.getByRole('tab', { name: 'ボーン' }).click();
-    await page.getByRole('combobox', { name: '動かすボーン' }).selectOption({ label: '右腕' });
+    await choose(page, '動かすボーン', '右腕');
     await page.getByRole('slider', { name: '回転 Z' }).focus();
     for (let i = 0; i < 3; i++) await page.keyboard.press('Shift+ArrowRight');
     const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: '保存', exact: true }).click()]);

@@ -2,6 +2,7 @@ import { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, 
 import { ADDABLE, NODE_TYPES, type NodeCategory, type PropDef, type SocketDef, type SocketKind } from '../../core/materials/nodes';
 import { inputLink, type ShaderNode, type SocketRef } from '../../core/materials/tree';
 import { useEngine, useUi } from '../EngineContext';
+import { BSelect } from './controls/BSelect';
 import { SocketField } from './fields';
 import { Menu, MenuContext, MenuItem, MenuLabel } from './Menu';
 
@@ -239,16 +240,13 @@ export function ShaderEditor({ typeSelect, onHover }: { typeSelect: ReactNode; o
                       )}
                       {row.kind === 'own' && <SocketField def={row.def} value={n.values[row.def.id]} compact onChange={v => engine.setNodeValue(n.id, row.def.id, v)} />}
                       {row.kind === 'prop' && row.def.kind === 'enum' && (
-                        <select className="bselect" aria-label={row.def.label} value={n.props[row.def.id]} onChange={e => engine.setNodeProp(n.id, row.def.id, e.currentTarget.value)}>
-                          {row.def.options!.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
-                        </select>
+                        <BSelect label={row.def.label} value={n.props[row.def.id]} onChange={v => engine.setNodeProp(n.id, row.def.id, v)}
+                                 options={row.def.options!.map(([value, label]) => ({ value, label }))} />
                       )}
                       {row.kind === 'prop' && row.def.kind === 'image' && (
                         <div className="image-pick">
-                          <select className="bselect" aria-label="画像" value={n.props.image ?? ''} onChange={e => engine.setNodeProp(n.id, 'image', e.currentTarget.value)}>
-                            <option value="">(なし)</option>
-                            {images.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
-                          </select>
+                          <BSelect label="画像" value={n.props.image ?? ''} onChange={v => engine.setNodeProp(n.id, 'image', v)}
+                                   options={[{ value: '', label: '(なし)' }, ...images.map(i => ({ value: i.id, label: i.name }))]} />
                           <button type="button" className="bbtn" title="画像ファイルを開く" onClick={() => { imageFor.current = n.id; fileRef.current?.click(); }}>開く…</button>
                         </div>
                       )}

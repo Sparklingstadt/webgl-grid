@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { MMDParser } from 'three/examples/jsm/libs/mmdparser.module.js';
 import { expect, test, type Page } from './fixtures/test';
-import { loadTestModel, open, screenPosOf, type Win } from './helpers';
+import { choose, loadTestModel, open, screenPosOf, setColor, type Win } from './helpers';
 
 // マテリアル (Blender と同じ仕組み): スロット・マテリアルの共有・プリンシプル BSDF・シェーダーエディター・.pmx の書き出し
 const active = (page: Page) => page.evaluate(() => {
@@ -25,7 +25,7 @@ test('形のマテリアル: 名前・ベースカラー・新規・ほかの物
   await page.keyboard.press('Enter');
   expect((await active(page))!.name).toBe('木');
   // サーフェスのベースカラー
-  await page.getByLabel('ベースカラー').fill('#ff0000');
+  await setColor(page, 'ベースカラー', '#ff0000');
   expect(await page.evaluate(() => {
     const { engine } = window as Win;
     return engine.surfaceShader().values.baseColor.map((v: number) => +v.toFixed(3));
@@ -33,7 +33,7 @@ test('形のマテリアル: 名前・ベースカラー・新規・ほかの物
   // 立方体をもう 1 つ置いて、同じマテリアルを入れる (共有)
   await page.getByRole('button', { name: '追加' }).click();
   await page.getByRole('menuitem', { name: '立方体' }).click();
-  await page.getByRole('combobox', { name: 'スロットのマテリアル' }).selectOption({ label: '木' });
+  await choose(page, 'スロットのマテリアル', '木');
   await expect(page.getByText('ほかの物とも共有しています')).toBeVisible();
   expect(await page.evaluate(() => { const { engine } = window as Win; return engine.library.users(engine.activeMaterial().id); })).toBe(2);
   // 新規: 新しいマテリアルに替わり、木は 1 つの物だけに戻る
@@ -88,7 +88,7 @@ test('MMD モデルの材質はプリンシプル BSDF に変換され、変え�
   await page.getByRole('tab', { name: 'マテリアル' }).click();
   await expect(page.getByRole('listbox', { name: 'マテリアルスロット' }).getByRole('option')).toHaveText(['体']);
   expect((await active(page))!.nodes).toEqual(['principled', 'output']);
-  await page.getByLabel('ベースカラー').fill('#336699');
+  await setColor(page, 'ベースカラー', '#336699');
   const [download] = await Promise.all([
     page.waitForEvent('download'),
     page.getByRole('button', { name: 'マテリアルを反映した .pmx を書き出す' }).click(),

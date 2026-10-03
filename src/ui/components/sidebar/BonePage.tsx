@@ -3,6 +3,7 @@ import type { BoneValue } from '../../../core/types';
 import { BONE_MOVE, BONE_ROTATE } from '../../../engine';
 import { useEngine, useUi } from '../../EngineContext';
 import { BSlider } from '../BSlider';
+import { BSelect } from '../controls/BSelect';
 import { Empty, NeedModel, Panel } from './Panel';
 
 // --- ボーン ---
@@ -25,13 +26,8 @@ function BoneEditor({ onLoadPose }: { onLoadPose: () => void }) {
       <Panel title="ボーン">
         {sel === undefined || !v ? <Empty>手で動かせるボーンがありません</Empty> : (
           <>
-            <select className="bselect" aria-label="動かすボーン" value={sel} onChange={e => engine.setBoneSel(+e.currentTarget.value)}>
-              {groups.map(g => (
-                <optgroup key={g.label} label={g.label}>
-                  {g.bones.map(b => <option key={b.index} value={b.index}>{b.name}</option>)}
-                </optgroup>
-              ))}
-            </select>
+            <BSelect label="動かすボーン" value={sel} onChange={v => engine.setBoneSel(v)}
+                     options={groups.map(g => ({ group: g.label, options: g.bones.map(b => ({ value: b.index, label: b.name })) }))} />
             <div className="note">{engine.boneNote(sel)}</div>
             {(flags & BONE_ROTATE) !== 0 && ROT_ROWS.map(([k, label]) => (
               <BSlider key={k} label={label} value={v[k]} min={-180} max={180} step={1} digits={0} unit="°" onChange={x => engine.setBone(sel, k, x)} />

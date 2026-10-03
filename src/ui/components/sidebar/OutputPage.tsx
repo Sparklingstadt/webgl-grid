@@ -1,6 +1,8 @@
 import { FPS } from '../../../core/constants';
 import { RESOLUTION_PRESETS, VIDEO_FORMATS, VIDEO_QUALITIES, frameSpan, presetIndex, type VideoFormat, type VideoQuality } from '../../../core/output';
 import { useEngine, useUi } from '../../EngineContext';
+import { BCheck } from '../controls/BCheck';
+import { BSelect } from '../controls/BSelect';
 import { NumField } from '../NumField';
 import { Panel } from './Panel';
 
@@ -19,11 +21,9 @@ export function OutputPage() {
       <Panel title="解像度">
         <div className="prop">
           <label htmlFor="out-preset">プリセット</label>
-          <select id="out-preset" className="bselect" aria-label="解像度のプリセット" value={preset}
-                  onChange={e => { const p = RESOLUTION_PRESETS[+e.currentTarget.value]; if (p) engine.setOutput({ width: p.width, height: p.height }); }}>
-            {RESOLUTION_PRESETS.map((p, i) => <option key={p.name} value={i}>{p.name}</option>)}
-            {preset < 0 && <option value={-1}>カスタム</option>}
-          </select>
+          <BSelect id="out-preset" label="解像度のプリセット" value={preset} placeholder="カスタム"
+                   onChange={i => { const p = RESOLUTION_PRESETS[i]; if (p) engine.setOutput({ width: p.width, height: p.height }); }}
+                   options={RESOLUTION_PRESETS.map((p, i) => ({ value: i, label: p.name }))} />
           <label htmlFor="out-w">解像度 X</label>
           <NumField id="out-w" label="解像度 X" value={o.width} min={16} step={2} onCommit={v => engine.setOutput({ width: v })} />
           <label htmlFor="out-h">Y</label>
@@ -44,20 +44,13 @@ export function OutputPage() {
       <Panel title="動画">
         <div className="prop">
           <label htmlFor="out-format">形式</label>
-          <select id="out-format" className="bselect" aria-label="動画の形式" value={o.format}
-                  onChange={e => engine.setOutput({ format: e.currentTarget.value as VideoFormat })}>
-            {VIDEO_FORMATS.map(f => <option key={f.key} value={f.key}>{f.name}</option>)}
-          </select>
+          <BSelect<VideoFormat> id="out-format" label="動画の形式" value={o.format} onChange={format => engine.setOutput({ format })}
+                   options={VIDEO_FORMATS.map(f => ({ value: f.key, label: f.name }))} />
           <label htmlFor="out-quality">画質</label>
-          <select id="out-quality" className="bselect" aria-label="動画の画質" value={o.quality}
-                  onChange={e => engine.setOutput({ quality: e.currentTarget.value as VideoQuality })}>
-            {VIDEO_QUALITIES.map(q => <option key={q.key} value={q.key}>{q.name}</option>)}
-          </select>
+          <BSelect<VideoQuality> id="out-quality" label="動画の画質" value={o.quality} onChange={quality => engine.setOutput({ quality })}
+                   options={VIDEO_QUALITIES.map(q => ({ value: q.key, label: q.name }))} />
         </div>
-        <label className="check">
-          <input type="checkbox" checked={o.audio} onChange={e => engine.setOutput({ audio: e.currentTarget.checked })} />
-          曲を入れる{hasMusic ? '' : ' (曲を読み込んでいません)'}
-        </label>
+        <BCheck checked={o.audio} onChange={audio => engine.setOutput({ audio })}>曲を入れる{hasMusic ? '' : ' (曲を読み込んでいません)'}</BCheck>
         <div className="note">ブラウザの中で 1 フレームずつ描いて圧縮するので、重い場面でもコマ落ちしません。MP4 を作れないブラウザでは WebM を選んでください</div>
       </Panel>
       <div className="row">

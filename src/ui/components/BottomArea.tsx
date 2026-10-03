@@ -1,3 +1,4 @@
+import { BSelect } from './controls/BSelect';
 import { ShaderEditor } from './ShaderEditor';
 import { Timeline } from './Timeline';
 
@@ -8,10 +9,8 @@ export function BottomArea({ editor, setEditor, open, onHover }: {
   editor: BottomEditor; setEditor: (e: BottomEditor) => void; open: boolean; onHover: (area: 'timeline' | 'shader') => void;
 }) {
   const typeSelect = (
-    <select className="editor-select" aria-label="エディターの種類" value={editor} onChange={e => setEditor(e.currentTarget.value as BottomEditor)}>
-      <option value="timeline">タイムライン</option>
-      <option value="shader">シェーダーエディター</option>
-    </select>
+    <BSelect className="editor-select" label="エディターの種類" value={editor} onChange={setEditor}
+             options={[{ value: 'timeline', label: 'タイムライン' }, { value: 'shader', label: 'シェーダーエディター' }]} />
   );
   return (
     <section className="area" aria-label={editor === 'timeline' ? 'タイムライン' : 'シェーダーエディター'}

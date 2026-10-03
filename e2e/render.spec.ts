@@ -13,7 +13,7 @@ test('F12 で画像をレンダリングし、レンダー結果から PNG を�
   await page.keyboard.press('Enter');
   await page.getByRole('spinbutton', { name: '解像度 Y' }).fill('200');
   await page.keyboard.press('Enter');
-  await expect(page.getByRole('combobox', { name: '解像度のプリセット' })).toHaveValue('-1'); // カスタム
+  await expect(page.getByRole('combobox', { name: '解像度のプリセット' })).toHaveText('カスタム');
   // 立方体を選んだまま描いても、選択の輪郭線とグリッドは描かない (背景はビューポートの灰色で塗る)
   await page.evaluate(() => { const { engine } = window as Win; engine.select(engine.world.objects[0]); });
   await page.locator('canvas#c').hover();

@@ -1,5 +1,6 @@
 import { PALETTE, PALETTE_NAMES, paletteCss } from '../../../core/constants';
 import { useEngine, useUi } from '../../EngineContext';
+import { BCheck } from '../controls/BCheck';
 import { NumField } from '../NumField';
 import { Empty, Panel } from './Panel';
 
@@ -33,10 +34,7 @@ export function ObjectPage() {
       )}
       {sel.kind === 'model' && hairHang !== null && (
         <Panel title="物理演算">
-          <label className="check">
-            <input type="checkbox" checked={hairHang} onChange={e => engine.setHairHang(e.currentTarget.checked)} />
-            髪を重力で垂らす
-          </label>
+          <BCheck checked={hairHang} onChange={on => engine.setHairHang(on)}>髪を重力で垂らす</BCheck>
           <div className="note">髪の形を保つ「錘」の剛体を外して、髪をまっすぐ垂らします。オフにすると、モデルの作者が作った髪の形 (MMD と同じ) に戻ります</div>
         </Panel>
       )}

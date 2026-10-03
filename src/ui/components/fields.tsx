@@ -1,15 +1,27 @@
 import { useRef, useState } from 'react';
+import { hexToRgb } from '../../core/hsv';
 import { hexToLinear, linearToHex } from '../../core/materials/color';
 import type { Color3, SocketDef, SocketValue } from '../../core/materials/nodes';
 import { BSlider } from './BSlider';
+import { ColorPicker } from './controls/ColorPicker';
+import { Popover } from './controls/Popover';
 
-// 色の欄。値はリニアな色 (マテリアルと同じ)、欄には画面の色で見せる
+// 色の欄。値はリニアな色 (マテリアルと同じ)、欄には画面の色で見せる。押すと色選びの窓が開く
 export function ColorField({ label, value, onChange, compact }: { label: string; value: Color3; onChange: (c: Color3) => void; compact?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const btn = useRef<HTMLButtonElement>(null);
+  const hex = linearToHex(value);
   return (
-    <label className={compact ? 'color-field compact' : 'color-field'}>
+    <div className={compact ? 'color-field compact' : 'color-field'}>
       <span>{label}</span>
-      <input type="color" value={linearToHex(value)} aria-label={label} onChange={e => onChange(hexToLinear(e.currentTarget.value))} />
-    </label>
+      <button type="button" ref={btn} className="bcolor" aria-label={label} title={`${label} ${hex}`} aria-haspopup="dialog" aria-expanded={open}
+              style={{ background: hex }} onClick={() => setOpen(o => !o)} />
+      {open && (
+        <Popover anchor={btn.current} onClose={() => setOpen(false)} className="color-pop" role="dialog" label={`${label}を選ぶ`}>
+          <ColorPicker label={label} rgb={hexToRgb(hex)!} onDone={() => { setOpen(false); btn.current?.focus(); }} onChange={c => onChange(hexToLinear(`#${c.map(v => Math.round(v * 255).toString(16).padStart(2, '0')).join('')}`))} />
+        </Popover>
+      )}
+    </div>
   );
 }
 
