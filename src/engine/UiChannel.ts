@@ -20,6 +20,7 @@ export interface UiState {
   toast: { text: string; id: number } | null;
   palette: { x: number; y: number; c: number } | null;
   viewInfo: string;
+  hairHang: boolean | null; // 選んでいるモデルの髪を重力で垂らしているか (髪の形を保つ錘がなければ null)
 }
 type Version = 'modelVersion' | 'values' | 'keysVersion';
 
@@ -28,7 +29,7 @@ export class UiChannel {
     mode: 'orbit', sel: null, modelVersion: 0, values: 0, canAdd: true,
     frame: 0, playing: false, start: 0, end: TL_DEFAULT_END, keysVersion: 0,
     fxState: { ao: false, dof: false, bloom: false, diffusion: false, color: false }, fxLevel: { ...FX_LEVEL_DEFAULT },
-    toast: null, palette: null, viewInfo: '',
+    toast: null, palette: null, viewInfo: '', hairHang: null,
   });
   private valuesAt = 0;
   private toastTimer: ReturnType<typeof setTimeout> | undefined;

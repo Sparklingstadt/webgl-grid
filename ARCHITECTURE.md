@@ -12,7 +12,7 @@ engine/  three.js の実行部 (場面・描画・操作・アニメーション
 core/    純粋な計算とデータ (three.js の数学ライブラリは使ってよいが、場面・DOM・WebGL には触らない)
 ```
 
-- **core** は単体テストしやすい計算をまとめた場所です（積み重ねの判定、キーフレームの補間、.vpd の書式、Shift-JIS、タイムラインの目盛り、ストア、イベント）。
+- **core** は単体テストしやすい計算をまとめた場所です（積み重ねの判定、髪の錘の見つけ方、キーフレームの補間、.vpd の書式、Shift-JIS、タイムラインの目盛り、ストア、イベント）。
 - **engine** は、役割ごとのクラス（サービス）でできています。モジュールのグローバル変数は持たず、使う相手はコンストラクタで受け取ります。`Engine` がすべてを組み立てる場所（コンポジションルート）で、画面への窓口（ファサード）も兼ねます。
 - **ui** はエンジンを React の Context（`EngineProvider` / `useEngine`）で受け取り、状態は `useUi(selector)` で購読します。
 
@@ -33,7 +33,7 @@ core/    純粋な計算とデータ (three.js の数学ライブラリは使っ
 | | `Keyframes` | キーフレームの挿入・選択・移動・削除と、モデルへの反映 | World, Posing, Viewport, UiChannel |
 | | `Music` | 曲。`TimeSource` として Clock に再生位置を渡す | UiChannel |
 | MMD | `MmdLoader` | .pmx をメッシュにする | UiChannel |
-| | `Physics` | 物理演算 (`System`) | World, Viewport, UiChannel |
+| | `Physics` | 物理演算 (`System`)・髪の錘を外して垂らす。MMDPhysics は必ず等倍・親なしのモデルの座標で呼ぶ | World, Viewport, UiChannel |
 | | `Stage` | ステージ | SceneGraph, Viewport |
 | | `Motion` | VMD のダンスとカメラ (`System`、カメラは `CameraOverride`) | World, Physics, Stage, CameraController, UiChannel |
 | | `Posing` | 表情とボーン・IK と付与 (`System`) | World, Physics, Motion, Viewport, UiChannel |

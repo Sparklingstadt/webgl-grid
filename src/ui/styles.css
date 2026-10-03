@@ -99,6 +99,8 @@ canvas#c.over-box { cursor: pointer; }
 .panel-body .row > * { flex: 1; }
 .empty { color: var(--dim); padding: 4px 0; }
 .note { color: var(--dim); font-size: 11px; }
+.check { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.check input { margin: 0; accent-color: var(--accent); }
 .bbtn { padding: 4px 8px; border: 0; border-radius: 4px; background: var(--widget); cursor: pointer; text-align: center;
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bbtn:hover:not(:disabled) { background: var(--widget-hi); }

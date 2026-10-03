@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { findHairWeights } from '../../core/hairWeights';
 import type { System, Viewport } from '../render/Viewport';
 import type { Any, ModelObj, Obj } from '../types';
 import type { UiChannel } from '../UiChannel';
@@ -24,6 +25,8 @@ interface Entry {
   prev: THREE.Vector3 | null; vel: THREE.Vector3; acc: THREE.Vector3;
   gravity: Any; force: Any; zero: Any; axisX: number; axisZ: number;
   prevR: number | null; w: number; alpha: number; dynamic: Any[];
+  hair: { bodies: Any[]; constraints: Any[] } | null; // 髪の形を保つ錘と、それにつながる関節 (なければ null)
+  hang: boolean;                                       // 錘を外して、髪を重力で垂らしている
 }
 const MMD_GRAVITY = 9.8 * 10; // MMD の重力 (モデルの単位で)
 const INERTIA = 0.3;          // 運ぶ・落ちるときの揺れの強さ
@@ -46,6 +49,26 @@ function inModelFrame<T>(obj: Obj, fn: () => T): T {
     mesh.scale.copy(scale);
     obj.node.updateMatrixWorld(true);
   }
+}
+// 髪の形を保つ錘と、それにつながる関節を探す (core/hairWeights.ts)
+function findHairRig(mesh: Any, physics: Any): Entry['hair'] {
+  const bones: THREE.Bone[] = mesh.skeleton.bones;
+  // 頭のボーン (MMD の標準の名前「頭」) か、その子孫か
+  const isHeadBone = (i: number) => {
+    for (let b: THREE.Object3D | null = bones[i] ?? null; b && (b as THREE.Bone).isBone; b = b.parent) if (b.name === '頭') return true;
+    return false;
+  };
+  const isLocked = (c: Any) => [c.translationLimitation1, c.translationLimitation2, c.rotationLimitation1, c.rotationLimitation2]
+    .every((v: ArrayLike<number>) => Array.from(v).every(x => x === 0));
+  const index = new Map<Any, number>(physics.bodies.map((b: Any, i: number) => [b, i]));
+  const found = findHairWeights(
+    physics.bodies.map((b: Any) => ({ type: b.params.type, groupTarget: b.params.groupTarget, boneIndex: b.params.boneIndex })),
+    physics.constraints.map((c: Any) => ({ a: index.get(c.bodyA)!, b: index.get(c.bodyB)!, locked: isLocked(c.params) })),
+    isHeadBone);
+  if (!found.length) return null;
+  const bodies = found.map(i => physics.bodies[i]);
+  const set = new Set(bodies);
+  return { bodies, constraints: physics.constraints.filter((c: Any) => set.has(c.bodyA) || set.has(c.bodyB)) };
 }
 // 物理演算を cycles 回 (1/60 秒ずつ) 進めて、いまの姿勢になじませる
 function warmup(obj: Obj, physics: Any, cycles: number) {
@@ -84,12 +107,43 @@ export class Physics implements System {
         axisX: mesh.position.x * (1 - 1 / k), axisZ: mesh.position.z * (1 - 1 / k),
         prevR: null, w: 0, alpha: 0,
         dynamic: physics.bodies.filter((b: Any) => b.params.type !== 0), // 骨に付いていくだけの剛体は除く
+        hair: findHairRig(mesh, physics),
+        hang: false,
       });
       this.viewport.startTicking();
     } catch (err) {
       console.error(err);
       this.ui.toast(`物理演算を開始できませんでした: ${(err as Error)?.message ?? err}`, 8000);
     }
+  }
+  // 髪を重力で垂らしているか。髪の形を保つ錘がない (か物理演算がない) モデルは null
+  hairHang(obj: Obj): boolean | null {
+    const p = this.entries.find(p => p.obj === obj);
+    return p?.hair ? p.hang : null;
+  }
+  // 髪の錘を外して、髪を重力で垂らす (on) / 錘を戻して、モデルの作者が作った髪の形にする (off)
+  setHairHang(obj: Obj, on: boolean) {
+    const p = this.entries.find(p => p.obj === obj);
+    if (!p?.hair || p.hang === on) return;
+    p.hang = on;
+    const { world } = p.physics, { bodies, constraints } = p.hair;
+    if (on) {
+      // 外した錘は動かなくなるが、錘のボーンは見た目に関わらないので構わない
+      for (const c of constraints) world.removeConstraint(c.constraint);
+      for (const b of bodies) world.removeRigidBody(b.body);
+    } else {
+      // 錘のボーンを最初の姿勢 (髪の節からの位置) に戻してから、錘と関節を戻し、全体を置き直す
+      const rest = obj.model.userData.rest, bones = obj.model.skeleton.bones;
+      for (const b of bodies) {
+        const i = bones.indexOf(b.bone);
+        if (i >= 0) { b.bone.position.copy(rest[i].p); b.bone.quaternion.copy(rest[i].q); }
+        world.addRigidBody(b.body, 1 << b.params.groupIndex, b.params.groupTarget);
+      }
+      for (const c of constraints) world.addConstraint(c.constraint, true);
+      this.reset(p);
+      warmup(p.obj, p.physics, 60);
+    }
+    this.viewport.startTicking();
   }
   stop(obj: Obj) {
     const i = this.entries.findIndex(p => p.obj === obj);

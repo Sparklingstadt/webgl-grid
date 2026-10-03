@@ -90,7 +90,10 @@ export class Engine {
     viewport.onRender(() => {
       selection.publish();
       const what = camera.override ? 'カメラ' : camera.viewName || 'ユーザー';
-      ui.set({ viewInfo: `${what}・透視投影\n(${clock.frame}) ${ui.state.sel?.name ?? ''}` });
+      ui.set({
+        viewInfo: `${what}・透視投影\n(${clock.frame}) ${ui.state.sel?.name ?? ''}`,
+        hairHang: selection.model ? this.physics.hairHang(selection.model) : null,
+      });
     });
 
     world.addShape(0, 0, 0, 0); // 原点に立方体を 1 つ
@@ -241,6 +244,13 @@ export class Engine {
   boneNote(i: number) { return this.model ? this.posing.boneNote(this.model, i) : ''; }
   setBone(i: number, key: keyof BoneValue, v: number) { if (this.model) this.posing.setBone(this.model, i, key, v); }
   resetPose() { if (this.model) this.posing.resetPose(this.model); }
+  // 髪の形を保つ錘を外して、髪を重力で垂らす (MMD とは見た目が変わる)
+  setHairHang(on: boolean) {
+    if (!this.model) return;
+    this.physics.setHairHang(this.model, on);
+    this.ui.set({ hairHang: this.physics.hairHang(this.model) });
+    this.viewport.requestDraw();
+  }
   savePose() {
     if (this.model) this.vpd.save(this.model);
     else this.ui.toast('ポーズを保存するモデルをクリックして選んでください。');

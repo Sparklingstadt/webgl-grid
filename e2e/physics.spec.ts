@@ -51,3 +51,37 @@ test('タイムラインを飛んでも・繰り返しても、物理演算の�
   expect(await worstGap(page), '繰り返したあと').toBeLessThan(LIMIT);
   expect(errors).toEqual([]);
 });
+
+// 髪の剛体の横の位置 (モデルの座標。頭が 0)
+const hairX = (page: Page) => page.evaluate(() => {
+  const { engine } = window as Win;
+  const b = engine.physics.entries[0].physics.bodies.find((b: { params: { name: string } }) => b.params.name === '髪剛体');
+  return b.body.getCenterOfMassTransform().getOrigin().x();
+});
+
+test('「髪を重力で垂らす」で、髪の錘を外して垂らし、オフで元の形に戻す', async ({ page }) => {
+  test.slow(); // 物理エンジン (Ammo.js) を CDN から読む
+  const errors = await open(page);
+  await loadTestModel(page, [], { physics: true });
+  const toggle = page.getByRole('checkbox', { name: '髪を重力で垂らす' });
+  await expect(toggle).toBeVisible({ timeout: 30_000 }); // 錘のある髪が見つかったら出る
+  await expect(toggle).not.toBeChecked();
+  // 錘があるあいだは、髪は頭から 45° 外へ伸びたまま (x = 3)
+  await page.waitForTimeout(1000);
+  expect(await hairX(page)).toBeGreaterThan(2.5);
+  // 錘を外すと、関節の動ける範囲 (0.6 ラジアン) まで垂れる
+  await toggle.check();
+  await expect.poll(() => hairX(page), { timeout: 10_000 }).toBeLessThan(1.5);
+  expect(await page.evaluate(() => (window as Win).engine.ui.state.hairHang)).toBe(true);
+  // 錘を戻すと、元の形に戻る
+  await toggle.uncheck();
+  await expect.poll(() => hairX(page), { timeout: 10_000 }).toBeGreaterThan(2.5);
+  expect(errors).toEqual([]);
+});
+
+test('髪の形を保つ錘がないモデルには、スイッチを出さない', async ({ page }) => {
+  await open(page);
+  await loadTestModel(page); // 剛体のないモデル
+  await expect(page.locator('.prop')).toContainText('テスト人形');
+  await expect(page.getByRole('checkbox', { name: '髪を重力で垂らす' })).toHaveCount(0);
+});

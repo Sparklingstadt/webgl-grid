@@ -7,6 +7,7 @@ import { Empty, Panel } from './Panel';
 export function ObjectPage() {
   const engine = useEngine();
   const sel = useUi(s => s.sel);
+  const hairHang = useUi(s => s.hairHang);
   if (!sel) return <Panel title="オブジェクト"><Empty>何も選んでいません。ビューポートで物をクリックすると選べます。</Empty></Panel>;
   const deg = ((sel.r * 180 / Math.PI) % 360 + 540) % 360 - 180;
   return (
@@ -28,6 +29,15 @@ export function ObjectPage() {
                       style={{ background: paletteCss(i) }} onClick={() => engine.setObjColor(i)} />
             ))}
           </div>
+        </Panel>
+      )}
+      {sel.kind === 'model' && hairHang !== null && (
+        <Panel title="物理演算">
+          <label className="check">
+            <input type="checkbox" checked={hairHang} onChange={e => engine.setHairHang(e.currentTarget.checked)} />
+            髪を重力で垂らす
+          </label>
+          <div className="note">髪の形を保つ「錘」の剛体を外して、髪をまっすぐ垂らします。オフにすると、モデルの作者が作った髪の形 (MMD と同じ) に戻ります</div>
         </Panel>
       )}
       {sel.kind === 'model' && (
