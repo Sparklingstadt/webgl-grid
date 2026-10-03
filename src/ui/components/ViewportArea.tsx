@@ -10,6 +10,7 @@ import { Menu, MenuItem, MenuLabel, MenuSep } from './Menu';
 import type { SideTab } from './sidebar/Sidebar';
 import { Icon } from './icons';
 import { NPanel } from './NPanel';
+import { ViewContextMenu } from './ViewContextMenu';
 import { OutputFrame, useShowFrame } from './OutputFrame';
 import { ModelPicker } from './ModelPicker';
 import { RecoverBanner } from './Overlays';
@@ -140,6 +141,7 @@ export function ViewportArea(props: {
           <RecoverBanner />
           <ModelPicker />
           {props.nOpen && <NPanel />}
+          <ViewContextMenu showSide={() => { if (!props.sideOpen) props.toggleSide(); }} />
           <button type="button" className="npanel-toggle" aria-label={props.nOpen ? t('サイドバーを隠す') : t('サイドバーを出す')} aria-expanded={props.nOpen}
                   aria-controls="n-panel" title={t('サイドバー (N)')} onClick={props.toggleN}>{props.nOpen ? '›' : '‹'}</button>
           <div className="nav">

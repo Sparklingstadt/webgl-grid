@@ -65,3 +65,32 @@ test('B のあと、ドラッグで囲んだ物を選ぶ (Esc でやめる)', as
   await expect(page.locator('.select-box')).toHaveCount(0);
   expect((await selected(page)).ids.length).toBe(2);
 });
+
+test('ビューポートの右クリック: 押した物を選んでメニューを出し、複製・削除などができる。右ドラッグはカメラのまま', async ({ page }) => {
+  await open(page);
+  const p = await screenPosOf(page, 0);
+  const menu = page.getByRole('menu', { name: 'オブジェクトのメニュー' });
+  await page.mouse.click(p.x, p.y, { button: 'right' });
+  await expect(menu).toBeVisible();
+  await expect(menu).toContainText('立方体');
+  expect((await selected(page)).ids.length).toBe(1);
+  await menu.getByRole('menuitem', { name: '複製' }).click();
+  await expect(menu).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => (window as Win).engine.world.objects.length)).toBe(2);
+  // 何もない所: 選択の操作だけ使える
+  const box = (await page.locator('canvas#c').boundingBox())!;
+  await page.keyboard.press('Alt+a');
+  await page.mouse.click(box.x + 30, box.y + box.height - 30, { button: 'right' });
+  await expect(menu.getByRole('menuitem', { name: '削除' })).toBeDisabled();
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
+  // 右ドラッグはカメラを回すだけで、メニューは出さない
+  const yaw = () => page.evaluate(() => (window as Win).engine.camera.cam.yaw);
+  const before = await yaw();
+  await page.mouse.move(box.x + 100, box.y + 100);
+  await page.mouse.down({ button: 'right' });
+  await page.mouse.move(box.x + 180, box.y + 110, { steps: 4 });
+  await page.mouse.up({ button: 'right' });
+  expect(await yaw()).not.toBe(before);
+  await expect(menu).toHaveCount(0);
+});

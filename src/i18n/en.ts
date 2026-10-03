@@ -941,5 +941,9 @@ const dict: Dictionary = {
   "数字で値。クリック・Enter で決定、Esc・右クリックでやめる": "Numbers: value. Click/Enter to confirm, Esc/right-click to cancel",
   "移動 / 回転 / 拡大縮小 (Alt で元に戻す)": "Move / Rotate / Scale (Alt to clear)",
   "プロパティのタブ": "Properties Tabs",
+  "{n} 個のオブジェクト": "{n} Objects",
+  "すべて選択": "Select All",
+  "オブジェクトのメニュー": "Object Context Menu",
+  "選択を反転": "Invert Selection",
 };
 export default dict;

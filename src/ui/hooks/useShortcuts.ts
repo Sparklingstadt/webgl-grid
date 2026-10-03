@@ -31,7 +31,7 @@ export function useShortcuts(engine: Engine, actions: {
       if (engine.ui.state.missingTextures) { if (e.key === 'Escape') engine.loader.answerTextures([]); return; }
       if (a.dialogOpen()) { if (e.key === 'Escape') a.closeDialog(); return; } // (アドオンマネージャーのあいだは、場面のショートカットを使わない)
       if (engine.transform.active) return; // (G・R・S で動かしているあいだのキーは、TransformTool が先に受け取る)
-      if (e.key === 'Escape') { if (!a.closeMenus() && !engine.cancelBoxSelect()) engine.picker.close(); return; }
+      if (e.key === 'Escape') { if (!a.closeMenus() && !engine.closeContextMenu() && !engine.cancelBoxSelect()) engine.picker.close(); return; }
       // Ctrl+,: アドオンマネージャー (Blender のプリファレンスと同じキー)
       if (e.key === ',' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); a.openAddons(); return; }
       // F12: 画像をレンダリング、Ctrl+F12: アニメーションをレンダリング (Blender と同じ)

@@ -87,6 +87,7 @@ canvas#c.over-box { cursor: pointer; }
 .tools button:hover { background: #474747; }
 .tools button[aria-pressed="true"] { background: var(--accent); }
 .tools svg { width: 20px; height: 20px; }
+.ctx-anchor { position: fixed; width: 1px; height: 1px; pointer-events: none; }
 .select-box { position: fixed; z-index: 8; pointer-events: none; border: 1px dashed #fff; background: rgba(255, 255, 255, 0.06); }
 .viewport.box-select canvas#c { cursor: crosshair; }
 canvas#c.transforming { cursor: move; }

@@ -169,6 +169,7 @@ export class Engine {
         pick: (x, y) => { const b = this.pose.pickBone(x, y); if (b === null) return false; this.pose.selectBone(b); return true; },
       },
       remove: obj => this.world.remove(obj),
+      contextMenu: (x, y) => this.openContextMenu(x, y),
       box: {
         active: () => this.ui.state.boxSelect,
         show: box => this.ui.set({ box }),
@@ -233,6 +234,16 @@ export class Engine {
     this.history.soon();
     this.viewport.requestDraw();
   }
+
+  // ビューポートの右クリック: 押した物を (選んでいなければ) 選んで、メニューを出す
+  openContextMenu(x: number, y: number) {
+    if (this.pose.active || this.transform.active) return;
+    const picked = this.camera.pick(this.camera.screenRay(x, y))?.obj;
+    if (picked && !this.selection.isSelected(picked)) this.select(picked);
+    else if (picked) this.selection.setActive(picked);
+    this.ui.set({ contextMenu: { x, y } });
+  }
+  closeContextMenu() { if (!this.ui.state.contextMenu) return false; this.ui.set({ contextMenu: null }); return true; }
 
   // B: 次のドラッグで四角を描いて選ぶ。Esc でやめる
   startBoxSelect() { this.ui.set({ boxSelect: true }); }

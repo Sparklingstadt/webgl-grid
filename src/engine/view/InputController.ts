@@ -34,6 +34,7 @@ export interface InputActions {
   userGesture(): void;                       // 画面を触った (自動再生を止められた曲を鳴らす)
   // ポーズモード: そのあいだは物を選ばず・運ばず・消さない。関節を押したらボーンを選ぶ。ギズモを触っているあいだはカメラも動かさない
   pose?: { active(): boolean; busy(): boolean; pick(x: number, y: number): boolean };
+  contextMenu?(x: number, y: number): void; // 右クリック (動かさずに離した): メニューを出す
   // ボックス選択 (B): 次のドラッグで四角を描き、離したら中の物を選ぶ (Shift で足す)
   box?: { active(): boolean; show(rect: { x0: number; y0: number; x1: number; y1: number } | null): void; done(x0: number, y0: number, x1: number, y1: number, extend: boolean): void };
 }
@@ -319,6 +320,8 @@ export class InputController {
       const slop = e.pointerType === 'touch' ? 10 : 4;
       this.wasDragged = !!drag.grabbed || Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > slop;
       if (!this.wasDragged && e.type === 'pointerup' && e.pointerType === 'touch') this.handleTap(e);
+      // 右クリック (マウスで、動かさずに離した): メニュー。右ドラッグはカメラの操作のまま
+      if (!this.wasDragged && e.type === 'pointerup' && e.pointerType === 'mouse' && e.button === 2 && !drag.box) this.actions.contextMenu?.(e.clientX, e.clientY);
     }
     if (drag.pending) clearTimeout(drag.pending.timer);
     if (drag.box) {
