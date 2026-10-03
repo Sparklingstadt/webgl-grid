@@ -7,9 +7,9 @@ import { memoryAddonStorage, type AddonModule } from './Addons';
 const start = async (e = new Engine(), storage = memoryAddonStorage()) => { await e.addons.start(BUILTIN_ADDONS, storage); return e; };
 
 describe('アドオン', () => {
-  it('組み込みのアドオンは最初は切ってあり、有効にするとメニュー・パネル・命令が足され、切ると外れる', async () => {
+  it('組み込みのアドオンは Cinema 4D だけ最初から有効で、有効にするとメニュー・パネル・命令が足され、切ると外れる', async () => {
     const e = await start();
-    expect(e.ui.state.addons.map(a => [a.id, a.enabled])).toEqual([['turntable', false], ['float', false], ['scatter', false]]);
+    expect(e.ui.state.addons.map(a => [a.id, a.enabled])).toEqual([['cinema4d', true], ['turntable', false], ['float', false], ['scatter', false]]);
     const before = { menus: e.addons.menus.list().length, panels: e.addons.panels.list().length, commands: e.addons.commands.list().length, objectData: e.addons.objectData.list().length };
     await e.addons.enable('float');
     expect(e.addons.isEnabled('float')).toBe(true);
@@ -21,13 +21,15 @@ describe('アドオン', () => {
     expect({ menus: e.addons.menus.list().length, panels: e.addons.panels.list().length, commands: e.addons.commands.list().length, objectData: e.addons.objectData.list().length }).toEqual(before);
   });
 
-  it('有効にしたアドオンを覚えておき、次に始めたときも有効にする', async () => {
+  it('有効にしたアドオンを覚えておき、次に始めたときも有効にする。最初から有効のものも、切ったら切ったまま', async () => {
     const storage = memoryAddonStorage();
     const e = await start(new Engine(), storage);
     await e.addons.enable('turntable');
+    e.addons.disable('cinema4d');
     const f = await start(new Engine(), storage);
     expect(f.addons.isEnabled('turntable')).toBe(true);
     expect(f.addons.isEnabled('float')).toBe(false);
+    expect(f.addons.isEnabled('cinema4d')).toBe(false);
   });
 
   it('物ごとの値は、元に戻せて、プロジェクトに保存される', async () => {
@@ -69,7 +71,7 @@ describe('アドオン', () => {
   it('MCP: アドオンの一覧・有効にする・命令の一覧と実行', async () => {
     const e = await start();
     await runCommand(e, 'set_addon', { id: 'scatter', enabled: true });
-    expect(await runCommand(e, 'list_commands', {})).toEqual([
+    expect((await runCommand(e, 'list_commands', {}) as { addon: string }[]).filter(c => c.addon === 'scatter')).toEqual([
       { name: 'scatter.run', addon: 'scatter', description: '選んでいる形を、まわりにランダムに置く', params: expect.any(Object) },
     ]);
     e.select(e.world.objects[0]);

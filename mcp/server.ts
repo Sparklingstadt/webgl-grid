@@ -51,6 +51,10 @@ function tool<S extends z.ZodRawShape>(name: string, description: string, shape:
 const forward = <S extends z.ZodRawShape>(name: string, description: string, shape: S, timeoutMs?: number) =>
   tool(name, description, shape, async a => ({ content: [text(await call(name, a, timeoutMs))] }));
 
+// アドオンの命令を、専用のツールとして出す (アドオンが切ってあればエラー。set_addon で有効にする)
+const forwardAddon = <S extends z.ZodRawShape>(name: string, command: string, description: string, shape: S) =>
+  tool(name, `${description} (${command.split('.')[0]} アドオンの命令)`, shape, async a => ({ content: [text(await call('run_command', { name: command, params: a }))] }));
+
 const id = z.number().int().optional().describe('物の id (get_state の objects[].id)。省くと選んでいる物 (モデルの操作では最初のモデル)');
 const frame = z.number().int().min(0).optional();
 
@@ -83,7 +87,7 @@ forward('set_object', '物の位置・向き・色を変える (重なる位置�
 });
 forward('delete_object', '物を消す', { id });
 const vec3 = z.array(z.number()).length(3);
-forward('set_cloner', 'クローナー (Cinema 4D のクローナー): 物を直線・放射・グリッドに並べる。元の物の位置と向きが中心。MMD モデルは全部が同じ動きで踊る。省いた設定は今のまま。off: true でやめる', {
+forwardAddon('set_cloner', 'cinema4d.set_cloner', 'クローナー (Cinema 4D のクローナー): 物を直線・放射・グリッドに並べる。元の物の位置と向きが中心。MMD モデルは全部が同じ動きで踊る。省いた設定は今のまま。off: true でやめる', {
   id, off: z.boolean().optional(),
   mode: z.enum(['linear', 'radial', 'grid']).optional(),
   count: z.number().int().min(1).optional().describe('直線・放射の数'),
@@ -117,14 +121,14 @@ forward('run_command', 'アドオンが足した命令を実行する', {
   name: z.string().describe('命令の名前 ("アドオンの id.命令"。list_commands で確かめる)'),
   params: z.record(z.string(), z.unknown()).optional().describe('引数 (list_commands の params)'),
 });
-forward('set_deformers', 'デフォーマ (Cinema 4D のデフォーマ): 物を曲げる・ねじる・細くする・ふくらませる。上から順にかける。並びごと入れ替える (空でやめる)。MMD モデルはボーンで動かす前の形にかける', {
+forwardAddon('set_deformers', 'cinema4d.set_deformers', 'デフォーマ (Cinema 4D のデフォーマ): 物を曲げる・ねじる・細くする・ふくらませる。上から順にかける。並びごと入れ替える (空でやめる)。MMD モデルはボーンで動かす前の形にかける', {
   id, deformers: z.array(z.object({
     kind: z.enum(['bend', 'twist', 'taper', 'bulge']), enabled: z.boolean().optional(), axis: z.enum(['x', 'y', 'z']).optional(),
     amount: z.number().optional().describe('ベンド・ツイスト: 角度 (度)、テーパー・バルジ: 強さ (0 でそのまま。テーパー -0.5 で上が半分)'),
     directionDeg: z.number().optional().describe('ベンド: 曲げる向き (度)'),
   })),
 });
-forward('bake_cloner', '形のクローナーのクローンを、1 つずつの物にする (Cinema 4D の「現在の状態をオブジェクト化」)', { id });
+forwardAddon('bake_cloner', 'cinema4d.bake_cloner', '形のクローナーのクローンを、1 つずつの物にする (Cinema 4D の「現在の状態をオブジェクト化」)', { id });
 forward('reset_scene', '最初の状態 (立方体 1 個) に戻す', {});
 
 // ファイル

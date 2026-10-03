@@ -1,17 +1,19 @@
-import { CLONER_DEFAULT, CLONER_MODES, EFFECTOR_KINDS, newEffector, type ClonerMode, type ClonerSettings, type Effector, type EffectorKind, type Vec3 } from '../../../core/cloner';
-import type { SelInfo } from '../../../engine';
-import { useEngine } from '../../EngineContext';
-import { BCheck } from '../controls/BCheck';
-import { BSelect } from '../controls/BSelect';
-import { NumField } from '../NumField';
-import { Panel } from './Panel';
+import { CLONER_DEFAULT, CLONER_MODES, EFFECTOR_KINDS, newEffector, type ClonerMode, type ClonerSettings, type Effector, type EffectorKind, type Vec3 } from './cloner';
+import type { SelInfo } from '../../engine';
+import { useEngine } from '../../ui/EngineContext';
+import type { Cinema4d } from './Cinema4d';
+import { BCheck } from '../../ui/components/controls/BCheck';
+import { BSelect } from '../../ui/components/controls/BSelect';
+import { NumField } from '../../ui/components/NumField';
+import { Panel } from '../../ui/components/sidebar/Panel';
 
 // --- クローナー (Cinema 4D のクローナー): 選んでいる物を、直線・放射・グリッドに並べる ---
-export function ClonerPanel({ sel }: { sel: SelInfo }) {
+export function ClonerPanel({ sel, c4d }: { sel: SelInfo; c4d: Cinema4d }) {
   const engine = useEngine();
-  const c = sel.cloner;
-  const set = (patch: Partial<ClonerSettings>) => engine.setCloner(patch);
-  const head = <BCheck checked={!!c} label="クローナーにする" onChange={on => engine.setCloner(on ? { ...CLONER_DEFAULT } : null)} />;
+  const obj = engine.selection.current;
+  const c = c4d.cloner(obj);
+  const set = (patch: Partial<ClonerSettings>) => c4d.setCloner(patch);
+  const head = <BCheck checked={!!c} label="クローナーにする" onChange={on => c4d.setCloner(on ? { ...CLONER_DEFAULT } : null)} />;
   if (!c) {
     return (
       <Panel title="クローナー" head={head}>
@@ -19,8 +21,7 @@ export function ClonerPanel({ sel }: { sel: SelInfo }) {
       </Panel>
     );
   }
-  const obj = engine.selection.current;
-  const n = obj ? engine.cloners.count(obj) : 0;
+  const n = c4d.count(obj);
   const v3 = (label: string, key: 'step' | 'grid' | 'spacing', opts: { min?: number; step?: number; digits?: number }) => (
     <>
       <label>{label}</label>
@@ -76,7 +77,7 @@ export function ClonerPanel({ sel }: { sel: SelInfo }) {
       </details>
       <Effectors list={c.effectors} isModel={sel.kind === 'model'} onChange={effectors => set({ effectors })} />
       {sel.kind === 'shape' && (
-        <button type="button" className="bbtn" onClick={() => engine.bakeCloner()} title="クローンを 1 つずつの物にする (Cinema 4D の「現在の状態をオブジェクト化」)">1 つずつの物にする</button>
+        <button type="button" className="bbtn" onClick={() => c4d.bake()} title="クローンを 1 つずつの物にする (Cinema 4D の「現在の状態をオブジェクト化」)">1 つずつの物にする</button>
       )}
     </Panel>
   );

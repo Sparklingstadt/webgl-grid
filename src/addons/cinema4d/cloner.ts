@@ -1,5 +1,5 @@
-import { int, num, oneOf, vec3 as vec } from './normalize';
-import { seededRandom } from './random';
+import { int, num, oneOf, vec3 as vec } from '../../core/normalize';
+import { seededRandom } from '../../core/random';
 
 // --- クローナー (Cinema 4D のクローナー): 物を直線・放射・グリッドに並べる ---
 // 並べる場所は、元の物 (クローナー) の位置と向きから見た座標。元の物を動かす・回すと、クローンも一緒に動く

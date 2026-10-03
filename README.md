@@ -83,7 +83,10 @@ WebGL2 に対応したブラウザが必要です。URL に `?debug` を付け�
 
 ## クローナー（Cinema 4D のクローナー）
 
-- 物を選んで、サイドバーの「オブジェクト」の「クローナー」にチェックを入れる（か「オブジェクト > クローナーにする」）と、その物を並べます。元の物の位置と向きが中心で、元の物を動かす・回すと、クローンも一緒に動きます（Cinema 4D でクローナーの子にした状態）。
+クローナーとデフォーマは、組み込みの **Cinema 4D アドオン**（最初から有効）の機能です。アドオンマネージャーで切ると、パネル・メニュー・命令がなくなり、クローンと変形も外れます（付けた設定は覚えていて、有効にし直すと戻ります）。
+
+
+- 物を選んで、サイドバーの「オブジェクト」の「クローナー」にチェックを入れる（か「オブジェクト > クローナーにする / やめる」）と、その物を並べます。元の物の位置と向きが中心で、元の物を動かす・回すと、クローンも一緒に動きます（Cinema 4D でクローナーの子にした状態）。
   - **直線**: 数・1 つごとのずれ（X・Y・Z）・1 つごとの回転
   - **放射**: 数・半径・角度の範囲（一周なら等分）・外を向く
   - **グリッド**: X・Y・Z の数と間隔（横は元の物を真ん中に、縦は地面から上へ）
@@ -95,7 +98,7 @@ WebGL2 に対応したブラウザが必要です。URL に `?debug` を付け�
 - **MMD モデル**も並べられます。クローンは毎フレーム元のモデルの骨と表情を写すので、モーション・物理演算・手で動かしたボーンごと、全員が同じ動きで踊ります（25 体まで）。
 - クローンを押すと元の物が選ばれます。クローンは積み重ねには加わりません（足場は元の物だけ）。
 - 「1 つずつの物にする」（Cinema 4D の「現在の状態をオブジェクト化」）: 形のクローンを、1 つずつの物にします（マテリアルは共有。置ける物の数まで）。
-- 元に戻す・プロジェクト・自動保存・MCP（`set_cloner`・`bake_cloner`）に対応しています。
+- 元に戻す・プロジェクト・自動保存・MCP（`set_cloner`・`bake_cloner`。アドオンの命令 `cinema4d.set_cloner`・`cinema4d.bake_cloner` を呼ぶ）に対応しています。前の版のプロジェクトのクローナー・デフォーマもそのまま開けます。
 
 ## デフォーマ（Cinema 4D のデフォーマ）
 
@@ -181,7 +184,7 @@ WebGL2 に対応したブラウザが必要です。URL に `?debug` を付け�
 
 アプリに機能を足す JavaScript のモジュールです。「編集 > プリファレンス…（アドオン）」で一覧を出し、チェックで有効にします（有効にしたものは、次に開いたときも有効）。足したメニュー・パネル・命令は、切ると全部外れます。
 
-- **組み込みのアドオン**（最初は切ってあります）: **ターンテーブル**（再生中とアニメーションのレンダリング中にカメラを回す。設定は「シーン」）、**ふわふわ**（物をタイムラインに合わせて上下に揺らす。「オブジェクト > ふわふわさせる」）、**ランダムに散らす**（選んだ形をまわりにランダムに置く。「オブジェクト」のメニュー）。
+- **組み込みのアドオン**: **Cinema 4D**（クローナーとデフォーマ。最初から有効）。ほかは最初は切ってあります: **ターンテーブル**（再生中とアニメーションのレンダリング中にカメラを回す。設定は「シーン」）、**ふわふわ**（物をタイムラインに合わせて上下に揺らす。「オブジェクト > ふわふわさせる」）、**ランダムに散らす**（選んだ形をまわりにランダムに置く。「オブジェクト」のメニュー）。
 - **インストール**: 「ファイルからインストール…」で .js を選ぶと、ブラウザの中にしまって有効にします（同じ id なら入れ替え）。例は [examples/addons/hello.js](examples/addons/hello.js)。アドオンはアプリのすべてを操作できるので、信頼できるものだけを入れてください。
 - **保存**: アドオンが足した値（物ごと・場面）はプロジェクトに入り、元に戻すこともできます。そのアドオンを切った状態でプロジェクトを開くと「アドオン … のデータがあります」と知らせます。
 - **MCP**: `list_addons`・`set_addon` で有効にし、`list_commands` で命令を確かめて `run_command`（名前は `アドオンの id.命令`）で使います。
@@ -233,7 +236,7 @@ MCP クライアント ⇄ (stdio) ⇄ MCP サーバー (mcp/server.ts) ⇄ (Web
 | --- | --- |
 | つながり | `app_status`、`open_app` |
 | 場面を見る | `get_state`（物の一覧と id・位置・マテリアル、タイムライン、視点、効果、出力）、`screenshot`（ビューポートの画像） |
-| 物 | `add_shape`、`select`、`set_object`（位置・向き・色）、`delete_object`、`reset_scene`、`set_cloner`・`bake_cloner`（クローナー）、`set_deformers`（デフォーマ） |
+| 物 | `add_shape`、`select`、`set_object`（位置・向き・色）、`delete_object`、`reset_scene`、`set_cloner`・`bake_cloner`（クローナー）、`set_deformers`（デフォーマ。この 3 つは Cinema 4D アドオンの命令） |
 | ファイル | `load_files`（手元のパスの .pmx・.vmd・.vpd・曲。.pmx を渡すと同じフォルダのテクスチャも送る） |
 | アニメーション | `timeline`（フレーム・範囲・再生）、`insert_keyframe`、`delete_keyframe`、`list_bones`、`set_bone`、`reset_pose`、`list_morphs`、`set_morph`、`set_hair_hang` |
 | 見た目 | `set_camera`、`list_materials`、`set_material`（プリンシプル BSDF の値・設定・輪郭線・名前）、`set_effect`、`set_scene`（空・床・太陽）、`add_light`・`set_light`（ライト） |
@@ -306,8 +309,6 @@ src/
     light.ts                ライトのオブジェクトの設定 (Blender のポイント・サン・スポット・エリア)
     shapes.ts               置ける形 (Cinema 4D のプリミティブ) の一覧と大きさ
     normalize.ts, random.ts 保存されていた値をそろえる部品 (数・色・一覧のどれか)・シードで決まる乱数
-    cloner.ts               クローナーの並べ方 (直線・放射・グリッド・ばらつき・エフェクタ)
-    deform.ts               デフォーマの変形 (ベンド・ツイスト・テーパー・バルジ) と法線
     hsv.ts                  色選びの色の変換 (HSV・16 進)
     history.ts              元に戻すための場面の写しの型と、変わったものの名前
     animation.ts            チャンネルごとのキーフレーム・補間曲線・補間の計算
@@ -324,7 +325,7 @@ src/
     UiChannel.ts            画面に知らせる状態とお知らせ
     addons/                 Addons (アドオンの一覧・有効にする・窓口と、登録したもの: 物ごとの値・場面の値・命令・メニュー・パネル。元に戻す・プロジェクト・MCP・画面はここを順に扱う)・registry (登録するものの形)・builtins (本体の機能も同じ形で登録する)
     render/                 SceneGraph (場面)・Viewport (描画先と描画ループ)・Environment (空・床・太陽)・Effects, postfx (MME 風の後処理)
-    world/                  World (置いた物・積み重ね・落下)・Selection (選択)・ColorPicker (パレット)・Cloners (クローナー)・Deformers (デフォーマ)・Lights (ライト)
+    world/                  World (置いた物・積み重ね・落下)・Selection (選択)・ColorPicker (パレット)・Lights (ライト)
     view/                   CameraController (カメラ・レイ・視点)・InputController (マウス・タッチ)
     anim/                   Clock (タイムライン)・Keyframes (キーフレーム)・Music (曲)
     mmd/                    MmdLoader・Physics・Stage・Motion (ダンスとカメラ)・Posing (表情とボーン)・VpdIO
@@ -341,6 +342,7 @@ src/
     hooks/useShortcuts.ts   キーボードショートカット
     components/addons/      アドオンのパネル・メニューの項目・プリファレンスの窓
   addons/                   組み込みのアドオン (ターンテーブル・ふわふわ・ランダムに散らす)
+    cinema4d/               Cinema 4D アドオン: cloner (並べ方とエフェクタ)・deform (変形と法線)・Cloners・Deformers (three.js に当てる)・Cinema4d (設定と命令)・パネル
 src/vendor/three-mmd/        three.js r171 から取り込んだ MMD 用の部品 (MMDLoader・MMDAnimationHelper・MMDPhysics・CCDIKSolver など)
 public/libs/                物理演算の Ammo.js (WebAssembly)
 mcp/                        MCP サーバー (server: ツール・bridge: ページとの WebSocket・files: ファイルの読み書き・appServer: dist/ を配る・status: 動いているかの問い合わせに答える)

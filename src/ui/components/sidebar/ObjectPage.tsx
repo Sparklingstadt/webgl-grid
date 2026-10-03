@@ -2,9 +2,8 @@ import { PALETTE, PALETTE_NAMES, paletteCss } from '../../../core/constants';
 import { useEngine, useUi } from '../../EngineContext';
 import { BCheck } from '../controls/BCheck';
 import { NumField } from '../NumField';
-import { ClonerPanel } from './ClonerPanel';
-import { DeformerPanel } from './DeformerPanel';
 import { LightPanel } from './LightPanel';
+import { AddonPanels } from '../addons/AddonPanels';
 import { Empty, Panel } from './Panel';
 
 // --- オブジェクト: 選んでいる物の名前・位置・向き・色 ---
@@ -12,7 +11,7 @@ export function ObjectPage() {
   const engine = useEngine();
   const sel = useUi(s => s.sel);
   const hairHang = useUi(s => s.hairHang);
-  if (!sel) return <Panel title="オブジェクト"><Empty>何も選んでいません。ビューポートで物をクリックすると選べます。</Empty></Panel>;
+  if (!sel) return <><Panel title="オブジェクト"><Empty>何も選んでいません。ビューポートで物をクリックすると選べます。</Empty></Panel><AddonPanels tab="object" /></>;
   const deg = ((sel.r * 180 / Math.PI) % 360 + 540) % 360 - 180;
   return (
     <>
@@ -47,8 +46,7 @@ export function ObjectPage() {
         </Panel>
       )}
       {sel.kind === 'light' && <LightPanel sel={sel} />}
-      {sel.kind !== 'light' && <DeformerPanel sel={sel} />}
-      {sel.kind !== 'light' && <ClonerPanel sel={sel} />}
+      <AddonPanels tab="object" />
       <button type="button" className="bbtn" onClick={() => engine.deleteSelected()}>削除 (X)</button>
     </>
   );

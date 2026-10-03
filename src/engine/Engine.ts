@@ -1,8 +1,6 @@
 import { channelKeys, keyFrames, type Channel, type Curve } from '../core/animation';
-import { MAX_CLONES, clonerLayout, normalizeCloner, placeAround, type ClonerSettings } from '../core/cloner';
-import { normalizeDeformers, type Deformer } from '../core/deform';
 import type { LightSettings, LightType } from '../core/light';
-import { FPS, MAX_BOXES } from '../core/constants';
+import { FPS } from '../core/constants';
 import { errorText } from '../core/errors';
 import { patchPmxMaterials } from '../core/pmxMaterials';
 import type { BoneValue } from '../core/types';
@@ -30,12 +28,10 @@ import { Effects } from './render/Effects';
 import { Environment } from './render/Environment';
 import { SceneGraph } from './render/SceneGraph';
 import { Viewport } from './render/Viewport';
-import { isModel, isShape, type ModelObj, type Obj } from './types';
+import { isShape, type ModelObj, type Obj } from './types';
 import { UiChannel } from './UiChannel';
 import { CameraController } from './view/CameraController';
 import { InputController } from './view/InputController';
-import { Cloners } from './world/Cloners';
-import { Deformers } from './world/Deformers';
 import { Lights } from './world/Lights';
 import { nameOf } from './world/Selection';
 import { ColorPicker } from './world/ColorPicker';
@@ -61,8 +57,6 @@ export class Engine {
   readonly library = new MaterialLibrary();
   readonly world = new World(this.graph, this.viewport, this.ui, this.library);
   readonly selection = new Selection(this.world, this.ui);
-  readonly cloners = new Cloners(this.world, this.viewport, () => this.clock.frame);
-  readonly deformers = new Deformers(this.cloners, this.viewport);
   readonly lights = new Lights(this.world, this.viewport);
   readonly materials = new MaterialEditor(this.library, this.world, this.selection, this.ui);
   readonly picker = new ColorPicker(this.world, this.viewport, this.ui);
@@ -190,15 +184,6 @@ export class Engine {
     this.world.settle();
     this.viewport.requestDraw();
   }
-  // --- クローナー (Cinema 4D のクローナー) ---
-  // 選んでいる物をクローナーにする・設定を変える (patch は今の設定に重ねる。null でやめる)
-  setCloner(patch: Partial<ClonerSettings> | null) {
-    const o = this.selection.current;
-    if (!o) return;
-    const next = patch === null ? null : normalizeCloner({ ...o.cloner, ...patch, random: { ...o.cloner?.random, ...patch.random } as ClonerSettings['random'] });
-    this.cloners.set(o, next);
-    this.selection.publish();
-  }
   // --- ライト (Blender のライト) ---
   // 画面中央の近くに置いて選ぶ
   addLight(type: LightType, settings: Partial<LightSettings> = {}) {
@@ -214,38 +199,6 @@ export class Engine {
     if (!o?.light) return;
     this.lights.set(o, patch);
     this.selection.publish();
-  }
-
-  // 選んでいる物のデフォーマを入れ替える (空でやめる)
-  setDeformers(list: Deformer[]) {
-    const o = this.selection.current;
-    if (!o) return;
-    this.deformers.set(o, normalizeDeformers(list));
-    this.selection.publish();
-  }
-  // クローンを、1 つずつの物にする (Cinema 4D の「現在の状態をオブジェクト化」)。形だけ。マテリアルは元の物と共有する
-  bakeCloner() {
-    const o = this.selection.current;
-    if (!o?.cloner) return;
-    if (isModel(o)) { this.ui.toast('MMD モデルのクローンは、1 つずつの物にはできません'); return; }
-    const layout = clonerLayout(o.cloner, MAX_CLONES.shape).sort((a, b) => a.y - b.y); // 下の段から置く (上の段は積み重なる)
-    const room = MAX_BOXES - this.world.objects.length + 1;
-    if (layout.length > room) { this.ui.toast(`置ける物は ${MAX_BOXES} 個までなので、クローン ${layout.length} 個を 1 つずつの物にはできません (あと ${room} 個まで)`, 6000); return; }
-    const { x, z, r } = o, slot = o.slots[0];
-    // 最初のクローンには元の物を使う (マテリアルを手放さないように)
-    this.cloners.set(o, null);
-    layout.forEach((p, i) => {
-      const obj = i === 0 ? o : this.world.addShape(o.s, 0, 0, o.c);
-      if (i > 0) {
-        this.world.setSlot(obj, 0, slot);
-        if (o.deformers) this.deformers.set(obj, structuredClone(o.deformers)); // デフォーマも同じに
-      }
-      Object.assign(obj, placeAround(p, x, z, r));
-    });
-    this.world.settle();
-    this.selection.select(o);
-    this.ui.toast(`クローン ${layout.length} 個を、1 つずつの物にしました`);
-    this.viewport.requestDraw();
   }
 
   setObjColor(c: number) {

@@ -1,25 +1,22 @@
 import * as THREE from 'three';
-import { activeDeformers, deformArrays, type Deformer } from '../../core/deform';
-import type { Viewport } from '../render/Viewport';
-import { isModel, type Obj } from '../types';
+import { activeDeformers, deformArrays, type Deformer } from './deform';
+import type { Viewport } from '../../engine/render/Viewport';
+import { isModel, type Obj } from '../../engine/types';
 import type { Cloners } from './Cloners';
 
 // --- デフォーマ (Cinema 4D のデフォーマ) ---
-// 物の形 (頂点の位置と法線) を変形した写しを作って差し替える (core/deform.ts)。元の形は userData.baseGeometry に取っておく。
+// 物の形 (頂点の位置と法線) を変形した写しを作って差し替える (deform.ts)。元の形は userData.baseGeometry に取っておく。
 // MMD モデルは、ボーンで動かす前の形にかける。影・輪郭線・当たり判定・クローナーも、変形した形で動く
 export class Deformers {
-  constructor(private cloners: Cloners, private viewport: Viewport) {}
+  // listOf: 物のデフォーマ (アドオンの物ごとの値)
+  constructor(private cloners: Cloners, private viewport: Viewport, private listOf: (obj: Obj) => Deformer[] | null) {}
 
-  set(obj: Obj, list: Deformer[]) {
-    obj.deformers = list.length ? list : null;
-    this.apply(obj);
-  }
-
+  // 形を、いまのデフォーマで作り直す (なければ元の形に戻す)
   apply(obj: Obj) {
     const mesh: THREE.Mesh = isModel(obj) ? obj.model : obj.mesh!;
     const base: THREE.BufferGeometry = mesh.userData.baseGeometry ?? mesh.geometry;
     const prev = mesh.geometry;
-    const active = activeDeformers(obj.deformers);
+    const active = activeDeformers(this.listOf(obj));
     if (!active.length) {
       mesh.geometry = base;
       delete mesh.userData.baseGeometry;
@@ -30,7 +27,7 @@ export class Deformers {
     if (prev !== base && prev !== mesh.geometry) prev.dispose(); // 前に変形した写しは捨てる (元の形は残す)
     const proxy = obj.node.children.find(c => c.userData.pickProxy) as THREE.Mesh | undefined;
     if (proxy) proxy.geometry = mesh.geometry; // MMD モデルの当たり判定も、変形した形で
-    if (obj.cloner) this.cloners.rebuild(obj);
+    if (this.cloners.count(obj)) this.cloners.rebuild(obj);
     this.viewport.requestDraw();
   }
 }

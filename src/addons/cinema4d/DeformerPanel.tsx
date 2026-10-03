@@ -1,16 +1,17 @@
-import { DEFORMER_KINDS, newDeformer, type Axis, type Deformer, type DeformerKind } from '../../../core/deform';
-import type { SelInfo } from '../../../engine';
-import { useEngine } from '../../EngineContext';
-import { BSlider } from '../BSlider';
-import { BCheck } from '../controls/BCheck';
-import { BSelect } from '../controls/BSelect';
-import { Panel } from './Panel';
+import { DEFORMER_KINDS, newDeformer, type Axis, type Deformer, type DeformerKind } from './deform';
+import type { SelInfo } from '../../engine';
+import { useEngine } from '../../ui/EngineContext';
+import type { Cinema4d } from './Cinema4d';
+import { BSlider } from '../../ui/components/BSlider';
+import { BCheck } from '../../ui/components/controls/BCheck';
+import { BSelect } from '../../ui/components/controls/BSelect';
+import { Panel } from '../../ui/components/sidebar/Panel';
 
 // --- デフォーマ (Cinema 4D のデフォーマ): 選んでいる物を曲げる・ねじる・細くする・ふくらませる。上から順にかける ---
-export function DeformerPanel({ sel }: { sel: SelInfo }) {
+export function DeformerPanel({ sel, c4d }: { sel: SelInfo; c4d: Cinema4d }) {
   const engine = useEngine();
-  const list = sel.deformers ?? [];
-  const setList = (l: Deformer[]) => engine.setDeformers(l);
+  const list = c4d.deformerList(engine.selection.current);
+  const setList = (l: Deformer[]) => c4d.setDeformers(l);
   const update = (i: number, patch: Partial<Deformer>) => setList(list.map((d, k) => (k === i ? { ...d, ...patch } : d)));
   return (
     <Panel title="デフォーマ">

@@ -27,7 +27,7 @@ export interface SavedObject {
   s: number; x: number; y: number; z: number; r: number; c: number;
   slots: (string | null)[];
   activeSlot?: number;
-  // ほかに、物ごとの値 (Addons.objectData) を、その key で入れる: cloner (クローナー)・deformers (デフォーマ)・light (ライト)、
+  // ほかに、物ごとの値 (Addons.objectData) を、その key で入れる: light (ライト)、
   // アドオンのものは "アドオンの id.名前"
   [data: string]: unknown;
   // MMD モデルだけ
@@ -64,6 +64,9 @@ export interface ProjectData {
   // アドオンのものは "アドオンの id.名前"
   [data: string]: unknown;
 }
+
+// 本体からアドオンに移した、前の版の物ごとの値 (名前 → アドオンの id)
+export const MOVED_TO_ADDONS: Record<string, string> = { cloner: 'cinema4d', deformers: 'cinema4d' };
 
 export const projectBaseName = (name: string) => name.replace(/\.wgpj?$/i, '');
 

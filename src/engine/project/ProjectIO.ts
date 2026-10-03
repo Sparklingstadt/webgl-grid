@@ -9,7 +9,7 @@ import { applyObjectData } from '../addons/registry';
 import { download } from '../io/download';
 import { isModel, kindOf, type Any, type ModelObj, type Obj } from '../types';
 import {
-  PROJECT_EXT, PROJECT_FORMAT, PROJECT_VERSION, ProjectCancelled, parseData, projectBaseName, readEmbedded, writeEmbedded, writeReference,
+  MOVED_TO_ADDONS, PROJECT_EXT, PROJECT_FORMAT, PROJECT_VERSION, ProjectCancelled, parseData, projectBaseName, readEmbedded, writeEmbedded, writeReference,
   type PickMissing, type ProjectData, type ProjectStorage, type SavedAsset, type SavedImage, type SavedMaterial, type SavedObject,
 } from './format';
 
@@ -235,7 +235,7 @@ export class ProjectIO {
       const obj = objs[i];
       if (!obj) return;
       so.slots.forEach((id, k) => e.world.setSlot(obj, k, id ? matId.get(id) ?? null : null));
-      for (const d of e.addons.objectData.list()) applyObjectData(d, obj, so[d.key]); // 物ごとの値
+      for (const d of e.addons.objectData.list()) applyObjectData(d, obj, so[d.key] ?? d.aliases?.map(a => so[a]).find(v => v != null)); // 物ごとの値 (前の版の名前でも)
     });
     // 作り直すときに変換したマテリアル (もう使っていない) を片付けてから、保存した名前に戻す
     for (const id of [...lib.materials.keys()]) if (![...matId.values()].includes(id)) lib.remove(id);
@@ -280,11 +280,17 @@ export class ProjectIO {
     e.select(data.selected !== null ? objs[data.selected] ?? null : null);
     e.world.settle();
     e.viewport.requestDraw();
-    // 有効でないアドオンのデータ (名前が "アドオンの id.名前" で、登録されていないもの)
+    // 有効でないアドオンのデータ (名前が "アドオンの id.名前" で登録されていないものと、アドオンに移した前の版の値)
     const missing = new Set<string>();
-    const look = (keys: string[], known: (k: string) => boolean) => { for (const k of keys) if (k.includes('.') && !known(k)) missing.add(k.split('.')[0]); };
-    look(Object.keys(data), k => e.addons.sceneData.has(k));
-    for (const so of data.objects) look(Object.keys(so), k => e.addons.objectData.has(k));
+    const look = (o: Record<string, unknown>, known: (k: string) => boolean) => {
+      for (const [k, v] of Object.entries(o)) {
+        if (k.includes('.') && !known(k)) missing.add(k.split('.')[0]);
+        else if (k in MOVED_TO_ADDONS && v !== null && !known(k)) missing.add(MOVED_TO_ADDONS[k]);
+      }
+    };
+    const objectKeys = new Set(e.addons.objectData.list().flatMap(d => [d.key, ...d.aliases ?? []]));
+    look(data, k => e.addons.sceneData.has(k));
+    for (const so of data.objects) look(so, k => objectKeys.has(k));
     return { missingAddons: [...missing] };
   }
 }

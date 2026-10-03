@@ -46,7 +46,7 @@ test('形をクローナーにしてグリッドに並べ、クローンを押�
   // 1 つずつの物にする
   await page.getByRole('button', { name: '1 つずつの物にする' }).click();
   await expect.poll(() => page.evaluate(() => (window as Win).engine.world.objects.length)).toBe(9);
-  expect(await page.evaluate(() => (window as Win).engine.world.objects.every((o: Win) => !o.cloner))).toBe(true);
+  expect(await page.evaluate(() => (window as Win).engine.world.objects.every((o: Win) => !(window as Win).engine.addons.exposed('cinema4d').cloner(o)))).toBe(true);
   expect(errors).toEqual([]);
 });
 
@@ -58,7 +58,7 @@ test('MMD モデルをクローナーにすると、クローンも同じ動き�
   await page.evaluate(() => {
     const { engine } = window as Win;
     engine.clock.setPlaying(false);
-    engine.setCloner({ mode: 'linear', count: 3, step: [2, 0, 0] });
+    engine.addons.exposed('cinema4d').setCloner({ mode: 'linear', count: 3, step: [2, 0, 0] });
     engine.clock.seekFrame(15);
   });
   // 描いたあと: どのクローンの骨も、元のモデルの骨と同じ (ローカルの) 位置・回転
@@ -75,7 +75,7 @@ test('MMD モデルをクローナーにすると、クローンも同じ動き�
     // 元のモデルの骨が、最初の姿勢から動いている (モーション) こと
     const rest = m.model.userData.rest;
     const moved = Math.max(...src.map((b: Win, i: number) => b.position.distanceTo(rest[i].p)));
-    return { worst, moved, clones: engine.cloners.count(m), hidden: !m.model.visible };
+    return { worst, moved, clones: engine.addons.exposed('cinema4d').count(m), hidden: !m.model.visible };
   });
   expect(diff.clones).toBe(3);
   expect(diff.hidden).toBe(true);
@@ -110,7 +110,7 @@ test('エフェクタ: ステップで 1 つずつ大きく、ディレイで MM
     const { engine } = window as Win;
     const m = engine.world.models[0];
     engine.select(m);
-    engine.setCloner({ mode: 'linear', count: 3, step: [2, 0, 0], effectors: [{ kind: 'delay', enabled: true, position: [0, 0, 0], rotationDeg: 0, scale: 1, frames: 8 }] });
+    engine.addons.exposed('cinema4d').setCloner({ mode: 'linear', count: 3, step: [2, 0, 0], effectors: [{ kind: 'delay', enabled: true, position: [0, 0, 0], rotationDeg: 0, scale: 1, frames: 8 }] });
     engine.clock.seekFrame(0);
     engine.clock.setPlaying(true);
     await new Promise<void>(r => { const f = () => (engine.clock.frame >= 20 ? r() : requestAnimationFrame(f)); requestAnimationFrame(f); });

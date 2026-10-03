@@ -1,7 +1,8 @@
 import type { AddonModule } from '../engine/addons/Addons';
+import cinema4d from './cinema4d';
 import float from './float';
 import scatter from './scatter';
 import turntable from './turntable';
 
-// --- 組み込みのアドオン (最初は切ってある。編集 > プリファレンス で有効にする) ---
-export const BUILTIN_ADDONS: AddonModule[] = [turntable, float, scatter];
+// --- 組み込みのアドオン (Cinema 4D は最初から有効、ほかは最初は切ってある。編集 > アドオンマネージャーで切り替える) ---
+export const BUILTIN_ADDONS: AddonModule[] = [cinema4d, turntable, float, scatter];

@@ -60,6 +60,7 @@ export interface PanelDef {
   poll?(sel: SelInfo | null): boolean; // 出すかどうか (選んでいる物で)
   props?(): PropDef[];
   draw?(el: HTMLElement): void | (() => void);
+  component?: unknown; // React の部品 (props は { sel })。アプリと一緒に作る組み込みのアドオンだけが使える
   source?: string;
 }
 

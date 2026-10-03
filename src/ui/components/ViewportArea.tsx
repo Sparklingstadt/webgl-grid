@@ -61,9 +61,6 @@ export function ViewportArea(props: {
           <MenuItem label="削除" kbd="X" disabled={!sel} onSelect={() => engine.deleteSelected()} />
           <MenuItem label="選択を解除" kbd="Alt A" disabled={!sel} onSelect={() => engine.select(null)} />
           <MenuSep />
-          <MenuItem label={sel?.cloner ? 'クローナーをやめる' : 'クローナーにする'} disabled={!sel}
-                    onSelect={() => { engine.setCloner(sel?.cloner ? null : {}); props.showObjectTab(); }} />
-          <MenuSep />
           <MenuItem label="キーフレームを挿入" kbd="I" disabled={sel?.kind !== 'model'} onSelect={() => engine.insertKey()} />
           <AddonMenuItems menu="object" />
         </Menu>

@@ -66,8 +66,6 @@ export function sceneState(e: Engine) {
         ? { motion: o.motionFile?.name ?? null, keyframes: keyFrames(o.anim), hairHang: e.physics.hairHang(o) }
         : { color: PALETTE_NAMES[o.c] }),
       materials: o.slots.map(id => (id ? lib.materials.get(id)?.name ?? null : null)),
-      cloner: o.cloner ?? null,
-      deformers: o.deformers ?? [],
       ...(o.addonData && Object.keys(o.addonData).length ? { addons: o.addonData } : {}), // アドオンの、物ごとの値
     })),
     stage: e.stage.model?.name ?? null,
@@ -133,15 +131,6 @@ export const COMMANDS: Record<string, Command> = {
     e.viewport.requestDraw();
     return { id: obj.id, position: [r3(obj.x), r3(obj.y), r3(obj.z)] };
   },
-  // クローナー: off なら元に戻す。それ以外の引数は今の設定に重ねる
-  set_cloner: (e, p) => {
-    const obj = objOf(e, p?.id);
-    e.select(obj);
-    const { id: _id, off, ...patch } = p ?? {};
-    e.setCloner(off ? null : patch);
-    return { id: obj.id, cloner: obj.cloner ?? null, clones: e.cloners.count(obj) };
-  },
-  // デフォーマ: 並びごと入れ替える (空でやめる)
   // ライト: 置く・変える
   add_light: (e, p) => {
     const { type = 'point', x, z, ...settings } = p ?? {};
@@ -157,20 +146,6 @@ export const COMMANDS: Record<string, Command> = {
     const { id: _id, ...patch } = p ?? {};
     e.setLight(patch);
     return { id: obj.id, light: obj.light };
-  },
-  set_deformers: (e, p) => {
-    const obj = objOf(e, p?.id);
-    e.select(obj);
-    e.setDeformers(p?.deformers ?? []);
-    return { id: obj.id, deformers: obj.deformers ?? [] };
-  },
-  bake_cloner: (e, p) => {
-    const obj = objOf(e, p?.id);
-    e.select(obj);
-    const before = e.world.objects.length;
-    e.bakeCloner();
-    if (e.world.objects.length === before && obj.cloner) throw new Error(e.ui.state.toast?.text ?? '1 つずつの物にできませんでした');
-    return { objects: sceneState(e).objects.length };
   },
   delete_object: (e, p) => { e.world.remove(objOf(e, p?.id)); return { ok: true }; },
   reset_scene: e => { e.resetAll(); return { ok: true }; },

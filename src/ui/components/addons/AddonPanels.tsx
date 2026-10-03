@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type ComponentType } from 'react';
+import type { SelInfo } from '../../../engine';
 import type { PanelDef, PropDef } from '../../../engine/addons/registry';
 import { useEngine, useUi } from '../../EngineContext';
 import { BSlider } from '../BSlider';
@@ -16,7 +17,13 @@ export function AddonPanels({ tab }: { tab: string }) {
   useUi(s => s.values);
   useUi(s => s.frame);
   const panels = engine.addons.panels.list().filter(p => p.tab === tab && (p.poll?.(sel) ?? true));
-  return <>{panels.map(p => <AddonPanel key={p.key} panel={p} />)}</>;
+  return <>{panels.map(p => (p.component ? <Own key={p.key} panel={p} sel={sel} /> : <AddonPanel key={p.key} panel={p} />))}</>;
+}
+
+// 部品を持ってきたパネル (組み込みのアドオン)。パネルの枠も部品が描く
+function Own({ panel, sel }: { panel: PanelDef; sel: SelInfo | null }) {
+  const C = panel.component as ComponentType<{ sel: SelInfo | null }>;
+  return <C sel={sel} />;
 }
 
 function AddonPanel({ panel }: { panel: PanelDef }) {

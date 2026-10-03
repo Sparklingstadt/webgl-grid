@@ -31,7 +31,7 @@ export function Sidebar({ tab, setTab, onLoadPose, onOpenShaderEditor }: { tab: 
         {shown === 'scene' && <ScenePage />}
         {shown === 'fx' && <FxPage />}
         {shown === 'output' && <OutputPage />}
-        <AddonPanels tab={shown} />
+        {shown !== 'object' && <AddonPanels tab={shown} />}
       </div>
       <nav className="side-tabs" role="tablist" aria-label="サイドバーのタブ" aria-orientation="vertical">
         {tabs.map(([key, label]) => (

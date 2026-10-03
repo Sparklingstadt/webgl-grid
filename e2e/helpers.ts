@@ -11,7 +11,7 @@ export async function open(page: Page) {
   page.on('pageerror', e => errors.push(String(e)));
   page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
   await page.goto('/?debug');
-  await page.waitForFunction(() => (window as Win).engine?.world.objects.length === 1 && (window as Win).engine.viewport.mounted);
+  await page.waitForFunction(() => (window as Win).engine?.world.objects.length === 1 && (window as Win).engine.viewport.mounted && (window as Win).engine.addons.started);
   return errors;
 }
 

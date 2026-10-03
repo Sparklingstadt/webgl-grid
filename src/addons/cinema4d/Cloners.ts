@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
-import { MAX_CLONES, MAX_DELAY_FRAMES, clonerLayout, cloneCount, type ClonerSettings } from '../../core/cloner';
-import type { Viewport } from '../render/Viewport';
-import { isModel, type Any, type Obj } from '../types';
-import type { World } from './World';
+import { MAX_CLONES, MAX_DELAY_FRAMES, clonerLayout, cloneCount, type ClonerSettings } from './cloner';
+import type { Viewport } from '../../engine/render/Viewport';
+import { isModel, type Any, type Obj } from '../../engine/types';
+import type { World } from '../../engine/world/World';
 
 const GROUP = '__clones';
 const noRaycast = () => {};
@@ -11,7 +11,7 @@ const noRaycast = () => {};
 interface PoseSnap { pos: Float32Array; quat: Float32Array; morphs: Float32Array | null }
 
 // --- クローナー (Cinema 4D のクローナー) ---
-// 物をクローナーにすると、元の物は隠し、その位置と向きを中心に、クローンを直線・放射・グリッドに並べる (core/cloner.ts)。
+// 物をクローナーにすると、元の物は隠し、その位置と向きを中心に、クローンを直線・放射・グリッドに並べる (cloner.ts)。
 // クローンは物の three.js のグループ (node) の子なので、元の物を動かす・回すと一緒に動く。
 // 形のクローンは同じ形状と材質を使う普通のメッシュ。MMD モデルのクローンは骨ごと複製し、
 // 毎フレーム元のモデルの骨と表情を写す (モーション・物理演算・手で動かしたボーンが、そのまま全部のクローンに出る)。
@@ -20,30 +20,28 @@ interface PoseSnap { pos: Float32Array; quat: Float32Array; morphs: Float32Array
 export class Cloners {
   private history = new WeakMap<Obj, Map<number, PoseSnap>>();
 
-  constructor(private world: World, private viewport: Viewport, private frameNow: () => number) {
-    viewport.onBeforeRender(() => this.sync());
-  }
+  // settingsOf: 物のクローナーの設定 (アドオンの物ごとの値。なければ普通の物)
+  constructor(private world: World, private viewport: Viewport, private frameNow: () => number,
+              private settingsOf: (obj: Obj) => ClonerSettings | null) {}
 
-  // 物のクローナーの設定を変える (null でやめる)
-  set(obj: Obj, settings: ClonerSettings | null) {
-    obj.cloner = settings;
-    this.rebuild(obj);
+  // クローンを、いまの設定で作り直す (設定がなければ、クローンを消して元の物を出す)
+  rebuild(obj: Obj) {
+    this.build(obj);
     this.viewport.requestDraw();
   }
-
-  // クローンを作り直す
-  rebuild(obj: Obj) {
+  private build(obj: Obj) {
+    const cloner = this.settingsOf(obj);
     const old = obj.node.getObjectByName(GROUP);
     if (old) { obj.node.remove(old); disposeClones(old); }
     const src: THREE.Mesh = isModel(obj) ? obj.model : obj.mesh!;
     const proxy = obj.node.children.find(c => c.userData.pickProxy) as THREE.Mesh | undefined;
     // 元の物は隠し、クリックでも当たらないようにする (クローンのどれかを押すと、この物が選ばれる)
-    src.visible = !obj.cloner;
-    setPickable(isModel(obj) ? proxy : src, !obj.cloner);
-    if (!obj.cloner) return;
+    src.visible = !cloner;
+    setPickable(isModel(obj) ? proxy : src, !cloner);
+    if (!cloner) return;
     const group = new THREE.Group();
     group.name = GROUP;
-    for (const p of clonerLayout(obj.cloner, isModel(obj) ? MAX_CLONES.model : MAX_CLONES.shape)) {
+    for (const p of clonerLayout(cloner, isModel(obj) ? MAX_CLONES.model : MAX_CLONES.shape)) {
       const g = new THREE.Group();
       g.position.set(p.x, p.y, p.z);
       g.rotation.y = p.ry;
@@ -76,12 +74,12 @@ export class Cloners {
   }
 
   // クローンの数 (サイドバーに出す)
-  count(obj: Obj) { return obj.cloner ? cloneCount(obj.cloner, isModel(obj) ? MAX_CLONES.model : MAX_CLONES.shape) : 0; }
+  count(obj: Obj) { const c = this.settingsOf(obj); return c ? cloneCount(c, isModel(obj) ? MAX_CLONES.model : MAX_CLONES.shape) : 0; }
 
   // 描く前: 材質 (スロットを替えた・作り直した) と、MMD モデルの骨・表情を元の物に合わせる
-  private sync() {
+  sync() {
     for (const obj of this.world.objects) {
-      if (!obj.cloner) continue;
+      if (!this.settingsOf(obj)) continue;
       const group = obj.node.getObjectByName(GROUP);
       if (!group) continue;
       if (!isModel(obj)) {
