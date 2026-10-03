@@ -121,7 +121,10 @@ export class Motion implements System {
       // 最後まで行って止まった動きも、もう一度動くようにしてから時刻を合わせる
       info.action.paused = false;
       info.action.enabled = true;
-      helper.objects.get(target)?.mixer?.setTime(Math.min(t, info.duration));
+      // 時刻だけを合わせ、姿勢は下の update(0) で当てる。
+      // (mixer.setTime は姿勢を当ててしまい、そのあと update(0) が前の姿勢に戻すと、値が同じなので当て直さない。止めたまま飛ぶと姿勢が変わらなかった)
+      const mixer = helper.objects.get(target)?.mixer;
+      if (mixer) mixer.time = info.action.time = Math.min(t, info.duration);
     }
     helper.update(0);
     if (warmup) this.physics.resetAnimated(warmup);

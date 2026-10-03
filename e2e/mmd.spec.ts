@@ -1,6 +1,7 @@
 import { expect, test } from './fixtures/test';
 import { readFile } from 'node:fs/promises';
 import { choose, keyFramesOf, loadTestModel, open, uiState, type Win } from './helpers';
+import { makeVmd } from './fixtures/vmd';
 
 // MMD モデル: 読み込み・表情・ボーン・キーフレーム・ポーズファイル (テスト用に組み立てた小さな PMX を使う)
 const rightArmRz = (page: import('@playwright/test').Page) => page.evaluate(() => {
@@ -139,6 +140,24 @@ test.describe('MMD モデル', () => {
     expect(await rightArmRz(page)).toBe(0);
     await page.locator('input[accept=".vpd"]').setInputFiles({ name: 'pose.vpd', mimeType: 'application/octet-stream', buffer: bytes });
     await expect.poll(() => rightArmRz(page)).toBeCloseTo(30, 3);
+  });
+
+  test('モーションのあるモデルは、止めたままタイムラインを動かしても、そのフレームの姿勢になる', async ({ page }) => {
+    await open(page);
+    const vmd = Buffer.from(makeVmd([{ bone: 'センター', frame: 0, pos: [0, 0, 0] }, { bone: 'センター', frame: 30, pos: [0, 0, 6] }]));
+    await loadTestModel(page, [{ name: 'テスト.vmd', mimeType: 'application/octet-stream', buffer: vmd }]);
+    await page.evaluate(() => (window as Win).engine.clock.setPlaying(false));
+    const centerZ = (frame: number) => page.evaluate(async f => {
+      const { engine } = window as Win;
+      engine.clock.seekFrame(f);
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+      return engine.selection.current.model.skeleton.bones.find((b: { name: string }) => b.name === 'センター').position.z;
+    }, frame);
+    // (MMD の z は、three.js では向きが逆)
+    expect(await centerZ(30)).toBeCloseTo(-6, 1);
+    expect(await centerZ(15)).toBeCloseTo(-3, 1);
+    expect(await centerZ(0)).toBeCloseTo(0, 1);
+    expect(await centerZ(30)).toBeCloseTo(-6, 1);
   });
 
   test('ポーズファイルでないものは読み込まない', async ({ page }) => {
