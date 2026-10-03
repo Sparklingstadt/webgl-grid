@@ -16,7 +16,7 @@ export interface ObjState {
   hairHang?: boolean | null;
   motion?: string | null; // モーションのファイルの名前 (変わったかを見分けるため)
 }
-export interface SceneState { objects: ObjState[]; materials: unknown[]; range: [number, number] }
+export interface SceneState { objects: ObjState[]; materials: unknown[]; range: [number, number]; scene?: unknown }
 
 // 1 つ前の写しから何が変わったか (「元に戻す: 移動」の名前)。大きな変化を優先する
 export function describeChange(prev: SceneState, next: SceneState): string {
@@ -38,5 +38,6 @@ export function describeChange(prev: SceneState, next: SceneState): string {
   if (changed('hairHang')) return '髪を重力で垂らす';
   if (changed('motion')) return 'モーション';
   if (prev.range.join() !== next.range.join()) return 'フレーム範囲';
+  if (JSON.stringify(prev.scene) !== JSON.stringify(next.scene)) return 'シーン';
   return '変更';
 }

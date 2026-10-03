@@ -6,6 +6,7 @@ import { normalizeDeformers } from '../../core/deform';
 import { FPS } from '../../core/constants';
 import { errorText } from '../../core/errors';
 import { normalizeOutput } from '../../core/output';
+import { normalizeScene } from '../../core/scene';
 import type { Engine } from '../Engine';
 import { download } from '../io/download';
 import type { Any, ModelObj, Obj } from '../types';
@@ -149,6 +150,7 @@ export class ProjectIO {
       timeline: { start: e.clock.start, end: e.clock.end, frame: e.clock.frame },
       selected: cur ? e.world.objects.indexOf(cur) : null,
       output: { ...e.output.settings },
+      scene: structuredClone(e.environment.settings),
     };
     data.assets = [...assets.values()];
     return { data, assets };
@@ -270,6 +272,7 @@ export class ProjectIO {
     e.clock.setPlaying(false);
     e.clock.seek(data.timeline.frame / FPS);
     e.output.set(normalizeOutput(data.output));
+    e.environment.replace(normalizeScene(data.scene));
     e.history.reset(); // 開いた状態から、元に戻す履歴を始める
     e.select(data.selected !== null ? objs[data.selected] ?? null : null);
     e.world.settle();

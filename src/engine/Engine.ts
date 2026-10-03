@@ -25,6 +25,7 @@ import { Autosave } from './project/Autosave';
 import { ProjectIO } from './project/ProjectIO';
 import { RemoteLink } from './remote/RemoteLink';
 import { Effects } from './render/Effects';
+import { Environment } from './render/Environment';
 import { SceneGraph } from './render/SceneGraph';
 import { Viewport } from './render/Viewport';
 import type { ModelObj, Obj } from './types';
@@ -68,10 +69,11 @@ export class Engine {
   // 書き出すファイルの名前の元: プロジェクトの名前、なければ選んでいるモデルの名前
   readonly output = new RenderOutput(this.viewport, this.graph, this.clock, this.music, this.ui,
     () => this.ui.state.projectName ?? this.selection.model?.model.name ?? 'レンダー');
+  readonly environment = new Environment(this.graph, this.viewport, this.ui);
   readonly effects = new Effects(this.viewport, this.ui, () => this.camera.focusPoint());
   readonly loader = new MmdLoader(this.ui, this.library, () => this.viewport.requestDraw());
   readonly vpd = new VpdIO(this.posing, this.viewport, this.ui);
-  readonly history = new History(this.world, this.library, this.physics, this.motion, this.posing, this.keyframes, this.clock, this.selection, this.viewport, this.ui, this.cloners, this.deformers);
+  readonly history = new History(this.world, this.library, this.physics, this.motion, this.posing, this.keyframes, this.clock, this.selection, this.viewport, this.ui, this.cloners, this.deformers, this.environment);
   readonly project = new ProjectIO(this);
   readonly autosave = new Autosave(this.project, this.history, this.ui);
   readonly remote = new RemoteLink(this);
@@ -306,6 +308,7 @@ export class Engine {
     this.stage.clear();
     this.world.addShape(0, 0, 0, 0);
     this.clock.reset();
+    this.environment.reset();
     this.history.reset(); // 新しく始めるので、元に戻す履歴も消す
     this.viewport.requestDraw();
   }

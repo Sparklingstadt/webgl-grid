@@ -95,7 +95,8 @@ test('ビューポートに出力の枠を出し、枠の中に見えている�
       let x0 = 1e9, y0 = 1e9, x1 = -1, y1 = -1;
       for (let y = 0; y < 100; y++) for (let x = 0; x < 400; x++) {
         const i = (y * 400 + x) * 4;
-        if (d[i] > 120 && d[i] - d[i + 2] > 50 && d[i + 3] > 200) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+        // (立方体の黄土色。グリッドの赤い軸の線 (緑がほとんどない) は除く)
+        if (d[i] > 120 && d[i + 1] > 90 && d[i] - d[i + 2] > 50 && d[i + 3] > 200) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
       }
       return [x0 / 400, y0 / 100, x1 / 400, y1 / 100];
     };

@@ -4,6 +4,8 @@ import { describeChange, type ObjState, type SceneState } from '../../core/histo
 import type { Clock } from '../anim/Clock';
 import type { Cloners } from '../world/Cloners';
 import type { Deformers } from '../world/Deformers';
+import type { Environment } from '../render/Environment';
+import type { SceneSettings } from '../../core/scene';
 import type { Keyframes } from '../anim/Keyframes';
 import type { MaterialData, MaterialLibrary } from '../materials/MaterialLibrary';
 import type { Motion } from '../mmd/Motion';
@@ -37,7 +39,7 @@ export class History {
 
   constructor(private world: World, private library: MaterialLibrary, private physics: Physics, private motion: Motion,
               private posing: Posing, private keyframes: Keyframes, private clock: Clock, private selection: Selection,
-              private viewport: Viewport, private ui: UiChannel, private cloners: Cloners, private deformers: Deformers) {
+              private viewport: Viewport, private ui: UiChannel, private cloners: Cloners, private deformers: Deformers, private environment: Environment) {
     world.keepRemoved = true;
     world.events.on('removed', obj => { this.removed.set(obj.id, obj); this.soon(); });
     world.events.on('added', () => this.soon());
@@ -137,7 +139,7 @@ export class History {
       if (o.motionFile) motionFiles.set(o.id, o.motionFile);
       return st;
     });
-    const state: SceneState = { objects, materials: this.library.snapshot(), range: [this.clock.start, this.clock.end] };
+    const state: SceneState = { objects, materials: this.library.snapshot(), range: [this.clock.start, this.clock.end], scene: structuredClone(this.environment.settings) };
     return { state, sig: JSON.stringify(state), label, motionFiles };
   }
 
@@ -175,6 +177,7 @@ export class History {
       }
       library.prune(new Set(state.materials.map(m => (m as MaterialData).id)));
       this.clock.setRange(state.range[0], state.range[1]);
+      if (state.scene && JSON.stringify(state.scene) !== JSON.stringify(this.environment.settings)) this.environment.replace(state.scene as SceneSettings);
       // 置き直したモデルは、物理演算とモーションを付け直す
       for (const obj of back) {
         await this.physics.start(obj);

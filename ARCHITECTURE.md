@@ -23,6 +23,7 @@ core/    純粋な計算とデータ (three.js の数学ライブラリは使っ
 | 画面への通知 | `UiChannel` | 画面に見せる状態 (ストア)・お知らせ・「変わった」番号 | なし |
 | 描画 | `SceneGraph` | シーン・カメラ・光・地面のグリッド | なし |
 | | `Viewport` | WebGL の描画先・描画ループ (`System` を順に update)・描く前後のフック | SceneGraph |
+| | `Environment` | シーンの設定 (空・床・太陽・部屋の光) を場面に反映する。空は描くたびに最初に全面へ描く (`Viewport.drawBackground`。後処理のときも同じ) | SceneGraph, Viewport, UiChannel |
 | | `Effects` | MME 風の後処理の設定と描画 | Viewport, UiChannel |
 | マテリアル | `MaterialLibrary` | マテリアル (名前・ノードツリー・設定・輪郭線) と画像。使う物ごとに three.js の材質を作り、ノードから組み立てた GLSL を差し込み、変更を反映する | なし (イベントで知らせる) |
 | | `MaterialEditor` | 選んでいる物のマテリアルの編集 (スロット・マテリアルの割り当て・ノードツリー・画像)。サイドバーとシェーダーエディターから使う | MaterialLibrary, World, Selection, UiChannel |

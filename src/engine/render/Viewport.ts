@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OutlineEffect } from 'three/examples/jsm/effects/OutlineEffect.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { VIEWPORT_BG } from '../../core/constants';
 import { outputFrame, scaleFov } from '../../core/output';
 import type { SceneGraph } from './SceneGraph';
 
@@ -21,6 +22,8 @@ export class Viewport {
   height = 1;
   // 後処理 (効果) で描いたら true を返す。描かなければ、輪郭線付きでふつうに描く
   drawOverride: (() => boolean) | null = null;
+  // 背景 (空) を描く (Environment)。最初に全面へ描き、その上に場面を描く
+  drawBackground: ((r: THREE.WebGLRenderer, camera: THREE.Camera) => void) | null = null;
   private readonly systems: System[] = [];
   private readonly before = new Set<() => void>();
   private readonly after = new Set<() => void>();
@@ -45,14 +48,14 @@ export class Viewport {
   // canvas に描き始める。WebGL が使えなければ false
   mount(canvas: HTMLCanvasElement, container: HTMLElement) {
     try {
-      this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+      this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true }); // (背景の空も描くので、透けない)
     } catch {
       return false;
     }
     this.canvas = canvas;
     this.container = container;
     const { renderer } = this;
-    renderer.setClearColor(0x000000, 0); // 背景は CSS の色 (Blender のビューポートの灰色) を見せる
+    renderer.setClearColor(VIEWPORT_BG, 1);
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFShadowMap; // (新しい three.js には PCFSoftShadowMap がない)
     // MMD モデルの輪郭線。太さ・色・表示の有無は、MMDLoader が .pmx の材質から読んで
@@ -124,7 +127,16 @@ export class Viewport {
       camera.fov = scaleFov(camera.fov, this.output.fovScale);
       camera.updateProjectionMatrix();
     }
-    if (!this.drawOverride?.()) this.outline.render(this.graph.scene, this.graph.camera);
+    if (!this.drawOverride?.()) {
+      const { renderer, outline } = this, { scene, camera } = this.graph;
+      if (this.drawBackground) {
+        renderer.clear();
+        this.drawBackground(renderer, camera);
+        outline.autoClear = false; // 空を消さずに上に描く
+        outline.render(scene, camera);
+        outline.autoClear = true;
+      } else outline.render(scene, camera);
+    }
     for (const cb of this.after) cb();
   }
 
@@ -141,7 +153,7 @@ export class Viewport {
   endOutput() {
     if (!this.output) return;
     this.output = null;
-    this.renderer?.setClearColor(0x000000, 0);
+    this.renderer?.setClearColor(VIEWPORT_BG, 1);
     if (this.container) this.resize(this.container);
     // 止めていたあいだの描画ループを動かし直す
     this.ticking = false;

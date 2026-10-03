@@ -4,10 +4,11 @@ import { MaterialPage } from './MaterialPage';
 import { MorphPage } from './MorphPage';
 import { ObjectPage } from './ObjectPage';
 import { OutputPage } from './OutputPage';
+import { ScenePage } from './ScenePage';
 
 // Blender の N パネルのようなサイドバー。タブは右端に縦書きで並べる
-export type SideTab = 'object' | 'material' | 'morph' | 'bone' | 'fx' | 'output';
-const TABS: [SideTab, string][] = [['object', 'オブジェクト'], ['material', 'マテリアル'], ['morph', '表情'], ['bone', 'ボーン'], ['fx', '効果'], ['output', '出力']];
+export type SideTab = 'object' | 'material' | 'morph' | 'bone' | 'scene' | 'fx' | 'output';
+const TABS: [SideTab, string][] = [['object', 'オブジェクト'], ['material', 'マテリアル'], ['morph', '表情'], ['bone', 'ボーン'], ['scene', 'シーン'], ['fx', '効果'], ['output', '出力']];
 
 export function Sidebar({ tab, setTab, onLoadPose, onOpenShaderEditor }: { tab: SideTab; setTab: (t: SideTab) => void; onLoadPose: () => void; onOpenShaderEditor: () => void }) {
   return (
@@ -17,6 +18,7 @@ export function Sidebar({ tab, setTab, onLoadPose, onOpenShaderEditor }: { tab: 
         {tab === 'material' && <MaterialPage onOpenShaderEditor={onOpenShaderEditor} />}
         {tab === 'morph' && <MorphPage />}
         {tab === 'bone' && <BonePage onLoadPose={onLoadPose} />}
+        {tab === 'scene' && <ScenePage />}
         {tab === 'fx' && <FxPage />}
         {tab === 'output' && <OutputPage />}
       </div>

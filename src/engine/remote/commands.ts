@@ -73,6 +73,7 @@ export function sceneState(e: Engine) {
     camera: { yawDeg: r3(cam.yaw * DEG), pitchDeg: r3(cam.pitch * DEG), distance: r3(cam.dist), target: [r3(cam.tx), r3(cam.ty), r3(cam.tz)], fov: cam.fov, view: e.camera.viewName || null },
     effects: { enabled: e.ui.state.fxState, levels: e.ui.state.fxLevel },
     output: e.output.settings,
+    scene: e.environment.settings,
   };
 }
 
@@ -277,6 +278,8 @@ export const COMMANDS: Record<string, Command> = {
     if (p?.enabled !== undefined) await e.effects.set(k, !!p.enabled);
     return { enabled: e.ui.state.fxState, levels: e.ui.state.fxLevel };
   },
+  // シーンの設定 (空・床・太陽・部屋の光)。渡したところだけ変える
+  set_scene: (e, p) => { e.environment.set(p ?? {}); return e.environment.settings; },
   set_output: (e, p) => { e.output.set((p ?? {}) as Partial<OutputSettings>); return e.output.settings; },
   render_image: async (e, p) => {
     if (p?.frame !== undefined) e.clock.seekFrame(Number(p.frame));

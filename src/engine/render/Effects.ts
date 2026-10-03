@@ -1,5 +1,4 @@
 import type * as THREE from 'three';
-import { VIEWPORT_BG } from '../../core/constants';
 import { errorText } from '../../core/errors';
 import type { UiChannel } from '../UiChannel';
 import { FX_KEYS, FX_LEVEL_DEFAULT, applyFxLevels, createPostFx, type FxKey, type FxLevel, type FxState, type PostFx } from './postfx';
@@ -36,7 +35,7 @@ export class Effects {
   private ensure() {
     const { renderer, outline, graph, width, height } = this.viewport;
     if (!renderer || !outline) return Promise.resolve();
-    this.loading ??= createPostFx(renderer, graph.scene, graph.camera, outline, width, height, VIEWPORT_BG).then(p => {
+    this.loading ??= createPostFx(renderer, graph.scene, graph.camera, outline, width, height, r => this.viewport.drawBackground?.(r, graph.camera)).then(p => {
       this.fx = p;
       applyFxLevels(p, this.level);
     });

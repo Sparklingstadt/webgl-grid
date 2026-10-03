@@ -8,7 +8,7 @@ export const noOutline = () => ({ outlineParameters: { visible: false } });
 export class SceneGraph {
   readonly scene = new THREE.Scene();
   readonly camera = new THREE.PerspectiveCamera(DEFAULT_FOV, 1, 0.05, 1000);
-  private readonly light = new THREE.Vector3(0.6, 1.0, 0.35).normalize();
+  private readonly light = new THREE.Vector3(0.6, 1.0, 0.35).normalize(); // 太陽の来る向き
   private readonly sun = new THREE.DirectionalLight(0xffffff, 0.82 * Math.PI);
   readonly grid = makeGrid();
   // 地面に落ちる影 (グリッドの上に重ねる)
@@ -41,9 +41,26 @@ export class SceneGraph {
     sun.shadow.camera.updateProjectionMatrix();
   }
 
+  // 太陽: 来る向き (単位ベクトル)・明るさ・色・影を落とすか
+  setSun(dir: [number, number, number], intensity: number, color: THREE.ColorRepresentation, shadows: boolean) {
+    this.light.set(...dir).normalize();
+    this.sun.intensity = intensity;
+    this.sun.color.set(color);
+    this.sun.castShadow = shadows;
+  }
+
   // ステージがあるあいだは、ステージの床とちらつかないよう地面のグリッドと影の板を隠す
+  private groundOn = true;
+  private floorOn = false;
   setGroundVisible(on: boolean) {
-    this.grid.visible = this.shadowPlane.visible = on;
+    this.groundOn = on;
+    this.grid.visible = on;
+    this.shadowPlane.visible = on && !this.floorOn;
+  }
+  // 床 (シーンの設定) があるときは、影は床が受けるので、影の板は使わない
+  setFloor(on: boolean) {
+    this.floorOn = on;
+    this.shadowPlane.visible = this.groundOn && !on;
   }
 }
 

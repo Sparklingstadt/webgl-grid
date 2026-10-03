@@ -157,6 +157,15 @@ forward('set_effect', 'MME 風の効果のオン・オフと強さ', {
   effect: z.enum(['ao', 'dof', 'bloom', 'diffusion', 'color']), enabled: z.boolean().optional(),
   levels: z.record(z.string(), z.number()).optional().describe('強さ: ao, dof, bloom, diffusion, temp, sat, bright'),
 });
+const hexColor = z.string().regex(/^#?[0-9a-fA-F]{6}$/).describe('"#rrggbb"');
+forward('set_scene', 'シーンの設定 (Cinema 4D の空・床・太陽): 背景の空、床、太陽の光、部屋の光 (環境光)。渡したところだけ変える', {
+  sky: z.object({ mode: z.enum(['viewport', 'color', 'gradient']).optional(), top: hexColor.optional(), bottom: hexColor.optional() }).optional()
+    .describe('viewport: ビューポートの灰色 / color: top の単色 / gradient: 地平線 (bottom) から真上 (top) へ'),
+  floor: z.object({ enabled: z.boolean().optional(), color: hexColor.optional(), roughness: z.number().min(0).max(1).optional() }).optional(),
+  sun: z.object({ intensity: z.number().min(0).max(10).optional(), color: hexColor.optional(), azimuthDeg: z.number().optional(),
+    elevationDeg: z.number().min(1).max(90).optional(), shadows: z.boolean().optional() }).optional(),
+  environment: z.number().min(0).max(5).optional().describe('部屋の光 (環境光) の明るさ'),
+});
 forward('set_output', 'レンダリングの出力の設定', {
   width: z.number().int().min(16).max(4096).optional(), height: z.number().int().min(16).max(4096).optional(),
   format: z.enum(['mp4', 'webm']).optional(), quality: z.enum(['medium', 'high', 'veryHigh']).optional(), audio: z.boolean().optional(),

@@ -4,6 +4,7 @@ import type { ClonerSettings } from '../../core/cloner';
 import type { Deformer } from '../../core/deform';
 import type { NodeTree } from '../../core/materials/tree';
 import type { OutputSettings } from '../../core/output';
+import type { SceneSettings } from '../../core/scene';
 import type { BoneValue } from '../../core/types';
 import type { MaterialOutline, MaterialSettings, MmdSource } from '../materials/MaterialLibrary';
 
@@ -63,6 +64,7 @@ export interface ProjectData {
   timeline: { start: number; end: number; frame: number };
   selected: number | null;
   output?: OutputSettings; // 出力 (レンダリングの大きさ・形式)。古いプロジェクトにはない
+  scene?: SceneSettings;   // シーンの設定 (空・床・太陽)。古いプロジェクトにはない
 }
 
 export const projectBaseName = (name: string) => name.replace(/\.wgpj?$/i, '');

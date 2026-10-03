@@ -24,7 +24,7 @@ export interface PostFx {
 }
 
 export async function createPostFx(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera,
-                                   outline: OutlineEffect, width: number, height: number, background: string): Promise<PostFx> {
+                                   outline: OutlineEffect, width: number, height: number, drawBackground: (r: THREE.WebGLRenderer) => void): Promise<PostFx> {
   const [{ EffectComposer }, { Pass }, { UnrealBloomPass }, { BokehPass }, { GTAOPass }, { OutputPass }, { ShaderPass }] = await Promise.all([
     import('three/examples/jsm/postprocessing/EffectComposer.js'),
     import('three/examples/jsm/postprocessing/Pass.js'),
@@ -34,26 +34,14 @@ export async function createPostFx(renderer: THREE.WebGLRenderer, scene: THREE.S
     import('three/examples/jsm/postprocessing/OutputPass.js'),
     import('three/examples/jsm/postprocessing/ShaderPass.js'),
   ]);
-  // 後処理では CSS の背景が透けないので、ビューポートと同じ背景色を最初に全面に描く。
-  // (scene.background にすると、影の濃さ (GTAO) の法線を描くときに背景の板まで法線用の材質で描かれ、
-  //  値が壊れて黒く抜けるので、シーンには入れない)
-  const bgScene = new THREE.Scene(), bgCamera = new THREE.Camera();
-  bgScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
-    depthTest: false, depthWrite: false,
-    uniforms: { color: { value: new THREE.Color(background) } }, // リニアに変換される
-    vertexShader: 'void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }',
-    fragmentShader: `uniform vec3 color;
-      void main() { gl_FragColor = vec4(color, 1.0);
-      #include <colorspace_fragment>
-      }`,
-  })));
+  // (背景の空は drawBackground で描く。シーンには入れない: 影の濃さ (GTAO) の法線を描くときに、背景まで法線で描かれてしまうため)
   // 背景と、MMD の輪郭線 (OutlineEffect) ごとシーンを描く最初のパス
   class OutlineRenderPass extends Pass {
     constructor() { super(); this.needsSwap = false; }
     render(r: THREE.WebGLRenderer, _writeBuffer: THREE.WebGLRenderTarget, readBuffer: THREE.WebGLRenderTarget) {
       r.setRenderTarget(this.renderToScreen ? null : readBuffer);
       r.clear();
-      r.render(bgScene, bgCamera);
+      drawBackground(r);
       outline.autoClear = false; // 背景を消さずに上に描く
       outline.render(scene, camera);
       outline.autoClear = true;
