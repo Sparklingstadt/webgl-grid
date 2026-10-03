@@ -1,6 +1,6 @@
 // e2e テスト用の小さな PMX 2.0 モデルを組み立てる (配布の決まりがあるモデルをリポジトリに入れないため)。
 // 高さ 20 (MMD の単位) の四角柱 1 本。ボーンは「センター」(移動・回転) と「右腕」(回転)、表情は「まばたき」(目)。
-// 剛体はないので物理演算は動かない
+// physics を付けると、センターに付いていく剛体と、それに関節でぶら下がる右腕の剛体 (物理演算) を足す
 class Writer {
   private bytes: number[] = [];
   private view = new DataView(new ArrayBuffer(8));
@@ -17,7 +17,7 @@ class Writer {
   build() { return new Uint8Array(this.bytes); }
 }
 
-export function makePmx(name = 'テスト人形'): Uint8Array {
+export function makePmx(name = 'テスト人形', { physics = false } = {}): Uint8Array {
   const w = new Writer();
   // ヘッダー: 文字コード UTF-16、追加 UV なし、インデックスはすべて 4 バイト
   for (const c of 'PMX ') w.u8(c.charCodeAt(0));
@@ -90,7 +90,33 @@ export function makePmx(name = 'テスト人形'): Uint8Array {
   frame('表情', 1, [[1, 0]]);
   frame('腕', 0, [[0, 1]]);
 
-  w.i32(0); // 剛体なし
-  w.i32(0); // ジョイントなし
+  if (!physics) {
+    w.i32(0); // 剛体なし
+    w.i32(0); // ジョイントなし
+    return w.build();
+  }
+  // 剛体: 位置はモデルの座標 (ボーンからの相対ではない)
+  const body = (n: string, bone: number, group: number, mask: number, radius: number, pos: number[], type: number) => {
+    w.text(n); w.text('');
+    w.i32(bone);
+    w.u8(group); w.u16(mask);
+    w.u8(0); w.f32(radius, 0, 0); // 球
+    w.f32(...pos); w.f32(0, 0, 0);
+    w.f32(1);                      // 質量
+    w.f32(0.5, 0.5, 0, 0.5);       // 移動・回転の減衰、反発、摩擦
+    w.u8(type);                    // 0: ボーンに付いていく、1: 物理演算
+  };
+  w.i32(2);
+  body('センター剛体', 0, 0, 0xffff, 1, [0, 8, 0], 0);
+  body('右腕剛体', 1, 1, 0, 0.5, [0, 17, 0], 1); // 何ともぶつからない
+  // 関節: 右腕の剛体をセンターの剛体に、少しだけ回るようにつなぐ
+  w.i32(1);
+  w.text('右腕関節'); w.text('');
+  w.u8(0);
+  w.i32(0); w.i32(1);
+  w.f32(0, 15, 0); w.f32(0, 0, 0);
+  w.f32(0, 0, 0); w.f32(0, 0, 0);
+  w.f32(-0.5, -0.5, -0.5); w.f32(0.5, 0.5, 0.5);
+  w.f32(0, 0, 0); w.f32(0, 0, 0);
   return w.build();
 }

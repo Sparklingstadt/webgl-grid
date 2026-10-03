@@ -38,9 +38,9 @@ export async function emptySpot(page: Page) {
 }
 
 // テスト用の PMX モデルを、ファイル > MMD を読み込む… と同じ入力欄から読み込む
-export async function loadTestModel(page: Page, extra: { name: string; mimeType: string; buffer: Buffer }[] = []) {
+export async function loadTestModel(page: Page, extra: { name: string; mimeType: string; buffer: Buffer }[] = [], opts: { physics?: boolean } = {}) {
   await page.locator('input[type=file][multiple]').setInputFiles([
-    { name: 'テスト人形.pmx', mimeType: 'application/octet-stream', buffer: Buffer.from(makePmx()) },
+    { name: 'テスト人形.pmx', mimeType: 'application/octet-stream', buffer: Buffer.from(makePmx('テスト人形', opts)) },
     ...extra,
   ]);
   await expect.poll(async () => (await uiState(page)).sel?.name).toBe('テスト人形');

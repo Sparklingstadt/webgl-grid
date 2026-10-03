@@ -22,13 +22,35 @@ function loadAmmo() {
 interface Entry {
   obj: Obj; physics: Any; scale: number;
   prev: THREE.Vector3 | null; vel: THREE.Vector3; acc: THREE.Vector3;
-  gravity: Any; force: Any; axisX: number; axisZ: number;
+  gravity: Any; force: Any; zero: Any; axisX: number; axisZ: number;
   prevR: number | null; w: number; alpha: number; dynamic: Any[];
 }
 const MMD_GRAVITY = 9.8 * 10; // MMD の重力 (モデルの単位で)
 const INERTIA = 0.3;          // 運ぶ・落ちるときの揺れの強さ
 const ROT_INERTIA = 0.5;      // 回すときの揺れの強さ
 const _p = new THREE.Vector3(), _v = new THREE.Vector3(), _a = new THREE.Vector3();
+
+// MMDPhysics は、剛体を「拡大縮小していないモデル自身の座標」(親から外し、大きさ 1) で扱う。
+// update() は拡大縮小されたモデルを自分でそう直すが、直したあとの行列を戻さないので、描画を挟まずに続けて呼ぶ
+// (warmup) と 2 回目から座標がずれる。作るとき (コンストラクタ) と reset() は直しもしない。
+// そこで MMDPhysics を呼ぶときは必ず、その間だけモデルをこの状態にする (ボーンの位置もその座標で計算し直す)
+function inModelFrame<T>(obj: Obj, fn: () => T): T {
+  const mesh = obj.model, parent = mesh.parent, scale = mesh.scale.clone();
+  mesh.parent = null;
+  mesh.scale.set(1, 1, 1);
+  mesh.updateMatrixWorld(true);
+  try {
+    return fn();
+  } finally {
+    mesh.parent = parent;
+    mesh.scale.copy(scale);
+    obj.node.updateMatrixWorld(true);
+  }
+}
+// 物理演算を cycles 回 (1/60 秒ずつ) 進めて、いまの姿勢になじませる
+function warmup(obj: Obj, physics: Any, cycles: number) {
+  inModelFrame(obj, () => { for (let i = 0; i < cycles; i++) physics.update(1 / 60); });
+}
 
 // --- MMD の物理演算 (髪やスカートの揺れ) ---
 // MMDPhysics はモデル自身の座標で計算するので、置き場所の加速度を「見かけの重力」として足し、
@@ -48,21 +70,8 @@ export class Physics implements System {
       const Ammo = await loadAmmo();
       const { MMDPhysics } = await import('three/examples/jsm/animation/MMDPhysics.js');
       if (!this.world.has(obj)) return; // 読み込み中に消された
-      // MMDPhysics は、拡大縮小していないモデル自身の座標で剛体を作る。
-      // update() のときと同じように、いったん親から外して大きさを 1 に戻してから作る
-      const parent = mesh.parent, scale = mesh.scale.clone();
-      mesh.parent = null;
-      mesh.scale.set(1, 1, 1);
-      mesh.updateMatrixWorld(true);
-      let physics: Any;
-      try {
-        physics = new MMDPhysics(mesh, mmd.rigidBodies, mmd.constraints);
-      } finally {
-        mesh.parent = parent;
-        mesh.scale.copy(scale);
-        obj.node.updateMatrixWorld(true);
-      }
-      physics.warmup(60); // 最初の姿勢になじませる
+      const physics = inModelFrame(obj, () => new MMDPhysics(mesh, mmd.rigidBodies, mmd.constraints));
+      warmup(obj, physics, 60); // 最初の姿勢になじませる
       // 物理演算の座標 (拡大縮小を外したモデル自身の座標) での、置き場所の回転軸 (縦軸) の位置。
       // メッシュは置き場所から mesh.position だけずらして k 倍しているので、置き場所の原点はここに来る
       const k = mesh.scale.x;
@@ -71,6 +80,7 @@ export class Physics implements System {
         prev: null, vel: new THREE.Vector3(), acc: new THREE.Vector3(),
         gravity: new Ammo.btVector3(0, -MMD_GRAVITY, 0), // 毎フレーム作り直すと Ammo のメモリが増え続けるので使い回す
         force: new Ammo.btVector3(0, 0, 0),
+        zero: new Ammo.btVector3(0, 0, 0),
         axisX: mesh.position.x * (1 - 1 / k), axisZ: mesh.position.z * (1 - 1 / k),
         prevR: null, w: 0, alpha: 0,
         dynamic: physics.bodies.filter((b: Any) => b.params.type !== 0), // 骨に付いていくだけの剛体は除く
@@ -90,13 +100,29 @@ export class Physics implements System {
     return new Set(this.entries.find(p => p.obj === obj)?.dynamic.map(b => b.bone));
   }
   // 飛んだ先の姿勢 (モーションの途中など) に、モーションのあるモデルの剛体をなじませる
-  resetAnimated(warmup: number) {
+  resetAnimated(cycles: number) {
     for (const p of this.entries) {
       if (!p.obj.animated) continue;
-      p.obj.node.updateMatrixWorld(true);
-      p.physics.reset();
-      p.physics.warmup(warmup);
+      this.reset(p);
+      warmup(p.obj, p.physics, cycles);
     }
+  }
+  // 剛体を、いまのボーンの位置に置き直して止める。
+  // MMDPhysics.reset() は、ボーンの位置をそのまま (拡大縮小・置き場所込みの座標で) 使い、速さも消さないので、
+  // そのまま呼ぶと剛体が遠くへ飛ばされ、関節に引き戻されるときに髪とスカートが絡まる
+  private reset(p: Entry) {
+    inModelFrame(p.obj, () => p.physics.reset());
+    for (const rb of p.physics.bodies) {
+      rb.body.setLinearVelocity(p.zero);
+      rb.body.setAngularVelocity(p.zero);
+      rb.body.clearForces();
+    }
+    // 見かけの重力・回転の力の計算も、ここから測り直す
+    p.prev = null;
+    p.vel.set(0, 0, 0);
+    p.acc.set(0, 0, 0);
+    p.prevR = null;
+    p.w = p.alpha = 0;
   }
 
   active() { return this.entries.length > 0; }
@@ -118,7 +144,7 @@ export class Physics implements System {
       p.gravity.setValue(-a.x, -MMD_GRAVITY - a.y, -a.z);
       p.physics.world.setGravity(p.gravity);
       this.applyRotationForces(p, dt);
-      p.physics.update(dt);
+      inModelFrame(o, () => p.physics.update(dt));
     }
   }
   // 縦軸まわりに回したときの揺れ。回転は剛体ごとに軸からの位置で力が変わるので、見かけの重力ではなく
