@@ -82,7 +82,17 @@
   }
   .morphs button:hover { color: #dce3ee; }
   .morphs-tabs { display: flex; gap: 2px; padding: 0 6px 6px; border-bottom: 1px solid #2c3340; }
-  .morphs-tabs button[aria-selected="true"] { background: #3a4558; color: #fff; }
+  .morphs-tabs button[aria-selected="true"], .morphs-modes button[aria-selected="true"] { background: #3a4558; color: #fff; }
+  .morphs-modes { display: flex; gap: 2px; padding: 0 6px 6px; }
+  .morphs-modes button { flex: 1; }
+  #morph-ui { display: contents; }
+  #morph-ui[hidden], #bone-ui[hidden] { display: none; }
+  #bone-ui { display: flex; flex-direction: column; min-height: 0; border-top: 1px solid #2c3340; }
+  #bone-select {
+    margin: 8px 12px 0; padding: 6px 8px; font: inherit; color: #dce3ee;
+    background: #2a3140; border: 1px solid #3a4558; border-radius: 7px;
+  }
+  .bone-note { padding: 6px 12px 0; color: #9aa4b5; font-size: 12px; }
   .morphs-tabs button:disabled { opacity: 0.35; cursor: default; }
   .morphs-list { overflow-y: auto; padding: 6px 12px 10px; display: grid; grid-template-columns: minmax(0, 1fr) 120px; gap: 4px 10px; align-items: center; }
   .morphs-list label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -114,17 +124,28 @@
        accept=".pmx,.vmd,.png,.jpg,.jpeg,.bmp,.tga,.gif,.spa,.sph,image/*,.mp3,.wav,.ogg,.oga,.m4a,.aac,.flac,.opus,audio/*">
 <div class="morphs" id="morph-panel" role="dialog" aria-labelledby="morph-title" hidden>
   <div class="morphs-head">
-    <span id="morph-title">表情</span>
-    <button type="button" id="morph-zero">すべて0に戻す</button>
-    <button type="button" id="morph-close" aria-label="表情のパネルを閉じる">×</button>
+    <span id="morph-title">モデル</span>
+    <button type="button" id="morph-zero">表情を戻す</button>
+    <button type="button" id="morph-close" aria-label="モデルのパネルを閉じる">×</button>
   </div>
-  <div class="morphs-tabs" role="tablist" aria-label="表情の分類">
-    <button type="button" role="tab" data-panel="1">眉</button>
-    <button type="button" role="tab" data-panel="2">目</button>
-    <button type="button" role="tab" data-panel="3">口</button>
-    <button type="button" role="tab" data-panel="4">その他</button>
+  <div class="morphs-modes" role="tablist" aria-label="動かすもの">
+    <button type="button" role="tab" data-mode="morph" aria-selected="true">表情</button>
+    <button type="button" role="tab" data-mode="bone" aria-selected="false">ボーン</button>
   </div>
-  <div class="morphs-list" id="morph-list" role="tabpanel"></div>
+  <div id="morph-ui">
+    <div class="morphs-tabs" role="tablist" aria-label="表情の分類">
+      <button type="button" role="tab" data-panel="1">眉</button>
+      <button type="button" role="tab" data-panel="2">目</button>
+      <button type="button" role="tab" data-panel="3">口</button>
+      <button type="button" role="tab" data-panel="4">その他</button>
+    </div>
+    <div class="morphs-list" id="morph-list" role="tabpanel"></div>
+  </div>
+  <div id="bone-ui" hidden>
+    <select id="bone-select" aria-label="動かすボーン"></select>
+    <div class="bone-note" id="bone-note"></div>
+    <div class="morphs-list" id="bone-list"></div>
+  </div>
 </div>
 <div class="fx" id="fx-panel" role="group" aria-label="効果 (MME 風)" hidden>
   <button type="button" data-fx="bloom" aria-pressed="false">光る</button>
@@ -890,6 +911,12 @@ async function loadPmx(files) {
     const data = await new Promise((resolve, reject) => loader.loadPMX(MODEL_URL, resolve, undefined, reject));
     const mesh = loader.meshBuilder.build(data, './', undefined, err => console.error(err));
     mesh.userData.morphPanels = new Map(data.morphs.map(m => [m.name, m.panel]));
+    // ボーンを手で動かすための情報: 表示枠 (MMD でボーンを選ぶときのグループ)、フラグ、最初の姿勢
+    mesh.userData.boneFrames = (data.frames ?? []).map(f => ({
+      name: f.name, bones: f.elements.filter(e => e.target === 0).map(e => e.index),
+    })).filter(f => f.bones.length);
+    mesh.userData.boneFlags = data.bones.map(b => b.flag);
+    mesh.userData.rest = mesh.skeleton.bones.map(b => ({ p: b.position.clone(), q: b.quaternion.clone() }));
     mesh.name ||= data.metadata.modelName || pmx.name.replace(/\.pmx$/i, '');
     fixEmptyMorphs(mesh);
     if (isStageModel(mesh, pmx.name)) {
@@ -1101,8 +1128,9 @@ function stageMatrix() {
   return _stage.makeScale(MMD_SCALE, MMD_SCALE, MMD_SCALE);
 }
 
-// --- 表情 (モーフ) を手で動かす ---
-// モデルをクリック (タップ) すると開く。VMD で動かしている表情は、モーション側が優先される
+// --- 表情 (モーフ) とボーンを手で動かす ---
+// モデルをクリック (タップ) すると開く。「表情」と「ボーン」のタブで切り替える。
+// VMD で動かしている表情はモーション側が優先され、手で動かしたボーンはモーションより優先される
 const morphPanel = document.getElementById('morph-panel');
 const morphList = document.getElementById('morph-list');
 const morphTabs = morphPanel.querySelectorAll('[data-panel]');
@@ -1117,7 +1145,8 @@ function openMorphPanel(obj) {
   closeFxPanel();
   closePicker();
   morphObj = obj;
-  document.getElementById('morph-title').textContent = `${obj.model.name || 'モデル'} の表情`;
+  document.getElementById('morph-title').textContent = obj.model.name || 'モデル';
+  showMode(panelMode);
   const counts = [0, 0, 0, 0, 0];
   for (const m of morphsOf(obj)) counts[m.panel]++;
   morphTabs.forEach(t => { t.disabled = !counts[+t.dataset.panel]; });
@@ -1162,10 +1191,133 @@ morphTabs.forEach(t => t.addEventListener('click', () => showMorphTab(+t.dataset
 document.getElementById('morph-close').addEventListener('click', closeMorphPanel);
 document.getElementById('morph-zero').addEventListener('click', () => {
   if (!morphObj) return;
-  morphObj.model.morphTargetInfluences?.fill(0);
-  morphList.querySelectorAll('input').forEach(r => { r.value = 0; });
+  if (panelMode === 'morph') {
+    morphObj.model.morphTargetInfluences?.fill(0);
+    morphList.querySelectorAll('input').forEach(r => { r.value = 0; });
+  } else {
+    morphObj.pose?.clear();
+    solvePose(morphObj);
+    showBone(morphObj.boneSel);
+  }
   requestDraw();
 });
+
+// 表情とボーンのタブ
+const modeTabs = morphPanel.querySelectorAll('[data-mode]');
+let panelMode = 'morph';
+function showMode(mode) {
+  panelMode = mode;
+  modeTabs.forEach(t => t.setAttribute('aria-selected', String(t.dataset.mode === mode)));
+  document.getElementById('morph-ui').hidden = mode !== 'morph';
+  document.getElementById('bone-ui').hidden = mode !== 'bone';
+  document.getElementById('morph-zero').textContent = mode === 'morph' ? '表情を戻す' : 'ポーズを戻す';
+  if (mode === 'bone') buildBoneSelect();
+}
+modeTabs.forEach(t => t.addEventListener('click', () => showMode(t.dataset.mode)));
+
+// --- ボーン ---
+// 並べるのは、MMD で操作できるボーン (表示 0x08・操作可 0x10) で、回転 0x02 か移動 0x04 ができるもの。
+// 表示枠ごとにまとめる。回転は最初の姿勢からのオイラー角 (度)、移動は最初の位置からのずれ (MMD の単位)
+const boneSelect = document.getElementById('bone-select');
+const boneList = document.getElementById('bone-list');
+const BONE_ROTATE = 0x02, BONE_MOVE = 0x04, BONE_VISIBLE = 0x08, BONE_OPERABLE = 0x10;
+function operableBones(obj) {
+  const flags = obj.model.userData.boneFlags ?? [];
+  return flags.map((f, i) => i).filter(i => (flags[i] & BONE_VISIBLE) && (flags[i] & BONE_OPERABLE) && (flags[i] & (BONE_ROTATE | BONE_MOVE)));
+}
+function buildBoneSelect() {
+  const obj = morphObj, mesh = obj.model, bones = mesh.skeleton.bones;
+  const ok = new Set(operableBones(obj)), used = new Set();
+  boneSelect.replaceChildren();
+  const addGroup = (label, list) => {
+    const g = document.createElement('optgroup');
+    g.label = label;
+    for (const i of list) {
+      if (!ok.has(i) || used.has(i)) continue;
+      used.add(i);
+      g.append(new Option(bones[i].name, i));
+    }
+    if (g.children.length) boneSelect.append(g);
+  };
+  for (const f of mesh.userData.boneFrames ?? []) addGroup(f.name || 'Root', f.bones);
+  addGroup('その他', [...ok]);
+  boneSelect.disabled = !boneSelect.options.length;
+  if (!boneSelect.options.length) {
+    boneList.replaceChildren(Object.assign(document.createElement('div'), { className: 'morphs-empty', textContent: '手で動かせるボーンがありません' }));
+    document.getElementById('bone-note').textContent = '';
+    return;
+  }
+  obj.boneSel = used.has(obj.boneSel) ? obj.boneSel : +boneSelect.options[0].value;
+  boneSelect.value = obj.boneSel;
+  showBone(obj.boneSel);
+}
+boneSelect.addEventListener('change', () => { morphObj.boneSel = +boneSelect.value; showBone(morphObj.boneSel); });
+function showBone(index) {
+  const obj = morphObj, flags = obj.model.userData.boneFlags[index];
+  document.getElementById('bone-note').textContent = obj.animated
+    ? 'モーション再生中は、ここで動かしたボーンがモーションより優先されます'
+    : (flags & BONE_MOVE) && /ＩＫ|IK/.test(obj.model.skeleton.bones[index].name) ? 'IK を動かすと、つながった骨がついてきます' : '';
+  boneList.replaceChildren();
+  const v = obj.pose?.get(index) ?? { rx: 0, ry: 0, rz: 0, px: 0, py: 0, pz: 0 };
+  const rows = [];
+  if (flags & BONE_ROTATE) rows.push(['rx', '回転 X', -180, 180, 1, '°'], ['ry', '回転 Y', -180, 180, 1, '°'], ['rz', '回転 Z', -180, 180, 1, '°']);
+  if (flags & BONE_MOVE) rows.push(['px', '位置 X', -20, 20, 0.1, ''], ['py', '位置 Y', -20, 20, 0.1, ''], ['pz', '位置 Z', -20, 20, 0.1, '']);
+  for (const [key, name, min, max, step, unit] of rows) {
+    const id = `bone-${key}`;
+    const label = document.createElement('label');
+    label.htmlFor = id;
+    const range = document.createElement('input');
+    Object.assign(range, { type: 'range', id, min, max, step, value: v[key] });
+    const show = () => { label.textContent = `${name} ${(+range.value).toFixed(step < 1 ? 1 : 0)}${unit}`; };
+    show();
+    range.addEventListener('input', () => {
+      obj.pose ??= new Map();
+      const cur = obj.pose.get(index) ?? { rx: 0, ry: 0, rz: 0, px: 0, py: 0, pz: 0 };
+      cur[key] = +range.value;
+      obj.pose.set(index, cur);
+      show();
+      solvePose(obj);
+      startTicking();
+      requestDraw();
+    });
+    boneList.append(label, range);
+  }
+}
+// 手で動かした値をボーンに当てる (モーションの姿勢を上書きする)
+const _poseEuler = new THREE.Euler(), _poseQ = new THREE.Quaternion();
+const DEG = Math.PI / 180;
+function applyPose(obj) {
+  const bones = obj.model.skeleton.bones, rest = obj.model.userData.rest;
+  for (const [i, v] of obj.pose) {
+    bones[i].quaternion.copy(rest[i].q).multiply(_poseQ.setFromEuler(_poseEuler.set(v.rx * DEG, v.ry * DEG, v.rz * DEG, 'YXZ')));
+    bones[i].position.set(rest[i].p.x + v.px, rest[i].p.y + v.py, rest[i].p.z + v.pz);
+  }
+}
+// モーションのないモデルは、最初の姿勢に戻してから手の値を当て、IK と付与 (連動する骨) を計算し直す。
+// (付与は今の姿勢に足し込む計算なので、毎回最初の姿勢からやり直さないと回り続ける)
+// 物理演算で動く骨はそのままにする
+async function solvePose(obj) {
+  if (obj.animated) return; // モーションのあるモデルは、毎フレームのモーションのあとに applyPose する
+  const mesh = obj.model, bones = mesh.skeleton.bones, rest = mesh.userData.rest;
+  const p = physicsList.find(p => p.obj === obj);
+  const physicsBones = new Set(p?.dynamic.map(b => b.bone));
+  bones.forEach((b, i) => {
+    if (physicsBones.has(b)) return;
+    b.position.copy(rest[i].p);
+    b.quaternion.copy(rest[i].q);
+  });
+  if (obj.pose) applyPose(obj);
+  if (!obj.solvers) {
+    const [{ MMDAnimationHelper }, { CCDIKSolver }] = await Promise.all([
+      import('three/addons/animation/MMDAnimationHelper.js'), import('three/addons/animation/CCDIKSolver.js')]);
+    animHelper ??= new MMDAnimationHelper();
+    obj.solvers = { ik: new CCDIKSolver(mesh, mesh.geometry.userData.MMD.iks), grant: animHelper.createGrantSolver(mesh) };
+  }
+  mesh.updateMatrixWorld(true);
+  obj.solvers.ik.update();
+  obj.solvers.grant.update();
+  requestDraw();
+}
 
 // --- MMD のステージ ---
 // 横幅か奥行きが 40 (MMD の単位) を超えるか、名前に「ステージ」などを含む .pmx はステージとして扱う。
@@ -1342,7 +1494,11 @@ function tick(now) {
   if (!physicsList.length && !hasMotion()) { ticking = false; return; }
   const dt = tickLast ? Math.min(Math.max(now - tickLast, 0) / 1000, 1 / 20) : 1 / 60;
   tickLast = now;
-  if (hasMotion()) animHelper.update(motionDelta(dt)); // モーションを先に進めてから物理演算
+  if (hasMotion()) {
+    animHelper.update(motionDelta(dt)); // モーションを先に進めてから物理演算
+    // 手で動かしたボーンは、モーションより優先する
+    for (const b of boxes) if (b.animated && b.pose?.size) applyPose(b);
+  }
   for (const p of physicsList) {
     // モデルの動きの加速度を「見かけの重力」として足す (運ぶと髪がなびき、落ちると浮く)。
     // MMDPhysics はモデル自身の座標で計算するので、置き場所の動きはこうしないと伝わらない
@@ -1555,7 +1711,7 @@ resize();
 // 動作確認用: ?debug を付けて開いたときだけ、中の状態をコンソールから触れるようにする
 if (new URLSearchParams(location.search).has('debug')) {
   Object.assign(window, { THREE, renderer, scene, camera, boxes, cam, makeBox, settle, pickBox, screenRay, rayPlane,
-    loadPmx, loadFiles, getAnimHelper: () => animHelper, getCamMotion: () => camMotion, getStage: () => stageModel, getFx: () => fx, getMorphObj: () => morphObj, fxState, fxLevel, getMusic: () => music, camera, getDrag: () => drag, paletteEl, swatches, pointers, physicsList, outline });
+    loadPmx, loadFiles, getAnimHelper: () => animHelper, getCamMotion: () => camMotion, getStage: () => stageModel, getFx: () => fx, getMorphObj: () => morphObj, applyPose, fxState, fxLevel, getMusic: () => music, camera, getDrag: () => drag, paletteEl, swatches, pointers, physicsList, outline });
 }
 </script>
 </body>
