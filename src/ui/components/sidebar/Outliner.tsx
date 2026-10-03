@@ -11,16 +11,19 @@ import { MenuItem, MenuSep } from '../Menu';
 // --- アウトライナー (Blender のアウトライナー): 場面に置いた物を一覧にして、選ぶ・名前を変える・隠す・消す ---
 // クリックで選ぶ、ダブルクリック (F2) で名前を変える、目のアイコンでビューポートで隠す、カメラのアイコンでレンダリングに写さない、
 // 右クリックでメニュー。MMD モデルは広げるとボーンが並び、押すとそのボーンを選んでボーンのタブを開く。
+// 物でないもの (MMD のステージ・VMD のカメラモーション) も上に並べる (ステージは隠せる。右クリックで外す)。
 // ドラッグで並べ替える (マウスは行のどこでも、指は種類のアイコンをつかんで。Esc でやめる)。
 // キーボード: ↑↓ で選ぶ物を変える、Alt+↑↓ で並べ替える、→← で広げる・閉じる、H / Shift+H / Alt+H で隠す・見せる、X で消す
-const ICON: Record<ObjKind | 'bone', ReactNode> = {
+const ICON: Record<ObjKind | 'bone' | 'stage' | 'cameraMotion', ReactNode> = {
   shape: <path d="M8 1.5 13.5 4.5v7L8 14.5 2.5 11.5v-7z M8 1.5v6.5 M2.5 4.5 8 8l5.5-3.5" />,
   model: <><circle cx="8" cy="4" r="2.2" /><path d="M3.5 14.5c0-3.5 2-5.5 4.5-5.5s4.5 2 4.5 5.5" /></>,
   light: <><path d="M5.5 9.5a4 4 0 1 1 5 0c-.6.5-.9 1.2-.9 2h-3.2c0-.8-.3-1.5-.9-2z" /><path d="M6.5 14h3" /></>,
   bone: <path d="M8 2 11 6 8 14 5 6z M5 6h6" />,
   camera: <path d="M2.5 5h7v6h-7z M9.5 7.5 13.5 5v6l-4-2.5" />,
+  stage: <path d="M1.5 12.5h13 M3 12.5V7l5-3 5 3v5.5 M6 12.5v-3h4v3" />,
+  cameraMotion: <path d="M2.5 5h7v6h-7z M9.5 7.5 13.5 5v6l-4-2.5 M4 3h4" />,
 };
-const Icon = ({ kind }: { kind: ObjKind | 'bone' }) => (
+const Icon = ({ kind }: { kind: ObjKind | 'bone' | 'stage' | 'cameraMotion' }) => (
   <svg className={`ol-icon ol-${kind}`} viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round">{ICON[kind]}</svg>
 );
 const Eye = ({ off }: { off: boolean }) => (
@@ -73,6 +76,8 @@ export function Outliner({ onPickBone, style, onHover }: { onPickBone: () => voi
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(new Set());
   const [renaming, setRenaming] = useState<number | null>(null);
   const [menu, setMenu] = useState<{ id: number; anchor: HTMLElement } | null>(null);
+  const [extraMenu, setExtraMenu] = useState<{ what: 'stage' | 'cameraMotion'; anchor: HTMLElement } | null>(null);
+  const stage = engine.stage.model, cameraMotion = engine.motion.camera ? engine.motion.cameraFile?.name ?? t('カメラモーション') : null;
   const rows = useRef(new Map<number, HTMLElement>());
   const tree = useRef<HTMLUListElement>(null);
   const [drag, setDrag] = useState<Drop & { id: number } | null>(null);
@@ -170,7 +175,25 @@ export function Outliner({ onPickBone, style, onHover }: { onPickBone: () => voi
         <input type="search" className="ol-filter" placeholder={t('絞り込み')} aria-label={t('アウトライナーを絞り込む')} value={filter} onChange={e => setFilter(e.target.value)} />
       </div>
       <ul className={`ol-tree${drag ? ' dragging' : ''}`} role="tree" aria-label={t('シーンの物')} aria-multiselectable ref={tree}>
-        {!shown.length && <li className="ol-empty" role="none">{objects.length ? t('合う物がありません') : t('何も置いていません')}</li>}
+        {stage && match(stage.name ?? '') && (
+          <li role="treeitem" aria-level={1} aria-selected={false} aria-label={t('ステージ: {name}', { name: stage.name || t('ステージ') })} tabIndex={-1}>
+            <div className={`ol-row extra${stage.visible ? '' : ' hidden'}`} onContextMenu={e => { e.preventDefault(); setExtraMenu({ what: 'stage', anchor: e.currentTarget }); }}>
+              <span className="ol-twist" /><Icon kind="stage" />
+              <span className="ol-name" title={stage.name}>{t('ステージ: {name}', { name: stage.name || t('ステージ') })}</span>
+              <button type="button" className="ol-toggle" tabIndex={-1} aria-label={t('ビューポートで隠す')} aria-pressed={!stage.visible}
+                      onClick={() => engine.setStageHidden(stage.visible)}><Eye off={!stage.visible} /></button>
+            </div>
+          </li>
+        )}
+        {cameraMotion && match(cameraMotion) && (
+          <li role="treeitem" aria-level={1} aria-selected={false} aria-label={t('カメラモーション: {name}', { name: cameraMotion })} tabIndex={-1}>
+            <div className="ol-row extra" onContextMenu={e => { e.preventDefault(); setExtraMenu({ what: 'cameraMotion', anchor: e.currentTarget }); }}>
+              <span className="ol-twist" /><Icon kind="cameraMotion" />
+              <span className="ol-name" title={cameraMotion}>{t('カメラモーション: {name}', { name: cameraMotion })}</span>
+            </div>
+          </li>
+        )}
+        {!shown.length && !stage && !cameraMotion && <li className="ol-empty" role="none">{objects.length ? t('合う物がありません') : t('何も置いていません')}</li>}
         {shown.map(({ o, bones }) => {
           const name = nameOf(o), active = sel?.id === o.id, picked = selIds.includes(o.id), model = isModel(o);
           const isOpen = model && (expanded.has(o.id) || (!!q && bones.length > 0));
@@ -210,6 +233,15 @@ export function Outliner({ onPickBone, style, onHover }: { onPickBone: () => voi
           );
         })}
       </ul>
+      {extraMenu && (
+        <Popover anchor={extraMenu.anchor} onClose={() => setExtraMenu(null)} className="menu-pop" role="menu" label={t('アウトライナーのメニュー')}>
+          <div onClick={e => { if ((e.target as HTMLElement).closest('button:not(:disabled)')) setExtraMenu(null); }}>
+            {extraMenu.what === 'stage'
+              ? <MenuItem label={t('ステージを外す')} onSelect={() => engine.removeStage()} />
+              : <MenuItem label={t('カメラモーションを外す')} onSelect={() => engine.removeCameraMotion()} />}
+          </div>
+        </Popover>
+      )}
       {menu && menuObj && (
         <Popover anchor={menu.anchor} onClose={() => setMenu(null)} className="menu-pop" role="menu" label={t('アウトライナーのメニュー')}>
           <div onClick={e => { if ((e.target as HTMLElement).closest('button:not(:disabled)')) setMenu(null); }}>

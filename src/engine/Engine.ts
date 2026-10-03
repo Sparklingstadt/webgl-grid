@@ -264,6 +264,26 @@ export class Engine {
   }
   closeContextMenu() { if (!this.ui.state.contextMenu) return false; this.ui.set({ contextMenu: null }); return true; }
 
+  // --- 物でないもの (アウトライナー): ステージ・カメラモーション ---
+  setStageHidden(on: boolean) {
+    if (!this.stage.model) return;
+    this.stage.model.visible = !on;
+    this.ui.bump('sceneVersion');
+    this.viewport.requestDraw();
+  }
+  removeStage() {
+    if (!this.stage.model) return;
+    this.stage.clear();
+    this.ui.bump('sceneVersion');
+    this.viewport.requestDraw();
+  }
+  removeCameraMotion() {
+    if (!this.motion.camera) return;
+    if (this.camera.override && this.camera.override !== this.cameraView) this.camera.releaseOverride(true); // (いまの視点から手動に引き継ぐ)
+    this.motion.removeCamera();
+    this.viewport.requestDraw();
+  }
+
   // B: 次のドラッグで四角を描いて選ぶ。Esc でやめる
   startBoxSelect() { this.ui.set({ boxSelect: true }); }
   cancelBoxSelect() { if (!this.ui.state.boxSelect) return false; this.ui.set({ boxSelect: false, box: null }); return true; }

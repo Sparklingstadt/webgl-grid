@@ -966,5 +966,11 @@ const dict: Dictionary = {
   "場面のカメラから見る (テンキー 0)": "View from the Scene Camera (Numpad 0)",
   "場面のカメラから見る": "View from the Scene Camera",
   "場面のカメラは、アウトライナーでいちばん上のカメラです (ドラッグで並べ替えると変わります)。": "The scene camera is the topmost camera in the Outliner (reorder by dragging to change it).",
+  "カメラモーション": "Camera Motion",
+  "カメラモーション: {name}": "Camera Motion: {name}",
+  "カメラモーションを外す": "Remove Camera Motion",
+  "ステージ": "Stage",
+  "ステージ: {name}": "Stage: {name}",
+  "ステージを外す": "Remove Stage",
 };
 export default dict;

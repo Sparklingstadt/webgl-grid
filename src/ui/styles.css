@@ -159,6 +159,9 @@ button.ol-twist[aria-expanded="true"]::before { border-left-color: transparent; 
 .ol-model { color: #8fd18f; }
 .ol-light { color: #ffe37a; }
 .ol-camera { color: #9fd0ff; }
+.ol-stage { color: #c8a2ff; }
+.ol-cameraMotion { color: #9fd0ff; }
+.ol-row.extra { cursor: default; }
 .ol-bone { color: #b8c7e0; }
 .ol-bone .ol-icon { color: #9db3d6; }
 .ol-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -159,6 +159,7 @@ export class Motion implements System {
       released: () => this.removeCamera(), // 自分でカメラを動かしたら、カメラモーションをやめる
     };
     this.cameraCtl.setOverride(override);
+    this.ui.bump('sceneVersion');
   }
   private stageMatrix() {
     if (this.stage.model) return this.stageMat.copy(this.stage.model.matrixWorld);
@@ -179,11 +180,13 @@ export class Motion implements System {
     if (camera.fov !== c.fov) { camera.fov = c.fov; camera.updateProjectionMatrix(); }
     camera.updateMatrixWorld();
   }
-  private removeCamera() {
+  // カメラモーションをやめる (自分でカメラを動かした・アウトライナーで外した)
+  removeCamera() {
     if (!this.camera) return;
     this.helper.remove(this.camera.cam);
     this.camera = null;
     this.cameraFile = null;
     this.ui.bump('keysVersion');
+    this.ui.bump('sceneVersion');
   }
 }
