@@ -3,14 +3,14 @@ import { open } from './helpers';
 
 // スマホ (幅の狭い画面) のレイアウト
 test.describe('スマホ @mobile', () => {
-  test('サイドバーは最初はしまってあり、開くとビューポートに重なり、ビューポートを触るとしまう', async ({ page }) => {
+  test('アウトライナーとプロパティは最初はしまってあり、開くとビューポートに重なり、ビューポートを触るとしまう', async ({ page }) => {
     await open(page);
-    await expect(page.locator('#sidebar')).toHaveCount(0);
-    await page.getByRole('button', { name: 'サイドバー' }).tap();
-    await expect(page.locator('#sidebar')).toBeVisible();
+    await expect(page.locator('#side-column')).toHaveCount(0);
+    await page.getByRole('button', { name: 'プロパティ' }).tap();
+    await expect(page.locator('#side-column')).toBeVisible();
     const canvas = (await page.locator('canvas#c').boundingBox())!;
     await page.touchscreen.tap(canvas.x + 20, canvas.y + canvas.height - 20);
-    await expect(page.locator('#sidebar')).toHaveCount(0);
+    await expect(page.locator('#side-column')).toHaveCount(0);
   });
 
   test('横にはみ出さず、タイムラインの再生ボタンが見える', async ({ page }) => {

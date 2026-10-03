@@ -41,6 +41,12 @@ export class CameraController {
 
   get camera() { return this.graph.camera; }
 
+  // 視野角 (度。N パネルのビュー)
+  setFov(deg: number) {
+    if (!Number.isFinite(deg)) return;
+    this.cam.fov = Math.min(Math.max(deg, 10), 120);
+    this.viewport.requestDraw();
+  }
   setMode(m: 'orbit' | 'pan') {
     this.mode = m;
     this.ui.set({ mode: m });

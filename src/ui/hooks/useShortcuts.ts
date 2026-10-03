@@ -9,8 +9,8 @@ export function useShortcuts(engine: Engine, actions: {
   hoverArea: React.RefObject<Area>;
   openAddMenu: () => void;
   closeMenus: () => boolean; // 開いていたメニューを閉じたら true
-  toggleSide: () => void;
-  showSide: () => void; // サイドバーを開く (閉じていれば)
+  toggleN: () => void;   // ビューポートのサイドバー (N パネル)
+  showSide: () => void; // 右の列 (アウトライナー・プロパティ) を開く (閉じていれば)
   openFiles: () => void;
   openProject: () => void;
   openAddons: () => void;
@@ -84,7 +84,7 @@ export function useShortcuts(engine: Engine, actions: {
           if (e.shiftKey) { e.preventDefault(); a.openAddMenu(); } else if (e.altKey) { e.preventDefault(); engine.select(null); }
           break;
         case 'KeyN':
-          a.toggleSide();
+          a.toggleN();
           break;
         // 隠す (Blender と同じ): H 選んでいる物、Shift+H ほかの物、Alt+H 全部見せる
         case 'KeyH':

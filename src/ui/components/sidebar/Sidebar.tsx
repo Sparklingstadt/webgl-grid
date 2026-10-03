@@ -61,7 +61,7 @@ export function Sidebar({ tab, setTab, onLoadPose, onOpenShaderEditor }: { tab: 
     addEventListener('pointerup', up);
   };
   return (
-    <aside className="sidebar" id="sidebar" aria-label={t('サイドバー')} ref={col}>
+    <aside className="sidebar" id="side-column" aria-label={t('アウトライナーとプロパティ')} ref={col}>
       <Outliner onPickBone={() => setTab('bone')} style={{ height: olH }} />
       <div className="area-resizer horizontal" role="separator" aria-orientation="horizontal" aria-label={t('アウトライナーの高さ')} onPointerDown={resize} />
       <section className="area props" aria-label={t('プロパティ')}>

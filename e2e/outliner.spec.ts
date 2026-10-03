@@ -85,8 +85,7 @@ test('MMD モデルを広げるとボーンが並び、押すとボーンのタ�
   await expect(model.getByRole('treeitem')).toHaveText(['右腕']);
   await page.getByRole('searchbox', { name: 'アウトライナーを絞り込む' }).fill('');
   // F2 (ビューポートの上で): 選んでいる物の名前を変える。サイドバーを閉じていても開く
-  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-  await page.keyboard.press('n');
+  await page.getByRole('button', { name: 'プロパティ', exact: true }).click(); // (アウトライナーとプロパティを隠す)
   await expect(tree(page)).toHaveCount(0);
   await page.getByRole('region', { name: '3D ビューポート' }).hover();
   await page.keyboard.press('F2');

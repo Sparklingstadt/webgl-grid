@@ -9,6 +9,7 @@ import { Gizmo } from './Gizmo';
 import { Menu, MenuItem, MenuLabel, MenuSep } from './Menu';
 import type { SideTab } from './sidebar/Sidebar';
 import { Icon } from './icons';
+import { NPanel } from './NPanel';
 import { OutputFrame, useShowFrame } from './OutputFrame';
 import { ModelPicker } from './ModelPicker';
 import { RecoverBanner } from './Overlays';
@@ -17,7 +18,7 @@ import { requestRename } from './sidebar/Outliner';
 // 3D ビューポート (Blender の 3D ビューポート): 見出し (エディターの種類・モード・ビュー・追加・オブジェクトのメニュー)、
 // 左のツールバー、左上の文字、右上のナビゲーションギズモ
 export function ViewportArea(props: {
-  sideOpen: boolean; toggleSide: () => void; tlOpen: boolean; toggleTl: () => void;
+  sideOpen: boolean; toggleSide: () => void; nOpen: boolean; toggleN: () => void; tlOpen: boolean; toggleTl: () => void;
   onOpenFiles: () => void; onViewportPointerDown: () => void; showTab: (tab: SideTab) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -53,7 +54,8 @@ export function ViewportArea(props: {
           <MenuItem label={t('上から見る')} kbd={t('テンキー 7')} onSelect={() => camera.snapView('top')} />
           <MenuItem label={t('視点を戻す')} kbd="Home" onSelect={() => camera.resetView()} />
           <MenuSep />
-          <MenuItem label={props.sideOpen ? t('サイドバーを隠す') : t('サイドバーを出す')} kbd="N" onSelect={props.toggleSide} />
+          <MenuItem label={props.nOpen ? t('サイドバーを隠す') : t('サイドバーを出す')} kbd="N" onSelect={props.toggleN} />
+          <MenuItem label={props.sideOpen ? t('アウトライナーとプロパティを隠す') : t('アウトライナーとプロパティを出す')} onSelect={props.toggleSide} />
           <MenuItem label={props.tlOpen ? t('タイムラインをたたむ') : t('タイムラインを広げる')} onSelect={props.toggleTl} />
           <MenuItem label={showFrame ? t('出力の範囲を隠す') : t('出力の範囲を表示')} onSelect={() => setShowFrame(!showFrame)} />
           <AddonMenuItems menu="view" />
@@ -81,10 +83,10 @@ export function ViewportArea(props: {
           <AddonMenuItems menu="object" />
         </Menu>
         <span className="spacer" />
-        <button type="button" className="hbtn" aria-pressed={props.sideOpen} aria-controls="sidebar" title={t('サイドバー (N)')} onClick={props.toggleSide}>{t('サイドバー')}</button>
+        <button type="button" className="hbtn" aria-pressed={props.sideOpen} aria-controls="side-column" title={t('アウトライナーとプロパティ')} onClick={props.toggleSide}>{t('プロパティ')}</button>
       </div>
       <div className="view-body">
-        <div className="viewport" ref={el => { viewportRef.current = el; setViewportEl(el); }} onPointerDown={props.onViewportPointerDown}>
+        <div className={`viewport${props.nOpen ? ' n-open' : ''}`} ref={el => { viewportRef.current = el; setViewportEl(el); }} onPointerDown={props.onViewportPointerDown}>
           <canvas id="c" ref={canvasRef} />
           {showFrame && <OutputFrame container={viewportEl} />}
           <div className="tools" role="group" aria-label={t('カメラの操作')}>
@@ -105,6 +107,9 @@ export function ViewportArea(props: {
           {empty && <div className="view-hint">{t('Shift+A (追加) で形やライトを置く・ファイル > MMD を読み込む… でモデルを置く')}</div>}
           <RecoverBanner />
           <ModelPicker />
+          {props.nOpen && <NPanel />}
+          <button type="button" className="npanel-toggle" aria-label={props.nOpen ? t('サイドバーを隠す') : t('サイドバーを出す')} aria-expanded={props.nOpen}
+                  aria-controls="n-panel" title={t('サイドバー (N)')} onClick={props.toggleN}>{props.nOpen ? '›' : '‹'}</button>
           <div className="nav">
             <Gizmo />
             <button type="button" title={t('視点を戻す (Home)')} aria-label={t('視点を戻す')} onClick={() => camera.resetView()}>

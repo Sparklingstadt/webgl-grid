@@ -81,17 +81,33 @@ test.describe('ビューポート', () => {
     expect(await page.evaluate(() => (window as Win).engine.world.objects[0].c)).toBe(3);
   });
 
-  test('テンキー 7 で上から、Home で元の視点に戻る。N でサイドバーを開け閉めする', async ({ page }) => {
+  test('テンキー 7 で上から、Home で元の視点に戻る。N でビューポートのサイドバー (N パネル) を開け閉めする', async ({ page }) => {
     await open(page);
     await page.locator('canvas#c').hover();
     await page.keyboard.press('Numpad7');
     await expect(page.locator('.view-info')).toHaveText(/上・透視投影/);
     await page.keyboard.press('Home');
     await expect(page.locator('.view-info')).toHaveText(/ユーザー・透視投影/);
+    const npanel = page.getByRole('complementary', { name: 'サイドバー' });
+    await expect(npanel).toHaveCount(0);
     await page.keyboard.press('n');
-    await expect(page.locator('#sidebar')).toHaveCount(0);
+    await expect(npanel).toBeVisible();
+    await expect(page.locator('#side-column')).toBeVisible(); // (アウトライナーとプロパティはそのまま)
+    // アイテム: 選んでいる物の位置を変えられる
+    await page.getByRole('tree', { name: 'シーンの物' }).getByRole('treeitem', { name: '立方体' }).locator(':scope > .ol-row').click();
+    await npanel.getByRole('spinbutton', { name: '位置 X (サイドバー)' }).fill('2');
+    await page.keyboard.press('Enter');
+    expect(await page.evaluate(() => (window as Win).engine.world.objects[0].x)).toBe(2);
+    // ビュー: 視野角
+    await npanel.getByRole('tab', { name: 'ビュー' }).click();
+    const fov = () => page.evaluate(() => (window as Win).engine.camera.cam.fov);
+    const before = await fov();
+    await npanel.getByRole('slider', { name: '視野角' }).focus();
+    await page.keyboard.press('ArrowRight');
+    expect(await fov()).toBeGreaterThan(before);
+    await page.locator('canvas#c').hover();
     await page.keyboard.press('n');
-    await expect(page.locator('#sidebar')).toBeVisible();
+    await expect(npanel).toHaveCount(0);
   });
 
   test('ファイル > 最初の状態に戻す で、何も置いていない場面に戻る', async ({ page }) => {

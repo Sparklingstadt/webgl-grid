@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { t } from '../../core/i18n';
 import { outputFrame } from '../../core/output';
 import { useUi } from '../EngineContext';
@@ -26,14 +26,16 @@ export function OutputFrame({ container }: { container: HTMLElement | null }) {
   );
 }
 
-// 出力の枠を出すか (ブラウザに覚えておく)
+// 出力の枠を出すか (ブラウザに覚えておく。ビューのメニューと N パネルで同じ値を使う)
 const KEY = 'webgl-grid-output-frame';
+let frameOn = (() => { try { return localStorage.getItem(KEY) !== '0'; } catch { return true; } })();
+const listeners = new Set<() => void>();
+const setFrameOn = (v: boolean) => {
+  frameOn = v;
+  try { localStorage.setItem(KEY, v ? '1' : '0'); } catch { /* 覚えられなくても使える */ }
+  for (const f of listeners) f();
+};
 export function useShowFrame(): [boolean, (on: boolean) => void] {
-  const [on, setOn] = useState(() => {
-    try { return localStorage.getItem(KEY) !== '0'; } catch { return true; }
-  });
-  return [on, v => {
-    setOn(v);
-    try { localStorage.setItem(KEY, v ? '1' : '0'); } catch { /* 覚えられなくても使える */ }
-  }];
+  const on = useSyncExternalStore(f => { listeners.add(f); return () => { listeners.delete(f); }; }, () => frameOn);
+  return [on, setFrameOn];
 }

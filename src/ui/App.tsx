@@ -23,7 +23,8 @@ const isNarrow = () => matchMedia(NARROW).matches;
 export default function App() {
   const engine = useEngine();
   useUi(s => s.lang); // (言語を変えたら、画面を全部描き直す)
-  const [sideOpen, setSideOpen] = useState(() => !isNarrow());
+  const [sideOpen, setSideOpen] = useState(() => !isNarrow()); // 右の列 (アウトライナー・プロパティ)
+  const [nOpen, setNOpen] = useState(false); // ビューポートのサイドバー (N パネル)
   const [tlOpen, setTlOpen] = useState(true);
   const [sideTab, setSideTab] = useState<SideTab>('object');
   const [bottom, setBottom] = useState<BottomEditor>('timeline');
@@ -123,7 +124,7 @@ export default function App() {
     hoverArea,
     openAddMenu: () => setOpenMenu('add'),
     closeMenus: () => { const was = !!openMenuRef.current; setOpenMenu(null); return was; },
-    toggleSide,
+    toggleN: () => setNOpen(o => !o),
     showSide: () => setSideOpen(true),
     openFiles,
     openProject,
@@ -139,7 +140,7 @@ export default function App() {
         <TopBar onOpenFiles={openFiles} onOpenFolder={openFolder} onLoadPose={openPose} onOpenProject={openProject} onOpenAddons={() => setManagerOpen(true)}
                 onOpenOutput={() => showTab('output')} workspace={workspace} setWorkspace={goWorkspace} />
         <div className="grid-view" onPointerEnter={() => { hoverArea.current = 'view'; }}>
-          <ViewportArea sideOpen={sideOpen} toggleSide={toggleSide} tlOpen={tlOpen} toggleTl={() => setTlOpen(o => !o)}
+          <ViewportArea sideOpen={sideOpen} toggleSide={toggleSide} nOpen={nOpen} toggleN={() => setNOpen(o => !o)} tlOpen={tlOpen} toggleTl={() => setTlOpen(o => !o)}
                         onOpenFiles={openFiles} showTab={showTab}
                         onViewportPointerDown={() => { if (isNarrow()) setSideOpen(false); }} />
         </div>
