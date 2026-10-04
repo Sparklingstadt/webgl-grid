@@ -166,7 +166,8 @@ function unsupported(ctx: EmitContext, loc: Loc, message: string): void {
   ctx.diags.error('FX-UNSUPPORTED', loc, message);
 }
 
-function noteType(ty: Type, ctx: EmitContext): void {
+// 使う構造体を ctx.usedStructs に記す (配列の中も)
+export function noteType(ty: Type, ctx: EmitContext): void {
   if (ty.k === 'array') noteType(ty.of, ctx);
   else if (ty.k === 'struct') ctx.usedStructs.add(ty.name);
 }
@@ -185,7 +186,8 @@ function typeOf(e: Expr): Type {
   return e.type;
 }
 
-function children(e: Expr): Expr[] {
+// 式のすぐ下の式 (Expr の種類を足したら、ここも足す)
+export function exprChildren(e: Expr): Expr[] {
   switch (e.kind) {
     case 'unary': return [e.operand];
     case 'binary': return [e.left, e.right];
@@ -204,7 +206,7 @@ function children(e: Expr): Expr[] {
 function impure(e: Expr): boolean {
   if (e.kind === 'assign' || (e.kind === 'unary' && (e.op === '++' || e.op === '--'))) return true;
   if (e.kind === 'call' && (e.target?.kind !== 'intrinsic' || e.callee === 'sincos' || e.callee === 'modf')) return true;
-  return children(e).some(impure);
+  return exprChildren(e).some(impure);
 }
 
 // 2 回以上書き出す式は、副作用がないものだけ

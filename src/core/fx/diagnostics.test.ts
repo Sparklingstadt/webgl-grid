@@ -19,8 +19,23 @@ describe('診断', () => {
   });
   it('20 個を超える誤りで FX-TYPE-TOO-MANY を足して止める', () => {
     const d = new Diagnostics();
-    for (let i = 0; i < 20; i++) d.error('FX-TYPE-MISMATCH', loc, 'x');
-    expect(() => d.error('FX-TYPE-MISMATCH', loc, 'x')).toThrow(FxError);
+    for (let i = 0; i < 20; i++) d.error('FX-TYPE-MISMATCH', { ...loc, column: i + 1 }, 'x');
+    expect(() => d.error('FX-TYPE-MISMATCH', { ...loc, column: 21 }, 'x')).toThrow(FxError);
     expect(d.errors.map(e => e.code).at(-1)).toBe('FX-TYPE-TOO-MANY');
+  });
+  it('同じ誤り・警告は 1 回だけ積み、上限にも数えない', () => {
+    const d = new Diagnostics();
+    for (let i = 0; i < 30; i++) d.error('FX-UNSUPPORTED', loc, 'x');
+    d.warn('FX-WARN-STATE', loc, 'w');
+    d.warn('FX-WARN-STATE', loc, 'w');
+    expect(d.errors.map(e => e.code)).toEqual(['FX-UNSUPPORTED']);
+    expect(d.warnings).toHaveLength(1);
+    // 文・code・場所のどれかが違えば別のもの
+    d.error('FX-UNSUPPORTED', loc, 'y');
+    d.error('FX-PARSE', loc, 'x');
+    d.error('FX-UNSUPPORTED', { ...loc, line: 2 }, 'x');
+    d.error('FX-UNSUPPORTED', { ...loc, column: 2 }, 'x');
+    d.error('FX-UNSUPPORTED', { ...loc, file: 'b.fx' }, 'x');
+    expect(d.errors).toHaveLength(6);
   });
 });

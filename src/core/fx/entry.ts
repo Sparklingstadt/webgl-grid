@@ -4,7 +4,8 @@ import type { CheckedEffect, EntryInfo, FunctionInfo, GlobalInfo } from './check
 import type { AttributeRef, Program, UniformRef } from './desc.ts';
 import { Diagnostics, type Diagnostic, type Loc } from './diagnostics.ts';
 import {
-  emitConst, emitExpr, emitFunctions, emitHelpers, emitStructs, glslName, glslType, newEmitContext, zeroOf, type EmitContext,
+  emitConst, emitExpr, emitFunctions, emitHelpers, emitStructs, exprChildren, glslName, glslType, newEmitContext, noteType, zeroOf,
+  type EmitContext,
 } from './emit.ts';
 import { typeName, type Type } from './types.ts';
 
@@ -61,33 +62,16 @@ function toFloat(e: string, ty: Type): string | null {
   return ty.s === 'float' ? x : `float(${x})`;
 }
 
-// 0 で埋めた値 (数値の型でなければ誤りのあとなので何か書いておく)
+// 値の型 (0 で埋められ、GLSL の変数にできる型)
+const isValueType = (ty: Type): boolean => ['scalar', 'vector', 'matrix', 'array', 'struct'].includes(ty.k);
+
+// 0 で埋めた値 (値の型でなければ誤りのあとなので何か書いておく)
 function zero(ty: Type): string {
-  return ['scalar', 'vector', 'matrix', 'array', 'struct'].includes(ty.k) ? zeroOf(ty) : '0';
+  return isValueType(ty) ? zeroOf(ty) : '0';
 }
 
-function noteStruct(ty: Type, ctx: EmitContext): void {
-  if (ty.k === 'array') noteStruct(ty.of, ctx);
-  else if (ty.k === 'struct') ctx.usedStructs.add(ty.name);
-}
-
-// --- 引数をどう読んでいるか (POSITION を実際に読むときだけ警告するため) ---
+// --- 引数をどう読んでいるか (POSITION・PSIZE を実際に読むときだけ警告し、VPOS を読むときだけ mme_viewport を入れるため) ---
 interface Reads { whole: boolean; fields: Set<string> }
-
-function exprChildren(e: Expr): Expr[] {
-  switch (e.kind) {
-    case 'unary': return [e.operand];
-    case 'binary': return [e.left, e.right];
-    case 'assign': return [e.target, e.value];
-    case 'ternary': return [e.cond, e.then, e.else];
-    case 'call': case 'construct': return e.args;
-    case 'cast': case 'convert': return [e.value];
-    case 'member': return [e.object];
-    case 'index': return [e.object, e.index];
-    case 'initList': case 'sequence': return e.items;
-    default: return [];
-  }
-}
 
 function forEachExpr(s: Stmt, f: (e: Expr) => void): void {
   const st = (x: Stmt | null) => { if (x) forEachExpr(x, f); };
@@ -141,10 +125,12 @@ function mainLines(entry: EntryInfo, stage: Stage, vertexOut: string[], ctx: Emi
       src = fromFloats(`a_${sem}`, 4, ty);
     } else if (sem === 'VFACE') src = fromFloats(VFACE, 1, ty);
     else if (sem === 'VPOS') {
+      if (!read) return zero(ty); // 読まなければ mme_viewport は要らない
       io.vpos = true;
       src = fromFloats(VPOS, 2, ty);
-    } else if (sem === 'POSITION') {
-      if (read) diags.warn('FX-WARN-SEMANTIC', loc, t('ピクセルシェーダーでは POSITION を読めないので 0 にします: {name}', { name }));
+    } else if (sem === 'POSITION' || sem === 'PSIZE') {
+      // 頂点からは来ない (頂点と同じ構造体を受けるのはよくあるので、実際に読むときだけ警告する)
+      if (read) diags.warn('FX-WARN-SEMANTIC', loc, t('ピクセルシェーダーでは {semantic} を読めないので 0 にします: {name}', { semantic: sem, name }));
       return zero(ty);
     } else if (vertexOut.includes(sem)) {
       if (!io.varyings.includes(sem)) io.varyings.push(sem);
@@ -160,7 +146,7 @@ function mainLines(entry: EntryInfo, stage: Stage, vertexOut: string[], ctx: Emi
   // 入力 (in・inout の引数) の値。構造体はメンバーごとに作る。read は一番外のメンバーの名前から、読んでいるか
   const input = (ty: Type, sem: string | null, name: string, loc: Loc, read: (top: string | null) => boolean, top: string | null): string => {
     if (ty.k === 'struct') {
-      noteStruct(ty, ctx);
+      noteType(ty, ctx);
       const fields = ty.fields.map(f => input(f.type, f.semantic, `${name}.${f.name}`, loc, read, top ?? f.name));
       return `${glslName(ty.name)}(${fields.join(', ')})`;
     }
@@ -232,7 +218,7 @@ function mainLines(entry: EntryInfo, stage: Stage, vertexOut: string[], ctx: Emi
       args.push(emitExpr(a, ctx));
       return;
     }
-    // POSITION を読んでいるか (フラグメントだけ見る)
+    // 読んでいるか (フラグメントの POSITION・PSIZE・VPOS だけ見る)
     let reads: Reads | null = null;
     const read = (top: string | null): boolean => {
       reads ??= readsOf(fn, p);
@@ -243,7 +229,7 @@ function mainLines(entry: EntryInfo, stage: Stage, vertexOut: string[], ctx: Emi
       return;
     }
     const name = `mme_p${local++}`;
-    noteStruct(ty, ctx);
+    noteType(ty, ctx);
     lines.push(`${glslType(ty)} ${name} = ${p.modifier === 'inout' ? input(ty, p.semantic, p.name, p.loc, read, null) : zero(ty)};`);
     args.push(name);
     outs.push({ ty, sem: p.semantic, name: p.name, path: name, loc: p.loc });
@@ -251,7 +237,7 @@ function mainLines(entry: EntryInfo, stage: Stage, vertexOut: string[], ctx: Emi
   const callExpr = `${glslName(decl.name)}(${args.join(', ')})`;
   if (fn.ret.k === 'void') lines.push(`${callExpr};`);
   else {
-    noteStruct(fn.ret, ctx);
+    noteType(fn.ret, ctx);
     lines.push(`${glslType(fn.ret)} mme_r = ${callExpr};`);
     outs.unshift({ ty: fn.ret, sem: decl.retSemantic, name: decl.name, path: 'mme_r', loc: decl.loc });
   }
@@ -273,11 +259,11 @@ function staticGlobals(checked: CheckedEffect, ctx: EmitContext): { decls: strin
     const g = globals[i];
     const name = g.decl.name;
     if (g.storage === 'uniform' || !ctx.usedGlobals.has(name)) continue;
-    if (!['scalar', 'vector', 'matrix', 'array', 'struct'].includes(g.type.k)) {
+    if (!isValueType(g.type)) {
       ctx.diags.error('FX-UNSUPPORTED', g.decl.loc, t('static の {type} には対応していません: {name}', { type: typeName(g.type), name }));
       continue;
     }
-    noteStruct(g.type, ctx);
+    noteType(g.type, ctx);
     const head = `${glslType(g.type)} ${glslName(name)}`;
     if (g.needsInit && g.decl.init) {
       decls.unshift(`${head} = ${zeroOf(g.type)};`);

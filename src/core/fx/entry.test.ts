@@ -19,7 +19,13 @@ function programWithDiags(src: string): { program: Program | null; diags: Diagno
   const checked = check(parse(tokens, diags), diags);
   if (diags.errors.length > 0) throw new Error(diags.errors.map(e => `${e.code}: ${e.message}`).join('\n'));
   const pass = (checked.file.items.find(i => i.kind === 'technique') as TechniqueNode).passes[0];
-  return { program: emitProgram(checked, pass, diags), diags };
+  const program = emitProgram(checked, pass, diags);
+  // 誤りのない Program は、どれも GLSL として読め、2 つの段階がつながる
+  if (program && diags.errors.length === 0) {
+    expectParses(program);
+    expectLinked(program);
+  }
+  return { program, diags };
 }
 // 誤りも警告もない Program
 function programOf(src: string): Program {
@@ -35,6 +41,14 @@ const warningCodes = (src: string) => programWithDiags(src).diags.warnings.map(e
 function expectParses(p: Program): void {
   expect(() => parser.parse(p.vertex, { quiet: true, failOnWarn: true, stage: 'vertex' })).not.toThrow();
   expect(() => parser.parse(p.fragment, { quiet: true, failOnWarn: true, stage: 'fragment' })).not.toThrow();
+}
+
+// 2 つの段階がつながる: フラグメントの in vec4 v_X には頂点の out vec4 v_X があり、両方にある uniform は同じ宣言
+function expectLinked(p: Program): void {
+  for (const m of p.fragment.matchAll(/^in vec4 (v_\w+);$/gm)) expect(p.vertex).toContain(`\nout vec4 ${m[1]};\n`);
+  const uniforms = (code: string) => new Map([...code.matchAll(/^uniform \S+ (\w+);$/gm)].map(m => [m[1], m[0]]));
+  const vs = uniforms(p.vertex);
+  for (const [name, line] of uniforms(p.fragment)) if (vs.has(name)) expect(vs.get(name)).toBe(line);
 }
 
 const MMD_LIKE = `float4x4 WVP : WORLDVIEWPROJECTION; texture T; sampler S = sampler_state { texture = <T>; };
@@ -171,6 +185,25 @@ describe('pass ごとのシェーダー', () => {
     const src = `float Time; float f(float x) { return x * Time; } static float C = f(3);
       float4 VS(float4 p : POSITION, float4 n) : POSITION { return p * C; } float4 PS() : COLOR0 { return 1; }${PASS_BOTH}`;
     expect(errorCodes(src)).toEqual(['FX-PASS-SEMANTIC']);
+  });
+
+  it('PSIZE も実際に読むときだけ FX-WARN-SEMANTIC、VPOS は読むときだけ mme_viewport', () => {
+    const decls = `struct VO { float4 Pos : POSITION; float Size : PSIZE; float2 Tex : TEXCOORD0; };
+      VO VS(float4 Pos : POSITION, float2 Tex : TEXCOORD0) { VO o; o.Pos = Pos; o.Size = 2; o.Tex = Tex; return o; }`;
+    const p = programOf(`${decls} float4 PS(VO IN) : COLOR0 { return float4(IN.Tex, 0, 1); }${PASS_BOTH}`);
+    expect(p.vertex).toContain('gl_PointSize = mme_r.Size;');
+    expect(p.fragment).toContain('PS(VO(vec4(0.0), 0.0, v_TEXCOORD0.xy))');
+    expect(warningCodes(`${decls} float4 PS(VO IN) : COLOR0 { return IN.Size; }${PASS_BOTH}`)).toEqual(['FX-WARN-SEMANTIC']);
+    const q = programOf(`${VS_UV} float4 PS(float2 vpos : VPOS, float2 uv : TEXCOORD0) : COLOR0 { return float4(uv, 0, 1); }${PASS_BOTH}`);
+    expect(q.uniforms.map(u => [u.name, u.stages])).toEqual([['mme_flipY', ['vertex']]]);
+    expect(q.fragment).not.toContain('mme_viewport');
+    expect(q.fragment).toContain('PS(vec2(0.0), v_TEXCOORD0.xy)');
+  });
+
+  it('頂点とフラグメントで使う関数の誤りは 1 回だけ', () => {
+    const src = `float h() { float2x2 m = 0; m._m00_m01 = float2(1, 2); return m[0].x; }
+      float4 VS(float4 p : POSITION) : POSITION { return p * h(); } float4 PS() : COLOR0 { return h(); }${PASS_BOTH}`;
+    expect(errorCodes(src)).toEqual(['FX-UNSUPPORTED']);
   });
 
   it('頂点が出していない TEXCOORD3 を読むと vec4(0.0) と FX-WARN-SEMANTIC', () => {

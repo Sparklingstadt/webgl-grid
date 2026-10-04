@@ -1162,7 +1162,7 @@ const dict: Dictionary = {
   "関数の中のサンプラーの変数には対応していません": "Sampler variables inside functions are not supported",
   "セマンティクスのない入出力です: {name}": "Shader input/output has no semantic: {name}",
   "入出力 {name} の型 {type} には対応していません": "The type {type} of shader input/output {name} is not supported",
-  "ピクセルシェーダーでは POSITION を読めないので 0 にします: {name}": "POSITION cannot be read in a pixel shader, so 0 is used: {name}",
+  "ピクセルシェーダーでは {semantic} を読めないので 0 にします: {name}": "{semantic} cannot be read in a pixel shader, so 0 is used: {name}",
   "頂点シェーダーが {semantic} を出していないので 0 にします: {name}": "The vertex shader does not output {semantic}, so 0 is used: {name}",
   "ピクセルシェーダーの出力のセマンティクスは COLORn か DEPTH にしてください: {name}": "Pixel shader outputs must use the COLORn or DEPTH semantic: {name}",
   "頂点シェーダーが POSITION を出していません: {name}": "The vertex shader does not output POSITION: {name}",
