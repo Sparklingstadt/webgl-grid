@@ -3,7 +3,7 @@ import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js
 import { describe, expect, it, vi } from 'vitest';
 import { toMmdVec } from '../../core/mme/coords.ts';
 import { makePmx } from '../../core/testing/pmx';
-import { readMmdData } from './mmdData.ts';
+import { readMmdData, registerMmdSource } from './mmdData.ts';
 import { Skinner } from './Skinner.ts';
 
 vi.mock('./mmdData.ts', async (orig) => {
@@ -13,7 +13,7 @@ vi.mock('./mmdData.ts', async (orig) => {
 
 // makePmx と同じ 8 頂点の SkinnedMesh を three.js (右手系) で手で組む。
 // 下の 4 頂点は骨 0 (センター)、上の 4 頂点は骨 1 (右腕、センターの子)。morph: まばたき (上の頂点を y に −2)
-function makeMesh(opts: { relative?: boolean; pmx?: Uint8Array } = {}) {
+function makeMesh(opts: { relative?: boolean; pmx?: Uint8Array; register?: boolean } = {}) {
   const xs = [-2, 2, 2, -2], zs = [-2, -2, 2, 2];
   const pos: number[] = [], nrm: number[] = [], uv: number[] = [], idx: number[] = [], w: number[] = [];
   for (const y of [0, 20]) {
@@ -48,7 +48,9 @@ function makeMesh(opts: { relative?: boolean; pmx?: Uint8Array } = {}) {
   mesh.add(center);
   mesh.bind(new THREE.Skeleton([center, arm]));
   mesh.updateMorphTargets();
-  mesh.userData.sourceFile = new File([(opts.pmx ?? makePmx('t')) as BlobPart], 't.pmx');
+  const file = new File([(opts.pmx ?? makePmx('t')) as BlobPart], 't.pmx');
+  mesh.userData.sourceFile = file;
+  if (opts.register !== false) registerMmdSource(geometry, file); // MmdLoader と同じ
   mesh.updateMatrixWorld(true);
   return { mesh, center, arm };
 }
@@ -195,9 +197,9 @@ describe('Skinner.mmd', () => {
   it('同じ .pmx の File は 1 回だけ読む (クローンも共有)。読み終わるまで onReady は 1 回', async () => {
     vi.mocked(readMmdData).mockClear();
     const { mesh } = makeMesh();
-    // SkeletonUtils.clone (クローナーと同じ) は userData を JSON で写すので、File は引き継がれない
+    // SkeletonUtils.clone (クローナーと同じ) は userData を JSON で写すので、File は引き継がれない。形は共有する
     const clone = cloneSkinned(mesh) as THREE.SkinnedMesh;
-    clone.userData.sourceFile = mesh.userData.sourceFile;
+    expect(clone.userData.sourceFile).not.toBeInstanceOf(Blob);
     const sk = new Skinner();
     const a = vi.fn(), b = vi.fn();
     expect(sk.mmd(mesh, eye, 0.5, a)).toBeNull();
@@ -210,20 +212,66 @@ describe('Skinner.mmd', () => {
     expect(sk.mmd(clone, eye, 0.5, b)).not.toBeNull();
   });
 
-  it('.pmx がない物や読めない物は null のまま (onReady も呼ばない)', async () => {
+  it('SkeletonUtils.clone したクローンも、userData.sourceFile がなくても変形した形を得る', async () => {
+    const { mesh, arm } = makeMesh();
+    const clone = cloneSkinned(mesh) as THREE.SkinnedMesh;
+    expect(clone.userData.sourceFile).not.toBeInstanceOf(Blob);
     const sk = new Skinner();
-    const none = makeMesh().mesh;
+    await ready(sk, mesh);
+    const g = sk.mmd(clone, eye, 0.5, () => {});
+    expect(g).not.toBeNull();
+    expect(g).not.toBe(sk.mmd(mesh, eye, 0.5, () => {}));
+    arm.rotation.z = 0.7; // 元は動かしても、クローンの骨は別
+    expect((g!.geometry.getAttribute('a_POSITION') as THREE.BufferAttribute).getY(5)).toBeCloseTo(20, 4);
+    expect(sk.data(clone)).not.toBeNull();
+  });
+
+  it('形に登録がなければ userData.sourceFile から読む', async () => {
+    const { mesh } = makeMesh({ register: false });
+    expect(mesh.userData.sourceFile).toBeInstanceOf(Blob);
+    expect(await ready(new Skinner(), mesh)).not.toBeNull();
+  });
+
+  it('.pmx がない物や読めない物は null のまま (onReady も呼ばず、failed は読めない物だけ)。ログは物ごとに 1 回', async () => {
+    const sk = new Skinner();
+    const none = makeMesh({ register: false }).mesh;
     delete none.userData.sourceFile;
     const bad = makeMesh({ pmx: new Uint8Array(4) }).mesh;
+    const bad2 = makeMesh({ pmx: new Uint8Array(4) }).mesh;
     const onReady = vi.fn();
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
     expect(sk.mmd(none, eye, 0.5, onReady)).toBeNull();
     expect(sk.mmd(bad, eye, 0.5, onReady)).toBeNull();
-    await new Promise(r => setTimeout(r, 50));
+    expect(sk.failed(bad)).toBe(false); // 読んでいるあいだは失敗ではない
+    await vi.waitFor(() => expect(sk.failed(bad)).toBe(true));
     expect(sk.mmd(bad, eye, 0.5, onReady)).toBeNull();
+    expect(sk.mmd(bad, eye, 0.5, onReady)).toBeNull();
+    expect(err).toHaveBeenCalledTimes(1);
+    sk.mmd(bad2, eye, 0.5, onReady);
+    await vi.waitFor(() => expect(sk.failed(bad2)).toBe(true));
+    sk.mmd(bad2, eye, 0.5, onReady);
+    expect(err).toHaveBeenCalledTimes(2);
+    expect(sk.failed(none)).toBe(false);
     expect(onReady).not.toHaveBeenCalled();
     expect(sk.data(bad)).toBeNull();
+    err.mockRestore();
+  });
+
+  it('頂点の数が .pmx と合わない形は null で failed。ログは 1 回', async () => {
+    const sk = new Skinner();
+    const { mesh } = makeMesh();
+    await ready(sk, mesh);
+    const wrong = makeMesh().mesh;
+    wrong.geometry = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(9), 3));
+    registerMmdSource(wrong.geometry, mesh.userData.sourceFile);
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(sk.failed(wrong)).toBe(false);
+    expect(sk.mmd(wrong, eye, 0.5, () => {})).toBeNull(); // 読み込み中 (同じ File は読み終わっている)
+    expect(sk.mmd(wrong, eye, 0.5, () => {})).toBeNull();
+    expect(sk.failed(wrong)).toBe(true);
     expect(err).toHaveBeenCalledTimes(1);
+    expect(String(err.mock.calls[0][0])).toContain('頂点の数');
+    expect(sk.failed(mesh)).toBe(false);
     err.mockRestore();
   });
 });
@@ -278,13 +326,53 @@ describe('Skinner.plain', () => {
     expect((g.geometry.getAttribute('a_POSITION') as THREE.BufferAttribute).getZ(0)).toBe(-1);
   });
 
-  it('dispose は作った形を捨てる', async () => {
+  it('dispose は作った形を捨てる (二重には捨てない)', async () => {
     const sk = new Skinner();
     const { mesh } = makeMesh();
     const g = await ready(sk, mesh);
     const gp = sk.plain(box());
     const spies = [g.geometry, g.edge!, gp.geometry].map(x => vi.spyOn(x, 'dispose'));
     sk.dispose();
+    sk.dispose();
     for (const s of spies) expect(s).toHaveBeenCalledTimes(1);
+  });
+
+  it('元の形を差し替えて dispose すると、写しも捨てる。元の形の属性は消さない', () => {
+    const sk = new Skinner();
+    const mesh = box();
+    const old = mesh.geometry;
+    const g = sk.plain(mesh);
+    const spy = vi.spyOn(g.geometry, 'dispose');
+    const ownPos = g.geometry.getAttribute('a_POSITION');
+    mesh.geometry = box().geometry; // デフォーマが形を差し替えて、前の形を dispose するのと同じ
+    const g2 = sk.plain(mesh);
+    expect(g2).not.toBe(g);
+    expect(spy).not.toHaveBeenCalled(); // 元の形はまだ生きている
+    old.dispose();
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(g.geometry.getAttribute('a_POSITION')).toBe(ownPos); // 自分の属性は残る
+    expect(g.geometry.getAttribute('a_TEXCOORD0')).toBeUndefined(); // 共有の UV と index は外してある
+    expect(g.geometry.index).toBeNull();
+    expect(old.attributes.uv).toBeDefined();
+    expect(old.index).not.toBeNull();
+    // 外れたあとの dispose() は二重に捨てない
+    sk.dispose();
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it('MMD の写しも、元の形の dispose で捨てる (輪郭線の形と共有の法線を巻き込まない)', async () => {
+    const sk = new Skinner();
+    const { mesh } = makeMesh();
+    const g = await ready(sk, mesh);
+    const spies = [vi.spyOn(g.geometry, 'dispose'), vi.spyOn(g.edge!, 'dispose')];
+    const nrm = g.geometry.getAttribute('a_NORMAL');
+    mesh.geometry.dispose();
+    for (const s of spies) expect(s).toHaveBeenCalledTimes(1);
+    expect(g.edge!.getAttribute('a_NORMAL')).toBeUndefined();
+    expect(g.geometry.getAttribute('a_NORMAL')).toBe(nrm);
+    // 同じ物でもう一度呼ぶと、新しい写しを作る
+    const g2 = sk.mmd(mesh, eye, 0.5, () => {});
+    expect(g2).not.toBeNull();
+    expect(g2).not.toBe(g);
   });
 });

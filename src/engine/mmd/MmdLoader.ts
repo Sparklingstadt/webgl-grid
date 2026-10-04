@@ -3,6 +3,7 @@ import { errorText } from '../../core/errors';
 import { t } from '../../core/i18n';
 import { convertMmdMesh } from '../materials/fromMmd';
 import type { MaterialLibrary } from '../materials/MaterialLibrary';
+import { registerMmdSource } from '../mme/mmdData';
 import type { Any } from '../types';
 import type { UiChannel } from '../UiChannel';
 import { Stage } from './Stage';
@@ -107,6 +108,7 @@ export class MmdLoader {
       mesh.userData.rest = mesh.skeleton.bones.map((b: THREE.Bone) => ({ p: b.position.clone(), q: b.quaternion.clone() }));
       mesh.userData.fileName = pmx.name;
       mesh.userData.sourceFile = pmx;    // .pmx に書き出すときの元のファイル
+      registerMmdSource(mesh.geometry, pmx); // クローンは userData の File を失うので、形からも引けるように (MME)
       mesh.userData.usedFiles = used;    // プロジェクトに入れるファイル (テクスチャは読み終わると増える)
       mesh.name ||= data.metadata.modelName || pmx.name.replace(/\.pmx$/i, '');
       fixEmptyMorphs(mesh);

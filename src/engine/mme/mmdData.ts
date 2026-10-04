@@ -10,6 +10,11 @@ export interface MmdData {
   vertexEdgeSize: Float32Array;
 }
 
+// 形ごとの元の .pmx。SkeletonUtils.clone は userData を JSON で写して File を落とすが、形は共有するので、クローンも引ける
+const sources = new WeakMap<object, Blob>();
+export function registerMmdSource(geometry: object, pmx: Blob): void { sources.set(geometry, pmx); }
+export function mmdSourceOf(geometry: object): Blob | undefined { return sources.get(geometry); }
+
 // .pmx を MMD のパーサーで読み直し (MMDLoader は SDEF・QDEF を BDEF に変えて、C・R0・R1 も捨てるので)、
 // 変形・材質・輪郭線の情報を取り出す。座標は左手系のまま (leftToRight = false)
 export async function readMmdData(pmx: Blob | ArrayBuffer): Promise<MmdData> {
