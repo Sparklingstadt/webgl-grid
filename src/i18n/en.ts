@@ -1085,5 +1085,16 @@ const dict: Dictionary = {
   "#error: {text}": "#error: {text}",
   "知らない指令です: #{name}": "Unknown directive: #{name}",
   "ファイルが見つかりません: {path}": "File not found: {path}",
+  "入力の終わり": "End of input",
+  "{expected} が必要ですが、{found} がありました": "Expected {expected}, but found {found}",
+  "識別子": "an identifier",
+  "型の名前": "a type name",
+  "スカラーの型": "a scalar type",
+  "1 から 4 の整数": "an integer from 1 to 4",
+  "型の大きさは 1〜4 にしてください: {n}": "The size of a type must be 1 to 4: {n}",
+  "セマンティクス名": "a semantic name",
+  "メンバーの名前": "a member name",
+  "式 (数や名前など)": "an expression (a number, a name, etc.)",
+  "対応していない書き方です: {what}": "Unsupported syntax: {what}",
 };
 export default dict;
