@@ -210,7 +210,7 @@ scripts/fx-check.ts            npm run fx:check: fx/ と Ray-MMD を全部変換
 2. **本物の WebGL2 で確かめる（Playwright・e2e）**:
    - **コンパイルとリンク**: Ray-MMD の全 pass の GLSL を、ブラウザの `compileShader`・`linkProgram` に通す（CI でも SwiftShader で動く）。
    - **値の確かめ**: 意味を取り違えやすいもの（4x3 などの行列と `mul`・`fmod`・スワズルへの代入・暗黙の型変換・`int` の割り算・`static` の初期値・pass の引数・MRT）を、小さな HLSL にして 1x1 の浮動小数のレンダーターゲットに描き、読み戻した値を HLSL の仕様から手で計算した値と比べる。
-3. **見本を全部通す（vitest）**: Ray-MMD のすべての .fx を変換する。`ray.fx` は `#if` で隠れる部分が多いので、標準の `ray.conf` に加えて、主な切り替え（`AA_QUALITY` 1〜6・`SSR_QUALITY`・`BOKEH_QUALITY`・`SSSS_QUALITY`・`SSDO_QUALITY`・`HDR_BLOOM_MODE`・`HDR_STAR_MODE`・`HDR_FLARE_MODE`・`HDR_EYE_ADAPTATION`・`SUN_SHADOW_QUALITY`・`OUTLINE_QUALITY`・`TOON_ENABLE`）を 1 つずつ最大にした組み合わせでも変換する。切り替えは `options.defines` で上書きするのではなく、`ray.conf` の該当する `#define` の値を書き換えた中身を `readFile` から渡す（`#define` の二重定義を避けるため）。
+3. **見本を全部通す（vitest）**: Ray-MMD のすべての .fx を変換する。`ray.fx` は `#if` で隠れる部分が多いので、標準の `ray.conf` に加えて、`ray.conf` の 18 個の切り替え（`AA_QUALITY`・`SSR_QUALITY`・`BOKEH_QUALITY` など）を 1 つずつ、`ray.conf` の説明に書かれたそれぞれの値（例: `AA_QUALITY` は 0〜5）に変えた組み合わせでも変換する。切り替えは `options.defines` で上書きするのではなく、`ray.conf` の該当する `#define` の値を書き換えた中身を `readFile` から渡す（`#define` の二重定義を避けるため）。
 4. **fx/ の確かめ（`npm run fx:check`）**: `fx/` は CI にないので、テストではなく表で見る。ファイルごとに「成功／失敗した code と場所／変換にかかった時間」を出す。
 
 ## 合格の基準（この計画の終わり）
