@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import type { Expr, FileNode, FunctionDecl, GlobalDecl, Stmt, StructDecl } from './ast.ts';
+import type { Expr, FileNode, FunctionDecl, GlobalDecl, PassNode, ShaderCompile, Stmt, StructDecl, TechniqueNode } from './ast.ts';
 import { Diagnostics, FxError } from './diagnostics.ts';
 import { lex } from './lexer.ts';
 import { parse } from './parser.ts';
+import { preprocess } from './preprocess.ts';
 
 const parseSrc = (s: string, d = new Diagnostics()): FileNode => parse(lex(s, 'f.fx', d), d);
+// 前処理 (マクロ・#if) を通してから読む
+const parseFx = (src: string, defines?: Record<string, string>, d = new Diagnostics()): FileNode =>
+  parse(preprocess('f.fx', { readFile: p => (p === 'f.fx' ? new TextEncoder().encode(src) : null) }, { defines }, d), d);
+// technique の 1 つ目の pass
+const passOf = (states: string): PassNode => (parseSrc(`technique T { pass P { ${states} } }`).items[0] as TechniqueNode).passes[0];
 // 本体の 1 つ目の文
 const stmts = (body: string): Stmt[] => {
   const f = parseSrc(`void f() { ${body} }`).items[0] as FunctionDecl;
@@ -183,7 +189,6 @@ describe('構文解析: 文', () => {
       init: { kind: 'var', decls: [{ name: 'i' }, { name: 'j' }] },
       cond: { kind: 'binary', op: '<' },
       step: { kind: 'sequence', items: [{ kind: 'unary', op: '++', postfix: true }, { kind: 'unary', op: '--', postfix: true }] },
-      // oxlint-disable-next-line unicorn/no-thenable
       body: { kind: 'block', body: [{ kind: 'if', then: { kind: 'continue' }, else: { kind: 'break' } }] },
     });
     expect(body[1]).toMatchObject({ init: null, cond: null, step: null });
@@ -238,5 +243,123 @@ describe('構文解析: 誤り', () => {
     for (const src of sources) expect(failure(src).code, src).toBe('FX-UNSUPPORTED');
     expect(failure('Texture2D tex;')).toMatchObject({ line: 1, column: 1 });
     expect(failure('float4 f() { return tex.Sample(smp, uv); }')).toMatchObject({ column: 25 });
+  });
+});
+
+describe('構文解析: 注釈・sampler_state・technique・pass', () => {
+  it('注釈と、#if をはさんでつないだ Script の文字列', () => {
+    const src = 'technique T < string Script = "A=1;"\n#if 1\n"B=2;"\n#endif\n; > { pass P < string Script = "Draw=Buffer;"; > { ZEnable = false; } }';
+    const t = parseFx(src).items[0] as TechniqueNode;
+    expect(t).toMatchObject({ kind: 'technique', name: 'T' });
+    expect(t.annotations[0]).toMatchObject({ name: 'Script', type: { kind: 'builtin', type: { k: 'string' } }, value: { kind: 'string', value: 'A=1;B=2;' } });
+    expect(t.passes[0].name).toBe('P');
+    expect(t.passes[0].annotations[0]).toMatchObject({ name: 'Script', value: { kind: 'string', value: 'Draw=Buffer;' } });
+    expect(t.passes[0].states[0]).toMatchObject({ name: 'ZEnable', index: null, value: { kind: 'bool', value: false } });
+  });
+  it('compile と、引数付きの pass の関数', () => {
+    const p = passOf('PixelShader = compile ps_3_0 Blur(Samp, float2(ViewportOffset.x, 0.0f));');
+    expect(p.states[0].value).toMatchObject({ kind: 'compile', profile: 'ps_3_0', fn: 'Blur', args: [{ kind: 'ident' }, { kind: 'construct' }] });
+    const q = passOf('VertexShader = compile vs_3_0 VS();');
+    expect((q.states[0].value as ShaderCompile).args).toEqual([]);
+  });
+  it('pass のステートの値: NULL・列挙名・数・式 (RED | GREEN は二項式のまま)', () => {
+    const p = passOf('PixelShader = NULL; SrcBlend = SRCALPHA; ZFunc = LESSEQUAL; AlphaRef = 128; ColorWriteEnable = RED | GREEN;');
+    expect(p.states.map(s => s.name)).toEqual(['PixelShader', 'SrcBlend', 'ZFunc', 'AlphaRef', 'ColorWriteEnable']);
+    expect(p.states[0].value).toMatchObject({ kind: 'ident', name: 'NULL' });
+    expect(p.states[1].value).toMatchObject({ kind: 'ident', name: 'SRCALPHA' });
+    expect(p.states[2].value).toMatchObject({ kind: 'ident', name: 'LESSEQUAL' });
+    expect(p.states[3].value).toMatchObject({ kind: 'number', value: 128 });
+    expect(p.states[4].value).toMatchObject({ kind: 'binary', op: '|', left: { name: 'RED' }, right: { name: 'GREEN' } });
+  });
+  it('ステートの名前の最後の数字・[n] は index に分ける', () => {
+    const p = passOf('ColorWriteEnable1 = 0; ColorWriteEnable = 15; Texture[0] = <T>; ZEnable = true;');
+    expect(p.states.map(s => [s.name, s.index])).toEqual([['ColorWriteEnable', 1], ['ColorWriteEnable', null], ['Texture', 0], ['ZEnable', null]]);
+  });
+  it('sampler_state と Texture = <Tex> / (Tex)', () => {
+    const g = parseSrc('sampler S = sampler_state { texture = <Tex>; MinFilter = LINEAR; AddressU = CLAMP; };').items[0] as GlobalDecl;
+    expect(g.decl.init).toMatchObject({
+      kind: 'samplerState',
+      states: [{ name: 'texture', value: { kind: 'ident', name: 'Tex' } }, { name: 'MinFilter' }, { name: 'AddressU' }],
+    });
+    const h = parseSrc('sampler S2 = sampler_state { Texture = (Tex2); MipFilter = NONE; BorderColor = 0x00ffffff; };').items[0] as GlobalDecl;
+    expect(h.decl.init).toMatchObject({ states: [{ name: 'Texture', value: { kind: 'ident', name: 'Tex2' } }, {}, { value: { kind: 'number' } }] });
+  });
+  it('セマンティクスと注釈の付いたグローバル変数・注釈の閉じが >> でも読む', () => {
+    const [m, tex] = parseSrc(
+      'float m : CONTROLOBJECT < string name = "ray_controller.pmx"; string item = "SunLight+"; >;\n' +
+      'texture2D T : RENDERCOLORTARGET <float2 ViewportRatio = {1.0, 1.0}; string Format = "A16B16G16R16F";>;',
+    ).items as GlobalDecl[];
+    expect(m.decl).toMatchObject({ name: 'm', semantic: 'CONTROLOBJECT', init: null });
+    expect(m.decl.annotations.map(a => a.name)).toEqual(['name', 'item']);
+    expect(m.decl.annotations[1].value).toMatchObject({ kind: 'string', value: 'SunLight+' });
+    expect(tex.decl.annotations[0]).toMatchObject({ name: 'ViewportRatio', value: { kind: 'initList', items: [{ value: 1 }, { value: 1 }] } });
+    expect(tex.decl.annotations[1].value).toMatchObject({ value: 'A16B16G16R16F' });
+  });
+  it('セマンティクスのない変数・注釈と初期値の両方がある変数・数や真偽の注釈', () => {
+    const [a, b] = parseSrc('texture T < string ResourceName = "x.png"; >;\nfloat k < float UIMin = 0.0; bool On = true; int N = 3; > = 2.0;').items as GlobalDecl[];
+    expect(a.decl).toMatchObject({ semantic: null, annotations: [{ name: 'ResourceName' }] });
+    expect(b.decl.annotations.map(x => x.value)).toMatchObject([{ kind: 'number', value: 0 }, { kind: 'bool', value: true }, { kind: 'number', value: 3 }]);
+    expect(b.decl.init).toMatchObject({ kind: 'number', value: 2 });
+    expect(parseSrc('float z <>;').items).toHaveLength(1);
+  });
+  it('注釈の閉じが >> の字句なら半分ずつ使う (残りの > の位置で誤りになる)', () => {
+    const e = failure('float m < float a = 1; >> ;');
+    expect(e).toMatchObject({ code: 'FX-PARSE', line: 1, column: 25 });
+  });
+  it('中身のない technique・pass、複数の pass', () => {
+    const items = parseSrc('technique A { } technique B { pass P1 { } pass P2 < int x = 1; > { ZEnable = true; } }').items as TechniqueNode[];
+    expect(items[0]).toMatchObject({ name: 'A', annotations: [], passes: [] });
+    expect(items[1].passes.map(p => p.name)).toEqual(['P1', 'P2']);
+    expect(items[1].passes[0].states).toEqual([]);
+  });
+  it('asm と technique10 は FX-UNSUPPORTED、pass の外の中身は FX-PARSE', () => {
+    expect(failure('technique T { pass P { VertexShader = asm { vs_1_1 }; } }')).toMatchObject({ code: 'FX-UNSUPPORTED', column: 39 });
+    expect(failure('technique10 T { pass P { } }').code).toBe('FX-UNSUPPORTED');
+    expect(failure('technique T { ZEnable = true; }').code).toBe('FX-PARSE');
+    expect(failure('technique T { pass P { ZEnable = true } }').code).toBe('FX-PARSE');
+    expect(failure('technique T { pass P { = true; } }').code).toBe('FX-PARSE');
+    expect(failure('technique T { pass P { ZEnable = true; }').code).toBe('FX-PARSE');
+  });
+  it('マクロで書いた technique (Ray-MMD の OBJECT_TEC) を展開して読む', () => {
+    const src = `
+#define OBJECT_TEC(name, mmdpass) \\
+  technique name < string MMDPass = mmdpass; > { \\
+    pass DrawObject { \\
+      AlphaBlendEnable = FALSE; \\
+      VertexShader = compile vs_3_0 ObjectVS(); \\
+      PixelShader = compile ps_3_0 ObjectPS(); \\
+    } \\
+  }
+OBJECT_TEC(MainTec0, "object")
+OBJECT_TEC(MainTecBS0, "object_ss")`;
+    const items = parseFx(src).items as TechniqueNode[];
+    expect(items.map(t => t.name)).toEqual(['MainTec0', 'MainTecBS0']);
+    expect(items[1].annotations[0]).toMatchObject({ name: 'MMDPass', value: { value: 'object_ss' } });
+    expect(items[0].passes[0].states.map(s => s.name)).toEqual(['AlphaBlendEnable', 'VertexShader', 'PixelShader']);
+    expect(items[0].passes[0].states[1].value).toMatchObject({ kind: 'compile', profile: 'vs_3_0', fn: 'ObjectVS' });
+  });
+  it('どの式・文・宣言にも、行と列が正の loc が付く', () => {
+    const f = parseSrc(`
+float4 g : COLOR < string a = "x"; > = float4(1, 2, 3, 4);
+struct S { float a : A; };
+float4 f(float4 p : POSITION) : COLOR { float3 v = (float3)p.xyz; for (int i = 0; i < 2; i++) { v += i ? v : -v; } if (v.x > 0) return g; return float4(v, 1); }
+sampler Smp = sampler_state { Texture = <Tex>; MinFilter = LINEAR; };
+technique T < string Script = "x"; > { pass P < int n = 1; > { VertexShader = compile vs_3_0 f(1); ZEnable = true; } }`);
+    const bad: string[] = [];
+    const walk = (node: unknown, path: string): void => {
+      if (typeof node !== 'object' || node === null) return;
+      if (Array.isArray(node)) { node.forEach((x, i) => walk(x, `${path}[${i}]`)); return; }
+      const o = node as Record<string, unknown>;
+      // Type (k を持つ) と GlobalDecl (loc は中の decl が持つ) は対象外
+      if ('k' in o) return;
+      if (o.kind !== 'global' && ('kind' in o || 'name' in o)) {
+        const loc = o.loc as { line: number; column: number } | undefined;
+        if (!loc || !(loc.line > 0) || !(loc.column > 0)) bad.push(`${path} (${String(o.kind ?? o.name)})`);
+      }
+      for (const [k, v] of Object.entries(o)) if (k !== 'loc') walk(v, `${path}.${k}`);
+    };
+    walk(f, 'file');
+    expect(bad).toEqual([]);
+    expect(f.items).toHaveLength(5);
   });
 });

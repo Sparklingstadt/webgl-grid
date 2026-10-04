@@ -1094,6 +1094,8 @@ const dict: Dictionary = {
   "型の大きさは 1〜4 にしてください: {n}": "The size of a type must be 1 to 4: {n}",
   "セマンティクス名": "a semantic name",
   "メンバーの名前": "a member name",
+  "ステートの名前": "a state name",
+  "プロファイル名": "a profile name",
   "式 (数や名前など)": "an expression (a number, a name, etc.)",
   "対応していない書き方です: {what}": "Unsupported syntax: {what}",
 };

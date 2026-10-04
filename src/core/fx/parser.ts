@@ -3,8 +3,8 @@ import type { Diagnostics, Loc } from './diagnostics.ts';
 import { numberValue, type Token } from './lexer.ts';
 import { builtinType, matrixOf, vectorOf } from './types.ts';
 import type {
-  AnnotationNode, Expr, FileNode, FunctionDecl, GlobalDecl, ParamNode, Stmt, Storage, StructDecl, TopLevel, TypedefDecl,
-  TypeRef, VarDecl,
+  AnnotationNode, Expr, FileNode, FunctionDecl, GlobalDecl, ParamNode, PassNode, StateAssign, Stmt, Storage, StructDecl,
+  TechniqueNode, TopLevel, TypedefDecl, TypeRef, VarDecl,
 } from './ast.ts';
 
 // --- 構文解析 (再帰下降)。最初の構文の誤りで FX-PARSE を fatal にする ---
@@ -13,7 +13,7 @@ const STORAGE = new Set<string>(['static', 'const', 'uniform', 'shared', 'extern
 const IGNORED_MODIFIERS = new Set(['inline', 'precise', 'linear', 'centroid', 'nointerpolation', 'noperspective']);
 // SM4 以降の型。使うと FX-UNSUPPORTED
 const UNSUPPORTED_TYPES = new Set(['Texture1D', 'Texture2D', 'Texture3D', 'TextureCube', 'SamplerState', 'SamplerComparisonState']);
-const UNSUPPORTED_WORDS = new Set(['asm', 'cbuffer', 'tbuffer']);
+const UNSUPPORTED_WORDS = new Set(['asm', 'cbuffer', 'tbuffer', 'technique10', 'technique11']);
 const KEYWORDS = new Set([
   'if', 'else', 'for', 'while', 'do', 'switch', 'case', 'default', 'break', 'continue', 'return', 'discard', 'struct', 'typedef',
 ]);
@@ -41,13 +41,17 @@ class Parser {
   private readonly diags: Diagnostics;
 
   constructor(tokens: Token[], diags: Diagnostics) {
-    this.tokens = tokens;
+    this.tokens = [...tokens]; // 注釈の閉じの >> を割るので、呼び出し側の列は触らない
     this.diags = diags;
   }
 
   // --- 字句の読み取り ---
+  // 位置 i の字句 (終わりを越えたら eof)
+  private tokenAt(i: number): Token {
+    return this.tokens[Math.min(i, this.tokens.length - 1)];
+  }
   private peek(n = 0): Token {
-    return this.tokens[Math.min(this.pos + n, this.tokens.length - 1)];
+    return this.tokenAt(this.pos + n);
   }
   private next(): Token {
     const tok = this.peek();
@@ -87,9 +91,9 @@ class Parser {
   }
   // 位置 i から始まる型の次の位置。型でなければ -1 (診断は出さない)
   private scanTypeEnd(i: number): number {
-    const tok = this.tokens[i];
-    if (!tok || !this.isTypeName(tok)) return -1;
-    const at = (k: number) => this.tokens[Math.min(k, this.tokens.length - 1)];
+    const tok = this.tokenAt(i);
+    if (!this.isTypeName(tok)) return -1;
+    const at = (k: number) => this.tokenAt(k);
     if ((tok.text === 'vector' || tok.text === 'matrix') && isPunct(at(i + 1), '<')) {
       let j = i + 2;
       if (at(j).kind !== 'ident') return -1;
@@ -163,7 +167,7 @@ class Parser {
       if (UNSUPPORTED_WORDS.has(tok.text)) this.unsupported(tok, tok.text);
       if (tok.text === 'struct') return [this.parseStruct()];
       if (tok.text === 'typedef') return [this.parseTypedef()];
-      // technique はここに足す (Task 6)
+      if (tok.text === 'technique') return [this.parseTechnique()];
     }
     const storage = this.parseModifiers();
     const type = this.parseType();
@@ -218,9 +222,99 @@ class Parser {
     }
   }
 
-  // 注釈 <…> (Task 6 で読む)
+  // 注釈 <型 名前 = 値; …>。閉じが >> の字句なら半分ずつ使う
   private parseAnnotations(): AnnotationNode[] {
-    return [];
+    const list: AnnotationNode[] = [];
+    if (!this.accept('<')) return list;
+    for (;;) {
+      const tok = this.peek();
+      if (isPunct(tok, '>')) {
+        this.next();
+        return list;
+      }
+      if (isPunct(tok, '>>')) {
+        this.tokens[this.pos] = { ...tok, text: '>', loc: { ...tok.loc, column: tok.loc.column + 1 } };
+        return list;
+      }
+      const type = this.parseType();
+      const nameTok = this.expectIdent();
+      this.expect('=');
+      const value = this.parseInitializer();
+      this.expect(';');
+      list.push({ type, name: nameTok.text, value, loc: nameTok.loc });
+    }
+  }
+
+  // --- technique・pass・ステート ---
+  private parseTechnique(): TechniqueNode {
+    this.next();
+    const nameTok = this.expectIdent();
+    const annotations = this.parseAnnotations();
+    this.expect('{');
+    const passes: PassNode[] = [];
+    while (!this.at('}')) {
+      if (!isIdent(this.peek(), 'pass')) this.failAt(this.peek(), `'pass' / '}'`);
+      passes.push(this.parsePass());
+    }
+    this.next();
+    return { kind: 'technique', name: nameTok.text, annotations, passes, loc: nameTok.loc };
+  }
+
+  private parsePass(): PassNode {
+    this.next();
+    const nameTok = this.expectIdent();
+    const annotations = this.parseAnnotations();
+    this.expect('{');
+    const states = this.parseStates();
+    return { name: nameTok.text, annotations, states, loc: nameTok.loc };
+  }
+
+  // 名前 [n] = 値; を } まで (} は読む)。名前の最後の数字も index
+  private parseStates(): StateAssign[] {
+    const states: StateAssign[] = [];
+    while (!this.at('}')) {
+      const nameTok = this.expectIdent(t('ステートの名前'));
+      let name = nameTok.text;
+      let index: number | null = null;
+      if (this.accept('[')) {
+        const n = this.peek();
+        if (n.kind !== 'number' || !/^\d+$/.test(n.text)) this.failAt(n, t('1 から 4 の整数'));
+        this.next();
+        index = Number(n.text);
+        this.expect(']');
+      } else {
+        const m = /^(.*[A-Za-z_])(\d+)$/.exec(name);
+        if (m) {
+          name = m[1];
+          index = Number(m[2]);
+        }
+      }
+      this.expect('=');
+      const value = this.parseStateValue();
+      this.expect(';');
+      states.push({ name, index, value, loc: nameTok.loc });
+    }
+    this.next();
+    return states;
+  }
+
+  // compile プロファイル 関数(引数) か、<Tex> (識別子の値)、式 (RED | GREEN も二項式のまま)
+  private parseStateValue(): StateAssign['value'] {
+    const tok = this.peek();
+    if (isIdent(tok, 'compile')) {
+      this.next();
+      const profile = this.expectIdent(t('プロファイル名')).text;
+      const fn = this.expectIdent().text;
+      return { kind: 'compile', profile, fn, args: this.parseArgs(), loc: tok.loc };
+    }
+    if (isPunct(tok, '<') && this.peek(1).kind === 'ident' && this.at('>', 2)) {
+      const name = this.peek(1).text;
+      this.next();
+      this.next();
+      this.next();
+      return { kind: 'ident', name, loc: tok.loc };
+    }
+    return this.parseAssign();
   }
 
   // 型と名前の次から。a[2] : SEM <注釈> = 初期値, b, … (最初の名前は読み終えている)
@@ -331,7 +425,7 @@ class Parser {
     if (tok.kind !== 'ident') return false;
     if (STORAGE.has(tok.text) || IGNORED_MODIFIERS.has(tok.text)) return true;
     const end = this.scanTypeEnd(this.pos);
-    return end >= 0 && this.tokens[Math.min(end, this.tokens.length - 1)].kind === 'ident';
+    return end >= 0 && this.tokenAt(end).kind === 'ident';
   }
 
   private parseVarStatement(): Stmt {
@@ -377,7 +471,6 @@ class Parser {
             this.next();
             otherwise = this.parseStatement();
           }
-          // oxlint-disable-next-line unicorn/no-thenable
           return { kind: 'if', cond, then, else: otherwise, loc: tok.loc };
         }
         case 'for': return this.parseFor();
@@ -503,7 +596,6 @@ class Parser {
     this.next();
     const then = this.parseAssign();
     this.expect(':');
-    // oxlint-disable-next-line unicorn/no-thenable
     return { kind: 'ternary', cond, then, else: this.parseTernary(), loc: q.loc };
   }
 
@@ -522,7 +614,7 @@ class Parser {
   private isCastAhead(): boolean {
     if (!this.at('(')) return false;
     const end = this.scanTypeEnd(this.pos + 1);
-    return end >= 0 && isPunct(this.tokens[Math.min(end, this.tokens.length - 1)], ')');
+    return end >= 0 && isPunct(this.tokenAt(end), ')');
   }
 
   private parseUnary(): Expr {
@@ -597,8 +689,13 @@ class Parser {
           return { kind: 'bool', value: tok.text === 'true', loc: tok.loc };
         }
         if (KEYWORDS.has(tok.text)) break;
+        if (tok.text === 'sampler_state' && this.at('{', 1)) {
+          this.next();
+          this.next();
+          return { kind: 'samplerState', states: this.parseStates(), loc: tok.loc };
+        }
         const end = this.scanTypeEnd(this.pos);
-        if (end >= 0 && isPunct(this.tokens[Math.min(end, this.tokens.length - 1)], '(')) {
+        if (end >= 0 && isPunct(this.tokenAt(end), '(')) {
           const type = this.parseType();
           return { kind: 'construct', typeRef: type, args: this.parseArgs(), loc: tok.loc };
         }
