@@ -222,6 +222,19 @@ describe('GLSL の書き出し: 式', () => {
     expect(exprCodes('(x > 0) && b', { x: 'float2', b: 'bool2' })).toEqual([]);
     expect(exprCodes('(c = a) && b', { a: 'bool2', b: 'bool2', c: 'bool2' })).toEqual(['FX-UNSUPPORTED']);
   });
+  it('外から見える副作用のないユーザーの関数は 2 回書き出してよい (out・inout の引数・グローバル変数への書き込みがなく、呼ぶ関数もそう)', () => {
+    const codes = (fns: string) => emitFn(`sampler2D S; static float g; ${fns}
+      float4 PS(float2 uv : TEXCOORD0) : COLOR0 { return tex2Dlod(S, float4(f(uv), 0, 0)); }${PS_PASS}`, 'PS').ctx.diags.errors.map(e => e.code);
+    expect(codes('float2 h(float2 x) { float2 y = x; y *= 2; return y; } float2 f(float2 x) { float s, c; sincos(x.x, s, c); return h(x) * s; }')).toEqual([]);
+    expect(emitFn(`sampler2D S; float2 f(float2 x) { return x * 2; }
+      float4 PS(float2 uv : TEXCOORD0) : COLOR0 { return tex2Dlod(S, float4(f(uv), 0, 0)); }${PS_PASS}`, 'PS').code)
+      .toContain('textureLod(S, vec4(f(uv), 0.0, 0.0).xy, vec4(f(uv), 0.0, 0.0).w)');
+    expect(codes('float2 f(float2 x) { g += 1; return x; }')).toEqual(['FX-UNSUPPORTED']);
+    expect(codes('float2 h(float2 x) { g = x.x; return x; } float2 f(float2 x) { return h(x); }')).toEqual(['FX-UNSUPPORTED']);
+    expect(codes('void h(out float y) { y = 1; } float2 f(float2 x) { h(g); return x; }')).toEqual(['FX-UNSUPPORTED']);
+    expect(codes('float2 f(float2 x) { float c; sincos(x.x, g, c); return x; }')).toEqual(['FX-UNSUPPORTED']);
+    expect(codes('float2 f(inout float2 x) { return x; }').length).toBeGreaterThan(0);
+  });
   it('ddx・clip・discard は頂点シェーダーでは FX-UNSUPPORTED、行列への成分ごとの関数も FX-UNSUPPORTED', () => {
     expect(exprCodes('ddx(x)', { x: 'float' }, 'vertex')).toEqual(['FX-UNSUPPORTED']);
     const tex = (e: string, stage: 'vertex' | 'fragment') => emitFn(stage === 'vertex'

@@ -1,10 +1,10 @@
 import { t } from '../i18n.ts';
-import type { Expr, ParamNode, PassNode, Stmt } from './ast.ts';
+import type { Expr, ParamNode, PassNode } from './ast.ts';
 import type { CheckedEffect, EntryInfo, FunctionInfo, GlobalInfo } from './check.ts';
 import type { AttributeRef, Program, UniformRef } from './desc.ts';
 import { Diagnostics, type Diagnostic, type Loc } from './diagnostics.ts';
 import {
-  emitConst, emitExpr, emitFunctions, emitHelpers, emitStructs, exprChildren, glslName, glslType, newEmitContext, noteType, zeroOf,
+  emitConst, emitExpr, emitFunctions, emitHelpers, emitStructs, exprChildren, forEachExpr, glslName, glslType, newEmitContext, noteType, zeroOf,
   type EmitContext,
 } from './emit.ts';
 import { typeName, type Type } from './types.ts';
@@ -73,22 +73,6 @@ function zero(ty: Type): string {
 
 // --- 引数をどう読んでいるか (POSITION・PSIZE を実際に読むときだけ警告し、VPOS を読むときだけ mme_viewport を入れるため) ---
 interface Reads { whole: boolean; fields: Set<string> }
-
-function forEachExpr(s: Stmt, f: (e: Expr) => void): void {
-  const st = (x: Stmt | null) => { if (x) forEachExpr(x, f); };
-  const ex = (x: Expr | null) => { if (x) f(x); };
-  switch (s.kind) {
-    case 'block': s.body.forEach(st); break;
-    case 'var': s.decls.forEach(d => ex(d.init)); break;
-    case 'expr': f(s.expr); break;
-    case 'if': f(s.cond); st(s.then); st(s.else); break;
-    case 'for': st(s.init); ex(s.cond); ex(s.step); st(s.body); break;
-    case 'while': case 'do': f(s.cond); st(s.body); break;
-    case 'switch': f(s.value); s.cases.forEach(c => c.body.forEach(st)); break;
-    case 'return': ex(s.value); break;
-    default: break;
-  }
-}
 
 // 引数 p のメンバー (p.field) を読んだか、丸ごと使ったか
 function readsOf(fn: FunctionInfo, p: ParamNode): Reads {

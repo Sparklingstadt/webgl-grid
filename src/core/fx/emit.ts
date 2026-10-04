@@ -1,5 +1,5 @@
 import { t } from '../i18n.ts';
-import type { Expr, ParamNode, Stmt, VarDecl } from './ast.ts';
+import type { Expr, FunctionDecl, ParamNode, Stmt, VarDecl } from './ast.ts';
 import type { CheckedEffect, FunctionInfo } from './check.ts';
 import type { Diagnostics, Loc } from './diagnostics.ts';
 import { componentCount, scalarKind, typeName, type Scalar, type Type } from './types.ts';
@@ -202,10 +202,63 @@ export function exprChildren(e: Expr): Expr[] {
   }
 }
 
-// 副作用がありうる式 (++・--・代入・ユーザーの関数の呼び出し・out の引数を持つ組み込み関数)
+// 文の中の式を、それぞれ f に渡す (式の中までは入らない)
+export function forEachExpr(s: Stmt, f: (e: Expr) => void): void {
+  const st = (x: Stmt | null) => { if (x) forEachExpr(x, f); };
+  const ex = (x: Expr | null) => { if (x) f(x); };
+  switch (s.kind) {
+    case 'block': s.body.forEach(st); break;
+    case 'var': s.decls.forEach(d => ex(d.init)); break;
+    case 'expr': f(s.expr); break;
+    case 'if': f(s.cond); st(s.then); st(s.else); break;
+    case 'for': st(s.init); ex(s.cond); ex(s.step); st(s.body); break;
+    case 'while': case 'do': f(s.cond); st(s.body); break;
+    case 'switch': f(s.value); s.cases.forEach(c => c.body.forEach(st)); break;
+    case 'return': ex(s.value); break;
+    default: break;
+  }
+}
+
+// 書き込み先 (代入の左辺・out の引数) がグローバル変数か
+function globalTarget(e: Expr): boolean {
+  if (e.kind === 'member' || e.kind === 'index') return globalTarget(e.object);
+  return e.kind === 'ident' && e.sym?.kind === 'global';
+}
+
+// 式がグローバル変数を書き換えうるか (呼ぶユーザーの関数の中も見る)
+function writesGlobal(e: Expr): boolean {
+  if (e.kind === 'assign' && globalTarget(e.target)) return true;
+  if (e.kind === 'unary' && (e.op === '++' || e.op === '--') && globalTarget(e.operand)) return true;
+  if (e.kind === 'call' && e.target?.kind === 'function') {
+    const fn = e.target.fn;
+    if (fnWritesGlobal(fn) || fn.params.some((p, i) => p.modifier !== 'in' && p.modifier !== 'uniform' && i < e.args.length && globalTarget(e.args[i]))) return true;
+  }
+  if (e.kind === 'call' && (e.callee === 'sincos' || e.callee === 'modf') && e.args.slice(1).some(globalTarget)) return true;
+  return exprChildren(e).some(writesGlobal);
+}
+
+// 関数がグローバル変数を書き換えうるか。中身のないもの (プロトタイプだけ) は、書き換えうるとみなす
+const fnWrites = new WeakMap<FunctionDecl, boolean>();
+function fnWritesGlobal(fn: FunctionDecl): boolean {
+  const memo = fnWrites.get(fn);
+  if (memo !== undefined) return memo;
+  fnWrites.set(fn, true); // HLSL に再帰はないが、念のため
+  let writes = fn.body === null;
+  if (fn.body) forEachExpr(fn.body, e => { writes ||= writesGlobal(e); });
+  fnWrites.set(fn, writes);
+  return writes;
+}
+
+// 副作用がありうる式 (++・--・代入・out の引数を持つ組み込み関数・外から見える副作用のあるユーザーの関数の呼び出し)。
+// out・inout の引数がなく、グローバル変数を書き換えない関数は、2 回呼んでも同じなので副作用なしとする
 function impure(e: Expr): boolean {
   if (e.kind === 'assign' || (e.kind === 'unary' && (e.op === '++' || e.op === '--'))) return true;
-  if (e.kind === 'call' && (e.target?.kind !== 'intrinsic' || e.callee === 'sincos' || e.callee === 'modf')) return true;
+  if (e.kind === 'call' && (e.callee === 'sincos' || e.callee === 'modf')) return true;
+  if (e.kind === 'call' && e.target?.kind === 'function') {
+    const fn = e.target.fn;
+    if (fn.params.some(p => p.modifier === 'out' || p.modifier === 'inout') || fnWritesGlobal(fn)) return true;
+  }
+  if (e.kind === 'call' && !e.target) return true;
   return exprChildren(e).some(impure);
 }
 
