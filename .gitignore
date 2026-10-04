@@ -12,3 +12,5 @@ playwright-report/
 # ユーザーの PMX モデル置き場 (規約で再配布できないものもあるので、中身は Git に入れない。README だけ入れる)
 /models/*
 !/models/README.md
+# チュートリアル (モデルの画像が入るので、Git に入れない)
+/tutorial/
