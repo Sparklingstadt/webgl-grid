@@ -63,7 +63,13 @@ export async function runPixel(page: Page, hlsl: string, uniforms: Record<string
   const program = compileOne(hlsl);
   // HLSL の名前 → GLSL の名前 (mme_flipY は 1、mme_viewport は描画先の大きさ)
   const values: Record<string, number[]> = { mme_flipY: [1], mme_viewport: [1, 1] };
-  for (const u of program.uniforms) if (Object.hasOwn(uniforms, u.name)) values[u.glslName] = uniforms[u.name];
+  for (const [name, v] of Object.entries(uniforms)) {
+    const u = program.uniforms.find(x => x.name === name);
+    // コンパイラの知らない名前は書き間違いなので止める
+    if (!u) throw new Error(`uniform ${name} はプログラムにない (${program.uniforms.map(x => x.name).join(', ')})`);
+    values[u.glslName] = v;
+  }
+  // (GLSL のコンパイラが使われないと見て除いた uniform は、アクティブな uniform の一覧に出てこないので、黙って送らない)
   const result = await page.evaluate(({ vertex, fragment, outputs, values }) => {
     const gl = document.createElement('canvas').getContext('webgl2');
     if (!gl) return 'WebGL2 が使えない';
