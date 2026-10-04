@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { addNode, connect, surfaceShader } from '../../core/materials/tree';
-import { convertMmdMaterial, convertMmdMesh } from './fromMmd';
+import { convertMmdMaterial, convertMmdMesh, mmeTexturesOf } from './fromMmd';
 import { MaterialLibrary } from './MaterialLibrary';
 import { toPmxValues } from './toPmx';
 import { engineWithCube } from '../testEngine';
@@ -180,8 +180,26 @@ describe('MMD の材質の変換と .pmx への書き戻し', () => {
     Object.assign(a, { gradientMap: gradient, matcap });
     const mesh = { name: 'm', material: [a, b], userData: {} } as unknown as THREE.Mesh;
     convertMmdMesh(mesh, lib);
-    expect(mesh.userData.mmeTextures).toEqual([{ toon: gradient, sphere: matcap }, { toon: null, sphere: null }]);
-    expect(mesh.userData.mmeTextures[0].toon).toBe(gradient);
+    const [ma, mb] = mesh.material as THREE.Material[];
+    expect(mmeTexturesOf(ma)).toEqual({ toon: gradient, sphere: matcap });
+    expect(mmeTexturesOf(ma)!.toon).toBe(gradient);
+    expect(mmeTexturesOf(mb)).toEqual({ toon: null, sphere: null });
+    expect(mmeTexturesOf(new THREE.MeshBasicMaterial())).toBeNull();
+    expect(mesh.userData.mmeTextures).toBeUndefined();
     expect(disposed).toBe(0);
+  });
+
+  it('見つからなかったトゥーン・スフィアのファイルは null にする', () => {
+    const lib = new MaterialLibrary();
+    const gradient = new THREE.Texture(), matcap = new THREE.Texture();
+    const a = toon(), b = toon();
+    Object.assign(a, { gradientMap: gradient, matcap });
+    a.userData.MMD = { matcapFileName: 'sph\\Env.SPH' };
+    Object.assign(b, { gradientMap: gradient, matcap });
+    const mesh = { name: 'm', material: [a, b], userData: { missingTextures: new Set(['env.sph', 'toon_x.bmp']), toonFileNames: [null, 'tex/Toon_X.bmp'] } } as unknown as THREE.Mesh;
+    convertMmdMesh(mesh, lib);
+    const [ma, mb] = mesh.material as THREE.Material[];
+    expect(mmeTexturesOf(ma)).toEqual({ toon: gradient, sphere: null }); // スフィアだけ見つからない
+    expect(mmeTexturesOf(mb)).toEqual({ toon: null, sphere: matcap }); // トゥーンだけ見つからない
   });
 });

@@ -22,7 +22,17 @@ class Writer {
 // texture: 材質に付けるテクスチャのファイル名 (なければテクスチャなし)
 // flags: 材質のフラグ (0x01 両面・0x02 地面の影・0x04 セルフシャドウの深度・0x08 セルフシャドウを受ける・0x10 輪郭線)
 // sdef: 上の 4 頂点を SDEF (骨は センター・右腕) にする
-export function makePmx(name = 'テスト人形', { physics = false, texture, flags = 0x01 | 0x10, sdef = false }: { physics?: boolean; texture?: string; flags?: number; sdef?: boolean } = {}): Uint8Array {
+// parts: 材質を分ける (材質ごとの面の頂点番号 3 つずつと、輪郭線の太さ。なければ全部の面で 1 つ)
+// edgeRatios: 頂点ごとの輪郭線の太さの倍率 (なければ 1)
+export interface PmxOptions {
+  physics?: boolean;
+  texture?: string;
+  flags?: number;
+  sdef?: boolean;
+  parts?: { faces: number[]; edgeSize?: number }[];
+  edgeRatios?: number[];
+}
+export function makePmx(name = 'テスト人形', { physics = false, texture, flags = 0x01 | 0x10, sdef = false, parts, edgeRatios }: PmxOptions = {}): Uint8Array {
   const w = new Writer();
   // ヘッダー: 文字コード UTF-16、追加 UV なし、インデックスはすべて 4 バイト
   for (const c of 'PMX ') w.u8(c.charCodeAt(0));
@@ -47,27 +57,31 @@ export function makePmx(name = 'テスト人形', { physics = false, texture, fl
         w.u8(0);                         // BDEF1
         w.i32(y ? 1 : 0);                // ボーン
       }
-      w.f32(1);                          // 輪郭線の太さ
+      w.f32(edgeRatios?.[i + (y ? 4 : 0)] ?? 1); // 輪郭線の太さ (倍率)
     }
   }
   // 面: 側面 4 枚 + 上下 (両面表示にするので向きは気にしない)
-  const faces = [0, 1, 5, 0, 5, 4, 1, 2, 6, 1, 6, 5, 2, 3, 7, 2, 7, 6, 3, 0, 4, 3, 4, 7, 4, 5, 6, 4, 6, 7, 0, 2, 1, 0, 3, 2];
+  const allFaces = [0, 1, 5, 0, 5, 4, 1, 2, 6, 1, 6, 5, 2, 3, 7, 2, 7, 6, 3, 0, 4, 3, 4, 7, 4, 5, 6, 4, 6, 7, 0, 2, 1, 0, 3, 2];
+  const materials = parts ?? [{ faces: allFaces, edgeSize: 1 }];
+  const faces = materials.flatMap(m => m.faces);
   w.i32(faces.length);
   for (const f of faces) w.i32(f);
   if (texture) { w.i32(1); w.text(texture); } else w.i32(0); // テクスチャ
 
-  // 材質 1 つ
-  w.i32(1);
-  w.text('体'); w.text('body');
-  w.f32(0.9, 0.7, 0.5, 1);   // 拡散色
-  w.f32(0, 0, 0); w.f32(5);  // 反射色・強さ
-  w.f32(0.4, 0.3, 0.2);      // 環境色
-  w.u8(flags);               // 既定は両面表示・輪郭線あり
-  w.f32(0, 0, 0, 1); w.f32(1); // 輪郭線の色・太さ
-  w.i32(texture ? 0 : -1); w.i32(-1); w.u8(0); // テクスチャ・スフィアなし
-  w.u8(1); w.u8(0);          // 共有トゥーン 0
-  w.text('');
-  w.i32(faces.length);
+  // 材質 (既定は 1 つ)
+  w.i32(materials.length);
+  for (const m of materials) {
+    w.text('体'); w.text('body');
+    w.f32(0.9, 0.7, 0.5, 1);   // 拡散色
+    w.f32(0, 0, 0); w.f32(5);  // 反射色・強さ
+    w.f32(0.4, 0.3, 0.2);      // 環境色
+    w.u8(flags);               // 既定は両面表示・輪郭線あり
+    w.f32(0, 0, 0, 1); w.f32(m.edgeSize ?? 1); // 輪郭線の色・太さ
+    w.i32(texture ? 0 : -1); w.i32(-1); w.u8(0); // テクスチャ・スフィアなし
+    w.u8(1); w.u8(0);          // 共有トゥーン 0
+    w.text('');
+    w.i32(m.faces.length);
+  }
 
   // ボーン: フラグは 回転 0x02・移動 0x04・表示 0x08・操作 0x10
   const bone = (n: string, pos: number[], parent: number, flags: number) => {

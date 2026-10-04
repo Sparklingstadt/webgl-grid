@@ -95,6 +95,8 @@ export class MmdLoader {
       const mesh = loader.meshBuilder.build(data, './', undefined, (err: unknown) => console.error(err));
       // 見つからなかったテクスチャ (組み立てるあいだに、すぐ分かる)。マテリアルにするとき、画像なしにする (黒く写らないように)
       mesh.userData.missingTextures = new Set([...missing].map(fileKey));
+      // 材質ごとの、自分で選んだトゥーンのテクスチャのファイル名 (共有トゥーンは null。見つからないかの判定に使う)
+      mesh.userData.toonFileNames = data.materials.map((m: Any) => (m.toonFlag === 0 && m.toonIndex !== -1 ? data.textures[m.toonIndex] : null));
       mesh.userData.missingTextureNames = [...missing].map(n => n.replace(/\\/g, '/'));
       mesh.userData.morphPanels = new Map(data.morphs.map((m: Any) => [m.name, m.panel]));
       // ボーンを手で動かすための情報: 表示枠 (MMD でボーンを選ぶときのグループ)、フラグ、最初の姿勢
