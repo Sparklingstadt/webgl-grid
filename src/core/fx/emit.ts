@@ -47,11 +47,13 @@ dFdx dFdy fwidth`.split(/\s+/).filter(Boolean));
 // a_・v_・o_ のあとはいつも大文字のセマンティクスなので、小文字が続く名前 (a_x_b) は変えない
 const GENERATED = /^(?:(?:a|v|o)_[A-Z0-9]|mme_)/;
 
-// GLSL の予約語・組み込み関数・書き出しが作る名前とぶつかる名前は後ろに _、gl_ は前に x、__ は _x_
+// GLSL の予約語・組み込み関数・書き出しが作る名前とぶつかる名前は後ろに _、
+// gl_・webgl_・_webgl_ (GL と WebGL が予約) は前に x、__ (予約) は _x_ (後ろに _ を足したあとも)
 export function glslName(name: string): string {
-  let n = name.startsWith('gl_') ? `x${name}` : name;
+  let n = /^(?:gl_|webgl_|_webgl_)/.test(name) ? `x${name}` : name;
   n = n.replace(/__+/g, '_x_');
-  return RESERVED.has(n) || GENERATED.test(n) ? `${n}_` : n;
+  if (RESERVED.has(n) || GENERATED.test(n)) n = `${n}_`.replace(/__+/g, '_x_');
+  return n;
 }
 
 // --- 型 ---
@@ -429,7 +431,7 @@ function emitIntrinsic(e: ExprOf<'call'>, params: Type[], ctx: EmitContext): Cod
   if (!MATRIX_OK.has(name) && params.some(p => p.k === 'matrix')) {
     unsupported(ctx, loc, t('行列に {name} を使うことには対応していません', { name }));
   }
-  if (FRAGMENT_ONLY.has(name)) fragmentOnly(name, loc, ctx);
+  if (FRAGMENT_ONLY.has(name) || /^tex\w+bias$/.test(name)) fragmentOnly(name, loc, ctx); // texture(…, bias) もフラグメントだけ
   if (name === 'sincos') e.args.slice(1).forEach(a => checkLvalue(a, ctx));
   if (name === 'modf') checkLvalue(e.args[1], ctx);
   const tex = /^tex(1D|2D|3D|CUBE)(lod|bias|proj|grad)?$/.exec(name);
@@ -457,8 +459,8 @@ function emitIntrinsic(e: ExprOf<'call'>, params: Type[], ctx: EmitContext): Cod
     case 'ldexp': return primary(`(${wrap(c[0], P.mul)} * exp2(${a[1]}))`);
     case 'isfinite': {
       const one = (x: string) => `!(isnan(${x}) || isinf(${x}))`;
+      needPure(e.args, loc, ctx); // スカラーでも引数を 2 回書く
       if (p0.k !== 'vector') return code(one(a[0]), P.unary);
-      needPure(e.args, loc, ctx);
       return call(`bvec${p0.n}`, Array.from({ length: p0.n }, (_, i) => one(comp(c[0], i))));
     }
     case 'D3DCOLORtoUBYTE4': return call('ivec4', [`${wrap(c[0], P.post)}.zyxw * 255.001953`]);

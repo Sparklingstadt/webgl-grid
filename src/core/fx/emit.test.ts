@@ -8,6 +8,7 @@ import {
 } from './emit.ts';
 import { parse } from './parser.ts';
 import { preprocess } from './preprocess.ts';
+import { INTRINSIC_NAMES, resolveIntrinsic } from './intrinsics.ts';
 import { matrixOf, vectorOf, type Type } from './types.ts';
 
 const F4x3 = matrixOf('float', 4, 3);
@@ -65,6 +66,10 @@ describe('GLSL の書き出し: 名前と型', () => {
     expect(['input', 'mix', 'color', 'gl_Foo', 'a__b', 'a_POSITION'].map(glslName)).toEqual(['input_', 'mix_', 'color', 'xgl_Foo', 'a_x_b', 'a_POSITION_']);
     expect(['texture', 'sample', 'main', 'mme_fmod', 'v_TEXCOORD0', 'o_COLOR0', 'Pos', 'x___y'].map(glslName))
       .toEqual(['texture_', 'sample_', 'main_', 'mme_fmod_', 'v_TEXCOORD0_', 'o_COLOR0_', 'Pos', 'x_x_y']);
+    // 後ろに _ を足しても __ にならない。WebGL が予約する webgl_・_webgl_ は前に x
+    const odd = ['a_A_', 'mme_', 'webgl_foo', '_webgl_bar'].map(glslName);
+    expect(odd).toEqual(['a_A_x_', 'mme_x_', 'xwebgl_foo', 'x_webgl_bar']);
+    for (const n of odd) expect(n).not.toMatch(/__|^(?:gl_|webgl_|_webgl_)/);
   });
   it('glslType', () => {
     expect([F4x3, M44, I2, samplerOf(null)].map(glslType)).toEqual(['mat4x3', 'mat4', 'ivec2', 'sampler2D']);
@@ -213,11 +218,18 @@ describe('GLSL の書き出し: 式', () => {
   it('左辺を 2 回書くと副作用が 2 回になるものは FX-UNSUPPORTED', () => {
     expect(exprCodes('a[i++] %= 2', { 'a[3]': 'float', i: 'int' })).toEqual(['FX-UNSUPPORTED']);
     expect(exprCodes('a[i] %= 2', { 'a[3]': 'float', i: 'int' })).toEqual([]);
+    expect(exprCodes('isfinite(x + i++)', { x: 'float', i: 'int' })).toEqual(['FX-UNSUPPORTED']);
     expect(exprCodes('(x > 0) && b', { x: 'float2', b: 'bool2' })).toEqual([]);
     expect(exprCodes('(c = a) && b', { a: 'bool2', b: 'bool2', c: 'bool2' })).toEqual(['FX-UNSUPPORTED']);
   });
   it('ddx・clip・discard は頂点シェーダーでは FX-UNSUPPORTED、行列への成分ごとの関数も FX-UNSUPPORTED', () => {
     expect(exprCodes('ddx(x)', { x: 'float' }, 'vertex')).toEqual(['FX-UNSUPPORTED']);
+    const tex = (e: string, stage: 'vertex' | 'fragment') => emitFn(stage === 'vertex'
+      ? `sampler2D S; float4 VS(float4 q : TEXCOORD0) : POSITION { return ${e}; }${VS_PASS}`
+      : `sampler2D S; float4 PS(float4 q : TEXCOORD0) : COLOR0 { return ${e}; }${PS_PASS}`, stage === 'vertex' ? 'VS' : 'PS', stage).ctx.diags.errors.map(x => x.code);
+    expect(tex('tex2Dbias(S, q)', 'vertex')).toEqual(['FX-UNSUPPORTED']);
+    expect(tex('tex2Dbias(S, q)', 'fragment')).toEqual([]);
+    expect(tex('tex2Dlod(S, q)', 'vertex')).toEqual([]);
     expect(exprCodes('abs(M)', { M: 'float2x2' })).toEqual(['FX-UNSUPPORTED']);
     expect(exprCodes('M % M', { M: 'float2x2' })).toEqual(['FX-UNSUPPORTED']);
     expect(exprCodes('M._m00_m11 = v', { M: 'float2x2', v: 'float2' })).toEqual(['FX-UNSUPPORTED']);
@@ -232,6 +244,40 @@ describe('GLSL の書き出し: 式', () => {
     const st = bodyOf(c, 'PS')[0] as { kind: 'return'; value: Expr };
     expect(emitExpr(st.value, ctx)).toBe('vec4(u + s + K)');
     expect([...ctx.usedGlobals]).toEqual(['u', 's', 'K']);
+  });
+});
+
+// 組み込み関数ごとに型の合う引数 (out の引数は変数)
+const ARG_SETS: { names: string[]; types: Type[] }[] = [
+  { names: ['a'], types: [{ k: 'scalar', s: 'float' }] },
+  { names: ['a', 'b'], types: [{ k: 'scalar', s: 'float' }, { k: 'scalar', s: 'float' }] },
+  { names: ['a', 'b', 'c'], types: [{ k: 'scalar', s: 'float' }, { k: 'scalar', s: 'float' }, { k: 'scalar', s: 'float' }] },
+  { names: ['v3', 'w3'], types: [vectorOf('float', 3), vectorOf('float', 3)] },
+  { names: ['v4'], types: [vectorOf('float', 4)] },
+  { names: ['M'], types: [M44] },
+];
+function intrinsicArgs(name: string): string[] {
+  const tex = /^tex(1D|2D|3D|CUBE)(lod|bias|proj|grad)?$/.exec(name);
+  if (tex) {
+    const s = { '1D': 'S1', '2D': 'S2', '3D': 'S3', CUBE: 'SC' }[tex[1] as '1D'];
+    const coord = { '1D': 'a', '2D': 'uv', '3D': 'v3', CUBE: 'v3' }[tex[1] as '1D'];
+    if (tex[2] === 'grad') return [s, coord, coord, coord];
+    return [s, tex[2] ? 'v4' : coord];
+  }
+  const set = ARG_SETS.find(x => resolveIntrinsic(name, x.types).ok);
+  if (!set) throw new Error(`引数の組がない: ${name}`);
+  return set.names;
+}
+
+describe('GLSL の書き出し: 組み込み関数の表', () => {
+  it('INTRINSIC_NAMES のすべてを、誤りなく書き出せる (表がずれていない)', () => {
+    for (const name of INTRINSIC_NAMES) {
+      const src = `sampler1D S1; sampler2D S2; sampler3D S3; samplerCUBE SC;
+        float4 PS() : COLOR0 { float a = 1, b = 2, c = 3; float2 uv = 0; float3 v3 = 1, w3 = 2; float4 v4 = 1; float4x4 M = 1;
+          ${name}(${intrinsicArgs(name).join(', ')}); return 0; }${PS_PASS}`;
+      const { ctx } = emitFn(src, 'PS');
+      expect(ctx.diags.errors.map(e => `${name}: ${e.code}`)).toEqual([]);
+    }
   });
 });
 
