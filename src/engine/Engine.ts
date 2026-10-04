@@ -1,4 +1,4 @@
-import { animationFromJson, animationToJson, channelKeys, isEmpty, keyFrames, PROPS, type Channel, type Curve } from '../core/animation';
+import { animationFromJson, animationToJson, channelKeys, isEmpty, keyFrames, PROPS, type BoneKey, type Channel, type Curve, type MorphKey } from '../core/animation';
 import { radiusOf } from '../core/stacking';
 import { applyObjectData } from './addons/registry';
 import { cameraAim, type CameraSettings } from '../core/camera';
@@ -782,6 +782,9 @@ export class Engine {
   deleteSelectedKeys() { return this.keyed ? this.keyframes.deleteSelected(this.keyed, this.clock.t) : false; }
   moveSelectedKeys(delta: number) { if (this.keyed) this.keyframes.moveSelected(this.keyed, delta, this.clock.t); }
   setKeyValue(channel: Channel, frame: number, comp: keyof BoneValue | null, v: number) { if (this.keyed) this.keyframes.setKeyValue(this.keyed, channel, frame, comp, v, this.clock.t); }
+  // グラフエディター: キーを左右に動かす (base はドラッグを始めたときのチャンネルのキー)、フレーム frame のキーの補間曲線 (ハンドル) を変える
+  placeChannelKey(channel: Channel, base: ReadonlyMap<number, BoneKey | MorphKey>, from: number, to: number) { if (this.keyed) this.keyframes.placeChannelKey(this.keyed, channel, base, from, to, this.clock.t); }
+  setKeyCurveAt(channel: Channel, frame: number, curve: Curve) { if (this.keyed) this.keyframes.setCurve(this.keyed, channel, frame, curve, this.clock.t); }
   selectKeys(frames: number[], add: boolean) { this.keyframes.select(frames, add); }
   selectAllKeys(on = true) { this.keyframes.select(on && this.keyed ? keyFrames(this.keyed.anim) : [], false); }
   // キーのコピー・貼り付け (タイムライン・ドープシートの上で Ctrl+C・Ctrl+V)。貼り付けはいまのフレームから

@@ -62,3 +62,45 @@ test('グラフエディター: アクティブな物のチャンネルを曲線
   await page.mouse.up();
   expect(await key40()).toBeGreaterThan(before + 0.1);
 });
+
+test('グラフエディター: キーの点を右へドラッグするとそのチャンネルのキーだけが後ろのフレームへ動き、押したキーのハンドルで補間曲線を変える', async ({ page }) => {
+  await open(page);
+  await keyedScene(page);
+  await choose(page, 'エディターの種類', 'グラフエディター');
+  for (const name of ['位置 Z', '回転', '大きさ']) await page.getByRole('list', { name: '曲線' }).getByRole('button', { name }).click();
+  const canvas = page.locator('.graph-canvas');
+  const box = (await canvas.boundingBox())!;
+  // フレーム f・値 val の、キャンバスの中の位置 (値の範囲は、位置 X の 0〜2 を ±12% 広げたもの)
+  const at = (f: number, val: number) => page.evaluate(([f, val, w, h]) => {
+    const { engine } = window as Win, s = engine.clock.start, e = engine.clock.end;
+    const f0 = s - (e - s) * 0.04, f1 = e + (e - s) * 0.04;
+    const lo = 0 - 0.24, hi = 2 + 0.24, top = 22 + 14, bottom = h - 14;
+    return { x: (f - f0) / (f1 - f0) * w, y: bottom - (val - lo) / (hi - lo) * (bottom - top) };
+  }, [f, val, box.width, box.height]);
+  const xKeys = () => page.evaluate(() => [...(window as Win).engine.world.objects[0].anim.props.get(0).keys()].sort((a: number, b: number) => a - b));
+  // フレーム 40 の点を、フレーム 60 の所まで右へ (値はそのまま)
+  const p40 = await at(40, 2), p60 = await at(60, 2);
+  await page.mouse.move(box.x + p40.x, box.y + p40.y);
+  await page.mouse.down();
+  await page.mouse.move(box.x + p60.x, box.y + p40.y, { steps: 6 });
+  await page.mouse.up();
+  expect(await xKeys()).toEqual([0, 60]);
+  expect(await page.evaluate(() => [...(window as Win).engine.world.objects[0].anim.props.get(1).keys()].sort((a: number, b: number) => a - b))).toEqual([0, 40]); // (ほかのチャンネルはそのまま)
+  // 押したキー (60) の 2 つ目のハンドル (直線: 0.75 の所) を左へ
+  const curve = () => page.evaluate(() => [...(window as Win).engine.world.objects[0].anim.props.get(0).get(60).curve]);
+  expect(await curve()).toEqual([0.25, 0.25, 0.75, 0.75]);
+  const v60 = await page.evaluate(() => (window as Win).engine.world.objects[0].anim.props.get(0).get(60).v);
+  const h2 = await at(0.75 * 60, 0.75 * v60);
+  await page.mouse.move(box.x + h2.x, box.y + h2.y);
+  await page.mouse.down();
+  await page.mouse.move(box.x + h2.x - 40, box.y + h2.y, { steps: 4 });
+  await page.mouse.up();
+  const [x1, y1, x2] = await curve();
+  expect([x1, y1]).toEqual([0.25, 0.25]);
+  expect(x2).toBeLessThan(0.7);
+  // 元に戻すと、曲線 → フレームの順に戻る
+  await page.keyboard.press('Control+z');
+  await expect.poll(curve).toEqual([0.25, 0.25, 0.75, 0.75]);
+  await page.keyboard.press('Control+z');
+  await expect.poll(xKeys).toEqual([0, 40]);
+});

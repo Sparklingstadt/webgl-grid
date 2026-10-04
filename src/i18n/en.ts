@@ -951,7 +951,7 @@ const dict: Dictionary = {
   "{name} のチャンネル": "Channels of {name}",
   "キーかモーションのある物が、ここに並びます (物を選んで I でキーを打つ)": "Objects with keys or motions appear here (select an object and press I to insert a key)",
   "キーのある物を選ぶと、チャンネルの値がここに曲線で並びます": "Select an object with keys to see its channel values as curves here",
-  "グラフエディター (キーの点を上下にドラッグで値を変える)": "Graph Editor (drag key points up/down to change values)",
+  "グラフエディター (キーの点をドラッグで値・フレームを変える)": "Graph Editor (drag key points to change values and frames)",
   "グラフエディター": "Graph Editor",
   "ドープシート": "Dope Sheet",
   "曲線": "Curves",

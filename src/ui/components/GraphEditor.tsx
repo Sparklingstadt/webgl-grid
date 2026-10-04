@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { channelKeys, evaluate, PROPS, type BoneKey, type Channel, type MorphKey } from '../../core/animation';
+import { channelKeys, evaluate, PROPS, type BoneKey, type Channel, type Curve, type MorphKey } from '../../core/animation';
 import { DEG } from '../../core/constants';
 import { t } from '../../core/i18n';
 import { fitView, frameAt as frameAtView, rulerStep, zoomView } from '../../core/timelineMath';
@@ -10,7 +10,9 @@ import { useEngine, useUi } from '../EngineContext';
 
 // --- グラフエディター (Blender のグラフエディター): アクティブな物のチャンネルの値を、時間を横軸にした曲線で描く ---
 // 位置 X は赤・Z は青・回転は緑 (度)・大きさは黄、ボーンは回転 X/Y/Z (度) と位置 X/Y/Z、表情は 0〜1。
-// キーの点を上下にドラッグして値を変える。何もない所のドラッグで再生位置を動かす。ホイールで拡大縮小、Home で全体を表示。
+// キーの点をドラッグして、上下で値を、左右でフレームを変える (左右は 6px 動かしてから)。何もない所のドラッグで再生位置を動かす。
+// 押したキーには、前のキーからの補間曲線のハンドル (2 つ) が出て、ドラッグで曲線の形を変える (MMD の補間曲線と同じく、前後のキーのあいだに収まる)。
+// ホイールで拡大縮小、Home で全体を表示。
 // 左上の一覧で、曲線を出す・隠す。「正規化」で、曲線ごとに -1〜1 にそろえて描く (値の大きさの違う曲線を一緒に見る)
 interface CurveDef { id: string; label: string; color: string; ch: Channel; comp: keyof BoneValue | null; k: number } // k: 表示の倍率 (ラジアン → 度)
 const RULER = 22, PAD = 14, HIT = 7;
@@ -47,6 +49,16 @@ function curvesOf(engine: Engine, obj: Obj | null): CurveDef[] {
   }
   return out;
 }
+// 押したキーのハンドルの位置 (フレーム・表示の単位の値)。前のキーがなければ (最初のキー) null
+function handleGeom(c: CurveDef, keys: Map<number, BoneKey | MorphKey>, frame: number) {
+  const key = keys.get(frame);
+  const prevF = Math.max(...[...keys.keys()].filter(f => f < frame));
+  if (!key || !Number.isFinite(prevF)) return null;
+  const prev: [number, number] = [prevF, keyValue(c, keys.get(prevF)!)], cur: [number, number] = [frame, keyValue(c, key)];
+  const at = (u: number, w: number): [number, number] => [prev[0] + u * (cur[0] - prev[0]), prev[1] + w * (cur[1] - prev[1])];
+  const [x1, y1, x2, y2] = key.curve;
+  return { prev, key: cur, curve: key.curve, handles: [at(x1, y1), at(x2, y2)] };
+}
 // 曲線の、キーの値と、フレーム f の値
 const keyValue = (c: CurveDef, key: BoneKey | MorphKey) => (c.comp ? (key as BoneKey).v[c.comp] : (key as MorphKey).v) * c.k;
 function valueAt(c: CurveDef, ev: ReturnType<typeof evaluate>) {
@@ -72,7 +84,11 @@ export function GraphEditor({ open, typeSelect }: { open: boolean; typeSelect: R
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const view = useRef({ f0: -10, f1: 260, user: false });
   const yRange = useRef({ v0: -1, v1: 1 });
-  const drag = useRef<{ curve: CurveDef; frame: number } | { scrub: number } | null>(null);
+  type KeyDrag = { curve: CurveDef; frame: number; from: number; base: Map<number, BoneKey | MorphKey>; x0: number; moved: boolean };
+  type HandleDrag = { handle: 0 | 1; curve: CurveDef; frame: number };
+  const drag = useRef<KeyDrag | HandleDrag | { scrub: number } | null>(null);
+  const picked = useRef<{ id: string; frame: number } | null>(null); // 押したキー (ハンドルを出す)
+  const handles = useRef<{ which: 0 | 1; x: number; y: number }[]>([]); // (描いたハンドルの位置。押したかを調べる)
   const state = useRef({ frame, start, end, hidden, normalize });
   useLayoutEffect(() => { state.current = { frame, start, end, hidden, normalize }; }, [frame, start, end, hidden, normalize]);
   const obj = engine.selection.current;
@@ -156,6 +172,7 @@ export function GraphEditor({ open, typeSelect }: { open: boolean; typeSelect: R
       ctx.fillText(String(+val.toFixed(3)), W - 4, py - 7);
     }
     // 曲線と、キーの点
+    handles.current = [];
     for (const c of list) {
       const s = samples.get(c.id);
       if (!s?.length) continue;
@@ -166,11 +183,35 @@ export function GraphEditor({ open, typeSelect }: { open: boolean; typeSelect: R
       ctx.stroke();
       const keys = anim && channelKeys(anim, c.ch);
       const n = norm.current.get(c.id) ?? { mid: 0, half: 1 };
+      // 押したキーのハンドル: 前のキーから、このキーまでの補間曲線の 2 つの点
+      const pk = picked.current;
+      if (pk?.id === c.id && keys?.has(pk.frame)) {
+        const hs = handleGeom(c, keys, pk.frame);
+        if (hs) {
+          const pt = (f: number, val: number) => [x(f), y((val - n.mid) / n.half)] as const;
+          const [ax, ay] = pt(hs.prev[0], hs.prev[1]), [bx, by] = pt(hs.key[0], hs.key[1]);
+          handles.current = hs.handles.map(([f, val], i) => { const [hx, hy] = pt(f, val); return { which: i as 0 | 1, x: hx, y: hy }; });
+          ctx.strokeStyle = 'rgba(255, 190, 51, 0.8)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(ax, ay); ctx.lineTo(handles.current[0].x, handles.current[0].y);
+          ctx.moveTo(bx, by); ctx.lineTo(handles.current[1].x, handles.current[1].y);
+          ctx.stroke();
+          for (const h of handles.current) {
+            ctx.fillStyle = '#282828';
+            ctx.beginPath();
+            ctx.arc(h.x, h.y, 3.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#ffbe33';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+          }
+        }
+      }
       for (const [f, key] of keys ?? []) {
         const px = x(f), py = y((keyValue(c, key) - n.mid) / n.half);
         if (px < -HIT || px > W + HIT) continue;
-        const d = drag.current;
-        const active = d && 'curve' in d && d.curve.id === c.id && d.frame === f;
+        const active = pk?.id === c.id && pk.frame === f;
         ctx.fillStyle = active ? '#ffbe33' : '#eee';
         ctx.beginPath();
         ctx.arc(px, py, active ? 4.5 : 3.5, 0, Math.PI * 2);
@@ -246,12 +287,22 @@ export function GraphEditor({ open, typeSelect }: { open: boolean; typeSelect: R
         }
       }
     }
+    // 押したキーのハンドル (キーの点より先に)
+    const pk = picked.current, pc = pk && curves.find(c => c.id === pk.id);
+    const h = handles.current.find(h => Math.hypot(h.x - x, h.y - y) <= HIT);
+    if (h && pc && pk) {
+      drag.current = { handle: h.which, curve: pc, frame: pk.frame };
+      return;
+    }
     if (best) {
-      drag.current = { curve: best.curve, frame: best.frame };
+      const keys = channelKeys(anim!, best.curve.ch)!;
+      drag.current = { curve: best.curve, frame: best.frame, from: best.frame, base: new Map(keys), x0: x, moved: false };
+      picked.current = { id: best.curve.id, frame: best.frame };
       clock.seekFrame(best.frame, 5);
       draw();
       return;
     }
+    picked.current = null;
     const f = frameAtView(v, x, W);
     drag.current = { scrub: f };
     clock.seekFrame(f, 5);
@@ -260,9 +311,29 @@ export function GraphEditor({ open, typeSelect }: { open: boolean; typeSelect: R
     const d = drag.current;
     if (!d) return;
     const { x, y, W, H } = local(e);
-    if ('curve' in d) {
-      const n = norm.current.get(d.curve.id) ?? { mid: 0, half: 1 };
-      engine.setKeyValue(d.curve.ch, d.frame, d.curve.comp, (n.mid + toValue(y, H) * n.half) / d.curve.k);
+    const n = 'curve' in d ? norm.current.get(d.curve.id) ?? { mid: 0, half: 1 } : null;
+    const shown = n ? n.mid + toValue(y, H) * n.half : 0; // (表示の単位の値)
+    if ('handle' in d) {
+      // ハンドル: 前のキーとこのキーのあいだの割合にして、補間曲線の点にする (0〜1 に収める)
+      const keys = obj?.anim && channelKeys(obj.anim, d.curve.ch), hs = keys && handleGeom(d.curve, keys, d.frame);
+      if (!hs) return;
+      const fx = view.current.f0 + x / W * (view.current.f1 - view.current.f0);
+      const clamp = (u: number) => Math.min(Math.max(u, 0), 1);
+      const cv = [...hs.curve] as Curve;
+      cv[d.handle * 2] = clamp((fx - hs.prev[0]) / (hs.key[0] - hs.prev[0]));
+      if (Math.abs(hs.key[1] - hs.prev[1]) > 1e-9) cv[d.handle * 2 + 1] = clamp((shown - hs.prev[1]) / (hs.key[1] - hs.prev[1]));
+      engine.setKeyCurveAt(d.curve.ch, d.frame, cv);
+    } else if ('curve' in d) {
+      // キー: 左右はフレーム (6px 動かしてから)、上下は値
+      if (!d.moved && Math.abs(x - d.x0) >= 6) d.moved = true;
+      const f = d.moved ? Math.max(0, frameAtView(view.current, x, W)) : d.from;
+      if (f !== d.frame) {
+        engine.placeChannelKey(d.curve.ch, d.base, d.from, f);
+        d.frame = f;
+        picked.current = { id: d.curve.id, frame: f };
+        clock.seekFrame(f, 5);
+      }
+      engine.setKeyValue(d.curve.ch, d.frame, d.curve.comp, shown / d.curve.k);
     }
     else {
       const f = frameAtView(view.current, x, W);
@@ -285,7 +356,7 @@ export function GraphEditor({ open, typeSelect }: { open: boolean; typeSelect: R
                 title={t('曲線ごとに -1〜1 にそろえて描く')}>{t('正規化')}</button>
       </div>
       <div className="tl-body graph-body">
-        <canvas ref={canvasRef} className="graph-canvas" aria-label={t('グラフエディター (キーの点を上下にドラッグで値を変える)')}
+        <canvas ref={canvasRef} className="graph-canvas" aria-label={t('グラフエディター (キーの点をドラッグで値・フレームを変える)')}
                 onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} />
         {curves.length > 0 && (
           <ul className="graph-legend" aria-label={t('曲線')}>

@@ -159,6 +159,25 @@ describe('History', () => {
     }
   });
 
+  it('押し始めたとき、前の操作の変化がまだ手になっていなければ、先に 1 手にする', () => {
+    vi.useFakeTimers();
+    try {
+      const e = engineWithCube();
+      e.select(e.world.objects[0]);
+      e.history.setPressed(true);
+      e.setObjProp('x', 1);
+      e.history.setPressed(false);
+      vi.advanceTimersByTime(10); // (まだ手になっていない)
+      e.history.setPressed(true);
+      e.setObjProp('r', 30);
+      e.history.setPressed(false);
+      vi.advanceTimersByTime(100);
+      expect(e.ui.state.history.labels).toEqual(['最初', '移動', '回転']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('戻したあとに別の変更をすると、やり直しの先は消え、もう使わない消した物は片付ける', async () => {
     const e = engineWithCube();
     const dispose = vi.spyOn(e.world, 'dispose');

@@ -156,6 +156,19 @@ export class Keyframes {
     this.changed();
   }
 
+  // グラフエディターでキーを左右に動かす: チャンネルのキーを元の並び (base) に戻してから、from のキーを to へ置く。
+  // (ドラッグの途中で別のキーの上を通っても、base に戻すので消えない。離した所に重なったキーは上書き)
+  placeChannelKey(obj: Obj, channel: Channel, base: ReadonlyMap<number, BoneKey | MorphKey>, from: number, to: number, time: number) {
+    const keys = obj.anim && channelKeys(obj.anim, channel);
+    const k = base.get(from);
+    if (!keys || !k) return;
+    keys.clear();
+    for (const [f, key] of base) if (f !== from) keys.set(f, key);
+    keys.set(Math.max(0, Math.round(to)), k);
+    this.applyAll(time, true);
+    this.changed();
+  }
+
   // 一番後ろのキー (終了フレームを合わせるため)
   lastFrame() {
     let last = 0;

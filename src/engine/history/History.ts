@@ -74,9 +74,11 @@ export class History {
     if (!this.waiting) this.timer = setTimeout(() => this.checkpoint(), 60);
   }
   private get waiting() { return this.holds > 0 || this.pressed; }
-  // マウスのボタン (指) を押しているあいだは写しを取らない (ドラッグを 1 手にまとめる)。離したら取る
+  // マウスのボタン (指) を押しているあいだは写しを取らない (ドラッグを 1 手にまとめる)。離したら取る。
+  // 押し始めたときに、前の操作の変化がまだ手になっていなければ、先に 1 手にする (すぐ続けたドラッグと混ぜない)
   setPressed(on: boolean) {
     if (this.pressed === on) return;
+    if (on && this.pending) this.checkpoint();
     this.pressed = on;
     if (on) clearTimeout(this.timer); else this.soon();
   }
