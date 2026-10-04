@@ -513,3 +513,5 @@ details.sub > summary { cursor: pointer; color: var(--dim); font-size: 11px; pad
 .ol-add:hover { background: #444; }
 .ol-collection { color: #e8e8e8; }
 .ol-row.drop-into { box-shadow: inset 0 0 0 1px var(--accent); background: #2f3f5e; }
+.hbtn.icon-btn { display: inline-grid; place-items: center; padding: 3px 5px; }
+.hbtn.icon-btn svg { width: 16px; height: 16px; }

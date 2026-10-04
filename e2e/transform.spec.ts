@@ -75,3 +75,37 @@ test('いくつか選んで R すると、真ん中を中心に位置も回る',
   await page.keyboard.press('Enter');
   expect(await page.evaluate(() => (window as Win).engine.world.objects.map((o: Win) => Math.round(o.x)))).toEqual([2, -2]);
 });
+
+test('G・R・S のあいだ Ctrl を押すと、グリッド・15° にスナップする。見出しの磁石で入れ替わる', async ({ page }) => {
+  const errors = await open(page);
+  await page.getByRole('tree', { name: 'シーンの物' }).getByRole('treeitem', { name: '立方体' }).locator(':scope > .ol-row').click();
+  const canvas = page.locator('canvas#c');
+  const box = (await canvas.boundingBox())!;
+  const cx = box.x + box.width / 2, cy = box.y + box.height / 2;
+  await page.mouse.move(cx, cy);
+  // G のあと Ctrl を押して動かすと、グリッドの目 (1 m) に乗る
+  await page.keyboard.press('g');
+  await page.keyboard.down('Control');
+  await page.mouse.move(cx + 137, cy + 23, { steps: 4 });
+  await expect(page.getByRole('status').filter({ hasText: '移動' })).toContainText('スナップ');
+  await page.keyboard.up('Control');
+  const free = await cube(page);
+  expect(Number.isInteger(free.x) && Number.isInteger(free.z)).toBe(false); // (離すと、スナップしない)
+  await page.keyboard.down('Control');
+  await page.mouse.move(cx + 139, cy + 24);
+  await page.keyboard.press('Enter');
+  await page.keyboard.up('Control');
+  const snapped = await cube(page);
+  expect(Number.isInteger(snapped.x) && Number.isInteger(snapped.z)).toBe(true);
+  expect(snapped.x !== 0 || snapped.z !== 0).toBe(true);
+  // 磁石を入れると、Ctrl なしでスナップ (回転は 15° ずつ)
+  await page.getByRole('button', { name: 'スナップ' }).click();
+  await page.mouse.move(cx + 100, cy);
+  await page.keyboard.press('r');
+  await page.mouse.move(cx + 60, cy + 75, { steps: 4 });
+  await page.keyboard.press('Enter');
+  const deg = (await cube(page)).deg;
+  expect(deg % 15).toBe(0);
+  expect(deg).not.toBe(0);
+  expect(errors).toEqual([]);
+});

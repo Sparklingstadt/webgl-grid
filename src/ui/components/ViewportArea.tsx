@@ -36,6 +36,7 @@ export function ViewportArea(props: {
   const boxSelect = useUi(s => s.boxSelect);
   const box = useUi(s => s.box);
   const transform = useUi(s => s.transform);
+  const snap = useUi(s => s.snap);
   useUi(s => s.sceneVersion);
   const empty = !engine.world.objects.length && !engine.stage.model; // 何も置いていない (始めたとき・最初の状態に戻したとき)
   const [showFrame, setShowFrame] = useShowFrame();
@@ -116,6 +117,10 @@ export function ViewportArea(props: {
           <AddonMenuItems menu="object" />
         </Menu>
         <span className="spacer" />
+        <button type="button" className="hbtn icon-btn" aria-pressed={snap} aria-label={t('スナップ')} title={t('スナップ (Shift+Tab)。G・R・S のあいだ Ctrl で入れ替わる')}
+                onClick={() => engine.transform.setSnap(!snap)}>
+          <svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M4 2.5v5.5a4 4 0 0 0 8 0V2.5M4 5h2.5M9.5 5H12M6.5 2.5V8a1.5 1.5 0 0 0 3 0V2.5" /></svg>
+        </button>
         <button type="button" className="hbtn" aria-pressed={props.sideOpen} aria-controls="side-column" title={t('アウトライナーとプロパティ')} onClick={props.toggleSide}>{t('プロパティ')}</button>
       </div>
       <div className="view-body">
@@ -143,8 +148,9 @@ export function ViewportArea(props: {
             <div className="view-mode-hint" role="status">
               <b>{transform.mode === 'grab' ? t('移動') : transform.mode === 'rotate' ? t('回転') : t('拡大縮小')}</b>
               {transform.axis && ` ${transform.axis === 'x' ? t('X 軸') : t('Y 軸 (奥行き)')}`}
+              {transform.snap && ` ${t('スナップ')}`}
               {`  ${transform.value}  `}
-              <span className="dim">{transform.mode === 'grab' ? t('X・Y で軸、数字で値。クリック・Enter で決定、Esc・右クリックでやめる') : t('数字で値。クリック・Enter で決定、Esc・右クリックでやめる')}</span>
+              <span className="dim">{transform.mode === 'grab' ? t('X・Y で軸、数字で値、Ctrl でスナップ。クリック・Enter で決定、Esc・右クリックでやめる') : t('数字で値、Ctrl でスナップ。クリック・Enter で決定、Esc・右クリックでやめる')}</span>
             </div>
           )}
           {empty && <div className="view-hint">{t('Shift+A (追加) で形やライトを置く・ファイル > MMD を読み込む… でモデルを置く')}</div>}

@@ -85,6 +85,7 @@ export function useShortcuts(engine: Engine, actions: {
           break;
         // ポーズモード (Blender と同じ): Tab で切り替え、R 回す・G 動かす、Alt+R・Alt+G で戻す
         case 'Tab':
+          if (e.shiftKey) { e.preventDefault(); engine.transform.setSnap(!engine.transform.snapOn); break; } // Shift+Tab: スナップ
           if (engine.selection.model || engine.pose.active) { e.preventDefault(); engine.togglePoseMode(); }
           break;
         // G 移動・R 回転・S 拡大縮小 (Alt で元に戻す)。ポーズモードの R・G はボーンのギズモ
