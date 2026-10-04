@@ -63,6 +63,26 @@ function matrixElemsOf(name: string, rows: number, cols: number): [number, numbe
   return elems.length <= 4 ? elems : null;
 }
 
+// 型チェック前の形に写す (convert を外し、type・sym・access・target は付け直させる)。副作用のない式だけ
+function cloneExpr(e: Expr): Expr {
+  const { loc } = e;
+  switch (e.kind) {
+    case 'number': return { kind: 'number', value: e.value, isFloat: e.isFloat, loc };
+    case 'bool': return { kind: 'bool', value: e.value, loc };
+    case 'ident': return { kind: 'ident', name: e.name, loc };
+    case 'convert': return cloneExpr(e.value);
+    case 'unary': return { kind: 'unary', op: e.op, postfix: e.postfix, operand: cloneExpr(e.operand), loc };
+    case 'binary': return { kind: 'binary', op: e.op, left: cloneExpr(e.left), right: cloneExpr(e.right), loc };
+    case 'ternary': return { kind: 'ternary', cond: cloneExpr(e.cond), then: cloneExpr(e.then), else: cloneExpr(e.else), loc };
+    case 'call': return { kind: 'call', callee: e.callee, args: e.args.map(cloneExpr), loc };
+    case 'construct': return { kind: 'construct', typeRef: e.typeRef, args: e.args.map(cloneExpr), loc };
+    case 'cast': return { kind: 'cast', typeRef: e.typeRef, value: cloneExpr(e.value), loc };
+    case 'member': return { kind: 'member', object: cloneExpr(e.object), name: e.name, loc };
+    case 'index': return { kind: 'index', object: cloneExpr(e.object), index: cloneExpr(e.index), loc };
+    default: throw new Error(`cloneExpr: ${e.kind}`);
+  }
+}
+
 const hasDuplicate = (xs: unknown[]) => new Set(xs.map(String)).size !== xs.length;
 const hasStruct = (ty: Type): boolean => ty.k === 'struct' || (ty.k === 'array' && hasStruct(ty.of));
 
@@ -72,6 +92,7 @@ class Checker {
   readonly functions: FunctionInfo[] = []; // 使うと分かった順 (この順に中身を確かめる)
   private readonly diags: Diagnostics;
   private readonly env: ConstEnv;
+  private readonly shaderEnv: ConstEnv; // 関数の中: const でない static の初期値は使わない (実行中に書き換わる)
   private readonly typedefs = new Map<string, Type>();
   private readonly overloads = new Map<string, FunctionInfo[]>();
   private readonly firstUse = new Map<FunctionInfo, Loc>();
@@ -92,10 +113,22 @@ class Checker {
         return ty === ERR ? null : ty;
       },
     };
+    this.shaderEnv = {
+      global: name => {
+        const g = this.globals.get(name);
+        return g && (g.storage === 'const' || (g.storage === 'static' && g.decl.storage.includes('const'))) ? g.value : null;
+      },
+      resolveType: this.env.resolveType,
+    };
   }
 
   constEval(e: Expr): ConstValue | null {
     return evalConst(e, this.env);
+  }
+
+  // いまの文脈での定数 (関数の中なら shaderEnv)
+  private fold(e: Expr): ConstValue | null {
+    return evalConst(e, this.fn ? this.shaderEnv : this.env);
   }
 
   private error(code: DiagCode, loc: Loc, message: string): void {
@@ -163,7 +196,7 @@ class Checker {
     const d = dims[0];
     let length = unsized;
     if (d) {
-      const v = this.constEval(d);
+      const v = this.fold(d);
       length = v?.kind === 'num' && v.type.k === 'scalar' ? v.values[0] : undefined;
     }
     if (length === undefined || !Number.isInteger(length) || length < 1) {
@@ -282,7 +315,9 @@ class Checker {
     const list = this.overloads.get(decl.name) ?? [];
     const same = list.find(f => f.params.length === params.length && f.params.every((p, i) => sameType(p, params[i])));
     if (same) {
-      if (same.decl.body === null && decl.body !== null) same.decl = decl;
+      // 中身が 2 つ・戻り値の型だけ違うものは定義し直し
+      if ((same.decl.body !== null && decl.body !== null) || !sameType(same.ret, ret)) this.redefined(decl.loc, decl.name);
+      else if (same.decl.body === null && decl.body !== null) same.decl = decl;
       return;
     }
     list.push({ decl, params, ret });
@@ -444,7 +479,7 @@ class Checker {
           if (label) {
             this.checkExpr(label);
             c.value = this.coerce(label, INT);
-            if (label.type !== ERR && this.constEval(c.value) === null) this.error('FX-TYPE-CONST', label.loc, t('case の値は定数の整数にしてください'));
+            if (label.type !== ERR && this.fold(c.value) === null) this.error('FX-TYPE-CONST', label.loc, t('case の値は定数の整数にしてください'));
           }
           for (const x of c.body) this.checkStmt(x);
         }
@@ -622,6 +657,12 @@ class Checker {
     return ERR;
   }
 
+  // GLSL に書き方のない型の組み合わせ
+  private unsupportedOp(loc: Loc, op: string, types: Type[]): Type {
+    this.error('FX-UNSUPPORTED', loc, t('この型の組み合わせには対応していません: {op} ({types})', { op, types: types.map(typeName).join(', ') }));
+    return ERR;
+  }
+
   private inferUnary(e: ExprOf<'unary'>): Type {
     const ty = this.checkExpr(e.operand);
     if (ty === ERR) return ERR;
@@ -629,6 +670,7 @@ class Checker {
     if (s === null || e.op === '~') return this.opError(e.loc, e.op, [ty]);
     switch (e.op) {
       case '!':
+        if (ty.k === 'matrix') return this.unsupportedOp(e.loc, e.op, [ty]);
         e.operand = this.coerce(e.operand, withScalar(ty, 'bool'));
         return withScalar(ty, 'bool');
       case '++': case '--':
@@ -653,6 +695,7 @@ class Checker {
     const kb = scalarKind(b);
     if (!r || ka === null || kb === null) return this.opError(e.loc, e.op, [a, b]);
     const arithmetic = ARITHMETIC.has(e.op);
+    if (!arithmetic && r.type.k === 'matrix') return this.unsupportedOp(e.loc, e.op, [a, b]);
     let s: Scalar;
     if (arithmetic) s = scalarKind(r.type) as Scalar;
     else if (e.op === '&&' || e.op === '||') s = 'bool';
@@ -673,13 +716,45 @@ class Checker {
       e.value = this.coerce(e.value, tt);
       return tt;
     }
+    const op = e.op.slice(0, -1);
     const s = scalarKind(tt);
-    if (s === null || s === 'bool' || !binaryResultType(e.op[0], tt, vt)) {
+    const vs = scalarKind(vt);
+    const r = binaryResultType(op, tt, vt);
+    if (s === null || vs === null || s === 'bool' || !r) {
       this.opError(e.loc, e.op, [tt, vt]);
       return tt;
     }
-    e.value = this.coerce(e.value, vt.k === 'scalar' ? withScalar(vt, s) : tt);
+    const ak = arithmeticScalar(s, vs);
+    if (ak === s) {
+      e.value = this.coerce(e.value, vt.k === 'scalar' ? withScalar(vt, s) : tt);
+      return tt;
+    }
+    // 整数の左辺に float を混ぜた複合代入は、float で計算して戻す: t = (T)((float)t op v)。左辺は 2 回書くので副作用がないものだけ
+    if (!this.pure(e.target)) {
+      this.error('FX-UNSUPPORTED', e.loc, t('左辺に副作用がありうる、整数と float の複合代入には対応していません'));
+      return tt;
+    }
+    const copy = cloneExpr(e.target);
+    this.checkExpr(copy);
+    const side = (ty: Type) => withScalar(ty.k === 'scalar' ? ty : r.type, ak);
+    const bin: Expr = { kind: 'binary', op, left: this.coerce(copy, side(tt)), right: this.coerce(e.value, side(vt)), loc: e.loc, type: r.type };
+    e.op = '=';
+    e.value = this.coerce(bin, tt);
     return tt;
+  }
+
+  // 副作用のない左辺: 名前・そのメンバー・添字が名前か定数の要素
+  private pure(e: Expr): boolean {
+    switch (e.kind) {
+      case 'ident': return true;
+      case 'member': return this.pure(e.object);
+      case 'index': {
+        let i = e.index;
+        while (i.kind === 'convert') i = i.value;
+        return this.pure(e.object) && (i.kind === 'ident' || this.fold(e.index) !== null);
+      }
+      default: return false;
+    }
   }
 
   private checkLvalue(e: Expr): void {
@@ -722,7 +797,8 @@ class Checker {
     const common = this.commonType(a, b);
     const s = common && scalarKind(common);
     if (!common || scalarKind(ct) === null || (ct.k !== 'scalar' && !s)) return this.opError(e.loc, '?:', [ct, a, b]);
-    let result = common;
+    if (ct.k === 'matrix' || common.k === 'sampler' || common.k === 'texture') return this.unsupportedOp(e.loc, '?:', [ct, a, b]);
+    let result: Type = common;
     if (ct.k === 'scalar') e.cond = this.coerce(e.cond, BOOL);
     else {
       result = withScalar(ct, s as Scalar);
@@ -904,7 +980,7 @@ class Checker {
       return elem;
     }
     if (it.s !== 'int' && it.s !== 'uint') e.index = this.coerce(e.index, INT);
-    const v = this.constEval(e.index);
+    const v = this.fold(e.index);
     if (v?.kind === 'num' && (v.values[0] < 0 || v.values[0] >= size)) {
       this.error('FX-TYPE-MISMATCH', e.index.loc, t('添字 {index} は範囲の外です (大きさ {size})', { index: v.values[0], size }));
     }

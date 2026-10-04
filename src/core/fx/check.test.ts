@@ -275,3 +275,50 @@ describe('型チェック: 定数の計算', () => {
     expect(c.constEval(e('float4(1, 1, 0, 1)'))).toEqual({ kind: 'num', type: F4, values: [1, 1, 0, 1] });
   });
 });
+
+describe('型チェック: 修正 1 回目', () => {
+  // 本体の k 番目の文の式
+  const exprAt = (c: CheckedEffect, k: number) => (bodyOf(c, 'PS')[k] as { kind: 'expr'; expr: Expr }).expr as Expr & { kind: 'assign' };
+  it('int の左辺への float の複合代入は t = (int)((float)t op v) に書き直す', () => {
+    const c = checkSrc(PS_BODY('int f() { return 0; }', 'int n = 10; n *= 0.5; int3 a = 1; a *= 0.5; int arr[2] = { 1, 2 }; int i = 0; arr[i] += 0.5; float x = 1; x *= 2;'));
+    const n = exprAt(c, 1);
+    expect(n.op).toBe('=');
+    expect(show(n.value)).toBe('<int>((<float>(n) * 0.5))');
+    expect(n.value).toMatchObject({ type: I, value: { kind: 'binary', op: '*', type: F } });
+    const copy = (n.value as Expr & { kind: 'convert' }).value as Expr & { kind: 'binary' };
+    expect(copy.left).toMatchObject({ kind: 'convert', value: { kind: 'ident', name: 'n', type: I, sym: { kind: 'local' } } });
+    expect(copy.left).not.toBe(n.target);
+    const a = exprAt(c, 3);
+    expect(a).toMatchObject({ op: '=', value: { kind: 'convert', to: vectorOf('int', 3), value: { kind: 'binary', op: '*', type: F3 } } });
+    const arr = exprAt(c, 6);
+    expect(arr).toMatchObject({ op: '=', value: { kind: 'convert', to: I, value: { kind: 'binary', op: '+', left: { value: { kind: 'index', type: I } } } } });
+    const x = exprAt(c, 8);
+    expect(x.op).toBe('*=');
+    expect(show(x.value)).toBe('<float>(2)');
+    expect(codesOf(PS_BODY('int f() { return 0; }', 'int arr[2] = { 1, 2 }; arr[f()] += 0.5;'))).toEqual(['FX-UNSUPPORTED']);
+  });
+  it('関数の中の定数の計算は、const でない static の初期値を使わない', () => {
+    expect(codesOf(PS_BODY('static int k = 5;', 'float a[2] = { 1, 2 }; k = 0; float b = a[k];'))).toEqual([]);
+    expect(codesOf(PS_BODY('static int k = 1;', 'switch (0) { case k: break; }'))).toEqual(['FX-TYPE-CONST']);
+    expect(codesOf(PS_BODY('static const int k = 5;', 'float a[2] = { 1, 2 }; float b = a[k];'))).toEqual(['FX-TYPE-MISMATCH']);
+  });
+  it('float の 0 での割り算・NaN は定数にならない', () => {
+    const c = checkSrc('static float a = 1.0 / 0; static float b = sqrt(-1.0); static float d = 1.0 / 4;' + PASS_USING('a + b + d'));
+    expect(['a', 'b', 'd'].map(n => c.globals.get(n)?.value?.kind ?? null)).toEqual([null, null, 'num']);
+    expect(c.globals.get('a')?.needsInit).toBe(true);
+  });
+  it('同じ引数の型の関数を 2 つ定義すると FX-TYPE-REDEFINED (戻り値の型だけ違うものも)', () => {
+    expect(codesOf('float g(float x) { return x; } float g(float y) { return 1; }' + PS_PASS_RETURNING('1'))).toEqual(['FX-TYPE-REDEFINED']);
+    expect(codesOf('float g(float x) { return x; } int g(float y) { return 1; }' + PS_PASS_RETURNING('1'))).toEqual(['FX-TYPE-REDEFINED']);
+    expect(codesOf('float g(float x); float g(float x) { return x; }' + PS_PASS_RETURNING('g(1)'))).toEqual([]);
+  });
+  it('GLSL にない型の組み合わせは FX-UNSUPPORTED (行列の比較・行列の !・行列の条件・サンプラーの三項)', () => {
+    expect(codesOf(PS_BODY('float2x2 A; float2x2 B; sampler S; sampler T;', 'A < B; !A; float2x2 e = A ? A : B; float4 f = tex2D(true ? S : T, 0);')))
+      .toEqual(['FX-UNSUPPORTED', 'FX-UNSUPPORTED', 'FX-UNSUPPORTED', 'FX-UNSUPPORTED']);
+  });
+  it('ユーザーの関数を呼ぶ static の初期値は needsInit', () => {
+    const c = checkSrc('float f() { return 1; } static float s = f();' + PASS_USING('s'));
+    expect(c.globals.get('s')).toMatchObject({ storage: 'static', needsInit: true, value: null });
+    expect(c.functions.map(f => f.decl.name)).toEqual(['f', 'PS']);
+  });
+});

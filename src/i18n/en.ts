@@ -1145,5 +1145,7 @@ const dict: Dictionary = {
   "関数 {name} が見つかりません": "Function {name} was not found",
   "関数 {name} の中身がありません": "Function {name} has no body",
   "関数の中の static 変数には対応していません": "static variables inside functions are not supported",
+  "この型の組み合わせには対応していません: {op} ({types})": "This combination of types is not supported: {op} ({types})",
+  "左辺に副作用がありうる、整数と float の複合代入には対応していません": "Compound assignment mixing integer and float is not supported when the left side may have side effects",
 };
 export default dict;

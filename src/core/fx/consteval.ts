@@ -86,7 +86,7 @@ function evalBinary(op: string, a: Num, b: Num): Num | null {
       case '+': v = p + q; break;
       case '-': v = p - q; break;
       case '*': v = p * q; break;
-      case '/': if (isInt && q === 0) return null; v = isInt ? Math.trunc(p / q) : p / q; break;
+      case '/': if (q === 0) return null; v = isInt ? Math.trunc(p / q) : p / q; break;
       case '%': if (q === 0) return null; v = p % q; break; // JS の % は fmod と同じく被除数の符号
       case '<': v = Number(p < q); break;
       case '>': v = Number(p > q); break;
@@ -98,6 +98,7 @@ function evalBinary(op: string, a: Num, b: Num): Num | null {
       case '||': v = Number(p !== 0 || q !== 0); break;
       default: return null;
     }
+    if (!Number.isFinite(v)) return null; // 無限大・NaN は定数にしない
     values.push(ARITHMETIC.has(op) ? castScalar(v, scalarKindOf(r.type)) : v);
   }
   return { kind: 'num', type: r.type, values };
@@ -136,7 +137,7 @@ function evalIntrinsic(name: string, args: Num[]): Num | null {
     const len = Math.sqrt(sumSq(xs[0]));
     values = xs[0].map(x => x / len);
   }
-  if (values.some(Number.isNaN)) return null;
+  if (!values.every(Number.isFinite)) return null;
   const s = scalarKindOf(res.ret);
   return { kind: 'num', type: res.ret, values: values.map(x => castScalar(x, s)) };
 }
