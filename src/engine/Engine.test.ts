@@ -110,11 +110,11 @@ describe('Engine (描画なし)', () => {
     expect(e.camera.override).not.toBeNull();
     e.output.hooks.end!();
     expect(e.camera.override).toBeNull();
-    // 設定・キー (位置・回転。大きさはない)
+    // 設定・キー (位置・回転・視野角・高さ。大きさはない)
     e.setCamera({ fov: 60, tiltDeg: 20 });
     expect(cam.camera).toMatchObject({ fov: 60, tiltDeg: 20 });
     e.insertKey();
-    expect([...cam.anim!.props.keys()]).toEqual([0, 1, 2]);
+    expect([...cam.anim!.props.keys()]).toEqual([0, 1, 2, 8, 9]);
   });
 
   it('上から見る・視点を戻す', () => {
@@ -221,5 +221,28 @@ describe('キーフレーム', () => {
     e.clock.seekFrame(20);
     e.deleteKeyHere();
     expect(keyFrames(cube.anim)).toEqual([0]);
+  });
+
+  it('ライトの強さ・色・高さ、カメラの視野角にもキーを打ち、あいだは補間する。再生しただけでは手にならず、元に戻せる', () => {
+    const e = engineWithCube();
+    const light = e.addLight('point')!, cam = e.addCamera({ fov: 30 })!;
+    for (const [f, power, color, height, fov] of [[0, 100, '#000000', 2, 30], [20, 300, '#ff8000', 6, 70]] as const) {
+      e.clock.seekFrame(f);
+      e.select(light); e.setLight({ power, color, height }); e.insertKey();
+      e.select(cam); e.setCamera({ fov }); e.insertKey();
+    }
+    expect([...light.anim!.props.keys()]).toEqual([0, 1, 2, 4, 5, 6, 7, 9]);
+    e.clock.seekFrame(10);
+    expect(light.light!.power).toBeCloseTo(200);
+    expect(light.light!.height).toBeCloseTo(4);
+    expect(light.light!.color).toMatch(/^#(7f|80)4000$/); // (色は半分のところ)
+    expect(light.py).toBeCloseTo(4);
+    expect(cam.camera!.fov).toBeCloseTo(50);
+    e.history.checkpoint();
+    const steps = e.ui.state.history.labels.length;
+    e.clock.seekFrame(15);
+    e.history.checkpoint();
+    expect(e.ui.state.history.labels.length).toBe(steps);
+    expect(light.light!.power).toBeCloseTo(250);
   });
 });

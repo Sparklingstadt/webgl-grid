@@ -101,9 +101,9 @@ describe('チャンネルごとのキーフレーム', () => {
 describe('キーのコピー・貼り付け', () => {
   it('選んだフレームのキーを、いちばん前からの差で写し、ほかのフレームへ貼る (写しは元と別。重なったキーは上書き)', () => {
     const a = createAnimation();
-    insertPropKeys(a, 10, [1, 2, 0, 1]);
-    insertPropKeys(a, 14, [3, 4, 0, 1]);
-    insertPropKeys(a, 30, [9, 9, 9, 9]);
+    insertPropKeys(a, 10, [[0, 1], [1, 2], [2, 0], [3, 1]]);
+    insertPropKeys(a, 14, [[0, 3], [1, 4], [2, 0], [3, 1]]);
+    insertPropKeys(a, 30, [[0, 9], [1, 9], [2, 9], [3, 9]]);
     const clip = copyKeys(a, [10, 14]);
     expect(clip.map(c => [c.kind, c.index, c.keys.map(k => k[0])])).toEqual([['prop', 0, [0, 4]], ['prop', 1, [0, 4]], ['prop', 2, [0, 4]], ['prop', 3, [0, 4]]]);
     expect(pasteKeys(a, clip, 30)).toEqual([30, 34]);

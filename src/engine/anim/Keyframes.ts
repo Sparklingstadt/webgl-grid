@@ -6,16 +6,45 @@ import type { BoneValue } from '../../core/types';
 import { t } from '../../core/i18n';
 import type { Posing } from '../mmd/Posing';
 import type { Viewport } from '../render/Viewport';
+import type { CameraSettings } from '../../core/camera';
+import type { LightSettings } from '../../core/light';
 import { isModel, isShape, type ModelObj, type Obj } from '../types';
 import type { UiChannel } from '../UiChannel';
 import type { World } from '../world/World';
 
 // --- キーフレーム (Blender の I キー) ---
 // モデルのボーンと表情に、チャンネル (ボーン 1 本・表情 1 つ) ごとにキーを打つ (core/animation.ts)。
-// 形・ライトには、位置 X・位置 Z・回転・大きさ (形だけ) のチャンネルに打つ。
+// 形・ライト・カメラには、位置 X・位置 Z・回転と、形は大きさ、ライトは強さ・色 (R・G・B)・高さ、カメラは視野角・高さのチャンネルに打つ。
 // キーのあいだは、補間曲線にそって、回転は球面線形補間・位置と表情は線形補間でつなぐ。
 // タイムラインでは、キーはフレームごとにまとめて選び・ずらし・消す
+// 物にキーを打てる値 (PROPS の番号と、いまの値)
+type PropKey = typeof PROPS[number]['key'];
+const LIGHT_PROPS: PropKey[] = ['power', 'colorR', 'colorG', 'colorB', 'height'];
+export function propApplies(obj: Obj, key: PropKey) {
+  if (isModel(obj)) return false;
+  if (key === 'x' || key === 'z' || key === 'r') return true;
+  if (key === 'scale') return isShape(obj);
+  if (key === 'fov') return !!obj.camera;
+  if (key === 'height') return !!(obj.light || obj.camera);
+  return !!obj.light && LIGHT_PROPS.includes(key);
+}
+const hexToRgb = (h: string) => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16) / 255);
+const rgbToHex = (c: number[]) => `#${c.map(v => Math.round(Math.min(Math.max(v, 0), 1) * 255).toString(16).padStart(2, '0')).join('')}`;
+function propValue(obj: Obj, key: PropKey): number {
+  switch (key) {
+    case 'scale': return obj.scale ?? 1;
+    case 'power': return obj.light ? (obj.light.type === 'sun' ? obj.light.strength : obj.light.power) : 0;
+    case 'colorR': case 'colorG': case 'colorB': return obj.light ? hexToRgb(obj.light.color)['RGB'.indexOf(key[5])] : 0;
+    case 'fov': return obj.camera?.fov ?? 0;
+    case 'height': return obj.light?.height ?? obj.camera?.height ?? 0;
+    default: return obj[key];
+  }
+}
+// ライト・カメラの設定の値 (強さ・色・視野角・高さ) を当てる (Engine が Lights・Cameras につなぐ)
+export interface PropTarget { light(obj: Obj, patch: Partial<LightSettings>): void; camera(obj: Obj, patch: Partial<CameraSettings>): void }
+
 export class Keyframes {
+  target: PropTarget | null = null;
   readonly selected = new Set<number>(); // タイムラインで選んだフレーム (選んでいるモデルの)
   expanded = false; // タイムラインに、チャンネルごとの行を出す
   // コピーしたキー (Ctrl+C)。ボーン・表情は名前でも覚え、ほかのモデルにも同じ名前のチャンネルへ貼れる
@@ -41,7 +70,7 @@ export class Keyframes {
     for (const obj of objs) {
       if (isModel(obj)) continue;
       obj.anim ??= createAnimation();
-      const values = PROPS.filter(p => p.key !== 'scale' || isShape(obj)).map(p => (p.key === 'scale' ? obj.scale ?? 1 : obj[p.key]));
+      const values = PROPS.flatMap((p, i) => (propApplies(obj, p.key) ? [[i, propValue(obj, p.key)] as [number, number]] : []));
       n += insertPropKeys(obj.anim, frame, values);
     }
     if (!n) return;
@@ -85,7 +114,7 @@ export class Keyframes {
     if (!this.clip) { this.ui.toast(t('先にキーをコピーしてください (Ctrl+C)'), 2500); return false; }
     const clip: ClipChannel[] = [];
     for (const c of this.clip) {
-      const index = c.kind === 'prop' ? (PROPS[c.index]?.key !== 'scale' || isShape(obj) ? c.index : -1) : this.channelIndex(obj, c.kind, c.name);
+      const index = c.kind === 'prop' ? (PROPS[c.index] && propApplies(obj, PROPS[c.index].key) ? c.index : -1) : this.channelIndex(obj, c.kind, c.name);
       if (index >= 0) clip.push({ ...c, index });
     }
     if (!clip.length) { this.ui.toast(t('この物には、コピーしたキーのチャンネルがありません'), 3000); return false; }
@@ -183,13 +212,23 @@ export class Keyframes {
     for (const obj of this.world.objects) {
       if (isEmpty(obj.anim)) continue;
       const { pose, morphs, props } = evaluate(obj.anim!, t * FPS);
-      // 物の値 (位置・回転・大きさ)
+      // 物の値 (位置・回転・大きさ)、ライト・カメラの設定 (強さ・色・視野角・高さ)
+      const light: Partial<LightSettings> = {}, cam: Partial<CameraSettings> = {};
+      let rgb: number[] | null = null;
       for (const [p, v] of props) {
         const key = PROPS[p]?.key;
-        if (!key) continue;
-        if (key === 'scale') { if (isShape(obj)) obj.scale = v === 1 ? undefined : Math.max(v, 0.05); } else obj[key] = v;
+        if (!key || !propApplies(obj, key)) continue;
+        if (key === 'scale') obj.scale = v === 1 ? undefined : Math.max(v, 0.05);
+        else if (key === 'x' || key === 'z' || key === 'r') obj[key] = v;
+        else if (key === 'power') { if (obj.light?.type === 'sun') light.strength = Math.max(v, 0); else light.power = Math.max(v, 0); }
+        else if (key === 'fov') cam.fov = v;
+        else if (key === 'height') { if (obj.light) light.height = v; else cam.height = v; }
+        else { rgb ??= hexToRgb(obj.light!.color); rgb['RGB'.indexOf(key[5])] = v; }
         moved = true;
       }
+      if (rgb) light.color = rgbToHex(rgb);
+      if (obj.light && Object.keys(light).length) this.target?.light(obj, light);
+      if (obj.camera && Object.keys(cam).length) this.target?.camera(obj, cam);
       any = true;
       if (!isModel(obj)) continue;
       // 手で動かしたが、まだキーのないボーンは残す (キーを打つまで)

@@ -1039,5 +1039,9 @@ const dict: Dictionary = {
   "マーカーの名前を変更": "Rename Marker",
   "マーカーを削除": "Delete Marker",
   "コレクションへ移動 (タイムラインの上ではマーカーを置く)": "Move to collection (add a marker over the timeline)",
+  "ライトの強さ": "Light Strength",
+  "ライトの色 R": "Light Color R",
+  "ライトの色 G": "Light Color G",
+  "ライトの色 B": "Light Color B",
 };
 export default dict;

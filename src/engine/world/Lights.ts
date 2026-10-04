@@ -19,12 +19,35 @@ export class Lights {
     this.build(obj);
     return obj;
   }
-  // 設定を変える (渡したところだけ)
+  // 設定を変える (渡したところだけ)。強さ・色・高さだけなら、作り直さずにその場で変える (キーで毎フレーム変わるので)
   set(obj: Obj, patch: Partial<LightSettings>) {
     if (!obj.light) return;
-    obj.light = normalizeLight({ ...obj.light, ...patch });
-    this.build(obj);
+    const prev = obj.light, next = normalizeLight({ ...prev, ...patch });
+    obj.light = next;
+    if (!this.update(obj, prev, next)) this.build(obj);
     this.world.settle(); // (高さ)
+  }
+  private update(obj: Obj, prev: LightSettings, next: LightSettings) {
+    const quick = new Set<keyof LightSettings>(['power', 'strength', 'color', 'height']);
+    if ((Object.keys(next) as (keyof LightSettings)[]).some(k => !quick.has(k) && next[k] !== prev[k])) return false;
+    if (next.type === 'area' && !areaLoaded) return false;
+    const color = new THREE.Color(next.color), power = lightIntensity(next);
+    let found = false;
+    obj.node.children[0].traverse(o => {
+      const l = o as THREE.Light;
+      if (l.isLight) {
+        l.color.copy(color);
+        l.intensity = power;
+        const sun = l as THREE.DirectionalLight;
+        if (sun.isDirectionalLight) { sun.shadow.camera.far = 30 + next.height * 3; sun.shadow.camera.updateProjectionMatrix(); }
+        found = true;
+      }
+      const m = (o as THREE.Mesh).material as THREE.MeshBasicMaterial | undefined;
+      if (o.userData.lightColor && m) m.color.copy(color);
+      if (o.userData.heightLine) (o as THREE.Line).geometry.setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, -next.height, 0)]);
+    });
+    this.viewport.requestDraw();
+    return found;
   }
 
   // 光と目印を作り直す
@@ -36,7 +59,7 @@ export class Lights {
     const color = new THREE.Color(s.color);
     const aim = new THREE.Vector3(...lightAim(s.tiltDeg));
     const gizmoMat = new THREE.MeshBasicMaterial({ color, userData: { outlineBase: { visible: false } } });
-    const gizmo = (g: THREE.BufferGeometry) => Object.assign(new THREE.Mesh(g, gizmoMat), { userData: { editorOnly: true } });
+    const gizmo = (g: THREE.BufferGeometry) => Object.assign(new THREE.Mesh(g, gizmoMat), { userData: { editorOnly: true, lightColor: true } });
     const power = lightIntensity(s);
     if (s.type === 'point') {
       const l = new THREE.PointLight(color, power, s.range, 2);
@@ -53,6 +76,7 @@ export class Lights {
       const ray = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), aim.clone().multiplyScalar(1.2)]),
         new THREE.LineBasicMaterial({ color }));
       ray.userData.editorOnly = true;
+      ray.userData.lightColor = true;
       ray.raycast = () => {};
       holder.add(l, l.target, gizmo(new THREE.SphereGeometry(0.16, 16, 8)), ray);
     } else if (s.type === 'spot') {
@@ -80,6 +104,7 @@ export class Lights {
     const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, -s.height, 0)]),
       new THREE.LineBasicMaterial({ color: 0x8a8a8a, transparent: true, opacity: 0.6 }));
     line.userData.editorOnly = true;
+    line.userData.heightLine = true;
     line.raycast = () => {};
     holder.add(line);
     this.viewport.requestDraw();

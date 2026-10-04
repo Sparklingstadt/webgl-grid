@@ -20,7 +20,10 @@ const BONE_COMPS: [keyof BoneValue, string, string, number][] = [
   ['rx', '回転 X', '#ff5a5a', 1], ['ry', '回転 Y', '#7ed957', 1], ['rz', '回転 Z', '#5aa0ff', 1],
   ['px', '位置 X', '#ff9a9a', 1], ['py', '位置 Y', '#b5e89c', 1], ['pz', '位置 Z', '#9cc4ff', 1],
 ];
-const PROP_STYLE: Record<string, [string, number]> = { x: ['#ff5a5a', 1], z: ['#5aa0ff', 1], r: ['#7ed957', 1 / DEG], scale: ['#f2c94c', 1] };
+const PROP_STYLE: Record<string, [string, number]> = {
+  x: ['#ff5a5a', 1], z: ['#5aa0ff', 1], r: ['#7ed957', 1 / DEG], scale: ['#f2c94c', 1],
+  power: ['#ffd25e', 1], colorR: ['#ff7070', 1], colorG: ['#70e070', 1], colorB: ['#70a0ff', 1], fov: ['#8cc4ff', 1], height: ['#c8a2ff', 1],
+};
 const MORPH_COLORS = ['#d38cff', '#ff8cc6', '#8cf2ff', '#ffd08c'];
 
 // 物のチャンネルの曲線の一覧 (ボーンは、どこかのキーで 0 でない成分だけ)

@@ -141,7 +141,14 @@ export class History {
       const anim = o.anim;
       const keyed = (k: string) => !!anim?.props.has(PROPS.findIndex(p => p.key === k));
       if (keyed('scale')) delete data.scale;
-      const st: ObjState = { id: o.id, parent: o.parent ?? null, s: o.s, x: keyed('x') ? 0 : o.x, y: keyed('x') || keyed('z') ? 0 : o.y, z: keyed('z') ? 0 : o.z, r: keyed('r') ? 0 : o.r, c: o.c, slots: [...o.slots], data };
+      // (ライトの強さ・色・高さ、カメラの視野角・高さも同じ)
+      const light = data.light as { type: string; power: number; strength: number; color: string; height: number } | undefined;
+      if (light && keyed('power')) light[light.type === 'sun' ? 'strength' : 'power'] = 0;
+      if (light && (keyed('colorR') || keyed('colorG') || keyed('colorB'))) light.color = '#000000';
+      const camera = data.camera as { fov: number; height: number } | undefined;
+      if (camera && keyed('fov')) camera.fov = 0;
+      if (keyed('height')) { if (light) light.height = 0; if (camera) camera.height = 0; }
+      const st: ObjState = { id: o.id, parent: o.parent ?? null, s: o.s, x: keyed('x') ? 0 : o.x, y: keyed('x') || keyed('z') || keyed('height') ? 0 : o.y, z: keyed('z') ? 0 : o.z, r: keyed('r') ? 0 : o.r, c: o.c, slots: [...o.slots], data };
       if (!isModel(o)) { st.anim = isEmpty(anim) ? null : animationToJson(anim!); return st; }
       // キーのあるボーン・表情の値も、同じく入れない
       st.pose = [...(o.pose ?? [])].filter(([i]) => !anim?.bones.has(i)).map(([i, v]) => [i, { ...v }]);

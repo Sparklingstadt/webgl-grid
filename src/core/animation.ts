@@ -24,12 +24,19 @@ export interface Animation {
   props: Map<number, Map<number, MorphKey>>;  // 物の値 (PROPS の番号: 位置 X・位置 Z・回転・大きさ) → フレーム → キー
 }
 export type Channel = { kind: 'bone' | 'morph' | 'prop'; index: number };
-// 物 (形・ライト) のキーにする値 (Blender の位置・回転・拡大縮小)。回転はラジアン
+// 物 (形・ライト・カメラ) のキーにする値 (Blender の位置・回転・拡大縮小と、ライトの強さ・色、カメラの視野角)。回転はラジアン。
+// 番号はプロジェクトに保存するので、足すときは後ろに足す
 export const PROPS = [
   { key: 'x', name: msg('位置 X') },
   { key: 'z', name: msg('位置 Z') },
   { key: 'r', name: msg('回転') },
-  { key: 'scale', name: msg('大きさ') },
+  { key: 'scale', name: msg('大きさ') },        // 形だけ
+  { key: 'power', name: msg('ライトの強さ') },   // ライト: パワー (W。サンは強さ W/m²)
+  { key: 'colorR', name: msg('ライトの色 R') },  // ライト: 色 (0〜1)
+  { key: 'colorG', name: msg('ライトの色 G') },
+  { key: 'colorB', name: msg('ライトの色 B') },
+  { key: 'fov', name: msg('視野角') },          // カメラ: 縦の視野角 (度)
+  { key: 'height', name: msg('高さ') },         // ライト・カメラ: 床からの高さ
 ] as const;
 export type PropKey = typeof PROPS[number]['key'];
 
@@ -131,8 +138,9 @@ export function insertKeys(anim: Animation, frame: number, pose: Map<number, Bon
   return n;
 }
 // 物の値 (values: PROPS の順) を、フレームに打つ。すでにキーがあれば値だけ替える。打ったチャンネルの数を返す
-export function insertPropKeys(anim: Animation, frame: number, values: number[]) {
-  values.forEach((v, p) => {
+// values: [PROPS の番号, 値]
+export function insertPropKeys(anim: Animation, frame: number, values: [number, number][]) {
+  values.forEach(([p, v]) => {
     let keys = anim.props.get(p);
     if (!keys) anim.props.set(p, keys = new Map());
     keys.set(frame, { v, curve: [...(keys.get(frame)?.curve ?? LINEAR)] as Curve });

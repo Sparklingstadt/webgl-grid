@@ -106,6 +106,8 @@ export class Engine {
   constructor() {
     const { viewport, clock, motion, keyframes, music, world, selection, camera, graph, ui } = this;
     registerBuiltins(this);
+    // キーのあるライト・カメラの強さ・色・視野角・高さを、再生に合わせて当てる
+    this.keyframes.target = { light: (o, p) => this.lights.set(o, p), camera: (o, p) => this.cameras.set(o, p) };
     // 元に戻した・やり直したら、コレクションの表示と、親の位置を合わせ直す
     this.history.events.on('restored', () => { this.applyCollections(); this.hierarchy.resetPoses(); });
     // レンダリングは、カメラのモーションがなければ、場面のカメラ (置いたカメラのいちばん上) から撮る
