@@ -1168,5 +1168,6 @@ const dict: Dictionary = {
   "頂点シェーダーが POSITION を出していません: {name}": "The vertex shader does not output POSITION: {name}",
   "static の {type} には対応していません: {name}": "static {type} variables are not supported: {name}",
   "頂点シェーダーかピクセルシェーダーの片方だけの pass には対応していません": "Passes with only a vertex shader or only a pixel shader are not supported",
+  "コンパイラの内部の誤りです: {message}": "Internal compiler error: {message}",
 };
 export default dict;
