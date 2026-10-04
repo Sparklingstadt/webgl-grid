@@ -89,21 +89,50 @@ describe('pass ごとのシェーダー', () => {
   it('MMD の標準のような pass', () => {
     const p = programOf(MMD_LIKE);
     expect(p.attributes).toEqual([{ semantic: 'POSITION', glslName: 'a_POSITION', type: 'float4' }, { semantic: 'TEXCOORD0', glslName: 'a_TEXCOORD0', type: 'float4' }]);
-    expect(p.uniforms.map(u => [u.name, u.kind, u.stages])).toEqual([['WVP', 'value', ['vertex']], ['S', 'sampler', ['fragment']], ['mme_flipY', 'builtin', ['vertex']]]);
-    expect(p).toMatchObject({ outputs: 1, uniformVectors: 5 });
+    expect(p.uniforms.map(u => [u.name, u.kind, u.stages])).toEqual([['WVP', 'value', ['vertex']], ['S', 'sampler', ['fragment']], ['mme_flipY', 'builtin', ['vertex']], ['mme_halfPixel', 'builtin', ['vertex']]]);
+    expect(p).toMatchObject({ outputs: 1, uniformVectors: 6 });
     expect(p.vertex).toContain('gl_Position = vec4(');
     expect(p.vertex.split('\n').slice(0, 6)).toEqual(HEADER);
     expect(p.fragment.split('\n').slice(0, 6)).toEqual(HEADER);
-    expect(p.uniforms.map(u => [u.glslName, u.type])).toEqual([['WVP', 'float4x4'], ['S', 'sampler2D'], ['mme_flipY', 'float']]);
+    expect(p.uniforms.map(u => [u.glslName, u.type])).toEqual([['WVP', 'float4x4'], ['S', 'sampler2D'], ['mme_flipY', 'float'], ['mme_halfPixel', 'float2']]);
     // 宣言・main の中身
-    expect(p.vertex).toContain('uniform mat4 WVP;\nuniform float mme_flipY;\nin vec4 a_POSITION;\nin vec4 a_TEXCOORD0;\nout vec4 v_TEXCOORD0;\n');
+    expect(p.vertex).toContain('uniform mat4 WVP;\nuniform float mme_flipY;\nuniform vec2 mme_halfPixel;\nin vec4 a_POSITION;\nin vec4 a_TEXCOORD0;\nout vec4 v_TEXCOORD0;\n');
     expect(p.vertex).toContain('VO mme_r = VS(a_POSITION, a_TEXCOORD0.xy);');
-    expect(p.vertex).toContain('vec4 mme_pos = mme_r.Pos;\n  gl_Position = vec4(mme_pos.x, mme_pos.y * mme_flipY, 2.0 * mme_pos.z - mme_pos.w, mme_pos.w);');
+    expect(p.vertex).toContain('vec4 mme_pos = mme_r.Pos;\n  gl_Position = vec4(mme_pos.x + mme_halfPixel.x * mme_pos.w, mme_pos.y * mme_flipY + mme_halfPixel.y * mme_pos.w, 2.0 * mme_pos.z - mme_pos.w, mme_pos.w);');
     expect(p.vertex).toContain('v_TEXCOORD0 = vec4(mme_r.Tex, 0.0, 1.0);');
     expect(p.fragment).toContain('uniform sampler2D S;\nin vec4 v_TEXCOORD0;\nlayout(location = 0) out vec4 o_COLOR0;\n');
     expect(p.fragment).toContain('vec4 mme_r = PS(VO(vec4(0.0), v_TEXCOORD0.xy));\n  o_COLOR0 = mme_r;');
     expect(p.fragment).not.toContain('mme_flipY');
     expect(p.fragment).not.toContain('WVP');
+  });
+
+  it('gl_Position に半画素のずれを入れ、mme_halfPixel を uniform に出す', () => {
+    const p = programOf(`${VS_SIMPLE} float4 PS() : COLOR0 { return 1; }${PASS_BOTH}`);
+    expect(p.vertex).toContain('gl_Position = vec4(mme_pos.x + mme_halfPixel.x * mme_pos.w, mme_pos.y * mme_flipY + mme_halfPixel.y * mme_pos.w, 2.0 * mme_pos.z - mme_pos.w, mme_pos.w);');
+    expect(p.vertex).toContain('uniform vec2 mme_halfPixel;');
+    expect(p.fragment).not.toContain('mme_halfPixel');
+    expect(p.uniforms.find(u => u.name === 'mme_halfPixel')).toEqual({ name: 'mme_halfPixel', glslName: 'mme_halfPixel', type: 'float2', kind: 'builtin', stages: ['vertex'] });
+    expect(p.uniformVectors).toBe(2); // mme_flipY 1 + mme_halfPixel 1
+  });
+
+  it('非正方の行列の uniform は mat4 で宣言し、読むところで直す', () => {
+    const p = programOf(`float4x3 M; float3x4 A[2]; float2x2 Q;
+      ${VS_SIMPLE} float4 PS() : COLOR0 { return mul(float3(1, 2, 3), A[1]) + float4(mul(float4(1, 0, 0, 1), M), Q[0][0]); }${PASS_BOTH}`);
+    expect(p.fragment).toContain('uniform mat4 M;');
+    expect(p.fragment).toContain('uniform mat4 A[2];');
+    expect(p.fragment).toContain('uniform mat2 Q;');
+    expect(p.fragment).toContain('mat4x3(M)');
+    expect(p.fragment).toContain('mat3x4(A[1])');
+    expect(p.uniforms.find(u => u.name === 'M')).toMatchObject({ type: 'float4x3', upload: 'mat4' });
+    expect(p.uniforms.find(u => u.name === 'A')).toMatchObject({ type: 'float3x4[2]', upload: 'mat4' });
+    expect(p.uniforms.find(u => u.name === 'Q')).not.toHaveProperty('upload');
+    expect(p.uniformVectors).toBe(4 + 8 + 2 + 2); // M 4 + A 4 x 2 + Q 2 + mme_flipY・mme_halfPixel
+  });
+
+  it('非正方の行列の配列を丸ごと使うときは、配列の作り直しで直す', () => {
+    const p = programOf(`float2x3 A[2]; float f(float2x3 a[2]) { return a[1][0][0]; }
+      ${VS_SIMPLE} float4 PS() : COLOR0 { return f(A); }${PASS_BOTH}`);
+    expect(p.fragment).toContain('mat2x3[2](mat2x3(A[0]), mat2x3(A[1]))');
   });
 
   it('同じ構造体を頂点とフラグメントで使う (POSITION を読まなければ警告なし、読めば FX-WARN-SEMANTIC)', () => {
@@ -143,31 +172,31 @@ describe('pass ごとのシェーダー', () => {
   it('VPOS を使うと mme_viewport が入り、ddy を使うとフラグメントにも mme_flipY', () => {
     const p = programOf(VPOS);
     expect(p.uniforms.map(u => [u.name, u.kind, u.type, u.stages])).toEqual([
-      ['mme_flipY', 'builtin', 'float', ['vertex', 'fragment']], ['mme_viewport', 'builtin', 'float2', ['fragment']],
+      ['mme_flipY', 'builtin', 'float', ['vertex', 'fragment']], ['mme_halfPixel', 'builtin', 'float2', ['vertex']], ['mme_viewport', 'builtin', 'float2', ['fragment']],
     ]);
-    expect(p.uniformVectors).toBe(2);
+    expect(p.uniformVectors).toBe(3);
     expect(p.fragment).toContain('uniform float mme_flipY;\nuniform vec2 mme_viewport;\n');
     expect(p.fragment).toContain('vec2(gl_FragCoord.x - 0.5, (mme_flipY < 0.0 ? gl_FragCoord.y : mme_viewport.y - gl_FragCoord.y) - 0.5)');
     expect(p.vertex).not.toContain('mme_viewport');
     const q = programOf(DDY_VFACE);
-    expect(q.uniforms.map(u => [u.name, u.stages])).toEqual([['mme_flipY', ['vertex', 'fragment']]]);
+    expect(q.uniforms.map(u => [u.name, u.stages])).toEqual([['mme_flipY', ['vertex', 'fragment']], ['mme_halfPixel', ['vertex']]]);
     expect(q.fragment).toContain('PS(v_TEXCOORD0.xy, (gl_FrontFacing ? 1.0 : -1.0))');
-    expect(q.uniformVectors).toBe(1);
+    expect(q.uniformVectors).toBe(2);
   });
 
   it('pass の uniform の引数を main に埋め込む', () => {
     const p = programOf(UNIFORM_ARGS);
-    expect(p.vertex).toContain('vec4 mme_r = VS(a_POSITION, a_TEXCOORD0.xy, M, mme_p0);');
+    expect(p.vertex).toContain('vec4 mme_r = VS(a_POSITION, a_TEXCOORD0.xy, mat4x3(M), mme_p0);');
     expect(p.fragment).toContain('vec4 mme_r = PS(v_TEXCOORD0.xy, S, Scale * 2.0, true);');
     expect(p.uniforms.map(u => [u.name, u.kind, u.stages])).toEqual([
-      ['Scale', 'value', ['fragment']], ['M', 'value', ['vertex']], ['S', 'sampler', ['fragment']], ['mme_flipY', 'builtin', ['vertex']],
+      ['Scale', 'value', ['fragment']], ['M', 'value', ['vertex']], ['S', 'sampler', ['fragment']], ['mme_flipY', 'builtin', ['vertex']], ['mme_halfPixel', 'builtin', ['vertex']],
     ]);
-    expect(p.uniformVectors).toBe(6); // Scale 1 + float4x3 は 4 行 + mme_flipY 1
+    expect(p.uniformVectors).toBe(7); // Scale 1 + float4x3 は mat4 で 4 + mme_flipY 1 + mme_halfPixel 1
   });
 
   it('static の初期値を mme_init で計算する', () => {
     const p = programOf(STATICS);
-    expect(p.uniforms.map(u => [u.name, u.stages])).toEqual([['Time', ['vertex']], ['mme_flipY', ['vertex']]]);
+    expect(p.uniforms.map(u => [u.name, u.stages])).toEqual([['Time', ['vertex']], ['mme_flipY', ['vertex']], ['mme_halfPixel', ['vertex']]]);
     expect(p.vertex).toContain('float Phase = 0.0;\nfloat Half = 0.5;\nconst float K = 2.0;\nfloat B = 2.0;\nfloat Z = 0.0;\nfloat C = 0.0;\n');
     expect(p.vertex).not.toMatch(/float A\b/);
     expect(p.vertex).toContain('void mme_init() {\n  Phase = sin(Time) * 0.5;\n  C = f(3.0);\n}');
@@ -211,7 +240,7 @@ describe('pass ごとのシェーダー', () => {
     expect(p.fragment).toContain('PS(VO(vec4(0.0), 0.0, v_TEXCOORD0.xy))');
     expect(warningCodes(`${decls} float4 PS(VO IN) : COLOR0 { return IN.Size; }${PASS_BOTH}`)).toEqual(['FX-WARN-SEMANTIC']);
     const q = programOf(`${VS_UV} float4 PS(float2 vpos : VPOS, float2 uv : TEXCOORD0) : COLOR0 { return float4(uv, 0, 1); }${PASS_BOTH}`);
-    expect(q.uniforms.map(u => [u.name, u.stages])).toEqual([['mme_flipY', ['vertex']]]);
+    expect(q.uniforms.map(u => [u.name, u.stages])).toEqual([['mme_flipY', ['vertex']], ['mme_halfPixel', ['vertex']]]);
     expect(q.fragment).not.toContain('mme_viewport');
     expect(q.fragment).toContain('PS(vec2(0.0), v_TEXCOORD0.xy)');
   });

@@ -139,6 +139,10 @@ describe('構文解析: 型と宣言', () => {
     expect(items.map(i => i.decl.semantic)).toEqual([null, 'COLOR0', null]);
     expect(items[2].decl.arrayDims).toEqual([null]);
   });
+  it('register は小文字の名前で VarDecl に残す (なければ null)', () => {
+    const items = parseSrc('sampler A : register(s0); sampler B : register( S1 ) = sampler_state { }; float4 C : register(ps, c4); float D;').items as GlobalDecl[];
+    expect(items.map(i => i.decl.register)).toEqual(['s0', 's1', 'c4', null]);
+  });
   it('構造体: フィールドのカンマ・配列・セマンティクス', () => {
     const s = parseSrc('struct S { float4 p : POSITION; float a, b[2]; };').items[0] as StructDecl;
     expect(s).toMatchObject({ kind: 'struct', name: 'S' });

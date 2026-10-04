@@ -4,10 +4,10 @@ import type { CheckedEffect, EntryInfo, FunctionInfo, GlobalInfo } from './check
 import type { AttributeRef, Program, UniformRef } from './desc.ts';
 import { Diagnostics, type Diagnostic, type Loc } from './diagnostics.ts';
 import {
-  emitConst, emitExpr, emitFunctions, emitHelpers, emitStructs, exprChildren, forEachExpr, glslName, glslType, newEmitContext, noteType, zeroOf,
+  emitConst, emitExpr, emitFunctions, emitHelpers, emitStructs, exprChildren, forEachExpr, glslName, glslType, isMat4Upload, newEmitContext, noteType, zeroOf,
   type EmitContext,
 } from './emit.ts';
-import { typeName, type Type } from './types.ts';
+import { flatLength, typeName, type Type } from './types.ts';
 
 // --- pass ごとの頂点・フラグメントのシェーダー (main・入出力・uniform の一覧) ---
 
@@ -161,10 +161,10 @@ function mainLines(entry: EntryInfo, stage: Stage, vertexOut: string[], ctx: Emi
     const color = /^COLOR(\d+)$/.exec(s);
     let line: string | null = null;
     if (stage === 'vertex' && s === 'POSITION') {
-      // 深度の範囲 (0〜1 → −1〜1) と上下の向きを直す
+      // 深度の範囲 (0〜1 → −1〜1)・上下の向き・DX9 の半画素のずれ (mme_halfPixel はクリップ座標でのずれ) を直す
       const p = toVec4(path, ty);
       if (p !== null) {
-        line = `${position ? '' : 'vec4 '}mme_pos = ${p};\n  gl_Position = vec4(mme_pos.x, mme_pos.y * mme_flipY, 2.0 * mme_pos.z - mme_pos.w, mme_pos.w);`;
+        line = `${position ? '' : 'vec4 '}mme_pos = ${p};\n  gl_Position = vec4(mme_pos.x + mme_halfPixel.x * mme_pos.w, mme_pos.y * mme_flipY + mme_halfPixel.y * mme_pos.w, 2.0 * mme_pos.z - mme_pos.w, mme_pos.w);`;
         position = true;
       }
     } else if (stage === 'vertex' && s === 'PSIZE') {
@@ -267,6 +267,13 @@ function constOf(g: GlobalInfo): string | null {
   return g.value?.kind === 'num' ? emitConst(g.value.values, g.type) : null;
 }
 
+// uniform の宣言。非正方の行列 (とその配列) は mat4 (詰め方は desc.ts の upload)
+function uniformDecl(g: GlobalInfo): string {
+  const name = glslName(g.decl.name);
+  if (!isMat4Upload(g.type)) return `uniform ${glslType(g.type)} ${name};`;
+  return `uniform mat4 ${name}${g.type.k === 'array' ? `[${flatLength(g.type)}]` : ''};`;
+}
+
 // --- 1 つの段階 ---
 const block = (lines: string[]): string => lines.map(l => `${l}\n`).join('');
 
@@ -297,8 +304,9 @@ function emitStage(checked: CheckedEffect, entry: EntryInfo, stage: Stage, verte
       const flipY = stage === 'vertex' || ctx.helpers.has('mme_flipY') || io.vpos;
       const uniforms = [...checked.globals.values()]
         .filter(g => g.storage === 'uniform' && ctx.usedGlobals.has(g.decl.name))
-        .map(g => `uniform ${glslType(g.type)} ${glslName(g.decl.name)};`);
+        .map(uniformDecl);
       if (flipY) uniforms.push('uniform float mme_flipY;');
+      if (stage === 'vertex') uniforms.push('uniform vec2 mme_halfPixel;');
       if (io.vpos) uniforms.push('uniform vec2 mme_viewport;');
       const ios = stage === 'vertex'
         ? [...io.attributes.map(s => `in vec4 a_${s};`), ...io.varyings.map(s => `out vec4 v_${s};`)]
@@ -317,9 +325,9 @@ function emitStage(checked: CheckedEffect, entry: EntryInfo, stage: Stage, verte
 }
 
 // --- uniform の一覧 ---
-// uniform に使う vec4 の数: スカラー・ベクトルは 1、floatRxC は R、配列は長さを掛ける
+// uniform に使う vec4 の数: スカラー・ベクトルは 1、floatRxC は R (非正方は mat4 なので 4)、配列は長さを掛ける
 function vectorsOf(ty: Type): number {
-  if (ty.k === 'matrix') return ty.rows;
+  if (ty.k === 'matrix') return isMat4Upload(ty) ? 4 : ty.rows; // 非正方の行列は mat4 で渡す
   if (ty.k === 'array') return ty.length * vectorsOf(ty.of);
   return 1;
 }
@@ -339,9 +347,13 @@ function uniformList(checked: CheckedEffect, vs: StageResult, ps: StageResult): 
     if (stages.length === 0) continue;
     // 向きの決まらなかった sampler は GLSL と同じく 2D
     const type = g.type.k === 'sampler' && g.type.dim === null ? 'sampler2D' : typeName(g.type);
-    list.push({ name, glslName: glslName(name), type, kind: g.type.k === 'sampler' ? 'sampler' : 'value', stages });
+    list.push({
+      name, glslName: glslName(name), type, kind: g.type.k === 'sampler' ? 'sampler' : 'value', stages,
+      ...(isMat4Upload(g.type) ? { upload: 'mat4' as const } : {}),
+    });
   }
   list.push({ name: 'mme_flipY', glslName: 'mme_flipY', type: 'float', kind: 'builtin', stages: stagesOf(r => r.flipY) });
+  list.push({ name: 'mme_halfPixel', glslName: 'mme_halfPixel', type: 'float2', kind: 'builtin', stages: ['vertex'] });
   if (ps.io.vpos) list.push({ name: 'mme_viewport', glslName: 'mme_viewport', type: 'float2', kind: 'builtin', stages: ['fragment'] });
   return list;
 }

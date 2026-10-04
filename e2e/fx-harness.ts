@@ -58,6 +58,19 @@ export function compileOne(hlsl: string): Program {
   return program;
 }
 
+// upload: 'mat4' の uniform: 非正方の行列 (とその配列) の数を、1 つにつき 16 個に詰める (HLSL の行 r・列 c → r * 4 + c、残りは 0)
+function packMat4(type: string, v: number[]): number[] {
+  const m = /^float(\d)x(\d)/.exec(type);
+  if (!m) throw new Error(`mat4 に詰める型ではない: ${type}`);
+  const rows = Number(m[1]), cols = Number(m[2]), n = rows * cols;
+  if (v.length % n !== 0) throw new Error(`${type} の数が ${n} の倍数ではない: ${v.length}`);
+  const out = Array.from({ length: (v.length / n) * 16 }, () => 0);
+  for (let k = 0; k < v.length / n; k++) {
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) out[k * 16 + r * 4 + c] = v[k * n + r * cols + c];
+  }
+  return out;
+}
+
 // HLSL を 1 つ変換して、1x1 の RGBA32F (EXT_color_buffer_float) に全面の三角形で描き、出力ごとの値を読む。uniforms は名前 → 数の並び
 export async function runPixel(page: Page, hlsl: string, uniforms: Record<string, number[]> = {}): Promise<number[][]> {
   const program = compileOne(hlsl);
@@ -67,7 +80,7 @@ export async function runPixel(page: Page, hlsl: string, uniforms: Record<string
     const u = program.uniforms.find(x => x.name === name);
     // コンパイラの知らない名前は書き間違いなので止める
     if (!u) throw new Error(`uniform ${name} はプログラムにない (${program.uniforms.map(x => x.name).join(', ')})`);
-    values[u.glslName] = v;
+    values[u.glslName] = u.upload === 'mat4' ? packMat4(u.type, v) : v;
   }
   // (GLSL のコンパイラが使われないと見て除いた uniform は、アクティブな uniform の一覧に出てこないので、黙って送らない)
   const result = await page.evaluate(({ vertex, fragment, outputs, values }) => {
@@ -90,7 +103,7 @@ export async function runPixel(page: Page, hlsl: string, uniforms: Record<string
       return `${gl.getShaderInfoLog(vs)}\n${gl.getShaderInfoLog(fs)}\n${gl.getProgramInfoLog(prog)}`;
     }
     gl.useProgram(prog);
-    // uniform: 型はリンクしたプログラムから読む。行列は D3D の行優先の数のまま、transpose = false で送る
+    // uniform: 型はリンクしたプログラムから読む。行列は D3D の行優先の数のまま (非正方は mat4 に詰めて)、transpose = false で送る
     const n = gl.getProgramParameter(prog, gl.ACTIVE_UNIFORMS) as number;
     for (let i = 0; i < n; i++) {
       const info = gl.getActiveUniform(prog, i)!;

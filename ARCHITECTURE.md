@@ -16,11 +16,13 @@ core/    純粋な計算とデータ (three.js の数学ライブラリは使っ
 - **core/fx/** は MME の .fx（DirectX 用の HLSL）を GLSL ES 3.00 にするコンパイラです。前処理 → 構文解析 → 型チェック → GLSL ES 3.00 の書き出しの順で、入口は `compileEffect`（`core/fx/index.ts`）。出力の `EffectDesc`（パラメータ・テクスチャ・サンプラー・テクニック・パスごとのプログラム）は、これから作る MME 互換モードの実行部が読みます。いまはコンパイラだけで、アプリからは使っていません。`npm run fx:check` が、`fx/`（ユーザーのエフェクト。Git に入れない）と `third_party/ray-mmd-1.5.2/`（テスト用の見本）の全部の .fx を変換して結果を表にします。実行部が知っておくこと:
   - 配列の配列は 1 本に平らにする（`float2[6][9]` → `vec2[54]`。初期値も行ごとに並べて平らにする）。
   - `Program.uniformVectors` は、頂点・フラグメントの両方を合わせた 1 つの数（WebGL の上限は段ごとなので、実行部が分けて考える）。
-  - 組み込みの uniform に `mme_flipY`・`mme_viewport` がある。`mme_flipY` は 1 なら D3D の画面の上が GL の上のまま、−1 なら上下を返す。上下を返すと三角形の回りの向きも逆になるので、実行部が `frontFace`（`CullMode`）を逆にする（`VFACE` は `gl_FrontFacing` に従う）。`mme_viewport` は描画先の大きさ（ピクセル）で、`VPOS` を読むプログラムにだけある。
+  - 組み込みの uniform に `mme_flipY`・`mme_halfPixel`・`mme_viewport` がある。`mme_flipY` は 1 なら D3D の画面の上が GL の上のまま、−1 なら上下を返す。上下を返すと三角形の回りの向きも逆になるので、実行部が `frontFace`（`CullMode`）を逆にする（`VFACE` は `gl_FrontFacing` に従う）。`mme_viewport` は描画先の大きさ（ピクセル）で、`VPOS` を読むプログラムにだけある。`mme_halfPixel` は頂点がいつも持つ `vec2` で、`gl_Position` の xy に `mme_halfPixel * w` を足す（DX9 の半画素のずれ。クリップ座標での量で、ずらさないなら 0。どれだけずらすかは実行部が決める）。
   - GLSL の名前: 頂点の入力は `a_<セマンティクス>`、頂点からフラグメントへは `v_<セマンティクス>`（どちらもいつも `vec4`）、フラグメントの出力は `o_COLORn`（`layout(location = n)`）。
   - RenderState の `{ expr }` の値は、定数に計算できなかった HLSL の式を書き直した文字列（GLSL ではない。実行部が計算する）。
   - vs_2_0・ps_2_0 の `COLORn` を [0, 1] に収める動きはまねしない（vs_3_0 はもともと収めない）。
   - D3D の行列は、そのまま（行ごとに並べた数、`transpose=false`）渡す。
+  - 非正方の行列（`float4x3`・`float3x4[2]` など）の uniform は GLSL では `mat4`（配列は `mat4[n]`）で宣言し、読むところで `mat4x3(M)` に直す。`UniformRef.upload` が `'mat4'` のものは、1 つを 16 個の数（HLSL の行 r・列 c が `r * 4 + c`、残りは 0）にして `uniformMatrix4fv` で渡す（`uniformVectors` は 1 つにつき 4）。
+  - サンプラーの `register(s0)` は `SamplerDecl.register`（小文字。なければ null）に残す。
 - **engine** は、役割ごとのクラス（サービス）でできています。モジュールのグローバル変数は持たず、使う相手はコンストラクタで受け取ります。`Engine` がすべてを組み立てる場所（コンポジションルート）で、画面への窓口（ファサード）も兼ねます。
 - **ui** はエンジンを React の Context（`EngineProvider` / `useEngine`）で受け取り、状態は `useUi(selector)` で購読します。
 

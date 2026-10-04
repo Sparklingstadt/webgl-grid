@@ -57,7 +57,7 @@ function samplerOf(name: string, g: GlobalInfo, checked: CheckedEffect, diags: D
   const dim: Dim = g.type.k === 'sampler' && g.type.dim !== null ? g.type.dim : '2D';
   return {
     name, glslName: glslName(name), dim, texture: typeof tex?.value === 'string' ? tex.value : null,
-    states: all.filter(s => s.name !== 'Texture'),
+    states: all.filter(s => s.name !== 'Texture'), register: g.decl.register,
   };
 }
 

@@ -220,6 +220,17 @@ export function forEachExpr(s: Stmt, f: (e: Expr) => void): void {
   }
 }
 
+// 非正方の行列 (とその配列) の uniform は、GLSL では mat4 で宣言する (D3D の行ごとの並びを 1 つの mat4 に詰めて渡すため)。
+// 読むところで matRxC(…) に直す
+export function isMat4Upload(ty: Type): boolean {
+  const leaf = arrayLeaf(ty);
+  return leaf.k === 'matrix' && leaf.rows !== leaf.cols;
+}
+
+function isMat4Uniform(e: Expr, ctx: EmitContext): boolean {
+  return e.kind === 'ident' && e.sym?.kind === 'global' && ctx.checked.globals.get(e.name)?.storage === 'uniform' && isMat4Upload(typeOf(e));
+}
+
 // 書き込み先 (代入の左辺・out の引数) がグローバル変数か
 function globalTarget(e: Expr): boolean {
   if (e.kind === 'member' || e.kind === 'index') return globalTarget(e.object);
@@ -289,9 +300,16 @@ function ex(e: Expr, ctx: EmitContext): Code {
   switch (e.kind) {
     case 'number': return scalarLit(e.value, scalarKind(typeOf(e)) ?? (e.isFloat ? 'float' : 'int'));
     case 'bool': return primary(e.value ? 'true' : 'false');
-    case 'ident':
+    case 'ident': {
       if (e.sym?.kind === 'global') ctx.usedGlobals.add(e.name);
-      return primary(glslName(e.name));
+      const name = glslName(e.name);
+      if (!isMat4Uniform(e, ctx)) return primary(name);
+      // 非正方の行列の uniform (配列は 1 つずつ直して並べ直す)
+      const ty = typeOf(e);
+      const leaf = glslType(arrayLeaf(ty));
+      if (ty.k !== 'array') return call(leaf, [name]);
+      return call(glslType(ty), Array.from({ length: flatLength(ty) }, (_, i) => `${leaf}(${name}[${i}])`));
+    }
     case 'unary': return emitUnary(e, ctx);
     case 'binary': return emitBinary(e, ctx);
     case 'assign': return emitAssign(e, ctx);
@@ -336,14 +354,22 @@ function emitIndex(e: ExprOf<'index'>, ctx: EmitContext): Code {
     indices.unshift(base.index);
     base = base.object;
   }
-  if (indices.length <= 1) return primary(`${wrap(ex(e.object, ctx), P.post)}[${ex(e.index, ctx).s}]`);
+  // 非正方の行列の uniform の配列は、添え字をつけてから行列に直す
+  const raw = indices.length > 0 && isMat4Uniform(base, ctx);
+  const baseCode = (b: Expr): Code => {
+    if (!raw || b.kind !== 'ident') return ex(b, ctx);
+    ctx.usedGlobals.add(b.name);
+    return primary(glslName(b.name));
+  };
+  const finish = (s: string): Code => (raw ? call(glslType(typeOf(e)), [s]) : primary(s));
+  if (indices.length <= 1) return finish(`${wrap(baseCode(e.object), P.post)}[${ex(e.index, ctx).s}]`);
   const lengths = arrayLengths(typeOf(base));
   const terms = indices.map((x, k) => {
     const c = typeOf(x).k === 'scalar' && scalarKind(typeOf(x)) === 'uint' ? call('int', [ex(x, ctx).s]) : ex(x, ctx);
     const stride = lengths.slice(k + 1).reduce((a, b) => a * b, 1);
     return k === indices.length - 1 ? wrap(c, P.add + 1) : `${wrap(c, P.mul)} * ${stride}`;
   });
-  return primary(`${wrap(ex(base, ctx), P.post)}[${terms.join(' + ')}]`);
+  return finish(`${wrap(baseCode(base), P.post)}[${terms.join(' + ')}]`);
 }
 
 function emitUnary(e: ExprOf<'unary'>, ctx: EmitContext): Code {

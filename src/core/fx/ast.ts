@@ -43,7 +43,7 @@ export type Stmt = (
 export type Storage = 'static' | 'const' | 'uniform' | 'shared' | 'extern' | 'volatile' | 'row_major' | 'column_major';
 export interface AnnotationNode { type: TypeRef; name: string; value: Expr; loc: Loc }
 export interface VarDecl {
-  name: string; type: TypeRef; arrayDims: (Expr | null)[]; storage: Storage[]; semantic: string | null;
+  name: string; type: TypeRef; arrayDims: (Expr | null)[]; storage: Storage[]; semantic: string | null; register: string | null; // register(s0) → 's0'
   annotations: AnnotationNode[]; init: Expr | null; loc: Loc; resolved?: Type; reuses?: VarDecl;
 }
 export interface ParamNode {

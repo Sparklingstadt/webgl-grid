@@ -141,6 +141,15 @@ ${technique('PS()')}`;
     expectPixels(await runPixel(page, hlsl, { M: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] }), [[25, 29, 33, 0]]);
   });
 
+  test('uniform の非正方の行列の配列 (mat4 に詰めて送る)', async ({ page }) => {
+    const hlsl = `float3x4 A[2];
+${VS}
+float4 PS() : COLOR0 { return mul(float3(1, 2, 3), A[1]); }
+${technique('PS()')}`;
+    const rows = Array.from({ length: 24 }, (_, i) => i + 1);
+    expectPixels(await runPixel(page, hlsl, { A: rows }), [[110, 116, 122, 128]]);
+  });
+
   test('pass の uniform の引数', async ({ page }) => {
     const hlsl = `${VS}
 float4 PS(uniform float2 off) : COLOR0 { return float4(off, off + 0.5); }

@@ -199,9 +199,10 @@ class Parser {
     return dims;
   }
 
-  // : SEMANTIC と register(…) (どちらも、順も個数も問わない)。register は読み飛ばす
-  private parseSemantic(): string | null {
+  // : SEMANTIC と register(…) (どちらも、順も個数も問わない)。register は小文字の名前 (最後の識別子。register(ps_3_0, s0) なら s0) を取っておく
+  private parseSemantic(): { semantic: string | null; register: string | null } {
     let semantic: string | null = null;
+    let register: string | null = null;
     for (;;) {
       if (this.at(':')) {
         if (isIdent(this.peek(1), 'register') && this.at('(', 2)) this.next();
@@ -214,11 +215,14 @@ class Parser {
       if (isIdent(this.peek(), 'register') && this.at('(', 1)) {
         this.next();
         this.next();
-        while (!this.at(')') && this.peek().kind !== 'eof') this.next();
+        while (!this.at(')') && this.peek().kind !== 'eof') {
+          const tok = this.next();
+          if (tok.kind === 'ident') register = tok.text.toLowerCase();
+        }
         this.expect(')');
         continue;
       }
-      return semantic;
+      return { semantic, register };
     }
   }
 
@@ -323,10 +327,10 @@ class Parser {
     let nameTok = first;
     for (;;) {
       const arrayDims = this.parseArrayDims();
-      const semantic = this.parseSemantic();
+      const { semantic, register } = this.parseSemantic();
       const annotations = this.parseAnnotations();
       const init = this.accept('=') ? this.parseInitializer() : null;
-      decls.push({ name: nameTok.text, type, arrayDims, storage: [...storage], semantic, annotations, init, loc: nameTok.loc });
+      decls.push({ name: nameTok.text, type, arrayDims, storage: [...storage], semantic, register, annotations, init, loc: nameTok.loc });
       if (!this.accept(',')) return decls;
       nameTok = this.expectIdent();
     }
@@ -334,7 +338,7 @@ class Parser {
 
   private parseFunction(ret: TypeRef, nameTok: Token): FunctionDecl {
     const params = this.parseParams();
-    const retSemantic = this.parseSemantic();
+    const { semantic: retSemantic } = this.parseSemantic();
     let body: Stmt | null = null;
     if (this.at('{')) body = this.parseBlock();
     else if (!this.accept(';')) this.failAt(this.peek(), `'{' / ';'`);
@@ -368,7 +372,7 @@ class Parser {
     const type = this.parseType();
     const nameTok = this.expectIdent();
     const arrayDims = this.parseArrayDims();
-    const semantic = this.parseSemantic();
+    const { semantic } = this.parseSemantic();
     const init = this.accept('=') ? this.parseAssign() : null;
     return { name: nameTok.text, type, arrayDims, modifier, semantic, init, loc: nameTok.loc };
   }
@@ -385,7 +389,7 @@ class Parser {
       do {
         const field = this.expectIdent();
         const arrayDims = this.parseArrayDims();
-        const semantic = this.parseSemantic();
+        const { semantic } = this.parseSemantic();
         fields.push({ name: field.text, type, arrayDims, semantic, loc: field.loc });
       } while (this.accept(','));
       this.expect(';');

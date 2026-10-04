@@ -111,14 +111,21 @@ describe('compileEffect', () => {
     expect(prog?.uniforms).toContainEqual(expect.objectContaining({ name: 'K', glslName: 'K', kind: 'value', type: 'float2[2][3]', stages: ['fragment'] }));
     expect(prog?.fragment).toContain('\nuniform vec2[6] K;\n');
     expect(prog?.fragment).toContain('K[i * 3 + 2]');
-    expect(prog?.uniformVectors).toBe(7); // K の 6 つと mme_flipY
+    expect(prog?.uniformVectors).toBe(8); // K の 6 つと mme_flipY・mme_halfPixel
+  });
+
+  it('register(s0) をサンプラーに残す', () => {
+    const r = ok(compileEffect('a.fx', readerOf({ 'a.fx': `texture T; sampler DefSampler : register(s0); sampler S2 : register( S1 ) = sampler_state { texture = <T>; };
+      float4 VS(float4 p : POSITION) : POSITION { return p; } float4 PS() : COLOR0 { return tex2D(DefSampler, 0) + tex2D(S2, 0); }
+      technique T0 { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = compile ps_3_0 PS(); } }` })));
+    expect(r.effect.samplers.map(s => [s.name, s.register])).toEqual([['DefSampler', 's0'], ['S2', 's1']]);
   });
 
   it('サンプラー: 使われていない dim は 2D・Texture がなければ null', () => {
     const r = ok(compileEffect('a.fx', readerOf({ 'a.fx': `sampler S; textureCUBE TC; sampler SC = sampler_state { Texture = <TC>; AddressU = CLAMP; };${MINIMAL_TECHNIQUE}` })));
     expect(r.effect.samplers).toEqual([
-      { name: 'S', glslName: 'S', dim: '2D', texture: null, states: [] },
-      { name: 'SC', glslName: 'SC', dim: 'CUBE', texture: 'TC', states: [{ name: 'AddressU', value: 'CLAMP' }] },
+      { name: 'S', glslName: 'S', dim: '2D', texture: null, states: [], register: null },
+      { name: 'SC', glslName: 'SC', dim: 'CUBE', texture: 'TC', states: [{ name: 'AddressU', value: 'CLAMP' }], register: null },
     ]);
     expect(r.effect.textures).toEqual([{ name: 'TC', type: 'textureCUBE', semantic: null, annotations: [] }]);
   });
