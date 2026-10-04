@@ -278,6 +278,7 @@ button.ol-twist[aria-expanded="true"]::before { border-left-color: transparent; 
   .grid-view .area-header .editor-type { display: none; }
   .area-header .mode-select.mode-select { max-width: 104px; }
   .area-header .hbtn { padding: 4px 6px; }
+  .area-header :is(.shading-btns, .snap-btn) { display: none; } /* (ビューのメニューから) */
   .bslider { height: 28px; }
   .bslider .name { line-height: 28px; }
   .topbar .title { display: none; }
@@ -515,3 +516,5 @@ details.sub > summary { cursor: pointer; color: var(--dim); font-size: 11px; pad
 .ol-row.drop-into { box-shadow: inset 0 0 0 1px var(--accent); background: #2f3f5e; }
 .hbtn.icon-btn { display: inline-grid; place-items: center; padding: 3px 5px; }
 .hbtn.icon-btn svg { width: 16px; height: 16px; }
+.shading-btns { display: flex; gap: 1px; margin: 0 6px; background: #2a2a2a; border-radius: 4px; }
+.shading-btns .hbtn { border-radius: 3px; }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { t } from '../../core/i18n';
 import { LIGHT_TYPES } from '../../core/light';
 import { SHAPES } from '../../core/shapes';
@@ -10,7 +10,8 @@ import { Menu, MenuItem, MenuLabel, MenuSep } from './Menu';
 import type { SideTab } from './sidebar/Sidebar';
 import { Icon } from './icons';
 import { NPanel } from './NPanel';
-import { CollectionMenu, ViewContextMenu } from './ViewContextMenu';
+import { CollectionMenu, SHADING_LABELS, ShadingMenu, ViewContextMenu } from './ViewContextMenu';
+import type { ShadingMode } from '../../engine/render/Viewport';
 import { OutputFrame, useShowFrame } from './OutputFrame';
 import { ModelPicker } from './ModelPicker';
 import { RecoverBanner } from './Overlays';
@@ -37,6 +38,7 @@ export function ViewportArea(props: {
   const box = useUi(s => s.box);
   const transform = useUi(s => s.transform);
   const snap = useUi(s => s.snap);
+  const shading = useUi(s => s.shading);
   useUi(s => s.sceneVersion);
   const empty = !engine.world.objects.length && !engine.stage.model; // 何も置いていない (始めたとき・最初の状態に戻したとき)
   const [showFrame, setShowFrame] = useShowFrame();
@@ -60,6 +62,13 @@ export function ViewportArea(props: {
           <MenuItem label={t('上から見る')} kbd={t('テンキー 7')} onSelect={() => camera.snapView('top')} />
           <MenuItem label={t('視点を戻す')} kbd="Home" onSelect={() => camera.resetView()} />
           <MenuItem label={t('場面のカメラから見る')} kbd={t('テンキー 0')} onSelect={() => engine.toggleCameraView()} />
+          <MenuSep />
+          <MenuItem label={`${snap ? '✓ ' : ''}${t('スナップ')}`} kbd="Shift Tab" onSelect={() => engine.transform.setSnap(!snap)} />
+          <MenuSep />
+          <MenuLabel>{t('ビューポートの表示 (Z)')}</MenuLabel>
+          {(Object.keys(SHADING_ICONS) as ShadingMode[]).map(m => (
+            <MenuItem key={m} label={`${shading === m ? '✓ ' : ''}${t(SHADING_LABELS[m])}`} kbd={m === 'wireframe' ? 'Shift Z' : undefined} onSelect={() => engine.shading.set(m)} />
+          ))}
           <MenuSep />
           <MenuItem label={props.toolsOpen ? t('ツールバーを隠す') : t('ツールバーを出す')} kbd="T" onSelect={props.toggleTools} />
           <MenuItem label={props.nOpen ? t('サイドバーを隠す') : t('サイドバーを出す')} kbd="N" onSelect={props.toggleN} />
@@ -117,10 +126,16 @@ export function ViewportArea(props: {
           <AddonMenuItems menu="object" />
         </Menu>
         <span className="spacer" />
-        <button type="button" className="hbtn icon-btn" aria-pressed={snap} aria-label={t('スナップ')} title={t('スナップ (Shift+Tab)。G・R・S のあいだ Ctrl で入れ替わる')}
+        <button type="button" className="hbtn icon-btn snap-btn" aria-pressed={snap} aria-label={t('スナップ')} title={t('スナップ (Shift+Tab)。G・R・S のあいだ Ctrl で入れ替わる')}
                 onClick={() => engine.transform.setSnap(!snap)}>
           <svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M4 2.5v5.5a4 4 0 0 0 8 0V2.5M4 5h2.5M9.5 5H12M6.5 2.5V8a1.5 1.5 0 0 0 3 0V2.5" /></svg>
         </button>
+        <div className="shading-btns" role="group" aria-label={t('ビューポートの表示 (Z)')}>
+          {(Object.keys(SHADING_ICONS) as ShadingMode[]).map(m => (
+            <button key={m} type="button" className="hbtn icon-btn" aria-pressed={shading === m} aria-label={t(SHADING_LABELS[m])} title={t(SHADING_LABELS[m])}
+                    onClick={() => engine.shading.set(m)}>{SHADING_ICONS[m]}</button>
+          ))}
+        </div>
         <button type="button" className="hbtn" aria-pressed={props.sideOpen} aria-controls="side-column" title={t('アウトライナーとプロパティ')} onClick={props.toggleSide}>{t('プロパティ')}</button>
       </div>
       <div className="view-body">
@@ -159,6 +174,7 @@ export function ViewportArea(props: {
           {props.nOpen && <NPanel />}
           <ViewContextMenu showSide={() => { if (!props.sideOpen) props.toggleSide(); }} />
           <CollectionMenu />
+          <ShadingMenu />
           <button type="button" className="npanel-toggle" aria-label={props.nOpen ? t('サイドバーを隠す') : t('サイドバーを出す')} aria-expanded={props.nOpen}
                   aria-controls="n-panel" title={t('サイドバー (N)')} onClick={props.toggleN}>{props.nOpen ? '›' : '‹'}</button>
           <div className="nav">
@@ -172,3 +188,11 @@ export function ViewportArea(props: {
     </section>
   );
 }
+
+// 表示の切り替えのアイコン (Blender の見出しの右上と同じ並び)
+const SHADING_ICONS: Record<ShadingMode, ReactNode> = {
+  wireframe: <svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.1"><circle cx="8" cy="8" r="5.5" /><ellipse cx="8" cy="8" rx="2.4" ry="5.5" /><path d="M2.5 8h11" /></svg>,
+  solid: <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5" fill="#bdbdbd" /><circle cx="6.3" cy="6.3" r="1.6" fill="#ececec" /></svg>,
+  material: <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5" fill="#c0505a" /><path d="M8 2.5a5.5 5.5 0 0 0 0 11z" fill="#5a88c0" /><circle cx="6.3" cy="6.3" r="1.4" fill="#f3d0d4" /></svg>,
+  rendered: <svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.2"><circle cx="8" cy="8" r="5.5" /><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor" /></svg>,
+};

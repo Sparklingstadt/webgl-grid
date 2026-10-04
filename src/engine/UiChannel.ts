@@ -7,6 +7,7 @@ import { createStore, type Store } from '../core/store';
 import type { AddonInfo } from './addons/Addons';
 import { getLang, langEvents, msg, type Lang } from '../core/i18n';
 import { FX_LEVEL_DEFAULT, type FxLevel, type FxState } from './render/postfx';
+import type { ShadingMode } from './render/Viewport';
 
 // --- エンジンから画面 (React) へ知らせる状態と、お知らせ ---
 // エンジンの各部は、画面に見せたいことをここに書く (React の部品は Store を購読して描き直す)
@@ -24,6 +25,8 @@ export interface UiState {
   box: { x0: number; y0: number; x1: number; y1: number } | null; // ドラッグしているボックス (クライアント座標)
   contextMenu: { x: number; y: number } | null; // ビューポートの右クリックのメニュー (クライアント座標)
   collectionMenu: { x: number; y: number } | null; // 「コレクションへ移動」(M) のメニュー
+  shading: ShadingMode;  // ビューポートの表示 (Z)
+  shadingMenu: { x: number; y: number } | null; // Z のメニュー
   snap: boolean;         // スナップ (見出しの磁石)。G・R・S で Ctrl を押すと逆になる
   transform: { mode: 'grab' | 'rotate' | 'scale'; axis: 'x' | 'z' | null; value: string; count: number; snap: boolean } | null; // G・R・S で動かしている途中
   modelVersion: number;  // 選んでいるモデルの中身 (表情・ボーンの一覧) が変わった
@@ -62,7 +65,7 @@ type Version = 'modelVersion' | 'values' | 'keysVersion' | 'materialsVersion' | 
 
 export class UiChannel {
   readonly store: Store<UiState> = createStore<UiState>({
-    mode: 'orbit', sel: null, selIds: [], boxSelect: false, box: null, contextMenu: null, collectionMenu: null, snap: false, transform: null, modelVersion: 0, values: 0, canAdd: true,
+    mode: 'orbit', sel: null, selIds: [], boxSelect: false, box: null, contextMenu: null, collectionMenu: null, shading: 'rendered', shadingMenu: null, snap: false, transform: null, modelVersion: 0, values: 0, canAdd: true,
     frame: 0, playing: false, start: 0, end: TL_DEFAULT_END, keysVersion: 0,
     fxState: { ao: false, dof: false, bloom: false, diffusion: false, color: false }, fxLevel: { ...FX_LEVEL_DEFAULT },
     toast: null, palette: null, viewInfo: '', hairHang: null, materialsVersion: 0, projectName: null,

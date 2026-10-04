@@ -1014,5 +1014,12 @@ const dict: Dictionary = {
   "親子付け / 親子付けを外す": "Parent / Clear Parent",
   "スナップ": "Snap",
   "スナップ (Shift+Tab)。G・R・S のあいだ Ctrl で入れ替わる": "Snap (Shift+Tab). Hold Ctrl during G/R/S to toggle",
+  "ワイヤーフレーム": "Wireframe",
+  "ソリッド": "Solid",
+  "マテリアルプレビュー": "Material Preview",
+  "レンダープレビュー": "Rendered",
+  "ビューポートの表示": "Viewport Shading",
+  "ビューポートの表示 (Z)": "Viewport Shading (Z)",
+  "ビューポートの表示 / ワイヤーフレームと行き来": "Viewport shading / Toggle wireframe",
 };
 export default dict;

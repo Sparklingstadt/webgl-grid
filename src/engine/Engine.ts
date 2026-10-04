@@ -35,6 +35,7 @@ import { Effects } from './render/Effects';
 import { Environment } from './render/Environment';
 import { SceneGraph } from './render/SceneGraph';
 import { Viewport } from './render/Viewport';
+import { Shading } from './render/Shading';
 import { isModel, isShape, type ModelObj, type Obj } from './types';
 import { UiChannel } from './UiChannel';
 import { CameraController, type CameraOverride } from './view/CameraController';
@@ -94,6 +95,7 @@ export class Engine {
   readonly vpd = new VpdIO(this.posing, this.viewport, this.ui);
   readonly history = new History(this.world, this.library, this.physics, this.motion, this.posing, this.keyframes, this.clock, this.selection, this.viewport, this.ui, this.addons);
   readonly transform = new TransformTool(this.world, this.selection, this.camera, this.graph, this.viewport, this.history, this.ui); // G・R・S
+  readonly shading = new Shading(this.viewport, this.ui, this.world, this.selection, () => this.stage.model); // ビューポートの表示 (Z)
   readonly project = new ProjectIO(this);
   readonly autosave = new Autosave(this.project, this.history, this.ui);
   readonly remote = new RemoteLink(this);
@@ -268,8 +270,8 @@ export class Engine {
     this.ui.set({ contextMenu: { x, y } });
   }
   closeContextMenu() {
-    if (!this.ui.state.contextMenu && !this.ui.state.collectionMenu) return false;
-    this.ui.set({ contextMenu: null, collectionMenu: null });
+    if (!this.ui.state.contextMenu && !this.ui.state.collectionMenu && !this.ui.state.shadingMenu) return false;
+    this.ui.set({ contextMenu: null, collectionMenu: null, shadingMenu: null });
     return true;
   }
   // M: 「コレクションへ移動」のメニューを (x, y) に出す
@@ -465,20 +467,24 @@ export class Engine {
 
   // --- 親子付け (Ctrl+P・Alt+P) ---
   // Ctrl+P: アクティブを親にして、ほかの選んでいる物を子にする (輪になるものは付けない)
+  // (親子付け・コレクションの操作は、それだけで 1 手にする。すぐ前の操作とまとめない)
   parentSelected() {
     const parent = this.selection.current, kids = this.selection.list.filter(o => o !== parent);
     if (!parent || !kids.length) { this.ui.toast(t('子にする物と、親にする物 (最後に選んだ物) を選んでください')); return; }
+    this.history.checkpoint();
     const n = kids.filter(c => this.hierarchy.set(c, parent)).length;
     if (n < kids.length) this.ui.toast(t('親の子孫は、その親の親にできません'));
     this.objChanged();
   }
   // 1 つの物の親を決める (プロパティの「関係」。null で外す)
   setParent(obj: Obj, parent: Obj | null) {
+    this.history.checkpoint();
     if (!this.hierarchy.set(obj, parent)) { this.ui.toast(t('親の子孫は、その親の親にできません')); return; }
     this.objChanged();
   }
   // Alt+P: 親子付けを外す (その場に残す)
   clearParent() {
+    this.history.checkpoint();
     for (const o of this.selection.list) this.hierarchy.set(o, null);
     this.objChanged();
   }
@@ -503,6 +509,7 @@ export class Engine {
     this.objChanged();
   }
   newCollection(name = t('コレクション')) {
+    this.history.checkpoint();
     const used = new Set(this.collections.map(c => c.name));
     let n = name, i = 1;
     while (used.has(n)) n = `${name}.${String(i++).padStart(3, '0')}`;
@@ -511,6 +518,7 @@ export class Engine {
   }
   // M: 選んでいる物 (objs) をコレクションへ (null でシーン コレクション)
   moveToCollection(name: string | null, objs: readonly Obj[] = this.selection.list) {
+    this.history.checkpoint();
     if (name && !this.collections.some(c => c.name === name)) this.collections = [...this.collections, { name, hidden: false }];
     for (const o of objs) o.collection = name ?? undefined;
     this.applyCollections();
@@ -518,15 +526,17 @@ export class Engine {
   renameCollection(from: string, to: string) {
     const name = to.trim().slice(0, 64);
     if (!name || this.collections.some(c => c.name === name)) return;
+    this.history.checkpoint();
     for (const o of this.world.objects) if (o.collection === from) o.collection = name;
     this.setCollections(this.collections.map(c => (c.name === from ? { ...c, name } : c)));
   }
   // コレクションを消す (中の物はシーン コレクションへ)
   removeCollection(name: string) {
+    this.history.checkpoint();
     for (const o of this.world.objects) if (o.collection === name) o.collection = undefined;
     this.setCollections(this.collections.filter(c => c.name !== name));
   }
-  setCollectionHidden(name: string, hidden: boolean) { this.setCollections(this.collections.map(c => (c.name === name ? { ...c, hidden } : c))); }
+  setCollectionHidden(name: string, hidden: boolean) { this.history.checkpoint(); this.setCollections(this.collections.map(c => (c.name === name ? { ...c, hidden } : c))); }
 
   // --- 名前・表示 (アウトライナー・プロパティ・H / Alt+H) ---
   // 名前を付ける (空・null で種類の名前に戻す)

@@ -196,10 +196,11 @@ forward('set_morph', '表情 (モーフ) の値を 0〜1 で変える', { id, na
 forward('set_hair_hang', '髪の形を保つ錘を外して、髪を重力で垂らす (on: false で戻す)', { id, on: z.boolean() });
 
 // 視点
-forward('set_camera', '視点を変える (カメラモーションは止まる)。view で前・右・上・最初の視点へ', {
+forward('set_camera', '視点を変える (カメラモーションは止まる)。view で前・右・上・最初の視点へ。shading で表示', {
   view: z.enum(['front', 'right', 'top', 'home']).optional(), yawDeg: z.number().optional(), pitchDeg: z.number().optional(),
   distance: z.number().positive().optional(), target: z.array(z.number()).length(3).optional().describe('注視点 [x, y, z]'),
   fov: z.number().min(5).max(120).optional().describe('縦の画角 (度)'),
+  shading: z.enum(['wireframe', 'solid', 'material', 'rendered']).optional().describe('ビューポートの表示 (Z): ワイヤーフレーム・ソリッド・マテリアルプレビュー・レンダープレビュー。書き出しには効かない'),
 });
 
 // マテリアル

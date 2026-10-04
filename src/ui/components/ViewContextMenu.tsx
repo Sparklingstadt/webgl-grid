@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import type { ShadingMode } from '../../engine/render/Viewport';
 import { t } from '../../core/i18n';
 import { useEngine, useUi } from '../EngineContext';
 import { Popover } from './controls/Popover';
@@ -67,6 +68,44 @@ export function CollectionMenu() {
           {engine.collections.map(c => <MenuItem key={c.name} label={`${here(c.name) ? '✓ ' : ''}${c.name}`} onSelect={run(() => engine.moveToCollection(c.name))} />)}
           <MenuSep />
           <MenuItem label={t('新しいコレクション')} onSelect={run(() => engine.moveToCollection(engine.newCollection()))} />
+        </Popover>
+      )}
+    </>
+  );
+}
+
+// --- ビューポートの表示 (Z。Blender のパイメニューの代わり) ---
+export const SHADING_LABELS: Record<ShadingMode, string> = { wireframe: 'ワイヤーフレーム', solid: 'ソリッド', material: 'マテリアルプレビュー', rendered: 'レンダープレビュー' };
+export function ShadingMenu() {
+  const engine = useEngine();
+  const at = useUi(s => s.shadingMenu);
+  const mode = useUi(s => s.shading);
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  // 1〜4 のキーで選ぶ
+  useEffect(() => {
+    if (!at) return;
+    const onKey = (e: KeyboardEvent) => {
+      const m = (Object.keys(SHADING_LABELS) as ShadingMode[])[Number(e.key) - 1];
+      if (!m || e.ctrlKey || e.metaKey || e.altKey) return;
+      e.preventDefault();
+      e.stopPropagation();
+      engine.ui.set({ shadingMenu: null });
+      engine.shading.set(m);
+    };
+    addEventListener('keydown', onKey, true);
+    return () => removeEventListener('keydown', onKey, true);
+  }, [at, engine]);
+  if (!at) return null;
+  const close = () => engine.ui.set({ shadingMenu: null });
+  return (
+    <>
+      <div className="ctx-anchor" style={{ left: at.x, top: at.y }} ref={setAnchor} />
+      {anchor && (
+        <Popover anchor={anchor} onClose={close} className="menu-pop" role="menu" label={t('ビューポートの表示')}>
+          <MenuLabel>{t('ビューポートの表示')}</MenuLabel>
+          {(Object.keys(SHADING_LABELS) as ShadingMode[]).map((m, i) => (
+            <MenuItem key={m} label={`${mode === m ? '✓ ' : ''}${t(SHADING_LABELS[m])}`} kbd={String(i + 1)} onSelect={() => { close(); engine.shading.set(m); }} />
+          ))}
         </Popover>
       )}
     </>

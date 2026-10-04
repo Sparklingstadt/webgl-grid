@@ -140,6 +140,12 @@ export function useShortcuts(engine: Engine, actions: {
           e.preventDefault();
           engine.openCollectionMenu(pointer.x, pointer.y);
           break;
+        // Z: ビューポートの表示のメニュー、Shift+Z: ワイヤーフレームと行き来する
+        case 'KeyZ':
+          if (e.altKey) break;
+          e.preventDefault();
+          if (e.shiftKey) engine.shading.toggleWireframe(); else engine.ui.set({ contextMenu: null, collectionMenu: null, shadingMenu: { ...pointer } });
+          break;
         case 'F2':
           e.preventDefault();
           if (!engine.ui.state.sel) break;

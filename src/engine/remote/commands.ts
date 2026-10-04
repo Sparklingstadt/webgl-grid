@@ -1,4 +1,5 @@
 import { FPS, PALETTE_NAMES, VIEWPORT_BG } from '../../core/constants';
+import { SHADING_MODES, type ShadingMode } from '../render/Viewport';
 import { SHAPES, findShape } from '../../core/shapes';
 import { hexToLinear, linearToHex } from '../../core/materials/color';
 import { NODE_TYPES } from '../../core/materials/nodes';
@@ -78,7 +79,7 @@ export function sceneState(e: Engine) {
     stage: e.stage.model?.name ?? null,
     music: e.music.file?.name ?? null,
     cameraMotion: e.motion.camera ? e.motion.cameraFile?.name ?? '(あり)' : null,
-    camera: { yawDeg: r3(cam.yaw * DEG), pitchDeg: r3(cam.pitch * DEG), distance: r3(cam.dist), target: [r3(cam.tx), r3(cam.ty), r3(cam.tz)], fov: cam.fov, view: e.camera.viewName || null },
+    camera: { yawDeg: r3(cam.yaw * DEG), pitchDeg: r3(cam.pitch * DEG), distance: r3(cam.dist), target: [r3(cam.tx), r3(cam.ty), r3(cam.tz)], fov: cam.fov, view: e.camera.viewName || null, shading: e.shading.mode },
     effects: { enabled: e.ui.state.fxState, levels: e.ui.state.fxLevel },
     output: e.output.settings,
     scene: e.environment.settings,
@@ -284,6 +285,10 @@ export const COMMANDS: Record<string, Command> = {
     if (p?.target) [cam.tx, cam.ty, cam.tz] = (p.target as number[]).map(Number);
     if (p?.fov !== undefined) cam.fov = Math.min(Math.max(Number(p.fov), 5), 120);
     if (p?.yawDeg !== undefined || p?.pitchDeg !== undefined) camera.viewName = '';
+    if (p?.shading !== undefined) {
+      if (!SHADING_MODES.includes(p.shading as ShadingMode)) throw new Error(`shading は ${SHADING_MODES.join(' / ')} のどれかです`);
+      e.shading.set(p.shading as ShadingMode);
+    }
     e.viewport.requestDraw();
     return sceneState(e).camera;
   },

@@ -6,6 +6,10 @@ import { t } from '../../core/i18n';
 import { outputFrame, scaleFov } from '../../core/output';
 import type { SceneGraph } from './SceneGraph';
 
+// ビューポートの表示 (Blender のビューポートシェーディング): ワイヤーフレーム・ソリッド・マテリアル (空あり・効果なし)・レンダー (効果も)
+export type ShadingMode = 'wireframe' | 'solid' | 'material' | 'rendered';
+export const SHADING_MODES: ShadingMode[] = ['wireframe', 'solid', 'material', 'rendered'];
+
 // 毎フレーム計算するもの (再生・モーション・物理演算・落下など)。active のあいだだけ update される
 export interface System {
   active(): boolean;
@@ -25,6 +29,9 @@ export class Viewport {
   drawOverride: (() => boolean) | null = null;
   // 背景 (空) を描く (Environment)。最初に全面へ描き、その上に場面を描く
   drawBackground: ((r: THREE.WebGLRenderer, camera: THREE.Camera) => void) | null = null;
+  // 表示のしかた (レンダリング中は、いつもレンダー)。ワイヤーフレーム・ソリッドでは、描くあいだだけ材質を差し替える (Shading)
+  shading: ShadingMode = 'rendered';
+  swapMaterials: { begin(mode: 'wireframe' | 'solid'): void; end(): void } | null = null;
   private readonly systems: System[] = [];
   private readonly before = new Set<() => void>();
   private readonly after = new Set<() => void>();
@@ -131,15 +138,22 @@ export class Viewport {
       camera.fov = scaleFov(camera.fov, this.output.fovScale);
       camera.updateProjectionMatrix();
     }
-    if (!this.drawOverride?.()) {
-      const { renderer, outline } = this, { scene, camera } = this.graph;
-      if (this.drawBackground) {
-        renderer.clear();
-        this.drawBackground(renderer, camera);
-        outline.autoClear = false; // 空を消さずに上に描く
-        outline.render(scene, camera);
-        outline.autoClear = true;
-      } else outline.render(scene, camera);
+    const mode = this.output ? 'rendered' : this.shading;
+    const flat = mode === 'wireframe' || mode === 'solid';
+    if (flat) this.swapMaterials?.begin(mode);
+    try {
+      if (mode !== 'rendered' || !this.drawOverride?.()) {
+        const { renderer, outline } = this, { scene, camera } = this.graph;
+        if (this.drawBackground && !flat) {
+          renderer.clear();
+          this.drawBackground(renderer, camera);
+          outline.autoClear = false; // 空を消さずに上に描く
+          outline.render(scene, camera);
+          outline.autoClear = true;
+        } else outline.render(scene, camera);
+      }
+    } finally {
+      if (flat) this.swapMaterials?.end();
     }
     for (const cb of this.after) cb();
   }

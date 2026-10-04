@@ -60,7 +60,7 @@ test('レンダー > アニメーションをレンダリング で、開始〜�
     engine.output.set({ width: 320, height: 240, format: ok ? 'mp4' : 'webm' });
     return ok ? 'mp4' : 'webm';
   });
-  await page.getByRole('button', { name: 'レンダー' }).click();
+  await page.getByRole('button', { name: 'レンダー', exact: true }).click();
   const [download] = await Promise.all([
     page.waitForEvent('download', { timeout: 60_000 }),
     page.getByRole('menuitem', { name: 'アニメーションをレンダリング' }).click(),
