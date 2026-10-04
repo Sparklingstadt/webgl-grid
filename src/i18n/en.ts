@@ -1066,5 +1066,8 @@ const dict: Dictionary = {
   "レンダー範囲: 出力の枠の中をドラッグで囲む (Esc でやめる・Ctrl+Alt+B で消す)": "Render region: drag inside the output frame (Esc to cancel, Ctrl+Alt+B to clear)",
   "レンダー範囲をドラッグで囲む": "Drag to set the render region",
   "誤りが多いので、ここで止めました": "Stopped here because there are too many errors",
+  "コメントが閉じていません": "Comment is not closed",
+  "文字列が閉じていません": "String is not closed",
+  "読めない文字です: {c}": "Unreadable character: {c}",
 };
 export default dict;
