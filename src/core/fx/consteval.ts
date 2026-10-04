@@ -2,7 +2,7 @@
 // 型チェックしていない式 (pass のステートの値) のどちらも計算できるよう、型は値から求める。
 import type { Expr, TypeRef } from './ast.ts';
 import { resolveIntrinsic } from './intrinsics.ts';
-import { arithmeticScalar, binaryResultType, componentCount, scalarKind, vectorOf, withScalar, type Scalar, type Type } from './types.ts';
+import { arithmeticScalar, arrayLeaf, binaryResultType, componentCount, scalarKind, vectorOf, withScalar, type Scalar, type Type } from './types.ts';
 
 // num の values は成分を並べたもの。行列は HLSL の行ごと (1 行目の C 個、2 行目 …)。bool は 0 / 1
 export type ConstValue = { kind: 'num'; type: Type; values: number[] } | { kind: 'str'; value: string };
@@ -256,16 +256,11 @@ export function evalConst(e: Expr, env: ConstEnv): ConstValue | null {
       }
       if (vals.length === 0) return null;
       const type = e.type ?? (vals.length <= 4 ? vectorOf('float', vals.length) : { k: 'array', of: { k: 'scalar', s: 'float' }, length: vals.length });
-      const base = type.k === 'array' ? arrayBase(type) : type;
+      const base = arrayLeaf(type);
       const s = scalarKind(base);
       if (!s || componentCount(type) !== vals.length) return null;
       return { kind: 'num', type, values: vals.map(x => castScalar(x, s)) };
     }
     default: return null;
   }
-}
-
-// 配列の一番内側の型
-function arrayBase(t: Type): Type {
-  return t.k === 'array' ? arrayBase(t.of) : t;
 }

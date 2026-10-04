@@ -88,6 +88,15 @@ describe('型チェック: グローバル変数', () => {
     expect(c.globals.get('M')?.value).toEqual({ kind: 'num', type: matrixOf('float', 2, 2), values: [1, 2, 3, 4] });
     expect(codesOf('static float2 v = { 1, 2, 3 };' + PASS_USING('v.x'))).toEqual(['FX-TYPE-MISMATCH']);
   });
+  it('配列の配列: T a[N][M] は a[i] が T[M]。初期値は { } を入れ子にしても、要素を平らに並べてもよい', () => {
+    const c = checkSrc('float2 K[2][3] = { float2(1, 2), float2(3, 4), float2(5, 6), float2(7, 8), float2(9, 10), float2(11, 12) };'
+      + ' static const int N[2][2] = { { 1, 2 }, { 3, 4 } };' + PASS_USING('float4(K[1][2], K[0][N[1][0] - 3])'));
+    const F2x3: Type = { k: 'array', of: { k: 'array', of: F2, length: 3 }, length: 2 };
+    expect(c.globals.get('K')).toMatchObject({ type: F2x3, storage: 'uniform', value: { values: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] } });
+    expect(c.globals.get('N')?.value?.kind === 'num' && c.globals.get('N')?.value).toMatchObject({ values: [1, 2, 3, 4] });
+    expect(codesOf('float2 K[2][3] = { float2(1, 2), float2(3, 4), float2(5, 6) };' + PASS_USING('K[0][0].x'))).toEqual(['FX-TYPE-MISMATCH']);
+    expect(codesOf('float K[2][3];' + PASS_USING('K[0][3]'))).toEqual(['FX-TYPE-MISMATCH']);
+  });
 });
 
 describe('型チェック: 関数', () => {

@@ -1141,7 +1141,7 @@ const dict: Dictionary = {
   "添字はスカラーにしてください ({type})": "The index must be a scalar ({type})",
   "演算子 {op} は {types} に使えません": "Operator {op} cannot be used on {types}",
   "配列の大きさは正の整数の定数にしてください": "The array size must be a positive constant integer",
-  "配列の配列には対応していません": "Arrays of arrays are not supported",
+  "配列の配列の一部を値として使うことには対応していません": "Using part of an array of arrays as a value is not supported",
   "関数 {name} が見つかりません": "Function {name} was not found",
   "関数 {name} の中身がありません": "Function {name} has no body",
   "関数の中の static 変数には対応していません": "static variables inside functions are not supported",

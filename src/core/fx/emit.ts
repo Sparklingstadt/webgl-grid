@@ -2,7 +2,7 @@ import { t } from '../i18n.ts';
 import type { Expr, FunctionDecl, ParamNode, Stmt, VarDecl } from './ast.ts';
 import type { CheckedEffect, FunctionInfo } from './check.ts';
 import type { Diagnostics, Loc } from './diagnostics.ts';
-import { componentCount, scalarKind, typeName, type Scalar, type Type } from './types.ts';
+import { arrayLeaf, arrayLengths, componentCount, flatLength, scalarKind, typeName, type Scalar, type Type } from './types.ts';
 
 // --- GLSL ES 3.00 の書き出し (型・名前・式・文・関数)。型チェック済みの AST を、意味を変えずに GLSL に写す。
 // 暗黙の型変換は型チェックが入れた convert をそのまま書くだけで、ここでは新しい変換を作らない ---
@@ -64,7 +64,7 @@ export function glslType(ty: Type): string {
     case 'scalar': return ty.s;
     case 'vector': return `${VEC_PREFIX[ty.s]}${ty.n}`;
     case 'matrix': return ty.rows === ty.cols ? `mat${ty.rows}` : `mat${ty.rows}x${ty.cols}`; // HLSL の行が GLSL の列
-    case 'array': return `${glslType(ty.of)}[${ty.length}]`;
+    case 'array': return `${glslType(arrayLeaf(ty))}[${flatLength(ty)}]`; // 配列の配列は 1 次元にする (GLSL ES 3.00 にはない)
     case 'struct': return glslName(ty.name);
     case 'sampler': return ty.dim === '3D' ? 'sampler3D' : ty.dim === 'CUBE' ? 'samplerCube' : 'sampler2D'; // 1D は 2D の 1 行
     case 'void': return 'void';
@@ -76,7 +76,7 @@ export function zeroOf(ty: Type): string {
   switch (ty.k) {
     case 'scalar': return scalarLit(0, ty.s).s;
     case 'vector': case 'matrix': return `${glslType(ty)}(${scalarLit(0, ty.s).s})`;
-    case 'array': return `${glslType(ty)}(${Array.from({ length: ty.length }, () => zeroOf(ty.of)).join(', ')})`;
+    case 'array': return `${glslType(ty)}(${Array.from({ length: flatLength(ty) }, () => zeroOf(arrayLeaf(ty))).join(', ')})`;
     case 'struct': return `${glslName(ty.name)}(${ty.fields.map(f => zeroOf(f.type)).join(', ')})`;
     default: throw new Error(`zeroOf: ${typeName(ty)}`);
   }
@@ -154,8 +154,9 @@ export function emitConst(values: number[], ty: Type): string {
     case 'scalar': return scalarLit(castScalar(values[0], ty.s), ty.s).s;
     case 'vector': case 'matrix': return call(glslType(ty), values.map(v => scalarLit(castScalar(v, ty.s), ty.s).s)).s;
     case 'array': {
-      const n = componentCount(ty.of);
-      return call(glslType(ty), Array.from({ length: ty.length }, (_, i) => emitConst(values.slice(i * n, (i + 1) * n), ty.of))).s;
+      const leaf = arrayLeaf(ty);
+      const n = componentCount(leaf);
+      return call(glslType(ty), Array.from({ length: flatLength(ty) }, (_, i) => emitConst(values.slice(i * n, (i + 1) * n), leaf))).s;
     }
     default: throw new Error(`emitConst: ${typeName(ty)}`);
   }
@@ -299,18 +300,51 @@ function ex(e: Expr, ctx: EmitContext): Code {
     case 'construct': case 'initList': {
       const ty = typeOf(e);
       noteType(ty, ctx);
-      return call(glslType(ty), (e.kind === 'construct' ? e.args : e.items).map(a => arg(a, ctx)));
+      return call(glslType(ty), (e.kind === 'construct' ? e.args : flatItems(e, ctx)).map(a => arg(a, ctx)));
     }
     case 'cast': return emitCast(typeOf(e), e.value, e.loc, ctx);
     case 'convert': return emitConvert(e.to, e.value, ctx);
     case 'member': return emitMember(e, ctx);
-    case 'index': return primary(`${wrap(ex(e.object, ctx), P.post)}[${ex(e.index, ctx).s}]`);
+    case 'index': return emitIndex(e, ctx);
     case 'sequence': return code(e.items.map(x => arg(x, ctx)).join(', '), P.seq);
     default: throw new Error(`emitExpr: ${e.kind}`);
   }
 }
 
 type ExprOf<K extends Expr['kind']> = Extract<Expr, { kind: K }>;
+
+// 配列の配列の初期値のリストは、入れ子の { } を開いて平らに並べる
+function flatItems(e: ExprOf<'initList'>, ctx: EmitContext): Expr[] {
+  if (typeOf(e).k !== 'array') return e.items;
+  return e.items.flatMap(x => {
+    if (typeOf(x).k !== 'array') return [x];
+    if (x.kind === 'initList') return flatItems(x, ctx);
+    unsupported(ctx, x.loc, t('配列の配列の一部を値として使うことには対応していません'));
+    return [];
+  });
+}
+
+// 配列の配列は 1 次元にして持つので、a[i][j] (T a[N][M]) は a[i * M + j] にする
+function emitIndex(e: ExprOf<'index'>, ctx: EmitContext): Code {
+  if (typeOf(e).k === 'array') {
+    unsupported(ctx, e.loc, t('配列の配列の一部を値として使うことには対応していません'));
+    return primary('0');
+  }
+  const indices: Expr[] = [];
+  let base: Expr = e;
+  while (base.kind === 'index' && typeOf(base.object).k === 'array') {
+    indices.unshift(base.index);
+    base = base.object;
+  }
+  if (indices.length <= 1) return primary(`${wrap(ex(e.object, ctx), P.post)}[${ex(e.index, ctx).s}]`);
+  const lengths = arrayLengths(typeOf(base));
+  const terms = indices.map((x, k) => {
+    const c = typeOf(x).k === 'scalar' && scalarKind(typeOf(x)) === 'uint' ? call('int', [ex(x, ctx).s]) : ex(x, ctx);
+    const stride = lengths.slice(k + 1).reduce((a, b) => a * b, 1);
+    return k === indices.length - 1 ? wrap(c, P.add + 1) : `${wrap(c, P.mul)} * ${stride}`;
+  });
+  return primary(`${wrap(ex(base, ctx), P.post)}[${terms.join(' + ')}]`);
+}
 
 function emitUnary(e: ExprOf<'unary'>, ctx: EmitContext): Code {
   const x = ex(e.operand, ctx);
@@ -440,7 +474,7 @@ function emitCast(to: Type, value: Expr, loc: Loc, ctx: EmitContext): Code {
   const x = lit === null ? ex(value, ctx) : null;
   const fill = (ty: Type): string => {
     if (ty.k === 'struct') return call(glslType(ty), ty.fields.map(f => fill(f.type))).s;
-    if (ty.k === 'array') return call(glslType(ty), Array.from({ length: ty.length }, () => fill(ty.of))).s;
+    if (ty.k === 'array') return call(glslType(ty), Array.from({ length: flatLength(ty) }, () => fill(arrayLeaf(ty)))).s;
     if (x === null) return foldedConst(ty, lit as number).s;
     if (ty.k === 'matrix') return call('outerProduct', [`vec${ty.cols}(${wrap(x, P.assign)})`, `vec${ty.rows}(1.0)`]).s;
     return typeName(ty) === typeName(from) ? wrap(x, P.assign) : call(glslType(ty), [wrap(x, P.assign)]).s;

@@ -373,6 +373,22 @@ describe('GLSL の書き出し: 文と関数', () => {
       float4 PS() : COLOR0 { B b = (B)0; return b.a.x; }${PS_PASS}`, 'PS');
     expect(code).toContain('B b = B(A(0.0, ivec2(0)), mat3(0.0));');
   });
+  it('配列の配列は 1 次元にして書き、a[i][j] は a[i * M + j] にする (GLSL ES 3.00 に配列の配列はない)', () => {
+    const { code, ctx } = emitFn(`float2 K[2][3]; float2 f(float2 k[2][3], int i) { return k[i][1]; }
+      float4 PS(float2 uv : TEXCOORD0) : COLOR0 {
+        static const float W[2][2] = { 1, 2, 3, 4 }; float L[2][3]; int i = (int)uv.x; uint u = 1;
+        L[i][u] = W[1][i]; return float4(K[i][2] + f(K, i), L[1][0], W[i + 1][0]);
+      }${PS_PASS}`, 'PS');
+    expect(code).toContain('vec2 f(vec2[6] k, int i) {\n  return k[i * 3 + 1];');
+    expect(code).toContain('float[4] W = float[4](1.0, 2.0, 3.0, 4.0);');
+    expect(code).toContain('float[6] L = float[6](0.0, 0.0, 0.0, 0.0, 0.0, 0.0);');
+    expect(code).toContain('L[i * 3 + int(u)] = W[1 * 2 + i];');
+    expect(code).toContain('K[i * 3 + 2] + f(K, i), L[1 * 3 + 0], W[(i + 1) * 2 + 0]');
+    expect(ctx.diags.errors).toEqual([]);
+    // 配列の配列の一部を値として使うことには対応しない
+    expect(emitFn(`float K[2][3]; float g(float k[3]) { return k[0]; } float4 PS() : COLOR0 { return g(K[1]); }${PS_PASS}`, 'PS').ctx.diags.errors.map(e => e.code))
+      .toEqual(['FX-UNSUPPORTED']);
+  });
   it('helpers は使ったものだけ', () => {
     const { ctx } = emitFn(`float4 PS(float x : TEXCOORD0) : COLOR0 { return fmod(x, 2); }${PS_PASS}`, 'PS');
     const h = emitHelpers(ctx);

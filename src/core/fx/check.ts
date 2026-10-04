@@ -6,7 +6,7 @@ import { evalConst, type ConstEnv, type ConstValue } from './consteval.ts';
 import type { DiagCode, Diagnostics, Loc } from './diagnostics.ts';
 import { isIntrinsic, resolveIntrinsic, UNSUPPORTED_INTRINSICS } from './intrinsics.ts';
 import {
-  arithmeticScalar, binaryResultType, componentCount, conversion, sameType, scalarKind, typeName, vectorOf, withScalar, type Scalar, type Type,
+  arithmeticScalar, binaryResultType, componentCount, conversion, flatLength, sameType, scalarKind, typeName, vectorOf, withScalar, type Scalar, type Type,
 } from './types.ts';
 
 export type { ConstValue } from './consteval.ts';
@@ -189,21 +189,21 @@ class Checker {
   private resolveType(ref: TypeRef, dims: (Expr | null)[], report: boolean, unsized?: number): Type {
     const base = this.baseType(ref, report);
     if (dims.length === 0 || base === ERR) return base;
-    if (dims.length > 1) {
-      if (report) this.error('FX-UNSUPPORTED', ref.loc, t('配列の配列には対応していません'));
-      return ERR;
+    // T a[N][M] は「T[M] の N 個の配列」。大きさを書かない [] は 1 次元のときだけ
+    const lengths: number[] = [];
+    for (const d of dims) {
+      let length = dims.length === 1 ? unsized : undefined;
+      if (d) {
+        const v = this.fold(d);
+        length = v?.kind === 'num' && v.type.k === 'scalar' ? v.values[0] : undefined;
+      }
+      if (length === undefined || !Number.isInteger(length) || length < 1) {
+        if (report) this.error('FX-TYPE-CONST', d?.loc ?? ref.loc, t('配列の大きさは正の整数の定数にしてください'));
+        return ERR;
+      }
+      lengths.push(length);
     }
-    const d = dims[0];
-    let length = unsized;
-    if (d) {
-      const v = this.fold(d);
-      length = v?.kind === 'num' && v.type.k === 'scalar' ? v.values[0] : undefined;
-    }
-    if (length === undefined || !Number.isInteger(length) || length < 1) {
-      if (report) this.error('FX-TYPE-CONST', d?.loc ?? ref.loc, t('配列の大きさは正の整数の定数にしてください'));
-      return ERR;
-    }
-    return { k: 'array', of: base, length };
+    return lengths.reduceRight<Type>((of, length) => ({ k: 'array', of, length }), base);
   }
 
   private unsizedLength(decl: VarDecl): number | undefined {
@@ -548,6 +548,14 @@ class Checker {
     const count = (want: number, got: number) =>
       this.error('FX-TYPE-MISMATCH', init.loc, t('初期値の数が合いません (必要 {want}・指定 {got})', { want, got }));
     const s = scalarKind(ty);
+    // 配列の配列は、{ } を省いて要素を平らに並べてもよい ({ a, b, c, d } を { { a, b }, { c, d } } に)
+    if (ty.k === 'array' && ty.of.k === 'array' && init.items.length === flatLength(ty) && !init.items.some(x => x.kind === 'initList')) {
+      const n = flatLength(ty.of);
+      init.items = Array.from({ length: ty.length }, (_, i) => {
+        const items = init.items.slice(i * n, (i + 1) * n);
+        return { kind: 'initList', items, loc: items[0].loc };
+      });
+    }
     if (ty.k === 'array' || ty.k === 'struct') {
       const parts = ty.k === 'array' ? Array.from({ length: ty.length }, () => ty.of) : ty.fields.map(f => f.type);
       if (init.items.length !== parts.length) count(parts.length, init.items.length);

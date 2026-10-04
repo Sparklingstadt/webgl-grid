@@ -43,6 +43,7 @@ describe('型の名前', () => {
     const arr: Type = { k: 'array', of: F4, length: 3 };
     const st: Type = { k: 'struct', name: 'S', fields: [{ name: 'a', type: F3, semantic: null }, { name: 'b', type: F, semantic: 'X' }] };
     expect(typeName(arr)).toBe('float4[3]');
+    expect(typeName({ k: 'array', of: arr, length: 2 })).toBe('float4[2][3]'); // 配列の配列は書いた順
     expect(typeName(st)).toBe('S');
     expect(typeName({ k: 'sampler', dim: null })).toBe('sampler');
     expect(typeName({ k: 'sampler', dim: '3D' })).toBe('sampler3D');

@@ -61,13 +61,24 @@ export function builtinType(name: string): Type | null {
   return null;
 }
 
+// 配列の一番内側の型・外から順の大きさ・平らにした要素の数 (配列でなければ型そのもの・[]・1)
+export function arrayLeaf(t: Type): Type {
+  return t.k === 'array' ? arrayLeaf(t.of) : t;
+}
+export function arrayLengths(t: Type): number[] {
+  return t.k === 'array' ? [t.length, ...arrayLengths(t.of)] : [];
+}
+export function flatLength(t: Type): number {
+  return arrayLengths(t).reduce((a, b) => a * b, 1);
+}
+
 // HLSL の書き方: 'float4x3'・'float'・'S'・'float4[3]'
 export function typeName(t: Type): string {
   switch (t.k) {
     case 'scalar': return t.s;
     case 'vector': return `${t.s}${t.n}`;
     case 'matrix': return `${t.s}${t.rows}x${t.cols}`;
-    case 'array': return `${typeName(t.of)}[${t.length}]`;
+    case 'array': return `${typeName(arrayLeaf(t))}${arrayLengths(t).map(n => `[${n}]`).join('')}`; // 配列の配列は書いた順
     case 'struct': return t.name;
     case 'sampler': return t.dim === null ? 'sampler' : `sampler${t.dim}`;
     case 'texture': return t.dim === null ? 'texture' : `texture${t.dim}`;
