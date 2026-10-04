@@ -103,6 +103,8 @@ export function compileEffect(
   const diags = new Diagnostics();
   try {
     const tokens = preprocess(entry, { readFile, listFiles: options.listFiles }, { defines: options.defines }, diags);
+    // 前処理の誤りがあれば、ここで止める (先頭の誤りが本当の原因になるように)
+    if (diags.errors.length > 0) return { ok: false, errors: diags.errors, warnings: diags.warnings };
     const checked = check(parse(tokens, diags), diags);
     // 型の誤りがあれば、書き出さない (誤りが重なって出るのを避ける)
     if (diags.errors.length === 0) {

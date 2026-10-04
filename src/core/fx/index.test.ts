@@ -127,6 +127,12 @@ describe('compileEffect', () => {
     expect(r).toMatchObject({ ok: false, errors: [{ code: 'FX-PARSE', file: 'a.fx', line: 1 }], warnings: [] });
   });
 
+  it('前処理で誤りがあれば、そこで止めて前処理の誤りだけを返す', () => {
+    const r = compileEffect('a.fx', readerOf({ 'a.fx': '#include "none.fxsub"\nfloat a = ;' }));
+    expect(r).toMatchObject({ ok: false, errors: [{ code: 'FX-PP-INCLUDE-NOT-FOUND', file: 'a.fx', line: 1 }] });
+    expect(!r.ok && r.errors.length).toBe(1);
+  });
+
   it('エントリーのファイルがなければ FX-IO-NOT-FOUND', () => {
     expect(compileEffect('none.fx', () => null)).toMatchObject({ ok: false, errors: [{ code: 'FX-IO-NOT-FOUND', file: 'none.fx' }] });
   });
