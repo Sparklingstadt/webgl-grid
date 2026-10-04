@@ -4,7 +4,7 @@ import { SHAPES, findShape } from '../../core/shapes';
 import { hexToLinear, linearToHex } from '../../core/materials/color';
 import { NODE_TYPES } from '../../core/materials/nodes';
 import { surfaceShader } from '../../core/materials/tree';
-import type { OutputSettings } from '../../core/output';
+import { regionPixels, type OutputSettings } from '../../core/output';
 import { fromBase64, toBase64, type RemoteFile } from '../../core/remote';
 import { keyFrames } from '../../core/animation';
 import type { BoneValue } from '../../core/types';
@@ -337,7 +337,8 @@ export const COMMANDS: Record<string, Command> = {
   render_image: async (e, p) => {
     if (p?.frame !== undefined) e.clock.seekFrame(Number(p.frame));
     const blob = await e.output.renderPng();
-    return { png: await blobToBase64(blob), width: e.output.settings.width, height: e.output.settings.height, frame: e.clock.frame };
+    const { w, h } = regionPixels(e.output.settings);
+    return { png: await blobToBase64(blob), width: w, height: h, frame: e.clock.frame };
   },
   render_animation: async e => {
     const r = await e.output.renderVideo();

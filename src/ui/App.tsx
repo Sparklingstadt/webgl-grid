@@ -9,6 +9,7 @@ import { StatusBar } from './components/StatusBar';
 import { BottomArea, type BottomEditor } from './components/BottomArea';
 import { TopBar, type Workspace } from './components/TopBar';
 import { ViewportArea } from './components/ViewportArea';
+import { useShowFrame } from './components/OutputFrame';
 import { useEngine, useUi } from './EngineContext';
 import { useShortcuts, type Area } from './hooks/useShortcuts';
 import { t } from '../core/i18n';
@@ -50,6 +51,7 @@ export default function App() {
   const managerRef = useRef(managerOpen);
   useLayoutEffect(() => { managerRef.current = managerOpen; }, [managerOpen]);
   const hoverArea = useRef<Area>(null);
+  const [, setShowFrame] = useShowFrame();
   const setHover = (a: Area) => { hoverArea.current = a; }; // (マウスが乗っているエリア: X・Home・Ctrl+Space の働きを変える)
   const toggleMax = (area?: MaxArea) => {
     if (maxArea) { setMaxArea(null); return; }
@@ -146,6 +148,7 @@ export default function App() {
     toggleTools,
     toggleMax: () => toggleMax(),
     showSide: () => setSideOpen(true),
+    showFrame: () => setShowFrame(true),
     openFiles,
     openProject,
     openAddons: () => setManagerOpen(true),

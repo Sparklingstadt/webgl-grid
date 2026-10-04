@@ -2,7 +2,7 @@ import type * as THREE from 'three';
 import { FPS, VIEWPORT_BG } from '../../core/constants';
 import { errorText } from '../../core/errors';
 import { t } from '../../core/i18n';
-import { VIDEO_FORMATS, frameSpan, normalizeOutput, outputFileName, type OutputSettings } from '../../core/output';
+import { VIDEO_FORMATS, blurTimes, frameSpan, normalizeOutput, outputFileName, regionPixels, type OutputSettings } from '../../core/output';
 import { download, downloadUrl } from '../io/download';
 import type { Clock } from '../anim/Clock';
 import type { Music } from '../anim/Music';
@@ -18,7 +18,9 @@ export class RenderCancelled extends Error {
 // 描くときは、編集用の表示 (地面のグリッド・選択の輪郭線) を隠す。
 // 動画は、再生と同じようにタイムラインを 1 フレーム (1/30 秒) ずつ進めて描き (物理演算も同じ間隔で進む)、
 // WebCodecs で圧縮して MP4 / WebM にまとめる (mediabunny)。処理の速さに関係なく、コマ落ちしない。
-// renderPng / renderVideo はデータを返すだけ (MCP からも使う)。renderImage / renderAnimation は画面の操作 (結果を見せる・保存する)
+// renderPng / renderVideo はデータを返すだけ (MCP からも使う)。renderImage / renderAnimation は画面の操作 (結果を見せる・保存する)。
+// モーションブラーでは、シャッターが開いてからフレームの時刻までを何回かに分けて描き、重ねて平均する (時刻は前へだけ進める)。
+// レンダー範囲 (Ctrl+B) があれば、その部分だけを切り出して書き出す
 export class RenderOutput {
   settings: OutputSettings = normalizeOutput(undefined);
   active = false; // 描いている最中 (編集用の表示を隠す)
@@ -50,7 +52,7 @@ export class RenderOutput {
     try {
       const blob = await this.renderPng();
       this.closeResult();
-      const { width, height } = this.settings;
+      const { w: width, h: height } = regionPixels(this.settings);
       this.ui.set({ renderResult: { url: URL.createObjectURL(blob), name: outputFileName(this.baseName(), 'png', this.clock.frame), width, height } });
     } catch (err) {
       console.error(err);
@@ -87,13 +89,14 @@ export class RenderOutput {
   // --- データを作る ---
   // いまのフレームを 1 枚描いて、PNG にする
   async renderPng(): Promise<Blob> {
-    const copy = this.flatCanvas();
+    const copy = this.flatCanvas(), { clock } = this, t0 = clock.t, blur = this.settings.motionBlur;
     try {
       this.begin();
-      this.viewport.render();
-      this.flatten(copy); // WebGL の描画結果は、すぐ (次に画面へ出す前に) 写し取る
+      if (blur) clock.seek(Math.max(t0 - this.settings.shutter / FPS, 0)); // (シャッターが開くところから)
+      this.shoot(copy, t0); // WebGL の描画結果は、すぐ (次に画面へ出す前に) 写し取る
     } finally {
       this.end();
+      if (blur) clock.seek(t0);
     }
     return new Promise((ok, ng) => copy.toBlob(b => (b ? ok(b) : ng(new Error(t('PNG を作れませんでした')))), 'image/png'));
   }
@@ -109,7 +112,8 @@ export class RenderOutput {
     const quality = { medium: mb.QUALITY_MEDIUM, high: mb.QUALITY_HIGH, veryHigh: mb.QUALITY_VERY_HIGH }[s.quality];
     const supported = format.getSupportedVideoCodecs();
     const prefer = (s.format === 'mp4' ? ['avc', 'hevc', 'vp9', 'av1'] : ['vp9', 'av1', 'vp8']) as typeof supported;
-    const codec = await mb.getFirstEncodableVideoCodec(prefer.filter(c => supported.includes(c)), { width: s.width, height: s.height, quality, frameRate: FPS });
+    const size = regionPixels(s);
+    const codec = await mb.getFirstEncodableVideoCodec(prefer.filter(c => supported.includes(c)), { width: size.w, height: size.h, quality, frameRate: FPS });
     if (!codec) throw new Error(t('このブラウザでは {format} の動画を作れません。出力の形式か大きさを変えてください', { format: t(fmt.name) }));
 
     const output = new mb.Output({ format, target: new mb.BufferTarget() });
@@ -134,17 +138,17 @@ export class RenderOutput {
     this.ui.set({ rendering: { done: 0, total: count } });
     try {
       this.begin();
-      clock.seekFrame(start); // 飛んだ先の姿勢に、物理演算をなじませる (再生を始めるときと同じ)
+      // 飛んだ先の姿勢に、物理演算をなじませる (再生を始めるときと同じ)。モーションブラーなら、シャッターが開くところから
+      if (s.motionBlur) clock.seek(Math.max(start / FPS - s.shutter / FPS, 0)); else clock.seekFrame(start);
       const flat = this.flatCanvas();
       let yielded = performance.now();
       for (let i = 0; i < count; i++) {
         if (this.cancelled) throw new RenderCancelled();
-        if (i > 0) {
+        if (i > 0 && !s.motionBlur) {
           clock.advanceTo((start + i) / FPS);
           this.viewport.stepSystems(1 / FPS);
         }
-        this.viewport.render();
-        this.flatten(flat);
+        this.shoot(flat, (start + i) / FPS);
         const frame = new VideoFrame(flat, { timestamp: Math.round(i * 1e6 / FPS), duration: Math.round(1e6 / FPS) });
         const sample = new mb.VideoSample(frame, { timestamp: i / FPS, duration: 1 / FPS });
         try {
@@ -173,17 +177,35 @@ export class RenderOutput {
     return { bytes: new Uint8Array((output.target as InstanceType<typeof mb.BufferTarget>).buffer!), ext: fmt.ext, mime: format.mimeType, codec, frames: count };
   }
 
-  // 出力の大きさの 2D の canvas (背景を塗ってから 3D の絵を重ね、透けない絵にする)
+  // 書き出す大きさ (レンダー範囲があればその大きさ) の 2D の canvas (背景を塗ってから 3D の絵を重ね、透けない絵にする)
   private flatCanvas() {
-    return Object.assign(document.createElement('canvas'), { width: this.settings.width, height: this.settings.height });
+    const { w, h } = regionPixels(this.settings);
+    return Object.assign(document.createElement('canvas'), { width: w, height: h });
+  }
+  // 時刻 t の絵を to に描く。モーションブラーなら、シャッターが開いてから t までの時刻を順に描いて重ねる (平均)
+  private shoot(to: HTMLCanvasElement, t: number) {
+    const s = this.settings;
+    if (!s.motionBlur) { this.viewport.render(); this.flatten(to); return; }
+    const tmp = Object.assign(document.createElement('canvas'), { width: to.width, height: to.height });
+    const g = to.getContext('2d')!;
+    blurTimes(t, s.shutter, s.blurSamples, FPS).forEach((tk, k) => {
+      const d = tk - this.clock.t;
+      if (d > 0) { this.clock.advanceTo(tk); this.viewport.stepSystems(d); }
+      this.viewport.render();
+      this.flatten(tmp);
+      g.globalAlpha = 1 / (k + 1); // (それまでの平均に、1 / 枚数 の重みで重ねる)
+      g.drawImage(tmp, 0, 0);
+    });
+    g.globalAlpha = 1;
   }
   // 地面の影や半透明の物は、描いた所の透明度をそのまま残すので (画面では CSS の背景色が透けて見える)、
   // 書き出すときは背景色の上に重ねる
   private flatten(to: HTMLCanvasElement) {
     const g = to.getContext('2d')!;
+    const r = regionPixels(this.settings);
     g.fillStyle = VIEWPORT_BG;
     g.fillRect(0, 0, to.width, to.height);
-    g.drawImage(this.viewport.canvas!, 0, 0);
+    g.drawImage(this.viewport.canvas!, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h);
   }
 
   // 描く準備: 出力の大きさ・背景を塗る・編集用の表示を隠す

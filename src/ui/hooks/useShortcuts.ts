@@ -13,6 +13,7 @@ export function useShortcuts(engine: Engine, actions: {
   toggleTools: () => void; // ビューポートのツールバー (T)
   toggleMax: () => void;   // マウスが乗っているエリアを最大化する・戻す (Ctrl+Space)
   showSide: () => void; // 右の列 (アウトライナー・プロパティ) を開く (閉じていれば)
+  showFrame: () => void; // ビューポートに出力の枠を出す (隠していれば)
   openFiles: () => void;
   openProject: () => void;
   openAddons: () => void;
@@ -62,6 +63,12 @@ export function useShortcuts(engine: Engine, actions: {
       if ((e.ctrlKey || e.metaKey) && a.hoverArea.current === 'timeline' && (e.code === 'KeyC' || e.code === 'KeyV') && !e.shiftKey && !e.altKey) {
         e.preventDefault();
         if (e.code === 'KeyC') engine.copyKeys(); else engine.pasteKeys();
+        return;
+      }
+      // Ctrl+B: レンダー範囲をドラッグで決める、Ctrl+Alt+B: レンダー範囲を消す
+      if ((e.ctrlKey || e.metaKey) && e.code === 'KeyB') {
+        e.preventDefault();
+        if (e.altKey) engine.output.set({ region: null }); else { a.showFrame(); engine.ui.set({ regionSelect: true }); }
         return;
       }
       // Ctrl+P: 親子付け (ブラウザーの印刷は出さない)

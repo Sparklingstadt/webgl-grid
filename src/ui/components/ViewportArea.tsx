@@ -13,7 +13,7 @@ import { Icon } from './icons';
 import { NPanel } from './NPanel';
 import { CollectionMenu, SHADING_LABELS, ShadingMenu, ViewContextMenu } from './ViewContextMenu';
 import type { ShadingMode } from '../../engine/render/Viewport';
-import { OutputFrame, useShowFrame } from './OutputFrame';
+import { OutputFrame, RegionSelect, useShowFrame } from './OutputFrame';
 import { ModelPicker } from './ModelPicker';
 import { RecoverBanner } from './Overlays';
 import { requestRename } from './sidebar/Outliner';
@@ -143,6 +143,7 @@ export function ViewportArea(props: {
         <div className={`viewport${props.nOpen ? ' n-open' : ''}${props.toolsOpen ? '' : ' tools-hidden'}${boxSelect ? ' box-select' : ''}`} ref={el => { viewportRef.current = el; setViewportEl(el); }} onPointerDown={props.onViewportPointerDown}>
           <canvas id="c" ref={canvasRef} />
           {showFrame && <OutputFrame container={viewportEl} />}
+          <RegionSelect container={viewportEl} />
           {props.toolsOpen && <div className="tools" role="group" aria-label={t('カメラの操作')}>
             <button type="button" aria-pressed={mode === 'orbit'} title={t('回転: ドラッグで注視点のまわりを回る')} aria-label={t('回転')} onClick={() => camera.setMode('orbit')}>
               <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16.5 10a6.5 6.5 0 1 1-2-4.7" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /><path d="M15.5 2.5v3.6h-3.6" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>

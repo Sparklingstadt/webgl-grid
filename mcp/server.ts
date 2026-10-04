@@ -230,6 +230,10 @@ forward('set_scene', 'シーンの設定 (Cinema 4D の空・床・太陽): 背�
 forward('set_output', 'レンダリングの出力の設定', {
   width: z.number().int().min(16).max(4096).optional(), height: z.number().int().min(16).max(4096).optional(),
   format: z.enum(['mp4', 'webm']).optional(), quality: z.enum(['medium', 'high', 'veryHigh']).optional(), audio: z.boolean().optional(),
+  motionBlur: z.boolean().optional().describe('モーションブラー'), shutter: z.number().min(0.05).max(1).optional().describe('シャッター (フレームの長さに対する割合)'),
+  blurSamples: z.number().int().min(2).max(32).optional().describe('モーションブラーで 1 フレームを何回に分けて描くか'),
+  region: z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1), w: z.number().min(0).max(1), h: z.number().min(0).max(1) }).nullable().optional()
+    .describe('レンダー範囲 (出力の枠の中の割合。左上から)。null で全体'),
 });
 tool('render_image', 'いまの視点から出力の解像度で 1 枚レンダリングする (グリッド・選択の輪郭線なし)。画像を返し、path があれば PNG を保存する', {
   frame, path: z.string().optional().describe('保存する .png のパス'),
