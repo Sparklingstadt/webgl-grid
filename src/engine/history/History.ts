@@ -61,6 +61,13 @@ export class History {
     this.publish();
   }
 
+  // 本体の、物でない場面の値 (ステージ・カメラモーションが付いているか)。プロジェクトには入れず、元に戻すだけに使う
+  private extras: { key: string; label: string; save(): unknown; load(v: unknown): void }[] = [];
+  addExtra(def: { key: string; label: string; save(): unknown; load(v: unknown): void }) {
+    this.extras.push(def);
+    this.rebase();
+  }
+
   private rebase() {
     const cur = this.steps[this.index];
     if (cur && !this.restoring) this.steps[this.index] = this.capture(cur.label);
@@ -103,7 +110,7 @@ export class History {
     const next = this.capture('');
     if (next.sig === cur.sig) return;
     const pairs = <T extends { key: string; label: string }>(l: T[]) => l.map(x => [x.key, x.label] as [string, string]);
-    next.label = describeChange(cur.state, next.state, { objectData: pairs(this.addons.objectData.list()), sceneData: pairs(this.historySceneData) });
+    next.label = describeChange(cur.state, next.state, { objectData: pairs(this.addons.objectData.list()), sceneData: [...pairs(this.historySceneData), ...this.extras.map(x => [`@${x.key}`, x.label] as [string, string])] });
     this.steps.splice(this.index + 1, Infinity, next);
     if (this.steps.length > MAX_STEPS) this.steps.splice(0, this.steps.length - MAX_STEPS);
     this.index = this.steps.length - 1;
@@ -161,7 +168,7 @@ export class History {
       if (o.motionFiles?.length) motionFiles.set(o.id, o.motionFiles);
       return st;
     });
-    const data = Object.fromEntries(this.historySceneData.map(d => [d.key, structuredClone(d.save())]));
+    const data = Object.fromEntries([...this.historySceneData.map(d => [d.key, structuredClone(d.save())]), ...this.extras.map(x => [`@${x.key}`, x.save()])]);
     const state: SceneState = { objects, materials: this.library.snapshot(), range: [this.clock.start, this.clock.end], data };
     return { state, sig: JSON.stringify(state), label, motionFiles };
   }
@@ -200,6 +207,7 @@ export class History {
       library.prune(new Set(state.materials.map(m => (m as MaterialData).id)));
       this.clock.setRange(state.range[0], state.range[1]);
       for (const d of this.historySceneData) if (d.key in state.data && !same(d.save(), state.data[d.key])) d.load(structuredClone(state.data[d.key]));
+      for (const x of this.extras) if (`@${x.key}` in state.data && !same(x.save(), state.data[`@${x.key}`])) x.load(state.data[`@${x.key}`]);
       // 置き直したモデルは、物理演算とモーションを付け直す
       for (const obj of back) {
         await this.physics.start(obj);

@@ -6,7 +6,7 @@ import type { LightSettings, LightType } from '../core/light';
 import { FPS } from '../core/constants';
 import { SONG_FILE } from '../core/models';
 import { errorText } from '../core/errors';
-import { langEvents, t } from '../core/i18n';
+import { langEvents, msg, t } from '../core/i18n';
 import { patchPmxMaterials } from '../core/pmxMaterials';
 import type { BoneValue } from '../core/types';
 import * as THREE from 'three';
@@ -110,6 +110,26 @@ export class Engine {
     this.keyframes.target = { light: (o, p) => this.lights.set(o, p), camera: (o, p) => this.cameras.set(o, p) };
     // 元に戻した・やり直したら、コレクションの表示と、親の位置を合わせ直す
     this.history.events.on('restored', () => { this.applyCollections(); this.hierarchy.resetPoses(); });
+    // ステージ・カメラモーションを付けた・外したことも、元に戻せる (外したものは、しばらく取っておく)
+    this.history.addExtra({
+      key: 'stage', label: msg('ステージ'),
+      save: () => (this.stage.model ? { id: this.stage.model.uuid, hidden: !this.stage.model.visible } : null),
+      load: v => {
+        const s = v as { id: string; hidden: boolean } | null;
+        if (!s) this.stage.detach();
+        else if (this.stage.model?.uuid === s.id || this.stage.reattach(s.id)) this.stage.model.visible = !s.hidden;
+        this.ui.bump('sceneVersion');
+      },
+    });
+    this.history.addExtra({
+      key: 'cameraMotion', label: msg('カメラモーション'),
+      save: () => this.motion.cameraKey || null,
+      load: v => {
+        if (!v) this.removeCameraMotion(false);
+        else if (this.motion.restoreCamera(Number(v))) this.motion.seek(this.clock.t, 0);
+        this.viewport.requestDraw();
+      },
+    });
     // レンダリングは、カメラのモーションがなければ、場面のカメラ (置いたカメラのいちばん上) から撮る
     let rendering: { saved: CameraOverride | null } | null = null;
     this.output.hooks = {
@@ -287,23 +307,30 @@ export class Engine {
   }
 
   // --- 物でないもの (アウトライナー): ステージ・カメラモーション ---
+  // (どれも元に戻せる。外したものは取っておく)
   setStageHidden(on: boolean) {
     if (!this.stage.model) return;
+    this.history.checkpoint();
     this.stage.model.visible = !on;
     this.ui.bump('sceneVersion');
     this.viewport.requestDraw();
+    this.history.soon();
   }
   removeStage() {
     if (!this.stage.model) return;
-    this.stage.clear();
+    this.history.checkpoint();
+    this.stage.detach();
     this.ui.bump('sceneVersion');
     this.viewport.requestDraw();
+    this.history.soon();
   }
-  removeCameraMotion() {
+  removeCameraMotion(step = true) {
     if (!this.motion.camera) return;
+    if (step) this.history.checkpoint();
     if (this.camera.override && this.camera.override !== this.cameraView) this.camera.releaseOverride(true); // (いまの視点から手動に引き継ぐ)
     this.motion.removeCamera();
     this.viewport.requestDraw();
+    if (step) this.history.soon();
   }
 
   // B: 次のドラッグで四角を描いて選ぶ。Esc でやめる

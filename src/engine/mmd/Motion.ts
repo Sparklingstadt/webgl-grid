@@ -19,6 +19,10 @@ export class Motion implements System {
   helper: Any = null;
   camera: { cam: THREE.PerspectiveCamera; motion: MotionInfo } | null = null; // VMD のカメラモーション
   cameraFile: File | null = null; // カメラモーションの .vmd (プロジェクトに入れる)
+  cameraKey = 0; // いまのカメラモーションの番号 (0: なし)。外したものは、元に戻すで戻せるように取っておく
+  private cameraClip: THREE.AnimationClip | null = null;
+  private keptCameras = new Map<number, { clip: THREE.AnimationClip; file: File | null }>();
+  private nextCameraKey = 1;
   isPlaying = () => false; // タイムラインが再生中か (止まっているあいだは、毎フレーム姿勢だけ計算し直す)
   private stageMat = new THREE.Matrix4();
   private up = new THREE.Vector3();
@@ -148,8 +152,10 @@ export class Motion implements System {
   // --- カメラモーション ---
   // MMD のカメラは、モデルが原点に立っている MMD の単位の座標で動く。
   // ステージがあればステージ、なければ置いてある最初のモデルと同じ変換をかけて、このページのカメラに写す
-  private startCamera(clip: THREE.AnimationClip) {
-    if (this.camera) this.helper.remove(this.camera.cam);
+  private startCamera(clip: THREE.AnimationClip, key = this.nextCameraKey++) {
+    if (this.camera) this.removeCamera();
+    this.cameraKey = key;
+    this.cameraClip = clip;
     const cam = new THREE.PerspectiveCamera(DEFAULT_FOV);
     this.helper.add(cam, { animation: clip });
     this.camera = { cam, motion: this.info(cam, clip) };
@@ -160,6 +166,15 @@ export class Motion implements System {
     };
     this.cameraCtl.setOverride(override);
     this.ui.bump('sceneVersion');
+  }
+  // 取っておいたカメラモーション (番号) を付け直す (元に戻す)。なければ false
+  restoreCamera(key: number) {
+    const k = this.keptCameras.get(key);
+    if (!k || !this.helper) return false;
+    this.keptCameras.delete(key);
+    this.startCamera(k.clip, key);
+    this.cameraFile = k.file;
+    return true;
   }
   private stageMatrix() {
     if (this.stage.model) return this.stageMat.copy(this.stage.model.matrixWorld);
@@ -184,8 +199,14 @@ export class Motion implements System {
   removeCamera() {
     if (!this.camera) return;
     this.helper.remove(this.camera.cam);
+    if (this.cameraClip) {
+      this.keptCameras.set(this.cameraKey, { clip: this.cameraClip, file: this.cameraFile });
+      for (const k of this.keptCameras.keys()) { if (this.keptCameras.size <= 5) break; this.keptCameras.delete(k); }
+    }
     this.camera = null;
     this.cameraFile = null;
+    this.cameraKey = 0;
+    this.cameraClip = null;
     this.ui.bump('keysVersion');
     this.ui.bump('sceneVersion');
   }
