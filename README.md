@@ -17,7 +17,7 @@ npm run dev
 
 ### デスクトップ版（Electron）
 
-[Releases](https://github.com/Sparklingstadt/webgl-grid/releases) から、Mac（Apple Silicon: `mac-arm64`、Intel: `mac-x64`。.dmg か .zip）・Windows（`win-x64`・`win-arm64` の .zip。展開して `webgl-grid.exe`）を落として使えます。署名していないので、Mac では初めて開くときに Finder で右クリック >「開く」（それでも開けなければ「システム設定 > プライバシーとセキュリティ」の「このまま開く」）、Windows では SmartScreen の「詳細情報 > 実行」を選んでください。
+[Releases](https://github.com/Sparklingstadt/webgl-grid/releases) から、Mac（Apple Silicon: `mac-arm64`、Intel: `mac-x64`。.dmg か .zip）・Windows（`win-x64`・`win-arm64` の .zip。展開して `webgl-grid.exe`）を落として使えます。Apple の開発者 ID で署名・公証していない（アドホック署名だけ）ので、Mac では初めて開くときに「開発元を確認できない」と出ます。一度開こうとしてから「システム設定 > プライバシーとセキュリティ」の「このまま開く」を押してください（ターミナルで `xattr -dr com.apple.quarantine /Applications/webgl-grid.app` としても開けます）。Windows では SmartScreen の「詳細情報 > 実行」を選んでください。
 
 - 中身はブラウザ版と同じで、アプリを 127.0.0.1（17458 番から空いているポート）で配って窓に開きます。設定や自動保存はアプリの中に覚えます。
 - models フォルダは「書類/webgl-grid/models」です（メニューの「ファイル > models フォルダを開く」で開けます。環境変数 `WEBGL_GRID_MODELS_DIR` で変えられます）。ここにモデルのフォルダ（.pmx とテクスチャ）・.vmd・.vpd・曲を置くと、ブラウザ版の `models/` と同じように使えます。
