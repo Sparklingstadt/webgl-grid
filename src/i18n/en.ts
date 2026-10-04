@@ -1154,5 +1154,11 @@ const dict: Dictionary = {
   "ステート {name} の値が定数に計算できないので、式のまま残します": "The value of state {name} cannot be evaluated to a constant, so it is kept as an expression",
   "Script の命令が 名前=値 の形ではありません: {text}": "Script command is not in name=value form: {text}",
   "Script の命令を知りません: {name}": "Unknown Script command: {name}",
+  "clip は文としてだけ使えます": "clip can only be used as a statement",
+  "{name} はピクセルシェーダーでだけ使えます": "{name} can only be used in a pixel shader",
+  "副作用のある式を 2 回書き出すことになるので、対応していません": "Not supported because an expression with side effects would be written out twice",
+  "行列に {name} を使うことには対応していません": "Using {name} on matrices is not supported",
+  "行列の複数の成分への代入には対応していません: {name}": "Assigning to multiple matrix elements is not supported: {name}",
+  "関数の中のサンプラーの変数には対応していません": "Sampler variables inside functions are not supported",
 };
 export default dict;
