@@ -156,11 +156,13 @@ describe('型チェック: 関数', () => {
     expect(codesOf(PS_BODY('', 'static const float w[2] = { 0.5, 0.25 }; static const float n = w[0] * 2; float a = w[1] + n;'))).toEqual([]);
     expect(codesOf(PS_BODY('', 'static const float n = 1; n = 2;'))).toEqual(['FX-TYPE-LVALUE']);
   });
-  it('代入できない左辺は FX-TYPE-LVALUE (式・const・uniform・uniform の引数)', () => {
+  it('代入できない左辺は FX-TYPE-LVALUE (式・const・uniform・サンプラーの uniform の引数)', () => {
     expect(codesOf(PS_BODY('', 'float a = 0, b = 0, c = 1; c ? a : b = 3; a + b = c; 1++;'))).toEqual(['FX-TYPE-LVALUE', 'FX-TYPE-LVALUE', 'FX-TYPE-LVALUE']);
     expect(codesOf(PS_BODY('float u; const float k = 1; static const float sk = 1; static float s;', 'u = 1; k = 2; sk = 3; s = 4; const float l = 1; l += 1;')))
       .toEqual(['FX-TYPE-LVALUE', 'FX-TYPE-LVALUE', 'FX-TYPE-LVALUE', 'FX-TYPE-LVALUE']);
-    expect(codesOf('float4 PS(uniform float k) : COLOR0 { k = 1; return k; } technique T { pass P { PixelShader = compile ps_3_0 PS(1); } }')).toEqual(['FX-TYPE-LVALUE']);
+    expect(codesOf('sampler S; float4 PS(uniform sampler s) : COLOR0 { s = S; return 0; } technique T { pass P { PixelShader = compile ps_3_0 PS(S); } }')).toEqual(['FX-TYPE-LVALUE']);
+    // 数の uniform の引数は、関数の中の写しなので書き換えてよい (MME の D3DX9 のコンパイラと同じ。Ray-MMD の PostProcessHexDOF が使う)
+    expect(codesOf('float4 PS(uniform float k, uniform float2 o) : COLOR0 { k = 1; o *= 2; return k + o.x; } technique T { pass P { PixelShader = compile ps_3_0 PS(1, 2); } }')).toEqual([]);
   });
   it('out の引数は同じ型の変数', () => {
     expect(codesOf(PS_BODY('void f(out float x) { x = 1; }', 'float a; f(a); f(1); float2 b; f(b); float s, c; sincos(1.0, s, c);'))).toEqual(['FX-TYPE-LVALUE', 'FX-TYPE-MISMATCH']);

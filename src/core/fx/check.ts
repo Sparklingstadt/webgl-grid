@@ -778,7 +778,11 @@ class Checker {
         const sym = e.sym;
         if (!sym) return null;
         let readonly: boolean;
-        if (sym.kind === 'local') readonly = 'storage' in sym.decl ? sym.decl.storage.includes('const') : sym.decl.modifier === 'uniform';
+        // 数の uniform の引数は関数の中の写しなので書き換えてよい (MME の D3DX9 のコンパイラと同じ)。サンプラーは書き換えられない
+        if (sym.kind === 'local') {
+          const k = sym.decl.resolved?.k;
+          readonly = 'storage' in sym.decl ? sym.decl.storage.includes('const') : sym.decl.modifier === 'uniform' && (k === 'sampler' || k === 'texture');
+        }
         else {
           const g = this.globals.get(sym.name);
           readonly = g !== undefined && (g.storage !== 'static' || g.decl.storage.includes('const'));
