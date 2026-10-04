@@ -107,8 +107,12 @@ describe('GLSL の書き出し: 式', () => {
     expect(exprOf('i / j', { i: 'int', j: 'int' })).toBe('mme_idiv(i, j)');
     // 型チェックは int の 10 : 20 を int3 にするので、float の選択は float の数で確かめる
     expect(exprOf('(x > 2) ? 10.0 : 20.0', { x: 'float3' })).toBe('mix(vec3(20.0), vec3(10.0), greaterThan(x, vec3(2.0)))');
+    // int・uint・bool の成分ごとの選択は、短絡しない算術・ビット演算で (枝はどちらも 1 回だけ書く。条件は 2 回)
     expect(exprOf('(x > 2) ? 10 : 20', { x: 'float2' }))
-      .toBe('ivec2(greaterThan(x, vec2(2.0)).x ? ivec2(10).x : ivec2(20).x, greaterThan(x, vec2(2.0)).y ? ivec2(10).y : ivec2(20).y)');
+      .toBe('ivec2(10) * ivec2(greaterThan(x, vec2(2.0))) + ivec2(20) * ivec2(not(greaterThan(x, vec2(2.0))))');
+    expect(exprOf('c ? a : b', { c: 'bool3', a: 'uint3', b: 'uint3' })).toBe('a * uvec3(c) + b * uvec3(not(c))');
+    expect(exprOf('c ? a : b', { c: 'bool2', a: 'bool2', b: 'bool2' })).toBe('bvec2((uvec2(c) & uvec2(a)) | (uvec2(not(c)) & uvec2(b)))');
+    expect(exprCodes('(d = c) ? a : b', { c: 'bool2', d: 'bool2', a: 'int2', b: 'int2' })).toEqual(['FX-UNSUPPORTED']);
     expect(exprOf('c ? a : b', { c: 'bool', a: 'float', b: 'float' })).toBe('c ? a : b');
   });
   it('% と / の helpers (float・int・uint・ベクトルとスカラー)', () => {
@@ -153,7 +157,9 @@ describe('GLSL の書き出し: 式', () => {
     expect(exprOf('a != b', { a: 'int3', b: 'int3' })).toBe('notEqual(a, b)');
     expect(exprOf('!v', { v: 'bool2' })).toBe('not(v)');
     expect(exprOf('!c', { c: 'bool' })).toBe('!c');
-    expect(exprOf('a && b', { a: 'bool2', b: 'bool2' })).toBe('bvec2(a.x && b.x, a.y && b.y)');
+    // ベクトルの && || は短絡しない (HLSL は両方を計算する)
+    expect(exprOf('a && b', { a: 'bool2', b: 'bool2' })).toBe('bvec2(uvec2(a) & uvec2(b))');
+    expect(exprOf('a || (x > 0)', { a: 'bool3', x: 'float3' })).toBe('bvec3(uvec3(a) | uvec3(greaterThan(x, vec3(0.0))))');
     expect(exprOf('a || b', { a: 'bool', b: 'bool' })).toBe('a || b');
     expect(exprOf('a < b', { a: 'bool', b: 'bool' })).toBe('int(a) < int(b)');
   });
@@ -220,7 +226,22 @@ describe('GLSL の書き出し: 式', () => {
     expect(exprCodes('a[i] %= 2', { 'a[3]': 'float', i: 'int' })).toEqual([]);
     expect(exprCodes('isfinite(x + i++)', { x: 'float', i: 'int' })).toEqual(['FX-UNSUPPORTED']);
     expect(exprCodes('(x > 0) && b', { x: 'float2', b: 'bool2' })).toEqual([]);
-    expect(exprCodes('(c = a) && b', { a: 'bool2', b: 'bool2', c: 'bool2' })).toEqual(['FX-UNSUPPORTED']);
+    expect(exprCodes('(c = a) && b', { a: 'bool2', b: 'bool2', c: 'bool2' })).toEqual([]); // 1 回だけ書く
+  });
+  it('ベクトルの && || と int の選択は、discard する関数も条件によらず 1 回だけ呼ぶ (短絡しない)', () => {
+    const logic = shaderOf(`float2 f(float2 x) { if (x.x < 0) discard; return x; }
+      float4 PS(float2 uv : TEXCOORD0) : COLOR0 { bool2 b = (uv > 0.5) && (f(uv) > 0.25); return b.x ? 1 : 0; }${PS_PASS}`, 'PS');
+    expect(logic.glsl).toContain('bvec2 b = bvec2(uvec2(greaterThan(uv, vec2(0.5))) & uvec2(greaterThan(f(uv), vec2(0.25))));');
+    expect(logic.glsl.match(/f\(uv\)/g)).toHaveLength(1);
+    expect(logic.glsl).not.toContain('&&');
+    expect(logic.ctx.diags.errors).toEqual([]);
+    expect(() => parser.parse(logic.glsl, { quiet: true, failOnWarn: true, stage: 'fragment' })).not.toThrow();
+    const select = shaderOf(`static int n; int3 g() { n += 1; return n; }
+      float4 PS(float2 uv : TEXCOORD0) : COLOR0 { bool3 c = uv.xyx > 0.5; int3 r = c ? int3(1, 2, 3) : g(); return r.x; }${PS_PASS}`, 'PS');
+    expect(select.glsl).toContain('ivec3 r = ivec3(1, 2, 3) * ivec3(c) + g() * ivec3(not(c));');
+    expect(select.glsl.match(/g\(\)/g)).toHaveLength(3); // プロトタイプ・定義と、呼び出しの 1 回
+    expect(select.ctx.diags.errors).toEqual([]);
+    expect(() => parser.parse(select.glsl, { quiet: true, failOnWarn: true, stage: 'fragment' })).not.toThrow();
   });
   it('外から見える副作用のないユーザーの関数は 2 回書き出してよい (out・inout の引数・グローバル変数への書き込みがなく、呼ぶ関数もそう)', () => {
     const codes = (fns: string) => emitFn(`sampler2D S; static float g; ${fns}

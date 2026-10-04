@@ -393,11 +393,9 @@ function emitBinary(e: ExprOf<'binary'>, ctx: EmitContext): Code {
   const ty = typeOf(e);
   if (op === '&&' || op === '||') {
     if (ty.k !== 'vector') return binop(op, ex(e.left, ctx), ex(e.right, ctx));
-    // ベクトルの && || は成分ごと
-    needPure([e.left, e.right], e.loc, ctx);
-    const a = ex(e.left, ctx);
-    const b = ex(e.right, ctx);
-    return call(glslType(ty), Array.from({ length: ty.n }, (_, i) => `${comp(a, i)} ${op} ${comp(b, i)}`));
+    // ベクトルの && || は成分ごとで、短絡しない (HLSL は両方を計算する)。bool を 0・1 の uint にしてビット演算
+    const u = `uvec${ty.n}`;
+    return call(glslType(ty), [`${u}(${ex(e.left, ctx).s}) ${op[0]} ${u}(${ex(e.right, ctx).s})`]);
   }
   if (Object.hasOwn(VEC_COMPARE, op)) {
     const relational = op !== '==' && op !== '!=';
@@ -438,13 +436,18 @@ function emitTernary(e: ExprOf<'ternary'>, ctx: EmitContext): Code {
   if (ct.k !== 'vector') {
     return code(`${wrap(ex(e.cond, ctx), P.or)} ? ${wrap(ex(e.then, ctx), P.assign)} : ${wrap(ex(e.else, ctx), P.cond)}`, P.cond);
   }
-  // 条件がベクトル: float は mix、それ以外は成分ごと
-  if (scalarKind(ty) === 'float') return call('mix', [arg(e.else, ctx), arg(e.then, ctx), arg(e.cond, ctx)]);
-  needPure([e.cond, e.then, e.else], e.loc, ctx);
-  const c = ex(e.cond, ctx);
-  const a = ex(e.then, ctx);
-  const b = ex(e.else, ctx);
-  return call(glslType(ty), Array.from({ length: ct.n }, (_, i) => `${comp(c, i)} ? ${comp(a, i)} : ${comp(b, i)}`));
+  // 条件がベクトル: float は mix。それ以外は短絡しない算術・ビット演算で選ぶ (枝は 1 回ずつ書き、条件だけ 2 回書く)
+  const s = scalarKind(ty);
+  if (s === 'float') return call('mix', [arg(e.else, ctx), arg(e.then, ctx), arg(e.cond, ctx)]);
+  needPure([e.cond], e.loc, ctx);
+  const c = ex(e.cond, ctx).s;
+  if (s === 'bool') {
+    const u = `uvec${ct.n}`;
+    return call(glslType(ty), [`(${u}(${c}) & ${u}(${ex(e.then, ctx).s})) | (${u}(not(${c})) & ${u}(${ex(e.else, ctx).s}))`]);
+  }
+  // int・uint: a * T(c) + b * T(!c) (0・1 を掛けて足すので値は変わらない)
+  const T = glslType(ty);
+  return code(`${wrap(ex(e.then, ctx), P.mul)} * ${T}(${c}) + ${wrap(ex(e.else, ctx), P.mul)} * ${T}(not(${c}))`, P.add);
 }
 
 // 暗黙の型変換。中身が数なら変換したあとの数を書く
