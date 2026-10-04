@@ -12,7 +12,7 @@ import type { Engine } from '../Engine';
 import { nameOf } from '../world/Selection';
 import { projectBaseName } from '../project/ProjectIO';
 import type { FxKey, FxLevel } from '../render/postfx';
-import { isModel, isShape, kindOf, type Any, type ModelObj, type Obj } from '../types';
+import { canScale, isModel, kindOf, type Any, type ModelObj, type Obj } from '../types';
 
 // --- 外部 (MCP) から使える操作 ---
 // 名前 → (エンジン, 引数) → 結果 (JSON にできる値)。ファイルは base64 でやりとりする。
@@ -139,7 +139,7 @@ export const COMMANDS: Record<string, Command> = {
       e.world.setShapeColor(obj, colorIndex(p.color));
     }
     if (p.scale !== undefined) {
-      if (!isShape(obj)) throw new Error('大きさを変えられるのは形だけです');
+      if (!canScale(obj)) throw new Error('大きさを変えられるのは形と MMD モデルだけです');
       e.setScale(obj, Number(p.scale));
     }
     if (p.parent !== undefined) {

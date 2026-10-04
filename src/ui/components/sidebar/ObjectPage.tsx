@@ -28,7 +28,7 @@ export function ObjectPage() {
           <label>{t('位置 Y')}</label><span className="note">{t('{y} (積み重ねで決まる)', { y: sel.y.toFixed(2) })}</span>
           <label htmlFor="obj-z">{t('位置 Z')}</label><NumField id="obj-z" label={t('位置 Z')} value={+sel.z.toFixed(2)} digits={2} step={0.1} onCommit={v => engine.setObjProp('z', v)} />
           <label htmlFor="obj-r">{t('回転')}</label><NumField id="obj-r" label={t('縦軸まわりの回転 (度)')} value={Math.round(deg)} onCommit={v => engine.setObjProp('r', v)} />
-          {sel.kind === 'shape' && <><label htmlFor="obj-s">{t('大きさ')}</label><NumField id="obj-s" label={t('大きさ (倍)')} value={+sel.scale.toFixed(3)} digits={3} step={0.1} min={0.05} max={20} onCommit={v => { const o = engine.selection.current; if (o) engine.setScale(o, v); }} /></>}
+          {(sel.kind === 'shape' || sel.kind === 'model') && <><label htmlFor="obj-s">{t('大きさ')}</label><NumField id="obj-s" label={t('大きさ (倍)')} value={+sel.scale.toFixed(3)} digits={3} step={0.1} min={0.05} max={20} onCommit={v => { const o = engine.selection.current; if (o) engine.setScale(o, v); }} /></>}
         </div>
       </Panel>
       {obj && (

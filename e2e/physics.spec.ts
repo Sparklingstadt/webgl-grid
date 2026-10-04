@@ -86,3 +86,35 @@ test('髪の形を保つ錘がないモデルには、スイッチを出さな�
   await expect(page.getByText('このモデルには、物理演算の剛体がありません。')).toBeVisible();
   await expect(page.getByRole('checkbox', { name: '髪を重力で垂らす' })).toHaveCount(0);
 });
+
+test('MMD モデルも S で大きくでき、物理演算の剛体はボーンに付いたまま。Alt+S で戻す', async ({ page }) => {
+  const errors = await open(page, { cube: false });
+  const vmd = makeVmd([{ bone: 'センター', frame: 0, pos: [0, 0, 0] }, { bone: 'センター', frame: 30, pos: [0, 0, 10] }]);
+  await loadTestModel(page, [{ name: 'テスト.vmd', mimeType: 'application/octet-stream', buffer: Buffer.from(vmd) }], { physics: true });
+  await expect.poll(() => page.evaluate(() => (window as Win).engine.physics.entries.length), { timeout: 30_000 }).toBe(1);
+  const size = () => page.evaluate(() => {
+    const { engine, THREE } = window as Win, o = engine.world.objects[0];
+    engine.world.sync();
+    o.node.updateMatrixWorld(true);
+    return { scale: o.scale ?? 1, height: +new THREE.Box3().setFromObject(o.model).getSize(new THREE.Vector3()).y.toFixed(2) };
+  });
+  const before = await size();
+  await page.getByRole('tree', { name: 'シーンの物' }).getByRole('treeitem', { name: 'テスト人形' }).locator(':scope > .ol-row').click();
+  await page.locator('canvas#c').hover();
+  await page.keyboard.press('s');
+  await page.keyboard.type('2');
+  await page.keyboard.press('Enter');
+  const after = await size();
+  expect(after.scale).toBe(2);
+  expect(after.height).toBeCloseTo(before.height * 2, 1);
+  await expect(page.locator('#obj-s')).toHaveValue('2.000');
+  // 再生して動かしても、剛体はボーンから離れない (モデルの座標で計算するので、大きさに関わらない)
+  await page.evaluate(() => { const { engine } = window as Win; engine.clock.seekFrame(0); engine.clock.setPlaying(true); });
+  await expect.poll(() => page.evaluate(() => (window as Win).engine.clock.frame), { timeout: 20_000 }).toBeGreaterThan(20);
+  await page.evaluate(() => (window as Win).engine.clock.setPlaying(false));
+  expect(await worstGap(page)).toBeLessThan(5);
+  await page.locator('canvas#c').hover();
+  await page.keyboard.press('Alt+s');
+  expect((await size()).scale).toBe(1);
+  expect(errors).toEqual([]);
+});

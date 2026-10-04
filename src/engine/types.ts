@@ -55,3 +55,5 @@ export type ObjKind = 'shape' | 'model' | 'light' | 'camera';
 export const kindOf = (o: Obj): ObjKind => (o.light ? 'light' : o.camera ? 'camera' : isModel(o) ? 'model' : 'shape');
 // 形 (ライトでも MMD モデルでもない物)
 export const isShape = (o: Obj | null | undefined): o is Obj => !!o && kindOf(o) === 'shape';
+// 大きさ (拡大率) を変えられる物: 形と MMD モデル (モデルは物理演算ごと。ライト・カメラは目印だけなので変えない)
+export const canScale = (o: Obj | null | undefined): o is Obj => isShape(o) || isModel(o);

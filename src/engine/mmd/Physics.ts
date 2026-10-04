@@ -259,7 +259,7 @@ export class Physics implements System {
       }
       p.prev = (p.prev ?? new THREE.Vector3()).copy(_p);
       // ワールドの加速度を、モデルの向き・単位に直す
-      const a = _a.copy(p.acc).applyAxisAngle(THREE.Object3D.DEFAULT_UP, -o.r).multiplyScalar(p.scale * INERTIA);
+      const a = _a.copy(p.acc).applyAxisAngle(THREE.Object3D.DEFAULT_UP, -o.r).multiplyScalar(p.scale / (o.scale ?? 1) * INERTIA); // (大きくしたモデルでは、同じ動きでも揺れは小さい)
       a.clampLength(0, MMD_GRAVITY * 2);
       p.gravity.setValue(-a.x, -MMD_GRAVITY - a.y, -a.z);
       p.physics.world.setGravity(p.gravity);

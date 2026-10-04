@@ -61,7 +61,7 @@ function ItemTab() {
         <label>{t('位置 Y')}</label><span className="note">{sel.y.toFixed(2)}</span>
         <label htmlFor="np-z">{t('位置 Z')}</label><NumField id="np-z" label={t('位置 Z (サイドバー)')} value={+sel.z.toFixed(2)} digits={2} step={0.1} onCommit={v => engine.setObjProp('z', v)} />
         <label htmlFor="np-r">{t('回転')}</label><NumField id="np-r" label={t('回転 (サイドバー)')} value={Math.round(deg)} onCommit={v => engine.setObjProp('r', v)} />
-        {sel.kind === 'shape' && <><label htmlFor="np-s">{t('大きさ')}</label><NumField id="np-s" label={t('大きさ (サイドバー)')} value={+sel.scale.toFixed(3)} digits={3} step={0.1} min={0.05} max={20} onCommit={v => { const o = engine.selection.current; if (o) engine.setScale(o, v); }} /></>}
+        {(sel.kind === 'shape' || sel.kind === 'model') && <><label htmlFor="np-s">{t('大きさ')}</label><NumField id="np-s" label={t('大きさ (サイドバー)')} value={+sel.scale.toFixed(3)} digits={3} step={0.1} min={0.05} max={20} onCommit={v => { const o = engine.selection.current; if (o) engine.setScale(o, v); }} /></>}
       </div>
     </Panel>
   );

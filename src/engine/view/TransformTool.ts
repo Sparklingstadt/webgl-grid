@@ -3,7 +3,7 @@ import { DEG } from '../../core/constants';
 import type { History } from '../history/History';
 import type { SceneGraph } from '../render/SceneGraph';
 import type { Viewport } from '../render/Viewport';
-import { isShape, type Obj } from '../types';
+import { canScale, type Obj } from '../types';
 import type { UiChannel } from '../UiChannel';
 import type { Selection } from '../world/Selection';
 import type { World } from '../world/World';
@@ -20,7 +20,7 @@ interface State {
 // --- G・R・S (Blender のモーダルな移動・回転・拡大縮小) ---
 // キーを押したら、マウスを動かすと選んでいる物が動く。クリック・Enter で決める、Esc・右クリックでやめる (元に戻す)。
 // 移動は X・Y キーで軸をしぼる (Y は奥行き)。数字を打つと、その値ちょうど (移動は距離・回転は度・拡大縮小は倍率)。
-// 回転と拡大縮小は、選んでいる物の真ん中を中心にする (位置も一緒に回る・広がる)。大きさは形だけ (MMD モデル・ライトは変えない)。
+// 回転と拡大縮小は、選んでいる物の真ん中を中心にする (位置も一緒に回る・広がる)。大きさは形と MMD モデル (ライト・カメラは変えない)。
 // スナップ (Blender と同じ): Ctrl を押しているあいだ (見出しの磁石を入れているときは、押していないあいだ)、
 // 移動はグリッド (1 m。Shift も押すと 0.1 m) に、回転は 15° (Shift で 1°) ずつ、拡大縮小は 0.1 倍 (Shift で 0.01 倍) ずつ。
 // 決めるまでを、元に戻すの 1 手にする
@@ -58,7 +58,7 @@ export class TransformTool {
     const canvas = this.viewport.canvas;
     if (!canvas) return false;
     if (this.s) { this.restore(); this.s.mode = mode; this.s.typed = ''; this.begin(); this.update(); return true; } // (途中でほかの操作に切り替える)
-    const items = this.selection.list.filter(o => !o.hidden && (mode !== 'scale' || isShape(o)))
+    const items = this.selection.list.filter(o => !o.hidden && (mode !== 'scale' || canScale(o)))
       .map(obj => ({ obj, x: obj.x, z: obj.z, r: obj.r, scale: obj.scale ?? 1 }));
     if (!items.length) return false;
     this.history.checkpoint(); // (前の操作がまだ手になっていなければ、先に 1 手にしておく)

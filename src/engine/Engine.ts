@@ -37,7 +37,7 @@ import { SceneGraph } from './render/SceneGraph';
 import { Viewport } from './render/Viewport';
 import { Shading } from './render/Shading';
 import { Markers } from './anim/Markers';
-import { isModel, isShape, type ModelObj, type Obj } from './types';
+import { canScale, isModel, isShape, type ModelObj, type Obj } from './types';
 import { UiChannel } from './UiChannel';
 import { CameraController, type CameraOverride } from './view/CameraController';
 import { InputController } from './view/InputController';
@@ -278,7 +278,7 @@ export class Engine {
     for (const o of list) {
       if (what === 'location') { o.x = 0; o.z = 0; }
       else if (what === 'rotation') o.r = 0;
-      else if (isShape(o)) o.scale = undefined;
+      else if (canScale(o)) o.scale = undefined;
     }
     this.world.settle();
     this.selection.publish();
@@ -485,9 +485,9 @@ export class Engine {
     }
   }
 
-  // 大きさ (拡大率。形だけ: MMD モデルは物理演算の剛体が合わなくなり、ライトは目印だけなので変えない)
+  // 大きさ (拡大率。形と MMD モデル: モデルは物理演算ごと大きくなる。ライト・カメラは目印だけなので変えない)
   setScale(obj: Obj, k: number) {
-    if (!isShape(obj) || !Number.isFinite(k)) return;
+    if (!canScale(obj) || !Number.isFinite(k)) return;
     const v = Math.min(Math.max(k, 0.05), 20);
     if ((obj.scale ?? 1) === v) return;
     obj.scale = v === 1 ? undefined : v;

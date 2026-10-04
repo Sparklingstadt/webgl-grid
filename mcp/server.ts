@@ -84,7 +84,7 @@ forward('select', '物を選ぶ (id を省くと選択を解除。ids で いく
 forward('set_object', '物の位置・向き・色・名前・表示を変える (重なる位置なら上に積まれる)', {
   id, x: z.number().optional(), z: z.number().optional(), rotationDeg: z.number().optional().describe('縦軸まわりの回転 (度)'),
   color: z.union([z.number().int().min(0).max(7), z.string()]).optional(),
-  scale: z.number().positive().optional().describe('大きさ (拡大率 0.05〜20。形だけ)'),
+  scale: z.number().positive().optional().describe('大きさ (拡大率 0.05〜20。形と MMD モデル (物理演算ごと))'),
   name: z.string().nullable().optional().describe('名前 (空・null で種類の名前に戻す)'),
   parent: z.number().int().nullable().optional().describe('親の id (null で外す。親が動くと一緒に動く)'),
   collection: z.string().nullable().optional().describe('入れるコレクションの名前 (null でシーン コレクション。なければ作る)'),
