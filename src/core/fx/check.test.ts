@@ -337,3 +337,49 @@ describe('型チェック: 修正 1 回目', () => {
     expect(c.functions.map(f => f.decl.name)).toEqual(['f', 'PS']);
   });
 });
+
+describe('型チェック: TextureShader', () => {
+  it('注釈の target が tx_ で始まるテクスチャは、テクスチャの宣言の場所で FX-UNSUPPORTED', () => {
+    const d = diagsOf('float k;\ntexture Noise < string function = "MakeNoise"; string target = "tx_1_0"; int width = 64; >;' + PS_PASS_RETURNING('1'));
+    expect(d.errors.map(e => [e.code, e.line, e.column])).toEqual([['FX-UNSUPPORTED', 2, 9]]);
+    // 名前と値の大文字・小文字は問わない
+    expect(codesOf('texture2D T < string TARGET = "TX_1_0"; >;' + PS_PASS_RETURNING('1'))).toEqual(['FX-UNSUPPORTED']);
+  });
+  it('target が tx_ でないもの・テクスチャでないものは通す', () => {
+    expect(codesOf('texture T < string target = "ps_3_0"; >; float k < string target = "tx_1_0"; >; texture U < string name = "tx_1_0"; >;'
+      + PS_PASS_RETURNING('k'))).toEqual([]);
+  });
+});
+
+describe('型チェック: 向きのないサンプラーの引数', () => {
+  const CUBE: Type = { k: 'sampler', dim: 'CUBE' };
+  const ENV = 'float4 env(sampler s, float3 d) { return texCUBE(s, d); }';
+  const paramsOf = (c: CheckedEffect, name: string) => c.functions.find(f => f.decl.name === name)?.params;
+  it('関数の中の使い方から向きを決め、渡したグローバルのサンプラーの向きも決める', () => {
+    const c = checkSrc(`textureCUBE TC; sampler SC = sampler_state { Texture = <TC>; }; sampler S; ${ENV}
+      float4 outer(sampler s, float3 d) { return env(s, d); }` + PS_PASS_RETURNING('env(SC, 0) + outer(S, 1)'));
+    expect(paramsOf(c, 'env')).toEqual([CUBE, F3]);
+    expect(paramsOf(c, 'outer')).toEqual([CUBE, F3]);
+    expect(fnOf(c, 'env').params[0].resolved).toEqual(CUBE);
+    expect(c.globals.get('S')?.type).toEqual(CUBE);
+  });
+  it('pass の uniform の引数のサンプラーも向きを決める', () => {
+    const c = checkSrc('sampler S; float4 PS(uniform sampler s) : COLOR0 { return tex3D(s, 0); } technique T { pass P { PixelShader = compile ps_3_0 PS(S); } }');
+    expect(paramsOf(c, 'PS')).toEqual([{ k: 'sampler', dim: '3D' }]);
+    expect(c.globals.get('S')?.type).toEqual({ k: 'sampler', dim: '3D' });
+  });
+  it('決めた向きと違うサンプラーを渡すと FX-TYPE-MISMATCH', () => {
+    expect(codesOf(`sampler2D S2; ${ENV}` + PS_PASS_RETURNING('env(S2, 0)'))).toEqual(['FX-TYPE-MISMATCH']);
+    expect(codesOf(`sampler2D S2; ${ENV} float4 outer(sampler2D s) { return env(s, 0); }` + PS_PASS_RETURNING('outer(S2)'))).toEqual(['FX-TYPE-MISMATCH']);
+    expect(codesOf(`sampler S; ${ENV}` + PS_PASS_RETURNING('env(S, 0) + tex2D(S, 0)'))).toEqual(['FX-TYPE-MISMATCH']);
+  });
+  it('使い方の向きが食い違う・決められず 2D にできないときは FX-UNSUPPORTED', () => {
+    expect(codesOf('sampler S; float4 f(sampler s) { return tex2D(s, 0) + texCUBE(s, 0); }' + PS_PASS_RETURNING('f(S)'))).toEqual(['FX-UNSUPPORTED']);
+    expect(codesOf(`sampler S; ${ENV} float4 g(sampler s) { return env(s, 0) + tex2D(s, 0); }` + PS_PASS_RETURNING('g(S)'))).toEqual(['FX-UNSUPPORTED']);
+    expect(codesOf('samplerCUBE SC; float4 f(sampler s) { return 1; }' + PS_PASS_RETURNING('f(SC)'))).toEqual(['FX-UNSUPPORTED']);
+  });
+  it('使わない引数に 2D のサンプラーを渡すのはよい (sampler2D のまま)', () => {
+    const c = checkSrc('sampler2D S2; sampler1D S1; float4 f(sampler s) { return 1; }' + PS_PASS_RETURNING('f(S2) + f(S1)'));
+    expect(paramsOf(c, 'f')).toEqual([{ k: 'sampler', dim: null }]);
+  });
+});

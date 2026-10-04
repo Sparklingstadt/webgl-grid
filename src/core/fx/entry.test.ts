@@ -256,3 +256,12 @@ describe('pass ごとのシェーダー', () => {
     for (const src of [MMD_LIKE, UNIFORM_ARGS, STATICS, MRT, VPOS, DDY_VFACE]) expectParses(programOf(src));
   });
 });
+
+describe('向きのないサンプラーの引数', () => {
+  it('使い方から決めた向きで引数を書き、渡すグローバルのサンプラーも同じ向きにする', () => {
+    const p = programOf(`sampler S; float4 env(sampler s, float3 d) { return texCUBE(s, d); }
+      ${VS_SIMPLE} float4 PS() : COLOR0 { return env(S, float3(0, 0, 1)); }${PASS_BOTH}`);
+    expect(p.fragment).toContain('vec4 env(samplerCube s, vec3 d)');
+    expect(p.fragment).toContain('uniform samplerCube S;');
+  });
+});

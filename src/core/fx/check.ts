@@ -6,7 +6,7 @@ import { evalConst, type ConstEnv, type ConstValue } from './consteval.ts';
 import type { DiagCode, Diagnostics, Loc } from './diagnostics.ts';
 import { isIntrinsic, resolveIntrinsic, UNSUPPORTED_INTRINSICS } from './intrinsics.ts';
 import {
-  arithmeticScalar, binaryResultType, componentCount, conversion, flatLength, sameType, scalarKind, typeName, vectorOf, withScalar, type Scalar, type Type,
+  arithmeticScalar, binaryResultType, componentCount, conversion, flatLength, sameType, scalarKind, typeName, vectorOf, withScalar, type Dim, type Scalar, type Type,
 } from './types.ts';
 
 export type { ConstValue } from './consteval.ts';
@@ -98,6 +98,10 @@ class Checker {
   private readonly firstUse = new Map<FunctionInfo, Loc>();
   // ユーザーの関数の呼び出し (プロトタイプのあとに中身が来ても、最後に中身の宣言を指し直す)
   private readonly calls: { e: ExprOf<'call'>; info: FunctionInfo }[] = [];
+  // 向きのない sampler の引数: 関数の中の使い方から決めた向き
+  private readonly paramDims = new Map<ParamNode, Dim>();
+  // 向きのない sampler の引数に渡した式 (関数の中身を全部確かめてから向きを合わせる)
+  private readonly samplerArgs: { arg: Expr; info: FunctionInfo; index: number }[] = [];
   private scopes: Map<string, Local>[] = []; // 空ならグローバルの文脈
   private fn: { ret: Type; loops: number; switches: number } | null = null;
 
@@ -164,6 +168,7 @@ class Checker {
       if (pass) entries.set(pass, this.checkPass(pass, finish));
     }
     for (let i = 0; i < this.functions.length; i++) this.checkFunction(this.functions[i]);
+    this.settleSamplerArgs();
     for (const f of finish) f();
     for (const { e, info } of this.calls) e.target = { kind: 'function', fn: info.decl };
     return entries;
@@ -252,6 +257,7 @@ class Checker {
       this.error('FX-UNSUPPORTED', decl.loc, t('構造体の uniform には対応していません: {name}', { name: decl.name }));
     }
     this.checkAnnotations(decl.annotations);
+    if (declared.k === 'texture') this.checkTextureShader(decl);
     if (this.globals.has(decl.name)) {
       this.redefined(decl.loc, decl.name);
       return;
@@ -291,6 +297,14 @@ class Checker {
       else if (td !== null) dim = td;
     }
     return { k: 'sampler', dim };
+  }
+
+  // TextureShader (注釈の target が tx_…) は動かせない
+  private checkTextureShader(decl: VarDecl): void {
+    const v = decl.annotations.find(a => a.name.toLowerCase() === 'target')?.value;
+    if (v?.kind === 'string' && /^tx_/i.test(v.value)) {
+      this.error('FX-UNSUPPORTED', decl.loc, t('TextureShader ({target}) には対応していません', { target: v.value }));
+    }
   }
 
   private samplerMismatch(loc: Loc, name: string, a: string, b: string): void {
@@ -340,7 +354,10 @@ class Checker {
     info.ret = this.resolveType(decl.ret, [], true);
     // 既定値はグローバル変数だけを見る
     decl.params.forEach((p, i) => {
-      if (p.init && info.params[i] !== ERR) p.init = this.checkInit(p.init, info.params[i]);
+      if (p.init && info.params[i] !== ERR) {
+        p.init = this.checkInit(p.init, info.params[i]);
+        this.passSampler(p.init, info, i);
+      }
     });
     const scope = new Map<string, Local>();
     for (const p of decl.params) {
@@ -405,6 +422,7 @@ class Checker {
     }
     const { info, uniforms } = best;
     sc.args = sc.args.map((a, k) => this.coerce(a, info.params[uniforms[k]]));
+    sc.args.forEach((a, k) => this.passSampler(a, info, uniforms[k]));
     this.useFunction(info, sc.loc);
     const result: EntryInfo = { fn: info, profile: sc.profile, uniformArgs: [...sc.args] };
     // 省いた引数は既定値で埋める (関数の中身を確かめて、既定値を変換したあとで)
@@ -605,13 +623,68 @@ class Checker {
     return { kind: 'convert', to, value: e, loc: e.loc, type: to };
   }
 
-  // 向きの決まっていないグローバルのサンプラーを、最初に使った関数の向きにする
+  // 向きの決まっていないグローバルのサンプラー・sampler の引数を、最初に使った関数の向きにする
   private noteSampler(e: Expr, to: Type): void {
-    if (to.k !== 'sampler' || to.dim === null || e.kind !== 'ident' || e.sym?.kind !== 'global') return;
+    if (to.k !== 'sampler' || to.dim === null || e.kind !== 'ident' || !e.sym) return;
+    if (e.sym.kind === 'local') {
+      const p = e.sym.decl;
+      if ('storage' in p || p.resolved?.k !== 'sampler') return; // 関数の中のサンプラーの変数は書き出しで未対応
+      const dim = p.resolved.dim ?? this.paramDims.get(p);
+      if (dim === undefined) this.paramDims.set(p, to.dim);
+      else if (dim === to.dim) return;
+      else if (p.resolved.dim !== null) this.samplerMismatch(e.loc, e.name, dim, to.dim);
+      else this.error('FX-UNSUPPORTED', e.loc, t('サンプラーの引数 {name} を違う向き ({a} と {b}) で使うことには対応していません', { name: e.name, a: dim, b: to.dim }));
+      return;
+    }
     const g = this.globals.get(e.sym.name);
     if (g?.type.k !== 'sampler') return;
     if (g.type.dim === null) g.type = { k: 'sampler', dim: to.dim };
     else if (g.type.dim !== to.dim) this.samplerMismatch(e.loc, e.name, g.type.dim, to.dim);
+  }
+
+  // 向きのない sampler の引数に渡した式を覚える
+  private passSampler(arg: Expr, info: FunctionInfo, index: number): void {
+    const ty = info.params[index];
+    if (ty?.k === 'sampler' && ty.dim === null) this.samplerArgs.push({ arg, info, index });
+  }
+
+  // 渡したサンプラーの向き (決まっていなければ null)
+  private samplerDimOf(e: Expr): Dim | null {
+    if (e.kind !== 'ident' || !e.sym) return null;
+    if (e.sym.kind === 'global') {
+      const g = this.globals.get(e.sym.name);
+      return g?.type.k === 'sampler' ? g.type.dim : null;
+    }
+    const p = e.sym.decl;
+    return p.resolved?.k === 'sampler' ? (p.resolved.dim ?? ('storage' in p ? null : this.paramDims.get(p) ?? null)) : null;
+  }
+
+  // sampler の引数の向きを、呼ぶ側へ伝える (引数から引数へ渡すこともあるので、増えなくなるまで)。
+  // 決まらなかった引数は sampler2D になるので、3D・CUBE のサンプラーは渡せない
+  private settleSamplerArgs(): void {
+    let pending = this.samplerArgs;
+    for (;;) {
+      const rest = pending.filter(({ arg, info, index }) => {
+        const dim = this.paramDims.get(info.decl.params[index]);
+        if (dim !== undefined) this.noteSampler(arg, { k: 'sampler', dim });
+        return dim === undefined;
+      });
+      if (rest.length === pending.length) break;
+      pending = rest;
+    }
+    for (const { arg, info, index } of pending) {
+      const dim = this.samplerDimOf(arg);
+      if (dim === '3D' || dim === 'CUBE') {
+        this.error('FX-UNSUPPORTED', arg.loc, t('サンプラーの引数 {name} の向きを使い方から決められません ({dim} は渡せません)', { name: info.decl.params[index].name, dim }));
+      }
+    }
+    // 決めた向きを引数の型に書く
+    for (const info of this.functions) {
+      info.decl.params.forEach((p, i) => {
+        const dim = this.paramDims.get(p);
+        if (dim !== undefined) info.params[i] = p.resolved = { k: 'sampler', dim };
+      });
+    }
   }
 
   private infer(e: Expr): Type {
@@ -848,6 +921,7 @@ class Checker {
           const m = pick.decl.params[i].modifier;
           return m === 'out' || m === 'inout' ? this.outArg(a, pick.params[i]) : this.coerce(a, pick.params[i]);
         });
+        e.args.forEach((a, i) => this.passSampler(a, pick, i));
         e.target = { kind: 'function', fn: pick.decl };
         this.calls.push({ e, info: pick });
         this.useFunction(pick, e.loc);
