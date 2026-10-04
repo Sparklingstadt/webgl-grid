@@ -10615,6 +10615,11 @@ Parser.prototype.parsePmx = function ( buffer, leftToRight ) {
 				p.skinIndices = dv.getIndexArray( indexSize, 4 );
 				p.skinWeights = dv.getFloat32Array( 4 );
 
+			} else if ( p.type === 4 ) {  // QDEF (BDEF4 と同じ並び。ここでは type 4 のまま残す)
+
+				p.skinIndices = dv.getIndexArray( indexSize, 4 );
+				p.skinWeights = dv.getFloat32Array( 4 );
+
 			} else if ( p.type === 3 ) {  // SDEF
 
 				p.skinIndices = dv.getIndexArray( indexSize, 2 );

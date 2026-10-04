@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { addNode, connect, surfaceShader } from '../../core/materials/tree';
-import { convertMmdMaterial } from './fromMmd';
+import { convertMmdMaterial, convertMmdMesh } from './fromMmd';
 import { MaterialLibrary } from './MaterialLibrary';
 import { toPmxValues } from './toPmx';
 import { engineWithCube } from '../testEngine';
@@ -168,5 +168,20 @@ describe('MMD の材質の変換と .pmx への書き戻し', () => {
     // マテリアルがない (外した) スロットは元の値
     expect(toPmxValues(null, data.mmd!)).toEqual({ diffuse: data.mmd!.diffuse, specular: data.mmd!.specular, specularPower: 50,
       ambient: data.mmd!.ambient, edge: true, edgeColor: data.mmd!.edgeColor, edgeSize: data.mmd!.edgeSize });
+  });
+
+  it('convertMmdMesh は材質ごとのトゥーンとスフィアのテクスチャを残す (材質を捨てても破棄しない)', () => {
+    const lib = new MaterialLibrary();
+    const gradient = new THREE.Texture(), matcap = new THREE.Texture();
+    let disposed = 0;
+    gradient.addEventListener('dispose', () => disposed++);
+    matcap.addEventListener('dispose', () => disposed++);
+    const a = toon(), b = toon();
+    Object.assign(a, { gradientMap: gradient, matcap });
+    const mesh = { name: 'm', material: [a, b], userData: {} } as unknown as THREE.Mesh;
+    convertMmdMesh(mesh, lib);
+    expect(mesh.userData.mmeTextures).toEqual([{ toon: gradient, sphere: matcap }, { toon: null, sphere: null }]);
+    expect(mesh.userData.mmeTextures[0].toon).toBe(gradient);
+    expect(disposed).toBe(0);
   });
 });

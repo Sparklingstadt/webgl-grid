@@ -79,6 +79,8 @@ export function convertMmdMesh(mesh: Any, lib: MaterialLibrary): string[] {
   const instances = ids.map(id => lib.instance(id));
   mesh.material = Array.isArray(mesh.material) ? instances : instances[0];
   mesh.userData.slotSources = ids.map(id => lib.materials.get(id)!.mmd); // .pmx に書き出すときの元の値
+  // トゥーンとスフィアのテクスチャ (MME の toon・sphere に使う)。材質の dispose はテクスチャを捨てないので、そのまま残る
+  mesh.userData.mmeTextures = toons.map(m => ({ toon: m.gradientMap ?? null, sphere: m.matcap ?? null }));
   for (const t of toons) t.dispose(); // テクスチャは画像として残す
   return ids;
 }

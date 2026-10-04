@@ -1,6 +1,6 @@
 import { MMDParser } from '../vendor/three-mmd/mmdparser.module.js';
 import { describe, expect, it } from 'vitest';
-import { makePmx } from '../../e2e/fixtures/pmx';
+import { makePmx } from './testing/pmx';
 import { patchPmxMaterials, readPmxMaterials, type PmxMaterialValues } from './pmxMaterials';
 
 const buf = (bytes: Uint8Array) => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
