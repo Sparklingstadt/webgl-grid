@@ -19,9 +19,10 @@ const VFACE = '(gl_FrontFacing ? 1.0 : -1.0)';
 const PAD = ['0.0', '0.0', '0.0', '1.0']; // 足りない成分は (0, 0, 0, 1)
 const XYZW = 'xyzw';
 
-// 大文字にし、TEXCOORD などに番号がなければ 0 を付け、ほかの POSITION0・NORMAL0 などの 0 は取る
+// 大文字にし、TEXCOORD などに番号がなければ 0 を付け、ほかの POSITION0・NORMAL0 などの 0 は取る。
+// D3D10 の SV_Position・SV_Target・SV_Depth は D3D9 の POSITION・COLORn・DEPTH にする (fxc の vs_3_0・ps_3_0 と同じ)
 export function normalizeSemantic(s: string): string {
-  const u = s.toUpperCase();
+  const u = s.toUpperCase().replace(/^SV_(POSITION|DEPTH)$/, '$1').replace(/^SV_TARGET(\d*)$/, 'COLOR$1');
   const m = NUMBERED.exec(u);
   if (m) return m[1] === '' ? `${u}0` : u;
   return u.replace(/^(\D+)0$/, '$1');
@@ -154,7 +155,9 @@ function mainLines(entry: EntryInfo, stage: Stage, vertexOut: string[], ctx: Emi
       semanticError(diags, loc, name);
       return zero(ty);
     }
-    return leafInput(ty, normalizeSemantic(sem), name, loc, read(top));
+    // ピクセルの入力の SV_Position は VPOS (fxc の ps_3_0 と同じ)
+    const s = stage === 'fragment' && sem.toUpperCase() === 'SV_POSITION' ? 'VPOS' : normalizeSemantic(sem);
+    return leafInput(ty, s, name, loc, read(top));
   };
 
   // 出力 (戻り値・out・inout の引数) を、構造体ならメンバーごとに書く

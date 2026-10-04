@@ -79,6 +79,10 @@ describe('normalizeSemantic', () => {
     expect(['position0', 'NORMAL0', 'POSITION', 'POSITION1', 'depth0', 'VPOS', 'vface', 'PSize0'].map(normalizeSemantic))
       .toEqual(['POSITION', 'NORMAL', 'POSITION', 'POSITION1', 'DEPTH', 'VPOS', 'VFACE', 'PSIZE']);
   });
+
+  it('D3D10 の SV_Position・SV_Target・SV_Depth は D3D9 の名前にする', () => {
+    expect(['SV_Position', 'sv_target', 'SV_Target1', 'SV_Depth'].map(normalizeSemantic)).toEqual(['POSITION', 'COLOR0', 'COLOR1', 'DEPTH']);
+  });
 });
 
 describe('pass ごとのシェーダー', () => {
@@ -185,6 +189,14 @@ describe('pass ごとのシェーダー', () => {
     const src = `float Time; float f(float x) { return x * Time; } static float C = f(3);
       float4 VS(float4 p : POSITION, float4 n) : POSITION { return p * C; } float4 PS() : COLOR0 { return 1; }${PASS_BOTH}`;
     expect(errorCodes(src)).toEqual(['FX-PASS-SEMANTIC']);
+  });
+
+  it('SV_Position: 頂点の出力は POSITION、ピクセルの入力は VPOS (fxc の ps_3_0 と同じ)', () => {
+    const p = programOf(`void VS(float4 p : POSITION, out float4 o : SV_Position) { o = p; }
+      float4 PS(float4 sp : SV_Position) : SV_Target { return sp; }${PASS_BOTH}`);
+    expect(p.vertex).toContain('gl_Position = vec4(');
+    expect(p.fragment).toContain('PS(vec4(vec2(gl_FragCoord.x - 0.5,');
+    expect(p.uniforms.map(u => u.name)).toContain('mme_viewport');
   });
 
   it('PSIZE も実際に読むときだけ FX-WARN-SEMANTIC、VPOS は読むときだけ mme_viewport', () => {
