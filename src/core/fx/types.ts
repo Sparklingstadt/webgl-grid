@@ -49,6 +49,8 @@ export function builtinType(name: string): Type | null {
     if (m[3] === undefined) return vectorOf(s, Number(m[2]));
     return matrixOf(s, Number(m[2]), Number(m[3]));
   }
+  if (name === 'vector') return vectorOf('float', 4); // 型引数なしの vector / matrix
+  if (name === 'matrix') return matrixOf('float', 4, 4);
   const o = OBJECT_RE.exec(name);
   if (o) {
     const dim = o[2] === undefined ? null : DIMS[o[2]];

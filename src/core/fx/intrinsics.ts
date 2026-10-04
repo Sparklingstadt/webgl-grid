@@ -84,33 +84,35 @@ function vectorFn(spec: VectorFn): Overload[] {
   }));
 }
 
-// mul: スカラー・ベクトル・行列の積
-function mulOverloads(): Overload[] {
-  const out = new Map<string, Overload>();
-  const add = (a: Type, b: Type, ret: Type) => {
-    out.set(`${JSON.stringify(a)}|${JSON.stringify(b)}`, { params: [a, b], ret });
-  };
-  const shapes = allShapes('float');
-  for (const x of shapes) {
-    add(FLOAT, x, x);
-    add(x, FLOAT, x);
+// mul: スカラー・ベクトル・行列の積。内側の大きさが合わないときは、大きいほうを小さいほうに切り詰める
+function resolveMul(args: Type[]): IntrinsicResolution {
+  const none: IntrinsicResolution = { ok: false, reason: 'no-overload' };
+  if (args.length !== 2) return none;
+  const [a, b] = args;
+  const numeric = (t: Type) => t.k === 'scalar' || t.k === 'vector' || t.k === 'matrix';
+  if (!numeric(a) || !numeric(b)) return none;
+  const fa = shapeLike(a, 'float');
+  const fb = shapeLike(b, 'float');
+  const done = (params: Type[], ret: Type): IntrinsicResolution => ({ ok: true, ret, params });
+  if (a.k === 'scalar') return done([FLOAT, fb], fb);
+  if (b.k === 'scalar') return done([fa, FLOAT], fa);
+  if (a.k === 'vector' && b.k === 'vector') {
+    const v = vectorOf('float', Math.min(a.n, b.n));
+    return done([v, v], FLOAT);
   }
-  for (const n of SIZES) {
-    const v = vectorOf('float', n);
-    add(v, v, FLOAT);
-    for (const m of SIZES) {
-      if (n * m < 2) continue;
-      add(v, matrixOf('float', n, m), vectorOf('float', m)); // 行ベクトル * (n 行 m 列)
-      add(matrixOf('float', m, n), v, vectorOf('float', m)); // (m 行 n 列) * 列ベクトル
-    }
-    for (const k of SIZES) {
-      for (const m of SIZES) {
-        if (n * k < 2 || k * m < 2) continue;
-        add(matrixOf('float', n, k), matrixOf('float', k, m), matrixOf('float', n, m));
-      }
-    }
+  if (a.k === 'vector' && b.k === 'matrix') {
+    const k = Math.min(a.n, b.rows);
+    return done([vectorOf('float', k), matrixOf('float', k, b.cols)], vectorOf('float', b.cols));
   }
-  return [...out.values()];
+  if (a.k === 'matrix' && b.k === 'vector') {
+    const k = Math.min(a.cols, b.n);
+    return done([matrixOf('float', a.rows, k), vectorOf('float', k)], vectorOf('float', a.rows));
+  }
+  if (a.k === 'matrix' && b.k === 'matrix') {
+    const k = Math.min(a.cols, b.rows);
+    return done([matrixOf('float', a.rows, k), matrixOf('float', k, b.cols)], matrixOf('float', a.rows, b.cols));
+  }
+  return none;
 }
 
 const TEX_DIMS: { base: string; dim: Dim; coord: Type }[] = [
@@ -154,7 +156,6 @@ function transposeOverloads(): Overload[] {
 
 // 特別な関数
 const SPECIAL: Record<string, () => Overload[]> = {
-  mul: mulOverloads,
   cross: () => [{ params: [F3, F3], ret: F3 }],
   all: anyAllOverloads,
   any: anyAllOverloads,
@@ -165,9 +166,9 @@ const SPECIAL: Record<string, () => Overload[]> = {
 };
 
 function buildOverloads(name: string): Overload[] {
-  if (name in SPECIAL) return SPECIAL[name]();
-  if (name in VECTOR_FNS) return vectorFn(VECTOR_FNS[name]);
-  if (name in COMPONENTWISE) return componentwise(COMPONENTWISE[name]);
+  if (Object.hasOwn(SPECIAL, name)) return SPECIAL[name]();
+  if (Object.hasOwn(VECTOR_FNS, name)) return vectorFn(VECTOR_FNS[name]);
+  if (Object.hasOwn(COMPONENTWISE, name)) return componentwise(COMPONENTWISE[name]);
   return textureOverloads(name) ?? [];
 }
 
@@ -175,7 +176,7 @@ const TEXTURE_SUFFIXES = ['', 'lod', 'bias', 'proj', 'grad'];
 
 // 組み込み関数の名前の一覧 (エミッターが 1 対 1 で対応づける)
 export const INTRINSIC_NAMES: readonly string[] = [
-  ...Object.keys(SPECIAL), ...Object.keys(VECTOR_FNS), ...Object.keys(COMPONENTWISE),
+  'mul', ...Object.keys(SPECIAL), ...Object.keys(VECTOR_FNS), ...Object.keys(COMPONENTWISE),
   ...TEX_DIMS.flatMap(d => TEXTURE_SUFFIXES.map(s => d.base + s)),
 ].filter((n, i, all) => all.indexOf(n) === i);
 
@@ -199,7 +200,7 @@ function scalarKind(t: Type): Scalar | null {
   return t.k === 'scalar' || t.k === 'vector' || t.k === 'matrix' ? t.s : null;
 }
 
-// float を int などに落とす引数の数 (同じ cost のとき float のほうを選ぶため)
+// float を int などに落とす引数の数
 function lossyCount(args: Type[], params: Type[]): number {
   let n = 0;
   for (let i = 0; i < args.length; i++) {
@@ -210,12 +211,30 @@ function lossyCount(args: Type[], params: Type[]): number {
   return n;
 }
 
-// 候補ごとに引数の conversion の cost の合計がいちばん小さいものを選ぶ。
-// 同じ cost なら、切り詰める引数が少ないもの、float を落とす引数が少ないものを選ぶ (lerp(float, float4, float) は float4 版)。
-// それでも同点が 2 つ以上なら ambiguous
+// 成分の種類の遠さ (同じ 0、整数・bool どうし 1、float との間 2)
+function kindDistance(args: Type[], params: Type[]): number {
+  let d = 0;
+  for (let i = 0; i < args.length; i++) {
+    const a = scalarKind(args[i]);
+    const p = scalarKind(params[i]);
+    if (a === null || p === null || a === p) continue;
+    d += a === 'float' || p === 'float' ? 2 : 1;
+  }
+  return d;
+}
+
+// 行列だけを取る関数 (ベクトルは行列に読み替えない)
+const MATRIX_ONLY = new Set(['transpose', 'determinant']);
+
+// 候補を (float を落とす引数の数, conversion の cost の合計, 切り詰める引数の数, 成分の種類の遠さ) の順で比べて、
+// いちばん小さいものを選ぶ。それでも同点が 2 つ以上なら ambiguous
+// (lerp(float, float4, float) は float4 版、abs(uint) は int 版、clamp(int, int, float) は float 版)
 export function resolveIntrinsic(name: string, args: Type[]): IntrinsicResolution {
+  if (!isIntrinsic(name)) return { ok: false, reason: 'no-overload' };
+  if (name === 'mul') return resolveMul(args);
+  if (MATRIX_ONLY.has(name) && args.some(a => a.k !== 'matrix')) return { ok: false, reason: 'no-overload' };
   let best: Overload | null = null;
-  let bestKey: [number, number, number] = [Infinity, Infinity, Infinity];
+  let bestKey: number[] = [Infinity, 0, 0, 0];
   let tie = false;
   for (const o of overloadsOf(name)) {
     if (o.params.length !== args.length) continue;
@@ -229,7 +248,7 @@ export function resolveIntrinsic(name: string, args: Type[]): IntrinsicResolutio
       if (c.truncates) truncations++;
     }
     if (!ok) continue;
-    const key: [number, number, number] = [cost, truncations, lossyCount(args, o.params)];
+    const key = [lossyCount(args, o.params), cost, truncations, kindDistance(args, o.params)];
     const order = compareKeys(key, bestKey);
     if (order < 0) {
       best = o; bestKey = key; tie = false;
@@ -243,6 +262,8 @@ export function resolveIntrinsic(name: string, args: Type[]): IntrinsicResolutio
 }
 
 function compareKeys(a: number[], b: number[]): number {
-  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] < b[i] ? -1 : 1;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return a[i] < b[i] ? -1 : 1;
+  }
   return 0;
 }

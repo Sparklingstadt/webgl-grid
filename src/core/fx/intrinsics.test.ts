@@ -43,8 +43,19 @@ describe('mul のかたち', () => {
     expect(resolveIntrinsic('mul', [M44])).toEqual({ ok: false, reason: 'no-overload' });
     expect(resolveIntrinsic('mul', [{ k: 'string' }, F3])).toEqual({ ok: false, reason: 'no-overload' });
   });
-  it('float3 * float4x4 は切り詰め方が決まらないので ambiguous', () => {
-    expect(resolveIntrinsic('mul', [F3, M44])).toEqual({ ok: false, reason: 'ambiguous' });
+  it('内側の大きさが合わなければ大きいほうを切り詰める', () => {
+    expect(resolveIntrinsic('mul', [F3, M44])).toEqual({ ok: true, ret: F4, params: [F3, matrixOf('float', 3, 4)] });
+    expect(resolveIntrinsic('mul', [F4, M33])).toEqual({ ok: true, ret: F3, params: [F3, M33] });
+    expect(resolveIntrinsic('mul', [M44, F3])).toEqual({ ok: true, ret: F4, params: [matrixOf('float', 4, 3), F3] });
+    expect(resolveIntrinsic('mul', [M44, M33]))
+      .toEqual({ ok: true, ret: matrixOf('float', 4, 3), params: [matrixOf('float', 4, 3), M33] });
+    expect(resolveIntrinsic('mul', [F3, F4])).toEqual({ ok: true, ret: F, params: [F3, F3] });
+  });
+  it('float と float1x3 の積は float1x3、int の引数は float にする', () => {
+    const m13 = matrixOf('float', 1, 3);
+    expect(resolveIntrinsic('mul', [F, m13])).toEqual({ ok: true, ret: m13, params: [F, m13] });
+    expect(resolveIntrinsic('mul', [m13, F])).toEqual({ ok: true, ret: m13, params: [m13, F] });
+    expect(resolveIntrinsic('mul', [vectorOf('int', 3), M33])).toMatchObject({ ok: true, ret: F3, params: [F3, M33] });
   });
 });
 
@@ -68,6 +79,23 @@ describe('広げてから選ぶ', () => {
     expect(resolveIntrinsic('saturate', [M33])).toMatchObject({ ok: true, ret: M33 });
     expect(resolveIntrinsic('pow', [M44, F])).toMatchObject({ ok: true, ret: M44 });
   });
+  it('uint と bool は int 版を選ぶ', () => {
+    const U: Type = { k: 'scalar', s: 'uint' };
+    const BS: Type = { k: 'scalar', s: 'bool' };
+    expect(resolveIntrinsic('abs', [U])).toEqual({ ok: true, ret: I, params: [I] });
+    expect(resolveIntrinsic('min', [U, U])).toEqual({ ok: true, ret: I, params: [I, I] });
+    expect(resolveIntrinsic('abs', [BS])).toEqual({ ok: true, ret: I, params: [I] });
+    expect(resolveIntrinsic('max', [vectorOf('uint', 3), vectorOf('uint', 3)])).toMatchObject({ ok: true, ret: vectorOf('int', 3) });
+  });
+  it('float を落とす候補は選ばない', () => {
+    expect(resolveIntrinsic('clamp', [I, I, F])).toEqual({ ok: true, ret: F, params: [F, F, F] });
+  });
+  it('Object.prototype の名前は組み込み関数ではない', () => {
+    for (const n of ['toString', 'constructor', 'hasOwnProperty', '__proto__', 'valueOf']) {
+      expect(isIntrinsic(n), n).toBe(false);
+      expect(resolveIntrinsic(n, [F]), n).toEqual({ ok: false, reason: 'no-overload' });
+    }
+  });
   it('スカラーを広げるほうを、切り詰めるより先に選ぶ', () => {
     expect(resolveIntrinsic('lerp', [F, F4, F])).toMatchObject({ ok: true, ret: F4 });
     expect(resolveIntrinsic('clamp', [F3, F, F])).toMatchObject({ ok: true, ret: F3 });
@@ -83,8 +111,8 @@ describe('広げてから選ぶ', () => {
     expect(resolveIntrinsic('dot', [SAMPLER, SAMPLER])).toEqual({ ok: false, reason: 'no-overload' });
   });
   it('同点が 2 つ以上なら ambiguous', () => {
-    // float4 は float1x4・float4x1・float2x2 のどれにも同じ cost で変わる
-    expect(resolveIntrinsic('transpose', [F4])).toEqual({ ok: false, reason: 'ambiguous' });
+    // float3x4 は float2x2 にも float3x3 にも同じ cost で切り詰められる
+    expect(resolveIntrinsic('determinant', [matrixOf('float', 3, 4)])).toEqual({ ok: false, reason: 'ambiguous' });
   });
 });
 
@@ -114,7 +142,8 @@ describe('ベクトル用・特別な関数', () => {
     expect(resolveIntrinsic('modf', [F3, F3])).toMatchObject({ ok: true, ret: F3 });
     expect(resolveIntrinsic('lit', [F, F, F])).toMatchObject({ ok: true, ret: F4 });
     expect(resolveIntrinsic('determinant', [M33])).toMatchObject({ ok: true, ret: F });
-    expect(resolveIntrinsic('determinant', [matrixOf('float', 3, 4)])).toMatchObject({ ok: false });
+    expect(resolveIntrinsic('transpose', [F4])).toEqual({ ok: false, reason: 'no-overload' }); // ベクトルは取らない
+    expect(resolveIntrinsic('determinant', [F])).toEqual({ ok: false, reason: 'no-overload' });
     expect(resolveIntrinsic('transpose', [matrixOf('float', 3, 4)])).toMatchObject({ ok: true, ret: matrixOf('float', 4, 3) });
     expect(resolveIntrinsic('D3DCOLORtoUBYTE4', [F4])).toMatchObject({ ok: true, ret: vectorOf('int', 4) });
   });

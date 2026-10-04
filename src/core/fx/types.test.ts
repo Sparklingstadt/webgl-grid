@@ -25,9 +25,11 @@ describe('型の名前', () => {
     expect(builtinType('texture')).toEqual({ k: 'texture', dim: null });
     expect(builtinType('string')).toEqual({ k: 'string' });
     expect(builtinType('void')).toEqual({ k: 'void' });
+    expect(builtinType('vector')).toEqual(F4); // 型引数なし
+    expect(builtinType('matrix')).toEqual(M44);
   });
   it('型でない名前は null', () => {
-    for (const n of ['float5', 'float2x', 'float5x5', 'vector', 'matrix', 'Float', 'sampler4D', 'foo']) {
+    for (const n of ['float5', 'float2x', 'float5x5', 'Float', 'sampler4D', 'foo']) {
       expect(builtinType(n)).toBeNull();
     }
   });
