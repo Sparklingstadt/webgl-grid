@@ -25,6 +25,8 @@ jobs:
           node-version: 24 # MCP サーバーは TypeScript をそのまま動かす (22.18 以上)
           cache: npm
       - run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1 # (デスクトップ版の Electron はテストに使わない)
       # e2e のブラウザ (Chromium) と、動かすのに要るもの
       - run: npx playwright install --with-deps chromium
       - run: npm run test:all

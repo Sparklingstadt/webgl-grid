@@ -15,6 +15,15 @@ npm run dev
 
 表示された http://localhost:5173/ を開きます。`start.command`（Finder でダブルクリック、またはターミナルで `./start.command`）なら、はじめての `npm install` と `npm run build` をしてから http://localhost:4173/ で配り、ブラウザで開きます（ポートがふさがっていれば止まります。止めるのは Ctrl+C）。`npm run build` で `dist/` に書き出せます（相対パスで参照するので、どのフォルダに置いても開けます）。物理演算に使う Ammo.js（`public/libs/`）は大きいので、剛体を持つモデルを初めて読み込んだときに読みます。どこからも取ってこないので、インターネットにつながっていなくても動きます。
 
+### デスクトップ版（Electron）
+
+[Releases](https://github.com/Sparklingstadt/webgl-grid/releases) から、Mac（Apple Silicon: `mac-arm64`、Intel: `mac-x64`。.dmg か .zip）・Windows（`win-x64`・`win-arm64` の .zip。展開して `webgl-grid.exe`）を落として使えます。署名していないので、Mac では初めて開くときに Finder で右クリック >「開く」（それでも開けなければ「システム設定 > プライバシーとセキュリティ」の「このまま開く」）、Windows では SmartScreen の「詳細情報 > 実行」を選んでください。
+
+- 中身はブラウザ版と同じで、アプリを 127.0.0.1（17458 番から空いているポート）で配って窓に開きます。設定や自動保存はアプリの中に覚えます。
+- models フォルダは「書類/webgl-grid/models」です（メニューの「ファイル > models フォルダを開く」で開けます。環境変数 `WEBGL_GRID_MODELS_DIR` で変えられます）。ここにモデルのフォルダ（.pmx とテクスチャ）・.vmd・.vpd・曲を置くと、ブラウザ版の `models/` と同じように使えます。
+- MCP サーバー（`npm run mcp`）が動いていれば、「ファイル > 外部から操作 (MCP) を受け付ける」でつながります。
+- 自分で作るときは `npm run electron`（ビルドして開く）・`npm run electron:build`（Mac の .dmg・.zip と Windows の .zip を `release/` に作る）。Windows のインストーラー（NSIS）は、Apple Silicon の Mac では Rosetta がないと作れないので作っていません。
+
 WebGL2 に対応したブラウザが必要です。URL に `?debug` を付けて開くと、動作確認用にエンジンを `window.engine` としてブラウザのコンソールから触れます（e2e テストもこれを使います）。
 
 ## 画面
