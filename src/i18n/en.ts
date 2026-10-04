@@ -1147,5 +1147,12 @@ const dict: Dictionary = {
   "関数の中の static 変数には対応していません": "static variables inside functions are not supported",
   "この型の組み合わせには対応していません: {op} ({types})": "This combination of types is not supported: {op} ({types})",
   "左辺に副作用がありうる、整数と float の複合代入には対応していません": "Compound assignment mixing integer and float is not supported when the left side may have side effects",
+  "知らないステートなので無視します: {name}": "Unknown state ignored: {name}",
+  "このステートは {where} には書けないので無視します: {name}": "This state cannot be written in {where}, so it is ignored: {name}",
+  "ステートの添字が正しくないので無視します: {name}": "Invalid state index, so it is ignored: {name}",
+  "ステートの値が正しくないので無視します: {name}": "Invalid state value, so it is ignored: {name}",
+  "ステート {name} の値が定数に計算できないので、式のまま残します": "The value of state {name} cannot be evaluated to a constant, so it is kept as an expression",
+  "Script の命令が 名前=値 の形ではありません: {text}": "Script command is not in name=value form: {text}",
+  "Script の命令を知りません: {name}": "Unknown Script command: {name}",
 };
 export default dict;
