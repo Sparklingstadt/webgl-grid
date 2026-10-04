@@ -523,7 +523,8 @@ class Checker {
 
   // 2 つ目の for (int i …) が同じ名前・同じ型なら、前の変数を使い直す (reuses)
   private declareLocal(decl: VarDecl, forInit: boolean): void {
-    if (decl.storage.includes('static')) this.error('FX-UNSUPPORTED', decl.loc, t('関数の中の static 変数には対応していません'));
+    // static const は値が変わらないので、ふつうの const の局所変数として扱う (呼ぶたびに作っても同じ)
+    if (decl.storage.includes('static') && !decl.storage.includes('const')) this.error('FX-UNSUPPORTED', decl.loc, t('関数の中の static 変数には対応していません'));
     const ty = this.resolveType(decl.type, decl.arrayDims, true, this.unsizedLength(decl));
     decl.resolved = ty;
     if (decl.init && ty !== ERR) {

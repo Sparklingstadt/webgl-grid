@@ -143,6 +143,10 @@ describe('型チェック: 関数', () => {
     expect(codesOf(PS_BODY('', 'static float s = 1;'))).toEqual(['FX-UNSUPPORTED']);
     expect(codesOf(PS_BODY('', 'int a = 1; int b = a & 2; int c = ~a;'))).toEqual(['FX-TYPE-MISMATCH', 'FX-TYPE-MISMATCH']);
   });
+  it('関数の中の static const は const の局所変数と同じ (値は変わらないので、呼ぶたびに作ってよい)', () => {
+    expect(codesOf(PS_BODY('', 'static const float w[2] = { 0.5, 0.25 }; static const float n = w[0] * 2; float a = w[1] + n;'))).toEqual([]);
+    expect(codesOf(PS_BODY('', 'static const float n = 1; n = 2;'))).toEqual(['FX-TYPE-LVALUE']);
+  });
   it('代入できない左辺は FX-TYPE-LVALUE (式・const・uniform・uniform の引数)', () => {
     expect(codesOf(PS_BODY('', 'float a = 0, b = 0, c = 1; c ? a : b = 3; a + b = c; 1++;'))).toEqual(['FX-TYPE-LVALUE', 'FX-TYPE-LVALUE', 'FX-TYPE-LVALUE']);
     expect(codesOf(PS_BODY('float u; const float k = 1; static const float sk = 1; static float s;', 'u = 1; k = 2; sk = 3; s = 4; const float l = 1; l += 1;')))
