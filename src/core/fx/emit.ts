@@ -2,7 +2,7 @@ import { t } from '../i18n.ts';
 import type { Expr, ParamNode, Stmt, VarDecl } from './ast.ts';
 import type { CheckedEffect, FunctionInfo } from './check.ts';
 import type { Diagnostics, Loc } from './diagnostics.ts';
-import { scalarKind, typeName, type Scalar, type Type } from './types.ts';
+import { componentCount, scalarKind, typeName, type Scalar, type Type } from './types.ts';
 
 // --- GLSL ES 3.00 の書き出し (型・名前・式・文・関数)。型チェック済みの AST を、意味を変えずに GLSL に写す。
 // 暗黙の型変換は型チェックが入れた convert をそのまま書くだけで、ここでは新しい変換を作らない ---
@@ -146,6 +146,19 @@ function foldedConst(to: Type, v: number): Code {
   if (to.k === 'scalar') return scalarLit(castScalar(v, s), s);
   if (to.k === 'matrix' && castScalar(v, s) !== 0) return call(glslType(to), Array.from({ length: to.rows * to.cols }, () => lit)); // matN(x) は対角だけ
   return call(glslType(to), [lit]);
+}
+
+// 定数の値 (consteval の並び。行列は HLSL の行ごと = GLSL の列ごと) を、型 ty の GLSL の定数式に
+export function emitConst(values: number[], ty: Type): string {
+  switch (ty.k) {
+    case 'scalar': return scalarLit(castScalar(values[0], ty.s), ty.s).s;
+    case 'vector': case 'matrix': return call(glslType(ty), values.map(v => scalarLit(castScalar(v, ty.s), ty.s).s)).s;
+    case 'array': {
+      const n = componentCount(ty.of);
+      return call(glslType(ty), Array.from({ length: ty.length }, (_, i) => emitConst(values.slice(i * n, (i + 1) * n), ty.of))).s;
+    }
+    default: throw new Error(`emitConst: ${typeName(ty)}`);
+  }
 }
 
 // --- 文脈 ---

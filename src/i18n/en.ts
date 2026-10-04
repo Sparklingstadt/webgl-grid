@@ -1160,5 +1160,13 @@ const dict: Dictionary = {
   "行列に {name} を使うことには対応していません": "Using {name} on matrices is not supported",
   "行列の複数の成分への代入には対応していません: {name}": "Assigning to multiple matrix elements is not supported: {name}",
   "関数の中のサンプラーの変数には対応していません": "Sampler variables inside functions are not supported",
+  "セマンティクスのない入出力です: {name}": "Shader input/output has no semantic: {name}",
+  "入出力 {name} の型 {type} には対応していません": "The type {type} of shader input/output {name} is not supported",
+  "ピクセルシェーダーでは POSITION を読めないので 0 にします: {name}": "POSITION cannot be read in a pixel shader, so 0 is used: {name}",
+  "頂点シェーダーが {semantic} を出していないので 0 にします: {name}": "The vertex shader does not output {semantic}, so 0 is used: {name}",
+  "ピクセルシェーダーの出力のセマンティクスは COLORn か DEPTH にしてください: {name}": "Pixel shader outputs must use the COLORn or DEPTH semantic: {name}",
+  "頂点シェーダーが POSITION を出していません: {name}": "The vertex shader does not output POSITION: {name}",
+  "static の {type} には対応していません: {name}": "static {type} variables are not supported: {name}",
+  "頂点シェーダーかピクセルシェーダーの片方だけの pass には対応していません": "Passes with only a vertex shader or only a pixel shader are not supported",
 };
 export default dict;
