@@ -90,6 +90,19 @@ export function sameType(a: Type, b: Type): boolean {
   }
 }
 
+// 形はそのままで成分の種類だけ変えた型 (数値の型でなければそのまま)
+export function withScalar(t: Type, s: Scalar): Type {
+  if (t.k === 'scalar') return { k: 'scalar', s };
+  if (t.k === 'vector') return { k: 'vector', s, n: t.n };
+  if (t.k === 'matrix') return { k: 'matrix', s, rows: t.rows, cols: t.cols };
+  return t;
+}
+
+// 数値の型 (スカラー・ベクトル・行列) の成分の種類。ほかは null
+export function scalarKind(t: Type): Scalar | null {
+  return t.k === 'scalar' || t.k === 'vector' || t.k === 'matrix' ? t.s : null;
+}
+
 export function componentCount(t: Type): number {
   switch (t.k) {
     case 'scalar': return 1;
@@ -154,7 +167,7 @@ const ARITHMETIC = new Set(['+', '-', '*', '/', '%']);
 const COMPARISON = new Set(['<', '>', '<=', '>=', '==', '!=', '&&', '||']);
 
 // 算術では、どちらかが float なら float、bool は int にする
-function arithmeticScalar(a: Scalar, b: Scalar): Scalar {
+export function arithmeticScalar(a: Scalar, b: Scalar): Scalar {
   if (a === 'float' || b === 'float') return 'float';
   if (a === 'uint' || b === 'uint') return 'uint';
   return 'int';
