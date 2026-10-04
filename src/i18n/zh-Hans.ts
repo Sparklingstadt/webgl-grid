@@ -1172,5 +1172,6 @@ const dict: Dictionary = {
   "static の {type} には対応していません: {name}": "不支持 static 的 {type}: {name}",
   "頂点シェーダーかピクセルシェーダーの片方だけの pass には対応していません": "不支持只有顶点着色器或只有像素着色器的 pass",
   "コンパイラの内部の誤りです: {message}": "编译器内部错误: {message}",
+  "{name} をコンパイルできませんでした: {error}": "无法编译 {name}: {error}",
 };
 export default dict;
