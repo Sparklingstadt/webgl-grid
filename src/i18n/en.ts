@@ -1065,5 +1065,6 @@ const dict: Dictionary = {
   "動いている物を、シャッターが開いているあいだ (フレームの長さ × シャッター) の動きでぼかします。1 フレームをサンプル数だけ描いて重ねるので、そのぶん時間がかかります": "Blurs moving things by their motion while the shutter is open (frame length × shutter). Each frame is drawn as many times as the samples and averaged, so rendering takes that much longer.",
   "レンダー範囲: 出力の枠の中をドラッグで囲む (Esc でやめる・Ctrl+Alt+B で消す)": "Render region: drag inside the output frame (Esc to cancel, Ctrl+Alt+B to clear)",
   "レンダー範囲をドラッグで囲む": "Drag to set the render region",
+  "誤りが多いので、ここで止めました": "Stopped here because there are too many errors",
 };
 export default dict;

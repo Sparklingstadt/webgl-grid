@@ -1,4 +1,4 @@
-import { Emitter } from './events';
+import { Emitter } from './events.ts';
 
 // --- 画面の言語 (日本語・英語・中国語 簡体字・繁体字) ---
 // 文言は日本語で書き、その日本語を鍵にして、言語ごとの辞書 (src/i18n/*.ts) から訳を引く。辞書になければ日本語のまま。
