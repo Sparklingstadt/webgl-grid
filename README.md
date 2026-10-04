@@ -424,7 +424,7 @@ MME の .fx そのものを動かすモードを作っています。いまあ�
 - `fx/` — 手持ちのエフェクトを、エフェクトの一式ごとのフォルダにして置く場所。中身は Git に入りません（[fx/README.md](fx/README.md)）。
 - `npm run fx:check` — `fx/` と `third_party/ray-mmd-1.5.2/` の .fx を全部変換して、ファイルごとの結果（`成功` か最初の誤りの種類）・場所・時間と、成功の数・誤りの種類ごとの数・いちばん遅いものを表にします（`node scripts/fx-check.ts [フォルダ…]` で、フォルダを選べます）。
 - 見本として Ray-MMD 1.5.2 を `third_party/ray-mmd-1.5.2/` に入れています（MIT ライセンス。同じフォルダの `LICENSE.txt`）。単体テストで、その .fx 全部（`ray.conf` の切り替えごとの `ray.fx` も）が誤りなく変換できることを確かめます。
-- いまの限り: `asm` ブロック・Shader Model 4 以降の書き方・`tx_1_0` の TextureShader は変換できません（`FX-UNSUPPORTED`）。入れ子の配列の初期値は、波括弧で全部囲むか、要素ごとに平らに並べます。
+- いまの限り: `asm` ブロック・Shader Model 4 以降の書き方・`tx_1_0` の TextureShader は変換できません（`FX-UNSUPPORTED`）。入れ子の配列の初期値は、波括弧で全部囲むか、要素ごとに平らに並べます。vs_2_0・ps_2_0 で `COLORn` の値を [0, 1] に収める動きはまねしません（vs_3_0 はもともと収めません）。
 
 ## テスト
 
