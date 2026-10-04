@@ -6,6 +6,7 @@ import { useEngine, useUi } from '../EngineContext';
 import { AddonMenuItems } from './addons/AddonMenuItems';
 import { BSelect } from './controls/BSelect';
 import { Gizmo } from './Gizmo';
+import { ObjGizmo } from './ObjGizmo';
 import { Menu, MenuItem, MenuLabel, MenuSep } from './Menu';
 import type { SideTab } from './sidebar/Sidebar';
 import { Icon } from './icons';
@@ -173,6 +174,7 @@ export function ViewportArea(props: {
           <ModelPicker />
           {props.nOpen && <NPanel />}
           <ViewContextMenu showSide={() => { if (!props.sideOpen) props.toggleSide(); }} />
+          <ObjGizmo />
           <CollectionMenu />
           <ShadingMenu />
           <button type="button" className="npanel-toggle" aria-label={props.nOpen ? t('サイドバーを隠す') : t('サイドバーを出す')} aria-expanded={props.nOpen}

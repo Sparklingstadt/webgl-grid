@@ -518,3 +518,12 @@ details.sub > summary { cursor: pointer; color: var(--dim); font-size: 11px; pad
 .hbtn.icon-btn svg { width: 16px; height: 16px; }
 .shading-btns { display: flex; gap: 1px; margin: 0 6px; background: #2a2a2a; border-radius: 4px; }
 .shading-btns .hbtn { border-radius: 3px; }
+/* ライト・カメラのギズモ: 目印のまわりの輪と、右の取っ手 (左右にドラッグ) */
+.obj-gizmo { position: absolute; width: 0; height: 0; pointer-events: none; z-index: 2; }
+.obj-gizmo::before { content: ""; position: absolute; left: -26px; top: -26px; width: 52px; height: 52px; border: 1.5px solid rgba(255, 220, 120, 0.55); border-radius: 50%; }
+.obj-gizmo.camera::before { border-color: rgba(150, 200, 255, 0.55); border-style: dashed; }
+.obj-gizmo-handle { position: absolute; left: 19px; top: -7px; width: 14px; height: 14px; padding: 0; border: 2px solid #1d1d1d; border-radius: 50%; background: #ffd25e;
+                    pointer-events: auto; cursor: ew-resize; touch-action: none; }
+.obj-gizmo.camera .obj-gizmo-handle { background: #8cc4ff; }
+.obj-gizmo-handle:hover, .obj-gizmo-handle:focus-visible { box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.35); outline: none; }
+.obj-gizmo-value { position: absolute; left: 36px; top: -9px; padding: 1px 5px; background: rgba(0, 0, 0, 0.55); border-radius: 3px; font-size: 11px; white-space: nowrap; color: #eee; }

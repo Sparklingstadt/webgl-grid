@@ -1021,5 +1021,6 @@ const dict: Dictionary = {
   "ビューポートの表示": "Viewport Shading",
   "ビューポートの表示 (Z)": "Viewport Shading (Z)",
   "ビューポートの表示 / ワイヤーフレームと行き来": "Viewport shading / Toggle wireframe",
+  "{what} (左右にドラッグ)": "{what} (drag left/right)",
 };
 export default dict;
