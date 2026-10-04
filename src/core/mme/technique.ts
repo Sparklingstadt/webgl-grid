@@ -1,13 +1,9 @@
 // MME の technique の選び方: 注釈 (MMDPass・Subset・UseTexture ...) が条件に合う最初のもの
-import type { Annotation, EffectDesc, Technique } from '../fx/desc.ts';
+import type { EffectDesc, Technique } from '../fx/desc.ts';
+import { annotation } from './annotations.ts';
 import type { MmdPass } from './semantics.ts';
 
 export interface TechniqueQuery { pass: MmdPass; subset: number; useTexture: boolean; useSphereMap: boolean; useToon: boolean; selfShadow: boolean }
-
-function annotation(list: Annotation[], name: string): Annotation | undefined {
-  const n = name.toLowerCase();
-  return list.find(a => a.name.toLowerCase() === n);
-}
 
 // "0-3,5" や "6-" (6 以上) の形。壊れた項は無視する
 export function subsetMatcher(spec: string): (i: number) => boolean {
@@ -29,7 +25,7 @@ function flag(t: Technique, name: string): boolean | undefined {
 
 function matches(t: Technique, pass: MmdPass, q: TechniqueQuery): boolean {
   const p = annotation(t.annotations, 'MMDPass')?.value;
-  if ((typeof p === 'string' ? p : 'object') !== pass) return false;
+  if ((typeof p === 'string' ? p.trim().toLowerCase() : 'object') !== pass) return false;
   const subset = annotation(t.annotations, 'Subset')?.value;
   if (typeof subset === 'string' && !subsetMatcher(subset)(q.subset)) return false;
   const want: [string, boolean][] = [['UseTexture', q.useTexture], ['UseSphereMap', q.useSphereMap], ['UseToon', q.useToon], ['UseSelfShadow', q.selfShadow]];

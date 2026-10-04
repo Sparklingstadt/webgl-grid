@@ -1,6 +1,7 @@
 // MMD が .fx のセマンティクスに渡す値 (設計書「MMD が .fx に渡す値」)。three.js の空間の状態から MMD (左手系・D3D) の値を作る。
 import { Matrix4, Vector3 } from 'three';
-import type { Annotation, Param, TextureDecl } from '../fx/desc.ts';
+import type { Param, TextureDecl } from '../fx/desc.ts';
+import { annotation } from './annotations.ts';
 import { groundShadowMatrix, perspectiveD3D, toMmd, toMmdVec, viewLH } from './coords.ts';
 
 export type MmdPass = 'object' | 'object_ss' | 'zplot' | 'shadow' | 'edge';
@@ -33,11 +34,6 @@ const UNSUPPORTED = new Set(['CONTROLOBJECT', 'MOUSEPOSITION', 'LEFTMOUSEDOWN', 
 
 const numbers = (values: number[]): SemanticValue => ({ kind: 'numbers', values });
 const NONE: SemanticValue = { kind: 'none' };
-
-function annotation(list: Annotation[], name: string): Annotation | undefined {
-  const n = name.toLowerCase();
-  return list.find(a => a.name.toLowerCase() === n);
-}
 
 // 注釈 Object の値 (小文字)。なければ null
 function objectOf(p: Param): string | null {

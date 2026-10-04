@@ -1,5 +1,6 @@
 // MME のレンダーターゲット (RENDERCOLORTARGET・RENDERDEPTHSTENCILTARGET) の大きさと形式
 import type { Annotation, TextureDecl } from '../fx/desc.ts';
+import { annotation } from './annotations.ts';
 
 export type TargetFormat = 'rgba8' | 'rgba16f' | 'rgba32f' | 'r16f' | 'r32f' | 'rg16f' | 'rg32f' | 'depth24stencil8';
 export interface TargetSpec { width: number; height: number; format: TargetFormat; mipmaps: boolean; warnings: string[] }
@@ -12,13 +13,11 @@ const COLOR_FORMATS: Record<string, TargetFormat> = {
 const DEPTH_FORMATS = new Set(['D24S8', 'D24X8', 'D16']);
 
 function numbers(list: Annotation[], name: string): number[] | null {
-  const n = name.toLowerCase();
-  const v = list.find(a => a.name.toLowerCase() === n)?.value;
+  const v = annotation(list, name)?.value;
   return Array.isArray(v) && v.length > 0 ? v : null;
 }
 function text(list: Annotation[], name: string): string | null {
-  const n = name.toLowerCase();
-  const v = list.find(a => a.name.toLowerCase() === n)?.value;
+  const v = annotation(list, name)?.value;
   return typeof v === 'string' ? v : null;
 }
 
@@ -28,7 +27,7 @@ export function targetSpec(t: TextureDecl, screen: [number, number], depth: bool
   const dim = numbers(an, 'Dimensions');
   const ratio = numbers(an, 'ViewportRatio');
   const fromRatio = (axis: 0 | 1) => Math.round(screen[axis] * (ratio?.[axis] ?? ratio?.[0] ?? 1));
-  const size = (explicit: number | undefined, axis: 0 | 1) => Math.max(1, explicit ?? fromRatio(axis));
+  const size = (explicit: number | undefined, axis: 0 | 1) => Math.max(1, Math.round(explicit ?? fromRatio(axis)));
   const width = size(dim && dim.length >= 2 ? dim[0] : numbers(an, 'Width')?.[0], 0);
   const height = size(dim && dim.length >= 2 ? dim[1] : numbers(an, 'Height')?.[0], 1);
 

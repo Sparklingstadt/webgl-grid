@@ -55,6 +55,20 @@ describe('pickTechnique', () => {
     expect(pickTechnique(e, { ...BASE, pass: 'object' })?.name).toBe('A');
   });
 
+  it('object_ss から object に戻っても、ほかの条件は守る', () => {
+    const e = compile(`
+      technique A < string MMDPass = "object"; bool UseToon = true; > { ${PASS} }
+      technique B < string MMDPass = "object"; string Subset = "1"; > { ${PASS} }`);
+    expect(pickTechnique(e, { ...BASE, pass: 'object_ss', useToon: false, subset: 0 })).toBeNull();
+    expect(pickTechnique(e, { ...BASE, pass: 'object_ss', useToon: true, subset: 0 })?.name).toBe('A');
+    expect(pickTechnique(e, { ...BASE, pass: 'object_ss', useToon: false, subset: 1 })?.name).toBe('B');
+  });
+
+  it('MMDPass の値は大文字小文字・前後の空白を問わない', () => {
+    const e = compile(`technique A < string MMDPass = " Object_SS "; > { ${PASS} }`);
+    expect(pickTechnique(e, { ...BASE, pass: 'object_ss' })?.name).toBe('A');
+  });
+
   it('object_ss 以外は object に戻らない', () => {
     const e = compile(`technique A < string MMDPass = "object"; > { ${PASS} }`);
     expect(pickTechnique(e, { ...BASE, pass: 'shadow' })).toBeNull();
@@ -65,6 +79,11 @@ describe('subsetMatcher', () => {
   it('範囲・単独・開いた範囲', () => {
     const m = subsetMatcher('0-3,5,8-');
     expect([0, 3, 4, 5, 7, 8, 99].map(m)).toEqual([true, true, false, true, false, true, true]);
+  });
+  it('開いた範囲・逆向きの範囲・先頭のない範囲', () => {
+    expect([5, 6, 100].map(subsetMatcher('6-'))).toEqual([false, true, true]);
+    expect([1, 2, 3].map(subsetMatcher('3-1'))).toEqual([false, false, false]);
+    expect([0, 3].map(subsetMatcher('-3'))).toEqual([false, false]);
   });
   it('空白を許し、壊れた項は無視する', () => {
     const m = subsetMatcher(' 1 - 2 , x, 7 ');

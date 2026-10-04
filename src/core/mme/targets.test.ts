@@ -27,6 +27,20 @@ describe('targetSpec', () => {
     expect(spec('texture2D T : RENDERCOLORTARGET < int Width = 64; int Height = 32; >;', [800, 600])).toMatchObject({ width: 64, height: 32 });
   });
 
+  it('Dimensions は ViewportRatio より優先する', () => {
+    expect(spec('texture2D T : RENDERCOLORTARGET < int2 Dimensions = {256, 128}; float2 ViewportRatio = {0.5, 0.5}; >;', [800, 600]))
+      .toMatchObject({ width: 256, height: 128 });
+  });
+
+  it('Width だけのときは Height を ViewportRatio から決める', () => {
+    expect(spec('texture2D T : RENDERCOLORTARGET < int Width = 64; float2 ViewportRatio = {1, 0.5}; >;', [800, 600]))
+      .toMatchObject({ width: 64, height: 300 });
+  });
+
+  it('明示した大きさも四捨五入して最小 1', () => {
+    expect(spec('texture2D T : RENDERCOLORTARGET < float2 Dimensions = {100.6, 0.2}; >;', [800, 600])).toMatchObject({ width: 101, height: 1 });
+  });
+
   it('大きさは最小 1 で、MipLevels が 2 以上でも mipmaps になる', () => {
     expect(spec('texture2D T : RENDERCOLORTARGET < float2 ViewportRatio = {0.0001, 0.0001}; int MipLevels = 5; >;', [800, 600]))
       .toMatchObject({ width: 1, height: 1, mipmaps: true });
