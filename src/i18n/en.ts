@@ -1033,5 +1033,11 @@ const dict: Dictionary = {
   "キーを貼り付け": "Paste Keyframes",
   "すべてのキーを選択": "Select All Keyframes",
   "キーを削除": "Delete Keyframes",
+  "マーカー": "Markers",
+  "マーカーの名前": "Marker name",
+  "マーカーを追加": "Add Marker",
+  "マーカーの名前を変更": "Rename Marker",
+  "マーカーを削除": "Delete Marker",
+  "コレクションへ移動 (タイムラインの上ではマーカーを置く)": "Move to collection (add a marker over the timeline)",
 };
 export default dict;

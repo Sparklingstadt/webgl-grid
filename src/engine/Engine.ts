@@ -36,6 +36,7 @@ import { Environment } from './render/Environment';
 import { SceneGraph } from './render/SceneGraph';
 import { Viewport } from './render/Viewport';
 import { Shading } from './render/Shading';
+import { Markers } from './anim/Markers';
 import { isModel, isShape, type ModelObj, type Obj } from './types';
 import { UiChannel } from './UiChannel';
 import { CameraController, type CameraOverride } from './view/CameraController';
@@ -94,6 +95,7 @@ export class Engine {
   readonly loader = new MmdLoader(this.ui, this.library, () => this.viewport.requestDraw());
   readonly vpd = new VpdIO(this.posing, this.viewport, this.ui);
   readonly history = new History(this.world, this.library, this.physics, this.motion, this.posing, this.keyframes, this.clock, this.selection, this.viewport, this.ui, this.addons);
+  readonly markers = new Markers(this.ui, this.history); // タイムラインのマーカー (M)
   readonly transform = new TransformTool(this.world, this.selection, this.camera, this.graph, this.viewport, this.history, this.ui); // G・R・S
   readonly shading = new Shading(this.viewport, this.ui, this.world, this.selection, () => this.stage.model); // ビューポートの表示 (Z)
   readonly project = new ProjectIO(this);
@@ -147,6 +149,7 @@ export class Engine {
     clock.events.on('change', () => ui.set({ frame: clock.frame, playing: clock.playing, start: clock.start, end: clock.end }));
     music.events.on('loaded', () => this.fitEndToContent());
     music.events.on('playing', () => viewport.startTicking());
+    music.events.on('waveform', () => ui.bump('keysVersion')); // (タイムラインに曲の波形を描く)
     // 置いた物が増えた・減った (アウトライナーを描き直す)
     for (const ev of ['added', 'removed'] as const) world.events.on(ev, () => ui.bump('sceneVersion'));
     selection.events.on('changed', () => { keyframes.clearSelection(); ui.bump('materialsVersion'); ui.set({ rigShown: this.physics.rigShown(selection.model) }); });

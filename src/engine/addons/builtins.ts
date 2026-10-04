@@ -3,6 +3,7 @@ import { normalizeCamera } from '../../core/camera';
 import { normalizeLight } from '../../core/light';
 import { normalizeOutput } from '../../core/output';
 import { normalizeScene } from '../../core/scene';
+import { normalizeMarkers } from '../anim/Markers';
 import type { Engine } from '../Engine';
 import { COMMANDS } from '../remote/commands';
 
@@ -30,6 +31,10 @@ export function registerBuiltins(e: Engine) {
   sceneData.add({
     key: 'scene', label: msg('シーン'), history: true,
     save: () => structuredClone(e.environment.settings), load: raw => e.environment.replace(normalizeScene(raw)), reset: () => e.environment.reset(),
+  });
+  sceneData.add({
+    key: 'markers', label: msg('マーカー'), history: true,
+    save: () => e.markers.list.map(m => ({ ...m })), load: raw => e.markers.replace(normalizeMarkers(raw)), reset: () => e.markers.replace([]),
   });
   sceneData.add({ key: 'output', label: msg('出力'), save: () => ({ ...e.output.settings }), load: raw => e.output.set(normalizeOutput(raw)) });
   // 外 (MCP) から使える操作

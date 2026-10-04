@@ -527,3 +527,4 @@ details.sub > summary { cursor: pointer; color: var(--dim); font-size: 11px; pad
 .obj-gizmo.camera .obj-gizmo-handle { background: #8cc4ff; }
 .obj-gizmo-handle:hover, .obj-gizmo-handle:focus-visible { box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.35); outline: none; }
 .obj-gizmo-value { position: absolute; left: 36px; top: -9px; padding: 1px 5px; background: rgba(0, 0, 0, 0.55); border-radius: 3px; font-size: 11px; white-space: nowrap; color: #eee; }
+.marker-rename { position: absolute; bottom: 1px; width: 120px; height: 18px; padding: 0 4px; background: #1a1a1a; border: 0; border-radius: 3px; color: var(--text); outline: 1px solid var(--accent); font-size: 11px; }

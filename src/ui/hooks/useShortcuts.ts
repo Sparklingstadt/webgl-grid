@@ -87,7 +87,8 @@ export function useShortcuts(engine: Engine, actions: {
           if (e.altKey) engine.deleteKeyHere(); else if (engine.pose.active) engine.insertSelectedBoneKey(); else engine.insertKey();
           break;
         case 'KeyX': case 'Delete':
-          if (!(hoverTl && engine.deleteSelectedKeys()) && !engine.pose.active) engine.deleteSelected(); // (ポーズモードでは物を消さない)
+          if (hoverTl) { if (!engine.deleteSelectedKeys()) engine.markers.removeSelected(); break; } // (タイムラインの上ではキー、なければマーカー)
+          if (!engine.pose.active) engine.deleteSelected(); // (ポーズモードでは物を消さない)
           break;
         // ポーズモード (Blender と同じ): Tab で切り替え、R 回す・G 動かす、Alt+R・Alt+G で戻す
         case 'Tab':
@@ -138,14 +139,15 @@ export function useShortcuts(engine: Engine, actions: {
           e.preventDefault();
           if (e.altKey) engine.revealAll(); else engine.hideSelected(e.shiftKey);
           break;
-        // Alt+P: 親子付けを外す、M: コレクションへ移動
+        // Alt+P: 親子付けを外す、M: コレクションへ移動 (タイムラインの上ではマーカーを置く)
         case 'KeyP':
           if (e.altKey && !engine.pose.active) { e.preventDefault(); engine.clearParent(); }
           break;
         case 'KeyM':
-          if (e.shiftKey || e.altKey || engine.pose.active) break;
+          if (e.shiftKey || e.altKey) break;
           e.preventDefault();
-          engine.openCollectionMenu(pointer.x, pointer.y);
+          if (hoverTl) engine.markers.add(engine.clock.frame);
+          else if (!engine.pose.active) engine.openCollectionMenu(pointer.x, pointer.y);
           break;
         // Z: ビューポートの表示のメニュー、Shift+Z: ワイヤーフレームと行き来する
         case 'KeyZ':

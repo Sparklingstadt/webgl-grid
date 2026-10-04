@@ -12,8 +12,10 @@ import { MenuItem, MenuSep } from './Menu';
 // ドープシート (dopesheet) では、選んでいる物だけでなく、キーかモーションのある物すべての行を並べる。
 // ほかの物の ◆ を押すと、その物を選んでからキーを選ぶ (アクティブな物の行は少し明るい)
 // 行の何もない所をドラッグすると、囲んだキーを選ぶ (Blender のボックス選択。Shift で足す)。押して離すだけなら、そのフレームへ動いて選択を外す。
-// 右クリックで、キーのコピー・貼り付け (Ctrl+C・Ctrl+V。貼るのはいまのフレームから)・すべて選択 (A)・削除 (X) のメニュー
-const RULER = 24, ROW_Y = RULER + 6, ROW_H = 22, KEY_R = 6, LABEL_W = 140;
+// 右クリックで、キーのコピー・貼り付け (Ctrl+C・Ctrl+V。貼るのはいまのフレームから)・すべて選択 (A)・削除 (X) と、マーカーのメニュー。
+// いちばん下の帯にマーカー (M で置く) を並べ、押して選ぶ (Shift で足す)・左右にドラッグで動かす・ダブルクリックで名前を変える。
+// 曲を読み込んでいれば、その下に曲の波形を薄く描く (合わせてキーを打ちやすいように)
+const RULER = 24, ROW_Y = RULER + 6, ROW_H = 22, KEY_R = 6, LABEL_W = 140, MARKER_H = 20, WAVE_H = 34;
 
 export function Timeline({ open, typeSelect, mode = 'timeline' }: { open: boolean; typeSelect: React.ReactNode; mode?: 'timeline' | 'dopesheet' }) {
   const all = mode === 'dopesheet';
@@ -36,6 +38,8 @@ export function Timeline({ open, typeSelect, mode = 'timeline' }: { open: boolea
   const box = useRef<{ x0: number; y0: number; x1: number; y1: number; on: boolean; shift: boolean } | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
+  const markerDrag = useRef<{ x: number; delta: number } | null>(null);
+  const [renaming, setRenaming] = useState<{ frame: number; x: number } | null>(null);
   const state = useRef({ frame, start, end });
   useLayoutEffect(() => { state.current = { frame, start, end }; }, [frame, start, end]); // (描くときに読む)
 
@@ -80,9 +84,21 @@ export function Timeline({ open, typeSelect, mode = 'timeline' }: { open: boolea
       ctx.fillStyle = '#a8a8a8';
       ctx.fillText(String(f), px, RULER / 2);
     }
+    // 曲の波形 (下の帯の上に、薄く)
+    const wave = engine.music.waveform;
+    if (wave) {
+      const base = H - MARKER_H, half = WAVE_H / 2, mid = base - half;
+      ctx.fillStyle = 'rgba(110, 170, 255, 0.22)';
+      for (let px = 0; px < W; px++) {
+        const a = Math.max(Math.floor(v.f0 + px / ppf), 0), b = Math.min(Math.ceil(v.f0 + (px + 1) / ppf), wave.length);
+        let peak = 0;
+        for (let f = a; f < b; f++) if (wave[f] > peak) peak = wave[f];
+        if (peak > 0.004) ctx.fillRect(px, mid - peak * half, 1, Math.max(peak * WAVE_H, 1));
+      }
+    }
     // 行: 選んでいる物 (キーフレームとモーション)・チャンネルとカメラ (はみ出す分は上下に動かして見る)
     const list = engine.timelineRows(all);
-    const fit = Math.max(Math.floor((H - ROW_Y) / ROW_H), 1);
+    const fit = Math.max(Math.floor((H - MARKER_H - ROW_Y) / ROW_H), 1);
     scrollRows.current = Math.min(Math.max(scrollRows.current, 0), Math.max(list.length - fit, 0));
     const rows = list.slice(scrollRows.current);
     const selKeys = engine.keyframes.selected;
@@ -138,6 +154,23 @@ export function Timeline({ open, typeSelect, mode = 'timeline' }: { open: boolea
       ctx.fillStyle = 'rgba(230, 230, 230, 0.4)';
       ctx.textAlign = 'left';
       ctx.fillText(all ? t('キーかモーションのある物が、ここに並びます (物を選んで I でキーを打つ)') : t('物を選ぶと、キーフレームとモーションがここに並びます'), 8, ROW_Y + ROW_H / 2);
+    }
+    // マーカー: いちばん下の帯に、三角と名前 (選んでいるものは白)
+    ctx.fillStyle = '#232323';
+    ctx.fillRect(0, H - MARKER_H, W, MARKER_H);
+    const md = markerDrag.current;
+    ctx.textAlign = 'left';
+    for (const m of engine.markers.list) {
+      const on = engine.markers.selected.has(m.frame);
+      const px = Math.round(x(m.frame + (on && md ? md.delta : 0))) + 0.5, my = H - MARKER_H + 5;
+      if (px < -100 || px > W + 4) continue;
+      ctx.strokeStyle = on ? 'rgba(255, 255, 255, 0.5)' : 'rgba(255, 255, 255, 0.15)';
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath(); ctx.moveTo(px, RULER); ctx.lineTo(px, my); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = on ? '#fff' : '#aaa';
+      ctx.beginPath(); ctx.moveTo(px - 5, my); ctx.lineTo(px + 5, my); ctx.lineTo(px, my + 7); ctx.closePath(); ctx.fill();
+      ctx.fillText(m.name, px + 7, H - MARKER_H / 2);
     }
     // ボックス選択の枠
     const b = box.current;
@@ -205,6 +238,18 @@ export function Timeline({ open, typeSelect, mode = 'timeline' }: { open: boolea
     if (e.button !== 0) return;
     const { x, y, W } = local(e);
     canvasRef.current!.setPointerCapture(e.pointerId);
+    // マーカーの帯: 押したマーカーを選んで、ドラッグで動かす。何もない所は選択を外す
+    const H = canvasRef.current!.clientHeight;
+    if (y > H - MARKER_H) {
+      const ppf = W / (view.current.f1 - view.current.f0);
+      const hit = engine.markers.list.find(m => Math.abs((m.frame - view.current.f0) * ppf - x) <= 7);
+      if (hit) {
+        if (e.shiftKey || !engine.markers.selected.has(hit.frame)) engine.markers.select([hit.frame], e.shiftKey);
+        markerDrag.current = { x, delta: 0 };
+      } else if (!e.shiftKey) engine.markers.select([], false);
+      draw();
+      return;
+    }
     // ◆ を押したら選んでドラッグ。それ以外は再生位置を動かす
     if (y > ROW_Y) {
       const rows = engine.timelineRows(all);
@@ -244,6 +289,12 @@ export function Timeline({ open, typeSelect, mode = 'timeline' }: { open: boolea
   };
   const onPointerMove = (e: React.PointerEvent) => {
     const { x, y, W } = local(e);
+    const md = markerDrag.current;
+    if (md) {
+      const delta = Math.round((x - md.x) / (W / (view.current.f1 - view.current.f0)));
+      if (delta !== md.delta) { md.delta = delta; draw(); }
+      return;
+    }
     const b = box.current;
     if (b) {
       Object.assign(b, { x1: x, y1: y });
@@ -276,6 +327,12 @@ export function Timeline({ open, typeSelect, mode = 'timeline' }: { open: boolea
     engine.selectKeys([...frames], false);
   };
   const onPointerUp = (e: React.PointerEvent) => {
+    const md = markerDrag.current;
+    if (md) {
+      markerDrag.current = null;
+      if (md.delta) engine.markers.move(md.delta); else draw();
+      return;
+    }
     const b = box.current;
     if (b) {
       box.current = null;
@@ -340,7 +397,21 @@ export function Timeline({ open, typeSelect, mode = 'timeline' }: { open: boolea
         <canvas ref={canvasRef} id="tl-canvas" aria-label={t('タイムライン (ドラッグで再生位置を動かす)')}
                 onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
                 onContextMenu={e => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY }); }}
-                onDoubleClick={e => { if (local(e as unknown as React.PointerEvent).y < RULER) { fit(); draw(); } }} />
+                onDoubleClick={e => {
+                  const { x, y, W } = local(e as unknown as React.PointerEvent);
+                  if (y < RULER) { fit(); draw(); return; }
+                  // マーカーの名前を変える
+                  const ppf = W / (view.current.f1 - view.current.f0);
+                  const hit = y > canvasRef.current!.clientHeight - MARKER_H && engine.markers.list.find(m => Math.abs((m.frame - view.current.f0) * ppf - x) <= 7);
+                  if (hit) setRenaming({ frame: hit.frame, x: (hit.frame - view.current.f0) * ppf });
+                }} />
+        {renaming && (
+          <input className="marker-rename" aria-label={t('マーカーの名前')} autoFocus maxLength={64} style={{ left: renaming.x + 6 }}
+                 defaultValue={engine.markers.list.find(m => m.frame === renaming.frame)?.name ?? ''}
+                 onFocus={e => e.currentTarget.select()}
+                 onBlur={e => { if (renaming) engine.markers.rename(renaming.frame, e.currentTarget.value); setRenaming(null); }}
+                 onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') e.currentTarget.blur(); else if (e.key === 'Escape') setRenaming(null); }} />
+        )}
       </div>
       {menu && <div className="ctx-anchor" style={{ left: menu.x, top: menu.y }} ref={setMenuAnchor} />}
       {menu && menuAnchor && (
@@ -351,6 +422,11 @@ export function Timeline({ open, typeSelect, mode = 'timeline' }: { open: boolea
             <MenuSep />
             <MenuItem label={t('すべてのキーを選択')} kbd="A" disabled={!canKey} onSelect={() => engine.selectAllKeys()} />
             <MenuItem label={t('キーを削除')} kbd="X" disabled={!canKey} onSelect={() => engine.deleteSelectedKeys()} />
+            <MenuSep />
+            <MenuItem label={t('マーカーを追加')} kbd="M" onSelect={() => engine.markers.add(clock.frame)} />
+            <MenuItem label={t('マーカーの名前を変更')} disabled={engine.markers.selected.size !== 1}
+                      onSelect={() => { const f = [...engine.markers.selected][0], v = view.current, W = canvasRef.current!.clientWidth; setRenaming({ frame: f, x: (f - v.f0) / (v.f1 - v.f0) * W }); }} />
+            <MenuItem label={t('マーカーを削除')} disabled={!engine.markers.selected.size} onSelect={() => engine.markers.removeSelected()} />
           </div>
         </Popover>
       )}
