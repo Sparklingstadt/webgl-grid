@@ -30,6 +30,7 @@ describe('Ray-MMD 1.5.2', () => {
     expect(entries.length).toBe(515);
     expect(corpus.listFiles().filter(p => p.endsWith('.fxsub')).length).toBe(107);
     expect(corpus.listFiles().filter(p => p.endsWith('.conf')).length).toBe(6);
+    expect(rayConfVariants(text(corpus.readFile('ray.conf')!)).length).toBe(52);
   });
 
   for (const e of entries) {

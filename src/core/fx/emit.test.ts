@@ -254,7 +254,7 @@ describe('GLSL の書き出し: 式', () => {
     expect(codes('float2 h(float2 x) { g = x.x; return x; } float2 f(float2 x) { return h(x); }')).toEqual(['FX-UNSUPPORTED']);
     expect(codes('void h(out float y) { y = 1; } float2 f(float2 x) { h(g); return x; }')).toEqual(['FX-UNSUPPORTED']);
     expect(codes('float2 f(float2 x) { float c; sincos(x.x, g, c); return x; }')).toEqual(['FX-UNSUPPORTED']);
-    expect(codes('float2 f(inout float2 x) { return x; }').length).toBeGreaterThan(0);
+    expect(codes('float2 f(inout float2 x) { return x; }')).toEqual(['FX-UNSUPPORTED']);
   });
   it('ddx・clip・discard は頂点シェーダーでは FX-UNSUPPORTED、行列への成分ごとの関数も FX-UNSUPPORTED', () => {
     expect(exprCodes('ddx(x)', { x: 'float' }, 'vertex')).toEqual(['FX-UNSUPPORTED']);

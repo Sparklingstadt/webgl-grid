@@ -771,7 +771,7 @@ class Checker {
     if (problem) this.error('FX-TYPE-LVALUE', e.loc, problem);
   }
 
-  // 代入できない理由 (できるなら null)。const・uniform の変数と uniform の引数は書き換えられない
+  // 代入できない理由 (できるなら null)。const・uniform の変数と、サンプラー・テクスチャの uniform の引数は書き換えられない
   private lvalueProblem(e: Expr): string | null {
     switch (e.kind) {
       case 'ident': {

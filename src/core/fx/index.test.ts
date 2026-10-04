@@ -98,6 +98,22 @@ describe('compileEffect', () => {
     expect(r.effect.params[4].annotations).toEqual([{ name: 'Count', type: 'int', value: [3] }, { name: 'Range', type: 'float2', value: [0, 1] }]);
   });
 
+  it('配列の配列の uniform: type は書いた順・init は平ら・GLSL では 1 次元', () => {
+    const r = ok(compileEffect('a.fx', readerOf({
+      'a.fx': `float2 K[2][3] = { float2(1, 2), float2(3, 4), float2(5, 6), float2(7, 8), float2(9, 10), float2(11, 12) };
+        float4 VS(float4 p : POSITION) : POSITION { return p; } float4 PS(float2 uv : TEXCOORD0) : COLOR0 { int i = (int)uv.x; return K[i][2].xyxy; }
+        technique T { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = compile ps_3_0 PS(); } }`,
+    })));
+    expect(r.effect.params).toEqual([expect.objectContaining({
+      name: 'K', glslName: 'K', type: 'float2[2][3]', storage: 'uniform', init: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+    })]);
+    const prog = r.effect.techniques[0].passes[0].program;
+    expect(prog?.uniforms).toContainEqual(expect.objectContaining({ name: 'K', glslName: 'K', kind: 'value', type: 'float2[2][3]', stages: ['fragment'] }));
+    expect(prog?.fragment).toContain('\nuniform vec2[6] K;\n');
+    expect(prog?.fragment).toContain('K[i * 3 + 2]');
+    expect(prog?.uniformVectors).toBe(7); // K の 6 つと mme_flipY
+  });
+
   it('サンプラー: 使われていない dim は 2D・Texture がなければ null', () => {
     const r = ok(compileEffect('a.fx', readerOf({ 'a.fx': `sampler S; textureCUBE TC; sampler SC = sampler_state { Texture = <TC>; AddressU = CLAMP; };${MINIMAL_TECHNIQUE}` })));
     expect(r.effect.samplers).toEqual([

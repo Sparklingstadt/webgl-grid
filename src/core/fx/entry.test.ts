@@ -81,7 +81,7 @@ describe('normalizeSemantic', () => {
   });
 
   it('D3D10 の SV_Position・SV_Target・SV_Depth は D3D9 の名前にする', () => {
-    expect(['SV_Position', 'sv_target', 'SV_Target1', 'SV_Depth'].map(normalizeSemantic)).toEqual(['POSITION', 'COLOR0', 'COLOR1', 'DEPTH']);
+    expect(['SV_Position', 'sv_target', 'SV_Target1', 'SV_Depth', 'SV_Position0', 'SV_Depth0'].map(normalizeSemantic)).toEqual(['POSITION', 'COLOR0', 'COLOR1', 'DEPTH', 'POSITION', 'DEPTH']);
   });
 });
 
@@ -197,6 +197,10 @@ describe('pass ごとのシェーダー', () => {
     expect(p.vertex).toContain('gl_Position = vec4(');
     expect(p.fragment).toContain('PS(vec4(vec2(gl_FragCoord.x - 0.5,');
     expect(p.uniforms.map(u => u.name)).toContain('mme_viewport');
+    // 番号の付いた SV_Position0・小文字も同じ
+    const q = programOf(`void VS(float4 p : POSITION, out float4 o : sv_position0) { o = p; }
+      float4 PS(float4 sp : SV_Position0) : SV_Target0 { return sp; }${PASS_BOTH}`);
+    expect(q.fragment).toContain('PS(vec4(vec2(gl_FragCoord.x - 0.5,');
   });
 
   it('PSIZE も実際に読むときだけ FX-WARN-SEMANTIC、VPOS は読むときだけ mme_viewport', () => {

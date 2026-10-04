@@ -22,7 +22,7 @@ const XYZW = 'xyzw';
 // 大文字にし、TEXCOORD などに番号がなければ 0 を付け、ほかの POSITION0・NORMAL0 などの 0 は取る。
 // D3D10 の SV_Position・SV_Target・SV_Depth は D3D9 の POSITION・COLORn・DEPTH にする (fxc の vs_3_0・ps_3_0 と同じ)
 export function normalizeSemantic(s: string): string {
-  const u = s.toUpperCase().replace(/^SV_(POSITION|DEPTH)$/, '$1').replace(/^SV_TARGET(\d*)$/, 'COLOR$1');
+  const u = s.toUpperCase().replace(/^SV_(POSITION|DEPTH)0?$/, '$1').replace(/^SV_TARGET(\d*)$/, 'COLOR$1');
   const m = NUMBERED.exec(u);
   if (m) return m[1] === '' ? `${u}0` : u;
   return u.replace(/^(\D+)0$/, '$1');
@@ -139,8 +139,8 @@ function mainLines(entry: EntryInfo, stage: Stage, vertexOut: string[], ctx: Emi
       semanticError(diags, loc, name);
       return zero(ty);
     }
-    // ピクセルの入力の SV_Position は VPOS (fxc の ps_3_0 と同じ)
-    const s = stage === 'fragment' && sem.toUpperCase() === 'SV_POSITION' ? 'VPOS' : normalizeSemantic(sem);
+    // ピクセルの入力の SV_Position (SV_Position0 も) は VPOS (fxc の ps_3_0 と同じ)
+    const s = stage === 'fragment' && /^SV_POSITION0?$/i.test(sem) ? 'VPOS' : normalizeSemantic(sem);
     return leafInput(ty, s, name, loc, read(top));
   };
 
