@@ -33,9 +33,40 @@ export function ViewContextMenu({ showSide }: { showSide: () => void }) {
           <MenuItem label={t('選択物を隠す')} kbd="H" disabled={!any} onSelect={run(() => engine.hideSelected())} />
           <MenuItem label={t('削除')} kbd="X" disabled={!any} onSelect={run(() => engine.deleteSelected())} />
           <MenuSep />
+          <MenuItem label={t('親子付け')} kbd="Ctrl P" disabled={selIds.length < 2} onSelect={run(() => engine.parentSelected())} />
+          <MenuItem label={t('親子付けを外す')} kbd="Alt P" disabled={!any} onSelect={run(() => engine.clearParent())} />
+          <MenuItem label={t('コレクションへ移動')} kbd="M" disabled={!any} onSelect={run(() => engine.openCollectionMenu(at.x, at.y))} />
+          <MenuSep />
           <MenuItem label={t('すべて選択')} kbd="A" onSelect={run(() => engine.selectAll())} />
           <MenuItem label={t('選択を反転')} kbd="Ctrl I" onSelect={run(() => engine.invertSelection())} />
           <MenuItem label={t('すべて表示')} kbd="Alt H" onSelect={run(() => engine.revealAll())} />
+        </Popover>
+      )}
+    </>
+  );
+}
+
+// --- コレクションへ移動 (M): 選んでいる物を、シーン コレクション・コレクション・新しいコレクションへ ---
+export function CollectionMenu() {
+  const engine = useEngine();
+  const at = useUi(s => s.collectionMenu);
+  useUi(s => s.sceneVersion);
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  if (!at) return null;
+  const close = () => engine.ui.set({ collectionMenu: null });
+  const run = (fn: () => void) => () => { close(); fn(); };
+  const sel = engine.selection.list;
+  const here = (name: string | null) => sel.length > 0 && sel.every(o => (o.collection ?? null) === name);
+  return (
+    <>
+      <div className="ctx-anchor" style={{ left: at.x, top: at.y }} ref={setAnchor} />
+      {anchor && (
+        <Popover anchor={anchor} onClose={close} className="menu-pop" role="menu" label={t('コレクションへ移動')}>
+          <MenuLabel>{t('コレクションへ移動')}</MenuLabel>
+          <MenuItem label={`${here(null) ? '✓ ' : ''}${t('シーン コレクション')}`} onSelect={run(() => engine.moveToCollection(null))} />
+          {engine.collections.map(c => <MenuItem key={c.name} label={`${here(c.name) ? '✓ ' : ''}${c.name}`} onSelect={run(() => engine.moveToCollection(c.name))} />)}
+          <MenuSep />
+          <MenuItem label={t('新しいコレクション')} onSelect={run(() => engine.moveToCollection(engine.newCollection()))} />
         </Popover>
       )}
     </>

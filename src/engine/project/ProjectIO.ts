@@ -113,6 +113,8 @@ export class ProjectIO {
     const filesOf = (mesh: Any): string[] => [...(mesh.userData.usedFiles ?? [mesh.userData.sourceFile])].map(asset);
     const objects: SavedObject[] = e.world.objects.map(o => {
       const base: SavedObject = { kind: kindOf(o), s: o.s, x: o.x, y: o.y, z: o.z, r: o.r, c: o.c, slots: [...o.slots], activeSlot: o.activeSlot };
+      const parent = o.parent === undefined ? -1 : e.world.objects.findIndex(p => p.id === o.parent);
+      if (parent >= 0) base.parent = parent; // (開き直すと id が変わるので、何番目か)
       // 物ごとの値 (ライト・アドオンのもの)。アドオンの値は、ある物だけ
       for (const d of e.addons.objectData.list()) { const v = d.get(o) ?? null; if (v !== null || !d.key.includes('.')) base[d.key] = v; }
       if (!isModel(o)) return isEmpty(o.anim) ? base : { ...base, anim: animationToJson(o.anim!) }; // (形・ライトの位置・回転・大きさのキー)
@@ -217,6 +219,7 @@ export class ProjectIO {
       objs.push(obj);
     }
     for (const obj of objs) if (isModel(obj)) await e.physics.start(obj);
+    data.objects.forEach((so, i) => { const o = objs[i], p = so.parent === undefined ? null : objs[so.parent]; if (o && p) e.hierarchy.set(o, p); });
 
     // 画像を対応づけ、保存したマテリアルを作ってスロットに入れる
     const imageId = new Map<string, string>();
@@ -287,6 +290,8 @@ export class ProjectIO {
     e.clock.setPlaying(false);
     e.clock.seek(data.timeline.frame / FPS);
     for (const d of e.addons.sceneData.list()) d.load(data[d.key] as never);
+    e.applyCollections(); // (コレクションを隠していれば、中の物を隠す)
+    e.hierarchy.resetPoses();
     e.history.reset(); // 開いた状態から、元に戻す履歴を始める
     e.select(data.selected !== null ? objs[data.selected] ?? null : null);
     e.world.settle();

@@ -43,6 +43,10 @@ export interface Obj {
   hidden?: boolean;                   // ビューポートで隠す (Blender の目のアイコン。レンダリングには写る)
   hideRender?: boolean;               // レンダリングに写さない (Blender のカメラのアイコン)
   scale?: number;                     // 大きさ (拡大率。形だけ。なしは 1。積み重ねの高さと足場にも掛ける)
+  parent?: number;                    // 親の id (Ctrl+P)
+  parentPose?: { x: number; z: number; r: number }; // 親の、前に見た位置 (動いた分を子に写す)
+  collection?: string;                // 入っているコレクション (なしはシーン コレクション)
+  colHidden?: boolean;                // コレクションを隠しているので見せない (Engine が合わせる)
 }
 export type ModelObj = Obj & { model: Any };
 export const isModel = (o: Obj | null | undefined): o is ModelObj => o?.s === MODEL_KIND;

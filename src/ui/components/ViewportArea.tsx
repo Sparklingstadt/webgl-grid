@@ -10,7 +10,7 @@ import { Menu, MenuItem, MenuLabel, MenuSep } from './Menu';
 import type { SideTab } from './sidebar/Sidebar';
 import { Icon } from './icons';
 import { NPanel } from './NPanel';
-import { ViewContextMenu } from './ViewContextMenu';
+import { CollectionMenu, ViewContextMenu } from './ViewContextMenu';
 import { OutputFrame, useShowFrame } from './OutputFrame';
 import { ModelPicker } from './ModelPicker';
 import { RecoverBanner } from './Overlays';
@@ -102,6 +102,12 @@ export function ViewportArea(props: {
           <MenuItem label={t('削除')} kbd="X" disabled={!sel} onSelect={() => engine.deleteSelected()} />
           <MenuItem label={t('名前を変更')} kbd="F2" disabled={!sel} onSelect={() => { if (!props.sideOpen) props.toggleSide(); requestRename(); }} />
           <MenuSep />
+          <MenuLabel>{t('関係')}</MenuLabel>
+          <MenuItem label={t('親子付け')} kbd="Ctrl P" disabled={selIds.length < 2} onSelect={() => engine.parentSelected()} />
+          <MenuItem label={t('親子付けを外す')} kbd="Alt P" disabled={!selIds.length} onSelect={() => engine.clearParent()} />
+          <MenuItem label={t('コレクションへ移動')} kbd="M" disabled={!selIds.length}
+                    onSelect={() => { const r = viewportRef.current?.getBoundingClientRect(); engine.openCollectionMenu((r?.left ?? 0) + 120, (r?.top ?? 0) + 40); }} />
+          <MenuSep />
           <MenuItem label={t('選択物を隠す')} kbd="H" disabled={!sel} onSelect={() => engine.hideSelected()} />
           <MenuItem label={t('ほかを隠す')} kbd="Shift H" disabled={!sel} onSelect={() => engine.hideSelected(true)} />
           <MenuItem label={t('すべて表示')} kbd="Alt H" onSelect={() => engine.revealAll()} />
@@ -146,6 +152,7 @@ export function ViewportArea(props: {
           <ModelPicker />
           {props.nOpen && <NPanel />}
           <ViewContextMenu showSide={() => { if (!props.sideOpen) props.toggleSide(); }} />
+          <CollectionMenu />
           <button type="button" className="npanel-toggle" aria-label={props.nOpen ? t('サイドバーを隠す') : t('サイドバーを出す')} aria-expanded={props.nOpen}
                   aria-controls="n-panel" title={t('サイドバー (N)')} onClick={props.toggleN}>{props.nOpen ? '›' : '‹'}</button>
           <div className="nav">

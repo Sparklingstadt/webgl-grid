@@ -42,6 +42,7 @@ import { InputController } from './view/InputController';
 import { TransformTool } from './view/TransformTool';
 import { Lights } from './world/Lights';
 import { Cameras } from './world/Cameras';
+import { Hierarchy } from './world/Hierarchy';
 import { nameOf } from './world/Selection';
 import { ColorPicker } from './world/ColorPicker';
 import { Selection } from './world/Selection';
@@ -52,7 +53,7 @@ export interface TlRow { label: string; keys: number[]; motion: Int32Array | nul
 
 const MAX_NAME = 64;
 // ビューポート (rendering: レンダリング) に写すか
-const shownIn = (o: Obj, rendering: boolean) => !(rendering ? o.hideRender : o.hidden);
+const shownIn = (o: Obj, rendering: boolean) => !(rendering ? o.hideRender : o.hidden || o.colHidden);
 
 const isAudio = (f: File) => f.type.startsWith('audio/') || SONG_FILE.test(f.name);
 
@@ -72,6 +73,7 @@ export class Engine {
   readonly selection = new Selection(this.world, this.ui);
   readonly lights = new Lights(this.world, this.viewport);
   readonly cameras = new Cameras(this.world, this.viewport);
+  readonly hierarchy = new Hierarchy(this.world); // 親子付け
   readonly materials = new MaterialEditor(this.library, this.world, this.selection, this.ui);
   readonly picker = new ColorPicker(this.world, this.viewport, this.ui);
   readonly camera = new CameraController(this.graph, this.viewport, this.ui, this.world);
@@ -100,6 +102,8 @@ export class Engine {
   constructor() {
     const { viewport, clock, motion, keyframes, music, world, selection, camera, graph, ui } = this;
     registerBuiltins(this);
+    // 元に戻した・やり直したら、コレクションの表示と、親の位置を合わせ直す
+    this.history.events.on('restored', () => { this.applyCollections(); this.hierarchy.resetPoses(); });
     // レンダリングは、カメラのモーションがなければ、場面のカメラ (置いたカメラのいちばん上) から撮る
     let rendering: { saved: CameraOverride | null } | null = null;
     this.output.hooks = {
@@ -149,6 +153,7 @@ export class Engine {
     // 描く前: カメラ・物の位置・掴んでいる物の明るさ・選択の輪郭線・影の範囲
     viewport.onBeforeRender(() => {
       camera.update();
+      if (this.hierarchy.follow()) world.settle(); // (親が動いた分だけ子を動かす)
       world.sync();
       // (レンダリング中は、掴んでいる物の明るさと選択の輪郭線を出さない)
       const rendering = this.output.active;
@@ -233,9 +238,9 @@ export class Engine {
   deleteSelected() { for (const o of this.selection.list) this.world.remove(o); }
   // --- 選択 (Blender の「選択」のメニュー): すべて (A)・なし (Alt+A)・反転 (Ctrl+I)・ボックス選択 (B) ---
   // (隠している物は選ばない)
-  selectAll() { const all = this.world.objects.filter(o => !o.hidden); this.selection.setMany(all, this.selection.current && all.includes(this.selection.current) ? this.selection.current : all.at(-1) ?? null); this.viewport.requestDraw(); }
+  selectAll() { const all = this.world.objects.filter(o => !o.hidden && !o.colHidden); this.selection.setMany(all, this.selection.current && all.includes(this.selection.current) ? this.selection.current : all.at(-1) ?? null); this.viewport.requestDraw(); }
   invertSelection() {
-    const next = this.world.objects.filter(o => !o.hidden && !this.selection.isSelected(o));
+    const next = this.world.objects.filter(o => !o.hidden && !o.colHidden && !this.selection.isSelected(o));
     this.selection.setMany(next, next.at(-1) ?? null);
     this.viewport.requestDraw();
   }
@@ -262,7 +267,17 @@ export class Engine {
     else if (picked) this.selection.setActive(picked);
     this.ui.set({ contextMenu: { x, y } });
   }
-  closeContextMenu() { if (!this.ui.state.contextMenu) return false; this.ui.set({ contextMenu: null }); return true; }
+  closeContextMenu() {
+    if (!this.ui.state.contextMenu && !this.ui.state.collectionMenu) return false;
+    this.ui.set({ contextMenu: null, collectionMenu: null });
+    return true;
+  }
+  // M: 「コレクションへ移動」のメニューを (x, y) に出す
+  openCollectionMenu(x: number, y: number) {
+    if (this.pose.active || this.transform.active) return;
+    if (!this.selection.list.length) { this.ui.toast(t('コレクションへ移す物を選んでください')); return; }
+    this.ui.set({ contextMenu: null, collectionMenu: { x, y } });
+  }
 
   // --- 物でないもの (アウトライナー): ステージ・カメラモーション ---
   setStageHidden(on: boolean) {
@@ -294,7 +309,7 @@ export class Engine {
     const r = canvas.getBoundingClientRect(), cam = this.graph.camera, v = new THREE.Vector3();
     const [l, rr, top, bottom] = [Math.min(x0, x1), Math.max(x0, x1), Math.min(y0, y1), Math.max(y0, y1)];
     const hits = this.world.objects.filter(o => {
-      if (o.hidden) return false;
+      if (o.hidden || o.colHidden) return false;
       v.set(o.x, o.py + o.h * (o.scale ?? 1) / 2, o.z).project(cam);
       if (v.z > 1) return false; // (カメラの後ろ)
       const sx = r.left + (v.x + 1) / 2 * r.width, sy = r.top + (1 - v.y) / 2 * r.height;
@@ -421,6 +436,7 @@ export class Engine {
         if (v !== undefined && v !== null) applyObjectData(d, obj, structuredClone(v));
       }
       obj.name = this.nextName(nameOf(src));
+      if (src.parent !== undefined) this.hierarchy.set(obj, this.hierarchy.parentOf(src)); // (親子付けも写す)
       this.world.settle();
       return obj;
     }
@@ -446,6 +462,71 @@ export class Engine {
     this.history.soon();
     this.viewport.requestDraw();
   }
+
+  // --- 親子付け (Ctrl+P・Alt+P) ---
+  // Ctrl+P: アクティブを親にして、ほかの選んでいる物を子にする (輪になるものは付けない)
+  parentSelected() {
+    const parent = this.selection.current, kids = this.selection.list.filter(o => o !== parent);
+    if (!parent || !kids.length) { this.ui.toast(t('子にする物と、親にする物 (最後に選んだ物) を選んでください')); return; }
+    const n = kids.filter(c => this.hierarchy.set(c, parent)).length;
+    if (n < kids.length) this.ui.toast(t('親の子孫は、その親の親にできません'));
+    this.objChanged();
+  }
+  // 1 つの物の親を決める (プロパティの「関係」。null で外す)
+  setParent(obj: Obj, parent: Obj | null) {
+    if (!this.hierarchy.set(obj, parent)) { this.ui.toast(t('親の子孫は、その親の親にできません')); return; }
+    this.objChanged();
+  }
+  // Alt+P: 親子付けを外す (その場に残す)
+  clearParent() {
+    for (const o of this.selection.list) this.hierarchy.set(o, null);
+    this.objChanged();
+  }
+
+  // --- コレクション (Blender のコレクション。アウトライナーのまとまり) ---
+  collections: { name: string; hidden: boolean }[] = [];
+  setCollections(list: { name: string; hidden: boolean }[]) {
+    this.collections = list;
+    this.applyCollections();
+  }
+  // コレクションを隠しているかを、物に写す (描く・選ぶときに使う)
+  applyCollections() {
+    const hidden = new Set(this.collections.filter(c => c.hidden).map(c => c.name));
+    for (const o of this.world.objects) {
+      const known = !o.collection || this.collections.some(c => c.name === o.collection);
+      if (!known) o.collection = undefined;
+      const h = !!o.collection && hidden.has(o.collection);
+      if (h && this.selection.isSelected(o)) this.selection.deselect(o);
+      o.colHidden = h || undefined;
+      o.node.visible = shownIn(o, false);
+    }
+    this.objChanged();
+  }
+  newCollection(name = t('コレクション')) {
+    const used = new Set(this.collections.map(c => c.name));
+    let n = name, i = 1;
+    while (used.has(n)) n = `${name}.${String(i++).padStart(3, '0')}`;
+    this.setCollections([...this.collections, { name: n, hidden: false }]);
+    return n;
+  }
+  // M: 選んでいる物 (objs) をコレクションへ (null でシーン コレクション)
+  moveToCollection(name: string | null, objs: readonly Obj[] = this.selection.list) {
+    if (name && !this.collections.some(c => c.name === name)) this.collections = [...this.collections, { name, hidden: false }];
+    for (const o of objs) o.collection = name ?? undefined;
+    this.applyCollections();
+  }
+  renameCollection(from: string, to: string) {
+    const name = to.trim().slice(0, 64);
+    if (!name || this.collections.some(c => c.name === name)) return;
+    for (const o of this.world.objects) if (o.collection === from) o.collection = name;
+    this.setCollections(this.collections.map(c => (c.name === from ? { ...c, name } : c)));
+  }
+  // コレクションを消す (中の物はシーン コレクションへ)
+  removeCollection(name: string) {
+    for (const o of this.world.objects) if (o.collection === name) o.collection = undefined;
+    this.setCollections(this.collections.filter(c => c.name !== name));
+  }
+  setCollectionHidden(name: string, hidden: boolean) { this.setCollections(this.collections.map(c => (c.name === name ? { ...c, hidden } : c))); }
 
   // --- 名前・表示 (アウトライナー・プロパティ・H / Alt+H) ---
   // 名前を付ける (空・null で種類の名前に戻す)

@@ -1,6 +1,7 @@
 import { PALETTE, PALETTE_NAMES, paletteCss } from '../../../core/constants';
 import { t } from '../../../core/i18n';
-import { kindName } from '../../../engine/world/Selection';
+import { kindName, nameOf } from '../../../engine/world/Selection';
+import { BSelect } from '../controls/BSelect';
 import { useEngine, useUi } from '../../EngineContext';
 import { NumField } from '../NumField';
 import { AddonPanels } from '../addons/AddonPanels';
@@ -11,8 +12,10 @@ import { Empty, Panel } from './Panel';
 export function ObjectPage() {
   const engine = useEngine();
   const sel = useUi(s => s.sel);
+  useUi(s => s.sceneVersion); // (親・コレクション)
   if (!sel) return <><Panel title={t('オブジェクト')}><Empty>{t('何も選んでいません。ビューポートで物をクリックすると選べます。')}</Empty></Panel><AddonPanels tab="object" /></>;
   const deg = ((sel.r * 180 / Math.PI) % 360 + 540) % 360 - 180;
+  const obj = engine.world.find(sel.id);
   return (
     <>
       <Panel title={t('オブジェクト')}>
@@ -28,6 +31,18 @@ export function ObjectPage() {
           {sel.kind === 'shape' && <><label htmlFor="obj-s">{t('大きさ')}</label><NumField id="obj-s" label={t('大きさ (倍)')} value={+sel.scale.toFixed(3)} digits={3} step={0.1} min={0.05} max={20} onCommit={v => { const o = engine.selection.current; if (o) engine.setScale(o, v); }} /></>}
         </div>
       </Panel>
+      {obj && (
+        <Panel title={t('関係')}>
+          <div className="prop">
+            <label>{t('親')}</label>
+            <BSelect<number> label={t('親')} value={obj.parent ?? -1} onChange={v => engine.setParent(obj, v < 0 ? null : engine.world.find(v) ?? null)}
+                             options={[{ value: -1, label: t('なし') }, ...engine.world.objects.filter(o => o !== obj).map(o => ({ value: o.id, label: nameOf(o), disabled: !engine.hierarchy.canParent(obj, o) }))]} />
+            <label>{t('コレクション')}</label>
+            <BSelect<string> label={t('コレクション')} value={obj.collection ?? ''} onChange={v => engine.moveToCollection(v || null, [obj])}
+                             options={[{ value: '', label: t('シーン コレクション') }, ...engine.collections.map(c => ({ value: c.name, label: c.name }))]} />
+          </div>
+        </Panel>
+      )}
       {sel.kind === 'shape' && (
         <Panel title={t('色')}>
           <div className="swatches" role="group" aria-label={t('色')}>

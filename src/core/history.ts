@@ -4,7 +4,7 @@ import type { BoneValue } from './types';
 
 // --- 元に戻す・やり直し: 場面の写し (three.js にも画面にも依存しない形) と、何が変わったかの名前 ---
 export interface ObjState {
-  id: number; s: number; x: number; y: number; z: number; r: number; c: number;
+  id: number; parent?: number | null; s: number; x: number; y: number; z: number; r: number; c: number;
   slots: (string | null)[];
   data: Record<string, unknown>; // 物ごとの値 (ライト・アドオンのもの)
   // MMD モデルだけ。pose・morphs は、キーやモーションから決まるもの (再生で変わる) を除く
@@ -30,6 +30,7 @@ export function describeChange(prev: SceneState, next: SceneState, labels: Chang
   const changed = (k: keyof ObjState) => pairs.some(([a, b]) => JSON.stringify(a[k]) !== JSON.stringify(b[k]));
   const differ = (a: unknown, b: unknown) => JSON.stringify(a ?? null) !== JSON.stringify(b ?? null);
   if (changed('anim')) return msg('キーフレーム');
+  if (changed('parent')) return msg('親子付け');
   for (const [key, label] of labels.objectData) if (pairs.some(([a, b]) => differ(a.data[key], b.data[key]))) return label;
   if (changed('x') || changed('z')) return msg('移動');
   if (changed('r')) return msg('回転');

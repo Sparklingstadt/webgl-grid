@@ -67,6 +67,8 @@ export function sceneState(e: Engine) {
       position: [r3(o.x), r3(o.y), r3(o.z)],
       rotationDeg: r3(o.r * DEG),
       ...(o.scale ? { scale: r3(o.scale) } : {}),
+      ...(o.parent !== undefined ? { parent: o.parent } : {}),
+      ...(o.collection ? { collection: o.collection } : {}),
       ...(isModel(o)
         ? { motion: o.motionFiles?.map(f => f.name).join(', ') || null, keyframes: keyFrames(o.anim), hairHang: e.physics.hairHang(o) }
         : { color: PALETTE_NAMES[o.c] }),
@@ -139,6 +141,11 @@ export const COMMANDS: Record<string, Command> = {
       if (!isShape(obj)) throw new Error('大きさを変えられるのは形だけです');
       e.setScale(obj, Number(p.scale));
     }
+    if (p.parent !== undefined) {
+      const parent = p.parent === null ? null : objOf(e, p.parent);
+      if (!e.hierarchy.set(obj, parent)) throw new Error('親の子孫は、その親の親にできません');
+    }
+    if (p.collection !== undefined) { e.select(obj); e.moveToCollection(p.collection === null ? null : String(p.collection)); }
     if (p.name !== undefined) e.renameObj(obj, p.name === null ? null : String(p.name));
     if (p.hidden !== undefined || p.hideRender !== undefined) e.setVisibility(obj, { hidden: p.hidden === undefined ? undefined : !!p.hidden, hideRender: p.hideRender === undefined ? undefined : !!p.hideRender });
     e.world.settle();

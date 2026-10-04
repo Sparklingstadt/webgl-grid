@@ -508,3 +508,8 @@ details.sub > summary { cursor: pointer; color: var(--dim); font-size: 11px; pad
 .model-picker ul { list-style: none; margin: 0; padding: 0; overflow: auto; display: flex; flex-direction: column; gap: 3px; }
 .model-picker li .bbtn { width: 100%; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .model-picker-sub { color: var(--dim); font-size: 11px; margin-top: 2px; }
+.ol-add { flex: none; width: 22px; height: 20px; margin-left: 4px; padding: 2px; background: none; border: 0; border-radius: 3px; color: var(--text); cursor: pointer; }
+.ol-add svg { width: 16px; height: 16px; }
+.ol-add:hover { background: #444; }
+.ol-collection { color: #e8e8e8; }
+.ol-row.drop-into { box-shadow: inset 0 0 0 1px var(--accent); background: #2f3f5e; }

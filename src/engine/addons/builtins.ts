@@ -19,7 +19,14 @@ export function registerBuiltins(e: Engine) {
   objectData.add({ key: 'hidden', label: msg('ビューポートで隠す'), get: o => o.hidden ?? null, set: (o, v) => e.setVisibility(o, { hidden: !!v }), normalize: flag });
   objectData.add({ key: 'hideRender', label: msg('レンダリングに写さない'), get: o => o.hideRender ?? null, set: (o, v) => e.setVisibility(o, { hideRender: !!v }), normalize: flag });
   objectData.add({ key: 'scale', label: msg('大きさ'), get: o => o.scale ?? null, set: (o, v) => e.setScale(o, v ?? 1), normalize: raw => (typeof raw === 'number' && Number.isFinite(raw) && raw !== 1 ? Math.min(Math.max(raw, 0.05), 20) : null) });
+  objectData.add({ key: 'collection', label: msg('コレクション'), get: o => o.collection ?? null, set: (o, v) => { o.collection = v ?? undefined; }, normalize: raw => (typeof raw === 'string' && raw ? raw.slice(0, 64) : null) });
   // 場面の値
+  sceneData.add({
+    key: 'collections', label: msg('コレクション'), history: true,
+    save: () => e.collections.map(c => ({ ...c })),
+    load: raw => { e.setCollections(Array.isArray(raw) ? raw.filter(c => c && typeof c.name === 'string').map(c => ({ name: String(c.name).slice(0, 64), hidden: !!c.hidden })) : []); },
+    reset: () => { e.collections = []; },
+  });
   sceneData.add({
     key: 'scene', label: msg('シーン'), history: true,
     save: () => structuredClone(e.environment.settings), load: raw => e.environment.replace(normalizeScene(raw)), reset: () => e.environment.reset(),

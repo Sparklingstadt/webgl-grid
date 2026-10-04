@@ -39,6 +39,7 @@ export interface SavedObject {
   keys?: [number, { pose: Pose; morphs: number[] | null }][]; // 版 1 のキーフレーム (フレームごとのポーズ全体。開くときに変換する)
   hairHang?: boolean;
   ikOff?: number[]; // 切った IK (ターゲットのボーンの番号)
+  parent?: number;  // 親 (objects の何番目か)
   motion?: string | string[] | null; // 付けた .vmd (いくつかなら並び。まとめて 1 つの動きにする)
   boneSel?: number;
 }

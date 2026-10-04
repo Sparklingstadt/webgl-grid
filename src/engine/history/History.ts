@@ -34,7 +34,7 @@ export class History {
   private timer: ReturnType<typeof setTimeout> | undefined;
   private restoring = false;
   private queue: Promise<unknown> = Promise.resolve();
-  readonly events = new Emitter<{ changed: [] }>(); // 手が増えた・戻した (自動保存のきっかけ)
+  readonly events = new Emitter<{ changed: []; restored: [] }>(); // 手が増えた・戻した (自動保存のきっかけ)・写しのとおりにした
 
   constructor(private world: World, private library: MaterialLibrary, private physics: Physics, private motion: Motion,
               private posing: Posing, private keyframes: Keyframes, private clock: Clock, private selection: Selection,
@@ -139,7 +139,7 @@ export class History {
       const anim = o.anim;
       const keyed = (k: string) => !!anim?.props.has(PROPS.findIndex(p => p.key === k));
       if (keyed('scale')) delete data.scale;
-      const st: ObjState = { id: o.id, s: o.s, x: keyed('x') ? 0 : o.x, y: keyed('x') || keyed('z') ? 0 : o.y, z: keyed('z') ? 0 : o.z, r: keyed('r') ? 0 : o.r, c: o.c, slots: [...o.slots], data };
+      const st: ObjState = { id: o.id, parent: o.parent ?? null, s: o.s, x: keyed('x') ? 0 : o.x, y: keyed('x') || keyed('z') ? 0 : o.y, z: keyed('z') ? 0 : o.z, r: keyed('r') ? 0 : o.r, c: o.c, slots: [...o.slots], data };
       if (!isModel(o)) { st.anim = isEmpty(anim) ? null : animationToJson(anim!); return st; }
       // キーのあるボーン・表情の値も、同じく入れない
       st.pose = [...(o.pose ?? [])].filter(([i]) => !anim?.bones.has(i)).map(([i, v]) => [i, { ...v }]);
@@ -179,7 +179,7 @@ export class History {
       for (const st of state.objects) {
         const obj = world.find(st.id);
         if (!obj) continue;
-        Object.assign(obj, { x: st.x, y: st.y, py: st.y, vy: 0, z: st.z, r: st.r, c: st.c });
+        Object.assign(obj, { x: st.x, y: st.y, py: st.y, vy: 0, z: st.z, r: st.r, c: st.c, parent: st.parent ?? undefined });
         st.slots.forEach((id, k) => { if (obj.slots[k] !== id) world.setSlot(obj, k, id); });
         for (const d of this.addons.objectData.list()) applyObjectData(d, obj, st.data[d.key]);
         obj.anim = st.anim ? animationFromJson(st.anim) : null; // (キーのある値は、下の applyAll でいまのフレームの値にする)
@@ -210,6 +210,7 @@ export class History {
       if (this.selection.current && !world.has(this.selection.current)) this.selection.select(null);
       this.selection.publish();
       for (const k of ['modelVersion', 'keysVersion', 'materialsVersion', 'values', 'sceneVersion'] as const) this.ui.bump(k);
+      this.events.emit('restored'); // (コレクションの表示・親の位置を合わせ直す)
       this.viewport.requestDraw();
     } finally {
       this.restoring = false;

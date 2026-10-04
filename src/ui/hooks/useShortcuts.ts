@@ -22,6 +22,9 @@ export function useShortcuts(engine: Engine, actions: {
   const ref = useRef(actions);
   useLayoutEffect(() => { ref.current = actions; }); // (キーの処理は、いちばん新しい actions を使う)
   useEffect(() => {
+    // (M のメニューは、マウスのある所に出す)
+    const pointer = { x: innerWidth / 2, y: innerHeight / 2 };
+    const onPointer = (e: PointerEvent) => { pointer.x = e.clientX; pointer.y = e.clientY; };
     const onKey = (e: KeyboardEvent) => {
       const a = ref.current;
       // レンダリング中・レンダー結果を見ているあいだは、Esc (キャンセル・閉じる) だけを受け付ける
@@ -55,6 +58,8 @@ export function useShortcuts(engine: Engine, actions: {
       if (e.ctrlKey && e.code === 'Space') { e.preventDefault(); a.toggleMax(); return; }
       // Ctrl+I: 選択を反転
       if ((e.ctrlKey || e.metaKey) && e.code === 'KeyI') { e.preventDefault(); engine.invertSelection(); return; }
+      // Ctrl+P: 親子付け (ブラウザーの印刷は出さない)
+      if ((e.ctrlKey || e.metaKey) && e.code === 'KeyP') { e.preventDefault(); if (!engine.pose.active) engine.parentSelected(); return; }
       if ((e.ctrlKey || e.metaKey) && e.code === 'KeyS') { e.preventDefault(); engine.project.saveFile(e.altKey ? 'reference' : 'embedded'); return; }
       if (e.ctrlKey || e.metaKey) return;
       const hoverTl = a.hoverArea.current === 'timeline';
@@ -125,6 +130,15 @@ export function useShortcuts(engine: Engine, actions: {
           e.preventDefault();
           if (e.altKey) engine.revealAll(); else engine.hideSelected(e.shiftKey);
           break;
+        // Alt+P: 親子付けを外す、M: コレクションへ移動
+        case 'KeyP':
+          if (e.altKey && !engine.pose.active) { e.preventDefault(); engine.clearParent(); }
+          break;
+        case 'KeyM':
+          if (e.shiftKey || e.altKey || engine.pose.active) break;
+          e.preventDefault();
+          engine.openCollectionMenu(pointer.x, pointer.y);
+          break;
         case 'F2':
           e.preventDefault();
           if (!engine.ui.state.sel) break;
@@ -138,6 +152,7 @@ export function useShortcuts(engine: Engine, actions: {
       }
     };
     addEventListener('keydown', onKey);
-    return () => removeEventListener('keydown', onKey);
+    addEventListener('pointermove', onPointer);
+    return () => { removeEventListener('keydown', onKey); removeEventListener('pointermove', onPointer); };
   }, [engine]);
 }
