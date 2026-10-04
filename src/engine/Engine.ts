@@ -783,6 +783,14 @@ export class Engine {
   moveSelectedKeys(delta: number) { if (this.keyed) this.keyframes.moveSelected(this.keyed, delta, this.clock.t); }
   setKeyValue(channel: Channel, frame: number, comp: keyof BoneValue | null, v: number) { if (this.keyed) this.keyframes.setKeyValue(this.keyed, channel, frame, comp, v, this.clock.t); }
   selectKeys(frames: number[], add: boolean) { this.keyframes.select(frames, add); }
+  selectAllKeys(on = true) { this.keyframes.select(on && this.keyed ? keyFrames(this.keyed.anim) : [], false); }
+  // キーのコピー・貼り付け (タイムライン・ドープシートの上で Ctrl+C・Ctrl+V)。貼り付けはいまのフレームから
+  copyKeys() { return this.keyed ? this.keyframes.copy(this.keyed) : false; }
+  pasteKeys() {
+    if (!this.keyed) { this.ui.toast(t('貼り付ける物を選んでください')); return false; }
+    this.history.checkpoint();
+    return this.keyframes.paste(this.keyed, this.clock.frame, this.clock.t);
+  }
 
   // --- タイムライン ---
   // all: キーかモーションのある物すべて (ドープシート)。そうでなければ、アクティブな物だけ (タイムライン)

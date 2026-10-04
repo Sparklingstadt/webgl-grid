@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  LINEAR, animationFromJson, animationFromPoseKeys, animationToJson, createAnimation, curveAt, deleteKeys, evaluate, insertKeys, keyFrames, moveKeys,
+  LINEAR, animationFromJson, animationFromPoseKeys, animationToJson, copyKeys, createAnimation, curveAt, insertPropKeys, pasteKeys, deleteKeys, evaluate, insertKeys, keyFrames, moveKeys,
   type Animation, type Curve,
 } from './animation';
 import { ZERO_BONE, type BoneValue } from './types';
@@ -95,5 +95,21 @@ describe('チャンネルごとのキーフレーム', () => {
     expect(evaluate(a, 5).pose.get(2)!.rx).toBeCloseTo(20);
     expect(evaluate(a, 5).morphs.get(1)).toBeCloseTo(0.5);
     expect(a.morphs.has(0)).toBe(false);
+  });
+});
+
+describe('キーのコピー・貼り付け', () => {
+  it('選んだフレームのキーを、いちばん前からの差で写し、ほかのフレームへ貼る (写しは元と別。重なったキーは上書き)', () => {
+    const a = createAnimation();
+    insertPropKeys(a, 10, [1, 2, 0, 1]);
+    insertPropKeys(a, 14, [3, 4, 0, 1]);
+    insertPropKeys(a, 30, [9, 9, 9, 9]);
+    const clip = copyKeys(a, [10, 14]);
+    expect(clip.map(c => [c.kind, c.index, c.keys.map(k => k[0])])).toEqual([['prop', 0, [0, 4]], ['prop', 1, [0, 4]], ['prop', 2, [0, 4]], ['prop', 3, [0, 4]]]);
+    expect(pasteKeys(a, clip, 30)).toEqual([30, 34]);
+    expect(keyFrames(a)).toEqual([10, 14, 30, 34]);
+    expect(a.props.get(0)!.get(30)!.v).toBe(1); // (上書き)
+    a.props.get(0)!.get(30)!.v = 5;
+    expect(a.props.get(0)!.get(10)!.v).toBe(1); // (元は変わらない)
   });
 });

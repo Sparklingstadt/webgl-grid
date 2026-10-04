@@ -1022,5 +1022,16 @@ const dict: Dictionary = {
   "ビューポートの表示 (Z)": "Viewport Shading (Z)",
   "ビューポートの表示 / ワイヤーフレームと行き来": "Viewport shading / Toggle wireframe",
   "{what} (左右にドラッグ)": "{what} (drag left/right)",
+  "コピーするキーを選んでください": "Select the keys to copy",
+  "キーを {n} 個コピーしました": "Copied {n} keys",
+  "先にキーをコピーしてください (Ctrl+C)": "Copy keys first (Ctrl+C)",
+  "この物には、コピーしたキーのチャンネルがありません": "This object has none of the copied channels",
+  "キーを {n} 個貼り付けました": "Pasted {n} keys",
+  "貼り付ける物を選んでください": "Select an object to paste to",
+  "キーのメニュー": "Keyframe menu",
+  "キーをコピー": "Copy Keyframes",
+  "キーを貼り付け": "Paste Keyframes",
+  "すべてのキーを選択": "Select All Keyframes",
+  "キーを削除": "Delete Keyframes",
 };
 export default dict;

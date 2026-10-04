@@ -173,6 +173,32 @@ export function moveKeys(anim: Animation, frames: Iterable<number>, delta: numbe
   return [...fs].map(f => Math.max(0, f + delta));
 }
 
+// --- コピー・貼り付け (Ctrl+C・Ctrl+V) ---
+// frames のキーを、チャンネルごとに写す (フレームは写したいちばん前のフレームからの差)
+export interface ClipChannel { kind: Channel['kind']; index: number; keys: [number, BoneKey | MorphKey][] }
+const cloneKey = <K extends BoneKey | MorphKey>(k: K): K => ({ v: typeof k.v === 'object' ? { ...k.v } : k.v, curve: [...k.curve] as Curve }) as K;
+export function copyKeys(anim: Animation, frames: Iterable<number>): ClipChannel[] {
+  const fs = new Set(frames), first = Math.min(...fs), out: ClipChannel[] = [];
+  for (const kind of ['bone', 'morph', 'prop'] as const) {
+    for (const [index, keys] of mapOf(anim, kind) as Map<number, Map<number, BoneKey | MorphKey>>) {
+      const ks = [...keys].filter(([f]) => fs.has(f)).sort((a, b) => a[0] - b[0]).map(([f, k]) => [f - first, cloneKey(k)] as [number, BoneKey | MorphKey]);
+      if (ks.length) out.push({ kind, index, keys: ks });
+    }
+  }
+  return out;
+}
+// 写したキーを、フレーム at から貼る (重なったキーは上書き)。貼ったフレームを返す
+export function pasteKeys(anim: Animation, clip: ClipChannel[], at: number): number[] {
+  const frames = new Set<number>();
+  for (const ch of clip) {
+    const map = mapOf(anim, ch.kind) as Map<number, Map<number, BoneKey | MorphKey>>;
+    const keys = map.get(ch.index) ?? new Map<number, BoneKey | MorphKey>();
+    map.set(ch.index, keys);
+    for (const [rel, k] of ch.keys) { const f = Math.max(0, at + rel); keys.set(f, cloneKey(k)); frames.add(f); }
+  }
+  return [...frames].sort((a, b) => a - b);
+}
+
 // --- 保存 (JSON にできる形) ---
 export interface AnimationJson {
   bones: [number, [number, BoneValue, Curve][]][];

@@ -1,14 +1,18 @@
-import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { t } from '../../core/i18n';
 import { fitView, frameAt as frameAtView, rulerStep, zoomView } from '../../core/timelineMath';
 import { useEngine, useUi } from '../EngineContext';
 import { NumField } from './NumField';
+import { Popover } from './controls/Popover';
+import { MenuItem, MenuSep } from './Menu';
 
 // Blender のタイムライン: 上の目盛りで再生位置 (青い再生ヘッド) を動かし、下にキーフレームの ◆ を並べる。
 // ◆ はクリックで選び (Shift で追加)、左右にドラッグでずらす。ホイールで拡大縮小、Shift+ホイールで左右に動かす。
 // 「チャンネル」を押すと、選んでいる物の行の下にチャンネル (ボーン・表情、形・ライトは位置・回転・大きさ) ごとの行を出す (左端の名前の上でホイールすると上下に動く)
 // ドープシート (dopesheet) では、選んでいる物だけでなく、キーかモーションのある物すべての行を並べる。
 // ほかの物の ◆ を押すと、その物を選んでからキーを選ぶ (アクティブな物の行は少し明るい)
+// 行の何もない所をドラッグすると、囲んだキーを選ぶ (Blender のボックス選択。Shift で足す)。押して離すだけなら、そのフレームへ動いて選択を外す。
+// 右クリックで、キーのコピー・貼り付け (Ctrl+C・Ctrl+V。貼るのはいまのフレームから)・すべて選択 (A)・削除 (X) のメニュー
 const RULER = 24, ROW_Y = RULER + 6, ROW_H = 22, KEY_R = 6, LABEL_W = 140;
 
 export function Timeline({ open, typeSelect, mode = 'timeline' }: { open: boolean; typeSelect: React.ReactNode; mode?: 'timeline' | 'dopesheet' }) {
@@ -29,6 +33,9 @@ export function Timeline({ open, typeSelect, mode = 'timeline' }: { open: boolea
   const scrollRows = useRef(0); // 上に隠れている行の数
   const expanded = engine.keyframes.expanded; // (切り替えると keysVersion が進むので、描き直される)
   const scrub = useRef<number | null>(null);
+  const box = useRef<{ x0: number; y0: number; x1: number; y1: number; on: boolean; shift: boolean } | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const state = useRef({ frame, start, end });
   useLayoutEffect(() => { state.current = { frame, start, end }; }, [frame, start, end]); // (描くときに読む)
 
@@ -132,6 +139,16 @@ export function Timeline({ open, typeSelect, mode = 'timeline' }: { open: boolea
       ctx.textAlign = 'left';
       ctx.fillText(all ? t('キーかモーションのある物が、ここに並びます (物を選んで I でキーを打つ)') : t('物を選ぶと、キーフレームとモーションがここに並びます'), 8, ROW_Y + ROW_H / 2);
     }
+    // ボックス選択の枠
+    const b = box.current;
+    if (b?.on) {
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.06)';
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+      ctx.setLineDash([4, 3]);
+      ctx.fillRect(Math.min(b.x0, b.x1), Math.min(b.y0, b.y1), Math.abs(b.x1 - b.x0), Math.abs(b.y1 - b.y0));
+      ctx.strokeRect(Math.min(b.x0, b.x1) + 0.5, Math.min(b.y0, b.y1) + 0.5, Math.abs(b.x1 - b.x0), Math.abs(b.y1 - b.y0));
+      ctx.setLineDash([]);
+    }
     // 再生ヘッド: 青い縦線と、目盛りの上の番号札
     const px = Math.round(x(frame));
     ctx.fillStyle = '#4772b3';
@@ -217,14 +234,23 @@ export function Timeline({ open, typeSelect, mode = 'timeline' }: { open: boolea
           draw();
           return;
         }
-        if (!e.shiftKey && engine.keyframes.selected.size) engine.selectKeys([], false);
       }
+      // 何もない所: ドラッグすればボックス選択、離すだけならそのフレームへ
+      box.current = { x0: x, y0: y, x1: x, y1: y, on: false, shift: e.shiftKey };
+      return;
     }
     scrub.current = frameAt(x, W);
     clock.seekFrame(scrub.current, 5);
   };
   const onPointerMove = (e: React.PointerEvent) => {
-    const { x, W } = local(e);
+    const { x, y, W } = local(e);
+    const b = box.current;
+    if (b) {
+      Object.assign(b, { x1: x, y1: y });
+      if (!b.on && Math.hypot(x - b.x0, y - b.y0) > 4) b.on = true;
+      if (b.on) draw();
+      return;
+    }
     if (keyDrag.current) {
       const delta = Math.round((x - keyDrag.current.x) / (W / (view.current.f1 - view.current.f0)));
       if (delta !== keyDrag.current.delta) { keyDrag.current.delta = delta; draw(); }
@@ -233,7 +259,35 @@ export function Timeline({ open, typeSelect, mode = 'timeline' }: { open: boolea
       if (f !== scrub.current) { scrub.current = f; clock.seekFrame(f, 5); }
     }
   };
-  const onPointerUp = () => {
+  // 枠で囲んだキーを選ぶ (アクティブな物の行。アクティブな物の行に掛かっていなければ、いちばん上の掛かった物を選んで)
+  const boxSelect = (b: NonNullable<typeof box.current>, W: number) => {
+    const rows = engine.timelineRows(all).slice(scrollRows.current);
+    const v = view.current, fAt = (px: number) => v.f0 + px / W * (v.f1 - v.f0); // (丸めない)
+    const y0 = Math.min(b.y0, b.y1), y1 = Math.max(b.y0, b.y1), f0 = fAt(Math.min(b.x0, b.x1)), f1 = fAt(Math.max(b.x0, b.x1));
+    const hit = rows.filter((r, i) => r.editable && ROW_Y + (i + 1) * ROW_H > y0 && ROW_Y + i * ROW_H < y1);
+    let mine = hit.filter(r => r.active);
+    if (!mine.length && hit[0]?.objId !== undefined) {
+      engine.selectById(hit[0].objId);
+      mine = hit.filter(r => r.objId === hit[0].objId);
+      b.shift = false;
+    }
+    const frames = new Set(mine.flatMap(r => r.keys.filter(f => f >= f0 && f <= f1)));
+    if (b.shift) for (const f of engine.keyframes.selected) frames.add(f);
+    engine.selectKeys([...frames], false);
+  };
+  const onPointerUp = (e: React.PointerEvent) => {
+    const b = box.current;
+    if (b) {
+      box.current = null;
+      const { W } = local(e);
+      if (b.on) boxSelect(b, W);
+      else {
+        if (!b.shift && engine.keyframes.selected.size) engine.selectKeys([], false);
+        clock.seekFrame(frameAt(b.x0, W));
+      }
+      draw();
+      return;
+    }
     if (keyDrag.current) {
       const { delta } = keyDrag.current;
       keyDrag.current = null;
@@ -285,8 +339,21 @@ export function Timeline({ open, typeSelect, mode = 'timeline' }: { open: boolea
       <div className="tl-body">
         <canvas ref={canvasRef} id="tl-canvas" aria-label={t('タイムライン (ドラッグで再生位置を動かす)')}
                 onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
+                onContextMenu={e => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY }); }}
                 onDoubleClick={e => { if (local(e as unknown as React.PointerEvent).y < RULER) { fit(); draw(); } }} />
       </div>
+      {menu && <div className="ctx-anchor" style={{ left: menu.x, top: menu.y }} ref={setMenuAnchor} />}
+      {menu && menuAnchor && (
+        <Popover anchor={menuAnchor} onClose={() => setMenu(null)} className="menu-pop" role="menu" label={t('キーのメニュー')}>
+          <div onClick={e => { if ((e.target as HTMLElement).closest('button:not(:disabled)')) setMenu(null); }}>
+            <MenuItem label={t('キーをコピー')} kbd="Ctrl C" disabled={!canKey} onSelect={() => engine.copyKeys()} />
+            <MenuItem label={t('キーを貼り付け')} kbd="Ctrl V" disabled={!canKey} onSelect={() => engine.pasteKeys()} />
+            <MenuSep />
+            <MenuItem label={t('すべてのキーを選択')} kbd="A" disabled={!canKey} onSelect={() => engine.selectAllKeys()} />
+            <MenuItem label={t('キーを削除')} kbd="X" disabled={!canKey} onSelect={() => engine.deleteSelectedKeys()} />
+          </div>
+        </Popover>
+      )}
     </>
   );
 }

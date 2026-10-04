@@ -58,6 +58,12 @@ export function useShortcuts(engine: Engine, actions: {
       if (e.ctrlKey && e.code === 'Space') { e.preventDefault(); a.toggleMax(); return; }
       // Ctrl+I: 選択を反転
       if ((e.ctrlKey || e.metaKey) && e.code === 'KeyI') { e.preventDefault(); engine.invertSelection(); return; }
+      // タイムライン・ドープシート・グラフエディターの上: Ctrl+C・Ctrl+V でキーをコピー・貼り付け (いまのフレームへ)
+      if ((e.ctrlKey || e.metaKey) && a.hoverArea.current === 'timeline' && (e.code === 'KeyC' || e.code === 'KeyV') && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        if (e.code === 'KeyC') engine.copyKeys(); else engine.pasteKeys();
+        return;
+      }
       // Ctrl+P: 親子付け (ブラウザーの印刷は出さない)
       if ((e.ctrlKey || e.metaKey) && e.code === 'KeyP') { e.preventDefault(); if (!engine.pose.active) engine.parentSelected(); return; }
       if ((e.ctrlKey || e.metaKey) && e.code === 'KeyS') { e.preventDefault(); engine.project.saveFile(e.altKey ? 'reference' : 'embedded'); return; }
@@ -110,7 +116,8 @@ export function useShortcuts(engine: Engine, actions: {
         case 'KeyA':
           if (engine.pose.active) break;
           e.preventDefault();
-          if (e.shiftKey) a.openAddMenu(); else if (e.altKey) engine.select(null); else engine.selectAll();
+          if (hoverTl && !e.shiftKey) engine.selectAllKeys(!e.altKey); // (タイムラインの上ではキーを)
+          else if (e.shiftKey) a.openAddMenu(); else if (e.altKey) engine.select(null); else engine.selectAll();
           break;
         // B: ボックス選択
         case 'KeyB':

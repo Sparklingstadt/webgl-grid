@@ -1,5 +1,5 @@
 import {
-  channelKeys, createAnimation, deleteKeys, evaluate, insertKeys, insertPropKeys, isEmpty, keyFrames, moveKeys, PROPS, type BoneKey, type Channel, type Curve, type MorphKey,
+  channelKeys, copyKeys, createAnimation, deleteKeys, pasteKeys, type ClipChannel, evaluate, insertKeys, insertPropKeys, isEmpty, keyFrames, moveKeys, PROPS, type BoneKey, type Channel, type Curve, type MorphKey,
 } from '../../core/animation';
 import { FPS } from '../../core/constants';
 import type { BoneValue } from '../../core/types';
@@ -18,6 +18,8 @@ import type { World } from '../world/World';
 export class Keyframes {
   readonly selected = new Set<number>(); // タイムラインで選んだフレーム (選んでいるモデルの)
   expanded = false; // タイムラインに、チャンネルごとの行を出す
+  // コピーしたキー (Ctrl+C)。ボーン・表情は名前でも覚え、ほかのモデルにも同じ名前のチャンネルへ貼れる
+  private clip: (ClipChannel & { name: string | null })[] | null = null;
 
   constructor(private world: World, private posing: Posing, private viewport: Viewport, private ui: UiChannel) {}
 
@@ -69,6 +71,42 @@ export class Keyframes {
     this.applyAll(t, true);
     this.changed();
   }
+  // 選んだフレームのキーを写す (Ctrl+C)
+  copy(obj: Obj) {
+    if (!obj.anim || !this.selected.size) { this.ui.toast(t('コピーするキーを選んでください'), 2500); return false; }
+    const chans = copyKeys(obj.anim, this.selected);
+    this.clip = chans.map(c => ({ ...c, name: this.channelName(obj, c) }));
+    const n = chans.reduce((a, c) => a + c.keys.length, 0);
+    this.ui.toast(t('キーを {n} 個コピーしました', { n }), 2500);
+    return n > 0;
+  }
+  // 写したキーを、フレーム frame から貼る (Ctrl+V)。ボーン・表情は同じ名前のチャンネルへ、位置・回転・大きさはそのまま
+  paste(obj: Obj, frame: number, time: number) {
+    if (!this.clip) { this.ui.toast(t('先にキーをコピーしてください (Ctrl+C)'), 2500); return false; }
+    const clip: ClipChannel[] = [];
+    for (const c of this.clip) {
+      const index = c.kind === 'prop' ? (PROPS[c.index]?.key !== 'scale' || isShape(obj) ? c.index : -1) : this.channelIndex(obj, c.kind, c.name);
+      if (index >= 0) clip.push({ ...c, index });
+    }
+    if (!clip.length) { this.ui.toast(t('この物には、コピーしたキーのチャンネルがありません'), 3000); return false; }
+    obj.anim ??= createAnimation();
+    const frames = pasteKeys(obj.anim, clip, frame);
+    this.selected.clear();
+    for (const f of frames) this.selected.add(f);
+    this.applyAll(time, true);
+    this.changed();
+    this.ui.toast(t('キーを {n} 個貼り付けました', { n: clip.reduce((a, c) => a + c.keys.length, 0) }), 2500);
+    return true;
+  }
+  private channelName(obj: Obj, c: ClipChannel) {
+    if (!isModel(obj) || c.kind === 'prop') return null;
+    return c.kind === 'bone' ? obj.model.skeleton.bones[c.index]?.name ?? null : this.posing.morphs(obj).find(m => m.index === c.index)?.name ?? null;
+  }
+  private channelIndex(obj: Obj, kind: 'bone' | 'morph', name: string | null) {
+    if (!isModel(obj) || name === null) return -1;
+    return kind === 'bone' ? obj.model.skeleton.bones.findIndex((b: { name: string }) => b.name === name) : this.posing.morphs(obj).find(m => m.name === name)?.index ?? -1;
+  }
+
   // 選んだフレームのキーを削除する。消したら true
   deleteSelected(obj: Obj, time: number) {
     if (!obj.anim || !this.selected.size) return false;
