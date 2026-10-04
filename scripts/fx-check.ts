@@ -2,7 +2,7 @@
 // 使い方: node scripts/fx-check.ts [フォルダ…]。引数がなければ fx/ と third_party/ray-mmd-1.5.2/。
 // ルート (#include の基準になるフォルダ): fx/ は直下のフォルダ 1 つずつ (エフェクトの一式ごと) と、直下のファイル (fx/ がルート)。それ以外のフォルダは、そのものがルート。
 // 報告のための道具なので、変換できないものがあっても終了コードは 0。
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync, type Dirent } from 'node:fs';
 import path from 'node:path';
 import { compileEffect } from '../src/core/fx/index.ts';
 
@@ -12,10 +12,22 @@ interface Row { file: string; result: string; place: string; ms: number }
 const FX_DIR = path.resolve('fx');
 const RAY_DIR = path.resolve('third_party/ray-mmd-1.5.2');
 
+const byName = (a: Dirent, b: Dirent) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+
+// 読めないフォルダは 1 行出して、ないものとして続ける (ほかのフォルダの結果は出す)
+function listDir(dir: string): Dirent[] {
+  try {
+    return readdirSync(dir, { withFileTypes: true }).sort(byName);
+  } catch {
+    console.log(`読めないフォルダ: ${rel(dir)}`);
+    return [];
+  }
+}
+
 // folder の中のファイルを全部 (ルートからの相対で、名前の順に)
 function walk(dir: string, prefix = ''): string[] {
   const out: string[] = [];
-  for (const e of readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
+  for (const e of listDir(dir)) {
     if (e.isDirectory()) out.push(...walk(path.join(dir, e.name), `${prefix}${e.name}/`));
     else if (e.isFile()) out.push(prefix + e.name);
   }
@@ -23,14 +35,16 @@ function walk(dir: string, prefix = ''): string[] {
 }
 
 const isFx = (p: string) => p.toLowerCase().endsWith('.fx');
-const root = (dir: string, files: string[], entries = files.filter(isFx)): Root => ({ dir, files, entries });
+const root = (dir: string, files: string[]): Root => ({ dir, files, entries: files.filter(isFx) });
 
 function rootsOf(dir: string): Root[] {
   if (dir !== FX_DIR) return [root(dir, walk(dir))];
+  // fx/ の直下のファイルは fx/ がルート (include を探すのも直下のファイルだけ。ほかのエフェクトの一式は混ぜない)
+  const list = listDir(dir);
   const roots: Root[] = [];
-  const direct = readdirSync(dir, { withFileTypes: true }).filter(e => e.isFile()).map(e => e.name);
-  if (direct.some(isFx)) roots.push(root(dir, walk(dir), direct.filter(isFx)));
-  for (const e of readdirSync(dir, { withFileTypes: true })) {
+  const direct = list.filter(e => e.isFile()).map(e => e.name);
+  if (direct.some(isFx)) roots.push(root(dir, direct));
+  for (const e of list) {
     if (e.isDirectory()) roots.push(root(path.join(dir, e.name), walk(path.join(dir, e.name))));
   }
   return roots;
@@ -50,10 +64,10 @@ const dirs = args.length > 0 ? args.map(a => path.resolve(a)) : [FX_DIR, RAY_DIR
 const rows: Row[] = [];
 
 for (const dir of dirs) {
-  let isDir = false;
-  try { isDir = statSync(dir).isDirectory(); } catch { /* ない */ }
-  if (!isDir) {
-    console.log(`${rel(dir)}/ がないので飛ばします`);
+  let kind: 'dir' | 'file' | 'none' = 'none';
+  try { kind = statSync(dir).isDirectory() ? 'dir' : 'file'; } catch { /* ない */ }
+  if (kind !== 'dir') {
+    console.log(kind === 'file' ? `${rel(dir)} はフォルダではないので飛ばします` : `${rel(dir)}/ がないので飛ばします`);
     continue;
   }
   for (const r of rootsOf(dir)) {

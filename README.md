@@ -419,6 +419,7 @@ MME（MikuMikuEffect）の .fx は DirectX 用の HLSL で書かれていて、�
 ### MME 互換モード（作っている途中）
 
 MME の .fx そのものを動かすモードを作っています。いまあるのは **.fx を WebGL2 の GLSL ES 3.00 に変換するコンパイラだけ**（`src/core/fx/`。入口は `compileEffect`）で、アプリからはまだ読み込めません。
+上の表の組み込みの効果は、これとは別の、いままでどおりの仕組みです。
 
 - `fx/` — 手持ちのエフェクトを、エフェクトの一式ごとのフォルダにして置く場所。中身は Git に入りません（[fx/README.md](fx/README.md)）。
 - `npm run fx:check` — `fx/` と `third_party/ray-mmd-1.5.2/` の .fx を全部変換して、ファイルごとの結果（`成功` か最初の誤りの種類）・場所・時間と、成功の数・誤りの種類ごとの数・いちばん遅いものを表にします（`node scripts/fx-check.ts [フォルダ…]` で、フォルダを選べます）。
