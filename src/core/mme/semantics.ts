@@ -3,6 +3,7 @@ import { Matrix4, Vector3 } from 'three';
 import type { Param, TextureDecl } from '../fx/desc.ts';
 import { annotation } from './annotations.ts';
 import { groundShadowMatrix, perspectiveD3D, toMmd, toMmdVec, viewLH } from './coords.ts';
+import { typeShape } from './typeShape.ts';
 
 export type MmdPass = 'object' | 'object_ss' | 'zplot' | 'shadow' | 'edge';
 export interface CameraState { position: Vector3; target: Vector3; up: Vector3; fovY: number; aspect: number; near: number; far: number } // three.js の空間 (fovY はラジアン)
@@ -41,18 +42,10 @@ function objectOf(p: Param): string | null {
   return a && typeof a.value === 'string' ? a.value.toLowerCase() : null;
 }
 
-// 型の形 (行 × 列)。スカラーは 1 × 1。知らない型は null
-function shapeOf(type: string): { rows: number; cols: number; matrix: boolean } | null {
-  const m = /^(?:float|half|double|int|uint|bool)([1-4])?(?:x([1-4]))?$/.exec(type);
-  if (!m) return null;
-  if (m[2]) return { rows: Number(m[1]), cols: Number(m[2]), matrix: true };
-  return { rows: 1, cols: m[1] ? Number(m[1]) : 1, matrix: false };
-}
-
 // 値を型の形に合わせる。行列は 4×4 (行ごと) から R 行 C 列を取り、ベクトル・スカラーは先の個数を取る。足りない成分は 1 (不透明度など)
 function fit(values: number[], type: string): number[] {
-  const s = shapeOf(type);
-  if (!s) return values.slice();
+  const s = typeShape(type);
+  if (!s || s.array) return values.slice();
   if (s.matrix) {
     const out: number[] = [];
     for (let r = 0; r < s.rows; r++) for (let c = 0; c < s.cols; c++) out.push(values[r * 4 + c] ?? 0);

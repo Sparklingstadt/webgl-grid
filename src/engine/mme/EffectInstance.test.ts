@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
-import { compileEffect, type Pass, type Program } from '../../core/fx/index.ts';
+import { compileEffect, type Pass, type Program, type RenderState } from '../../core/fx/index.ts';
 import { semanticValue, SHADOW_COLOR, type MaterialState, type SemanticContext } from '../../core/mme/semantics.ts';
 import type { UiChannel } from '../UiChannel';
 import { EffectStore, type LoadedEffect } from './EffectStore.ts';
-import { applyStates, cullSide, decodeTexture, EffectInstance, type BaseState, type DrawBuiltins, type TextureSource } from './EffectInstance.ts';
+import { applyStates, cloneTexture, cullSide, decodeTexture, EffectInstance, type BaseState, type DrawBuiltins, type TextureSource } from './EffectInstance.ts';
 
 const FX = String.raw`
 float4x4 WVP : WORLDVIEWPROJECTION;
@@ -35,16 +35,14 @@ float4 PS(float2 uv : TEXCOORD0, float2 vpos : VPOS) : COLOR0 {
 technique T {
   pass P { AlphaBlendEnable = FALSE; CullMode = NONE; VertexShader = compile vs_3_0 VS(); PixelShader = compile ps_3_0 PS(); }
   pass Plain { VertexShader = compile vs_3_0 VS(); PixelShader = compile ps_3_0 PS(); }
+  pass Blend { AlphaBlendEnable = TRUE; VertexShader = compile vs_3_0 VS(); PixelShader = compile ps_3_0 PS(); }
   pass Empty { }
 }
 `;
 
 // フォルダごと読んだエフェクト (EffectStore.load と同じ形)
-function loadEffect(): LoadedEffect {
-  const bytes = new Map<string, Uint8Array>([
-    ['sub/effect.fx', new TextEncoder().encode(FX)],
-    ['sub/tex/stone.png', new Uint8Array([9, 8, 7])],
-  ]);
+function loadEffect(fx = FX, files: [string, Uint8Array][] = [['sub/tex/stone.png', new Uint8Array([9, 8, 7])]]): LoadedEffect {
+  const bytes = new Map<string, Uint8Array>([['sub/effect.fx', new TextEncoder().encode(fx)], ...files]);
   const result = compileEffect('sub/effect.fx', p => bytes.get(p) ?? null, { listFiles: () => [...bytes.keys()] });
   if (!result.ok) throw new Error(result.errors.map(e => `${e.code}: ${e.message}`).join('\n'));
   return { id: 'fx1', name: 'effect.fx', entry: 'sub/effect.fx', result, bytes };
@@ -167,6 +165,10 @@ describe('EffectInstance', () => {
     expect(inst.material(plain, 1, { kind: 'post', doubleSided: false })).toMatchObject({ blending: THREE.NoBlending, depthTest: false, depthWrite: false, side: THREE.DoubleSide });
     // pass が書いたステートが勝つ
     expect(inst.material(passOf(e, 'P'), 1, OBJECT)).toMatchObject({ blending: THREE.NoBlending, side: THREE.DoubleSide });
+    // ポストエフェクトでも MMD が残した SRCALPHA・INVSRCALPHA を使う (AlphaBlendEnable だけを書いた pass)
+    expect(inst.material(passOf(e, 'Blend'), 1, { kind: 'post', doubleSided: false })).toMatchObject({
+      blending: THREE.CustomBlending, blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.OneMinusSrcAlphaFactor, depthTest: false,
+    });
   });
 
   it('bind: WORLDVIEWPROJECTION・MATERIALDIFFUSE・builtin・非正方の行列の詰め方・初期値・setParam', () => {
@@ -342,6 +344,190 @@ describe('EffectInstance', () => {
     }
     expect(count).toBeGreaterThan(5);
     expect(inst.warnings).toEqual([]);
+  });
+
+  it('ステート: ブレンドの係数・式、深度とステンシルの比べ方・操作の表', () => {
+    const blend = (states: RenderState[]) => {
+      const m = new THREE.RawShaderMaterial();
+      expect(applyStates(m, [{ name: 'AlphaBlendEnable', value: true }, ...states], 1)).toEqual([]);
+      return m;
+    };
+    const FACTORS: [string, number][] = [
+      ['ZERO', THREE.ZeroFactor], ['ONE', THREE.OneFactor], ['SRCCOLOR', THREE.SrcColorFactor], ['INVSRCCOLOR', THREE.OneMinusSrcColorFactor],
+      ['SRCALPHA', THREE.SrcAlphaFactor], ['INVSRCALPHA', THREE.OneMinusSrcAlphaFactor], ['DESTALPHA', THREE.DstAlphaFactor], ['INVDESTALPHA', THREE.OneMinusDstAlphaFactor],
+      ['DESTCOLOR', THREE.DstColorFactor], ['INVDESTCOLOR', THREE.OneMinusDstColorFactor], ['SRCALPHASAT', THREE.SrcAlphaSaturateFactor],
+      ['BLENDFACTOR', THREE.ConstantColorFactor], ['INVBLENDFACTOR', THREE.OneMinusConstantColorFactor],
+    ];
+    for (const [name, f] of FACTORS) {
+      expect(blend([{ name: 'SrcBlend', value: name }]).blendSrc, name).toBe(f);
+      if (name !== 'SRCALPHASAT') expect(blend([{ name: 'DestBlend', value: name }]).blendDst, name).toBe(f);
+      expect(blend([{ name: 'SeparateAlphaBlendEnable', value: true }, { name: 'SrcBlendAlpha', value: name }]).blendSrcAlpha, name).toBe(f);
+    }
+    // BOTH… は SrcBlend に書くと DestBlend も決める
+    expect(blend([{ name: 'SrcBlend', value: 'BOTHSRCALPHA' }, { name: 'DestBlend', value: 'ONE' }])).toMatchObject({ blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.OneMinusSrcAlphaFactor });
+    expect(blend([{ name: 'SrcBlend', value: 'BOTHINVSRCALPHA' }])).toMatchObject({ blendSrc: THREE.OneMinusSrcAlphaFactor, blendDst: THREE.SrcAlphaFactor });
+    // BlendFactor は D3DCOLOR (0xAARRGGBB)。書かなければ D3D の既定の 0xFFFFFFFF
+    const bf = blend([{ name: 'SrcBlend', value: 'BLENDFACTOR' }, { name: 'BlendFactor', value: 0x80402010 }]);
+    expect([bf.blendColor.r, bf.blendColor.g, bf.blendColor.b, bf.blendAlpha]).toEqual([0x40 / 255, 0x20 / 255, 0x10 / 255, 0x80 / 255]);
+    const bd = blend([{ name: 'SrcBlend', value: 'BLENDFACTOR' }]);
+    expect([bd.blendColor.r, bd.blendColor.g, bd.blendColor.b, bd.blendAlpha]).toEqual([1, 1, 1, 1]);
+    const OPS: [string, number][] = [['ADD', THREE.AddEquation], ['SUBTRACT', THREE.SubtractEquation], ['REVSUBTRACT', THREE.ReverseSubtractEquation], ['MIN', THREE.MinEquation], ['MAX', THREE.MaxEquation]];
+    for (const [name, op] of OPS) {
+      expect(blend([{ name: 'BlendOp', value: name }]).blendEquation, name).toBe(op);
+      expect(blend([{ name: 'SeparateAlphaBlendEnable', value: true }, { name: 'BlendOpAlpha', value: name }]).blendEquationAlpha, name).toBe(op);
+    }
+    const COMPARE = ['NEVER', 'LESS', 'EQUAL', 'LESSEQUAL', 'GREATER', 'NOTEQUAL', 'GREATEREQUAL', 'ALWAYS'];
+    const DEPTH = [THREE.NeverDepth, THREE.LessDepth, THREE.EqualDepth, THREE.LessEqualDepth, THREE.GreaterDepth, THREE.NotEqualDepth, THREE.GreaterEqualDepth, THREE.AlwaysDepth];
+    const STENCIL = [THREE.NeverStencilFunc, THREE.LessStencilFunc, THREE.EqualStencilFunc, THREE.LessEqualStencilFunc, THREE.GreaterStencilFunc, THREE.NotEqualStencilFunc, THREE.GreaterEqualStencilFunc, THREE.AlwaysStencilFunc];
+    COMPARE.forEach((name, i) => {
+      const m = new THREE.RawShaderMaterial();
+      applyStates(m, [{ name: 'ZFunc', value: name }, { name: 'StencilFunc', value: name }], 1);
+      expect([m.depthFunc, m.stencilFunc], name).toEqual([DEPTH[i], STENCIL[i]]);
+    });
+    const STENCIL_OPS: [string, number][] = [
+      ['KEEP', THREE.KeepStencilOp], ['ZERO', THREE.ZeroStencilOp], ['REPLACE', THREE.ReplaceStencilOp], ['INCRSAT', THREE.IncrementStencilOp],
+      ['DECRSAT', THREE.DecrementStencilOp], ['INVERT', THREE.InvertStencilOp], ['INCR', THREE.IncrementWrapStencilOp], ['DECR', THREE.DecrementWrapStencilOp],
+    ];
+    for (const [name, op] of STENCIL_OPS) {
+      const m = new THREE.RawShaderMaterial();
+      applyStates(m, [{ name: 'StencilFail', value: name }, { name: 'StencilZFail', value: name }, { name: 'StencilPass', value: name }], 1);
+      expect([m.stencilFail, m.stencilZFail, m.stencilZPass], name).toEqual([op, op, op]);
+    }
+  });
+
+  it('bind: float3x3・ベクトルの配列・行列の配列・非正方の行列の配列・int・bool の値', () => {
+    const e = loadEffect(String.raw`
+float3x3 M33 = { 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+float4 V4s[2] = { float4(1, 2, 3, 4), float4(5, 6, 7, 8) };
+float4x4 M44s[2];
+float4x3 M43s[2];
+int I = 3;
+bool B = true;
+int2 I2 = { 1, 2 };
+float4 VS(float4 p : POSITION) : POSITION {
+  return float4(mul(p.xyz, M33), 1) + V4s[1] + mul(p, M44s[1]) + float4(mul(p, M43s[1]), 0) * I * (B ? 1 : 0) + I2.x;
+}
+float4 PS() : COLOR0 { return 1; }
+technique T { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = compile ps_3_0 PS(); } }
+`, []);
+    const inst = new EffectInstance(e, () => {}, async () => pixel([0, 0, 0, 255]));
+    const pass = passOf(e, 'P');
+    const prog = pass.program!;
+    const m = inst.material(pass, 1, OBJECT)!;
+    const seq = (n: number) => Array.from({ length: n }, (_, i) => i + 1);
+    inst.setParam('M43s', seq(24));
+    inst.bind(m, pass, makeCtx(), BUILTINS, noTextures());
+    const u = (name: string) => m.uniforms[glslOf(prog, name)].value as unknown;
+    expect(prog.uniforms.find(x => x.name === 'M43s')!.upload).toBe('mat4');
+    expect(u('M33')).toEqual(seq(9));                  // HLSL の行ごとの並びのまま (mat3 に transpose なしで入れる)
+    expect(u('V4s')).toEqual(seq(8));
+    expect(u('M44s')).toEqual(Array.from({ length: 32 }, () => 0));
+    const packed = Array.from({ length: 32 }, () => 0);
+    for (let k = 0; k < 2; k++) for (let r = 0; r < 4; r++) for (let c = 0; c < 3; c++) packed[k * 16 + r * 4 + c] = k * 12 + r * 3 + c + 1;
+    expect(u('M43s')).toEqual(packed);
+    expect(u('I')).toBe(3);
+    expect(u('B')).toBe(1);
+    expect(u('I2')).toEqual([1, 2]);
+  });
+
+  it('cloneTexture は Texture の種類ごとに source を共有した写しを作る (圧縮したキューブマップも)', () => {
+    const mip = { data: new Uint8Array(8), width: 4, height: 4 };
+    const faces = Array.from({ length: 6 }, () => ({ mipmaps: [mip], width: 4, height: 4 }));
+    const list: THREE.Texture[] = [
+      pixel([1, 2, 3, 4]),
+      new THREE.CompressedTexture([mip], 4, 4, THREE.RGBA_S3TC_DXT1_Format),
+      new THREE.CompressedCubeTexture(faces as unknown as THREE.CompressedTextureImageData[], THREE.RGBA_S3TC_DXT1_Format),
+      new THREE.CubeTexture([]),
+      new THREE.Data3DTexture(new Uint8Array(4), 1, 1, 1),
+    ];
+    for (const t of list) {
+      const c = cloneTexture(t);
+      expect(c.constructor, t.constructor.name).toBe(t.constructor);
+      expect(c.source).toBe(t.source);
+      expect(c).not.toBe(t);
+    }
+  });
+
+  it('ResourceName の dds のキューブマップを samplerCUBE に入れる。読めない dds は赤紫と警告', async () => {
+    const CUBE_FX = String.raw`
+texture Sky < string ResourceName = "sky.dds"; >;
+samplerCUBE SkySamp = sampler_state { texture = <Sky>; MinFilter = LINEAR; MagFilter = LINEAR; MipFilter = LINEAR; };
+texture Bad < string ResourceName = "bad.dds"; >;
+sampler BadSamp = sampler_state { texture = <Bad>; };
+float4 VS(float4 p : POSITION, out float3 d : TEXCOORD0) : POSITION { d = p.xyz; return p; }
+float4 PS(float3 d : TEXCOORD0) : COLOR0 { return texCUBE(SkySamp, d) + tex2D(BadSamp, d.xy); }
+technique T { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = compile ps_3_0 PS(); } }
+`;
+    const files: [string, Uint8Array][] = [['sub/sky.dds', new Uint8Array(128)], ['sub/bad.dds', new Uint8Array(128)]];
+    // 偽の decode: sky.dds は圧縮したキューブマップ
+    const mip = { data: new Uint8Array(8), width: 4, height: 4 };
+    const faces = Array.from({ length: 6 }, () => ({ mipmaps: [mip], width: 4, height: 4 }));
+    const cube = new THREE.CompressedCubeTexture(faces as unknown as THREE.CompressedTextureImageData[], THREE.RGBA_S3TC_DXT1_Format);
+    const e1 = loadEffect(CUBE_FX, files);
+    const inst1 = new EffectInstance(e1, () => {}, async (_b, path) => (path.endsWith('sky.dds') ? cube : pixel([0, 0, 0, 255])));
+    await inst1.ready();
+    const pass1 = passOf(e1, 'P');
+    const m1 = inst1.material(pass1, 1, OBJECT)!;
+    inst1.bind(m1, pass1, makeCtx(), BUILTINS, noTextures());
+    const sky = m1.uniforms[glslOf(pass1.program!, 'SkySamp')].value as THREE.CompressedCubeTexture;
+    expect(sky).toBeInstanceOf(THREE.CompressedCubeTexture);
+    expect(sky).not.toBe(cube);
+    expect(sky.source).toBe(cube.source);
+    // ミップが 1 段しかないので、ミップを使わない
+    expect(sky).toMatchObject({ minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, colorSpace: THREE.NoColorSpace, flipY: false });
+    inst1.bind(m1, pass1, makeCtx(), BUILTINS, noTextures());
+    expect(m1.uniforms[glslOf(pass1.program!, 'SkySamp')].value).toBe(sky);
+
+    // 既定の decode: 先頭が DDS でないファイルは three.js の DDSLoader が空の結果を返す → 読めないものとして扱う
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await expect(decodeTexture(new Uint8Array(128), 'x.dds')).rejects.toThrow();
+      const e2 = loadEffect(CUBE_FX, files);
+      const requestDraw = vi.fn();
+      const inst2 = new EffectInstance(e2, requestDraw);
+      await inst2.ready();
+      expect(requestDraw).toHaveBeenCalled();
+      const pass2 = passOf(e2, 'P');
+      const m2 = inst2.material(pass2, 1, OBJECT)!;
+      inst2.bind(m2, pass2, makeCtx(), BUILTINS, noTextures());
+      const bad = m2.uniforms[glslOf(pass2.program!, 'BadSamp')].value as THREE.DataTexture;
+      expect([...(bad.image.data as Uint8Array)]).toEqual([255, 0, 255, 255]);
+      expect(m2.uniforms[glslOf(pass2.program!, 'SkySamp')].value).toBeNull(); // キューブは three.js の空のテクスチャ
+      expect(inst2.warnings.some(x => x.includes('bad.dds'))).toBe(true);
+      expect(error).toHaveBeenCalled();
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it('ready は最初に読み始めた画像が全部読み終える (か失敗する) と終わる', async () => {
+    const e = loadEffect();
+    let resolve: (t: THREE.Texture) => void = () => {};
+    const inst = new EffectInstance(e, () => {}, () => new Promise(r => { resolve = r; }));
+    let done = false;
+    const ready = inst.ready().then(() => { done = true; });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(done).toBe(false);
+    resolve(pixel([1, 2, 3, 4]));
+    await ready;
+    expect(done).toBe(true);
+    // 失敗しても終わる
+    const failing = new EffectInstance(loadEffect(), () => {}, async () => { throw new Error('x'); });
+    await expect(failing.ready()).resolves.toBeUndefined();
+  });
+
+  it('既定の decode で作った ImageBitmap は、テクスチャを捨てると close する', async () => {
+    const close = vi.fn();
+    vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 1, height: 1, close })));
+    try {
+      const t = await decodeTexture(new Uint8Array([1, 2, 3]), 'a.PNG');
+      expect(close).not.toHaveBeenCalled();
+      t.dispose();
+      expect(close).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('既定の decode は .tga を three.js の TGALoader で読む (上下を返さない)', async () => {

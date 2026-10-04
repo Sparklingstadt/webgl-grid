@@ -5,6 +5,7 @@ import type { EffectDesc, Param, Pass, RenderState, SamplerDecl, StateValue, Tex
 import { dirname, joinPath, resolveFile } from '../../core/fx/source.ts';
 import { annotation } from '../../core/mme/annotations.ts';
 import { semanticValue, textureRole, type SemanticContext } from '../../core/mme/semantics.ts';
+import { typeShape } from '../../core/mme/typeShape.ts';
 import type { LoadedEffect } from './EffectStore.ts';
 
 // --- 1 つのエフェクトの GPU の資源: pass ごとの RawShaderMaterial、ResourceName のテクスチャ、パラメータの値 ---
@@ -30,7 +31,7 @@ const D3D_DEFAULTS: Record<string, StateValue> = {
   ZEnable: true, ZWriteEnable: true, ZFunc: 'LESSEQUAL', CullMode: 'CCW',
   StencilEnable: false, StencilFunc: 'ALWAYS', StencilRef: 0, StencilMask: 0xffffffff, StencilWriteMask: 0xffffffff,
   StencilFail: 'KEEP', StencilZFail: 'KEEP', StencilPass: 'KEEP',
-  DepthBias: 0, SlopeScaleDepthBias: 0, FillMode: 'SOLID',
+  BlendFactor: 0xffffffff, DepthBias: 0, SlopeScaleDepthBias: 0, FillMode: 'SOLID',
 };
 const BLEND_FACTOR: Record<string, THREE.BlendingSrcFactor> = {
   ZERO: THREE.ZeroFactor, ONE: THREE.OneFactor, SRCCOLOR: THREE.SrcColorFactor, INVSRCCOLOR: THREE.OneMinusSrcColorFactor,
@@ -94,12 +95,10 @@ export function applyStates(m: THREE.Material, states: RenderState[], flipY: 1 |
     m.blendSrcAlpha = separate ? (BLEND_FACTOR[str('SrcBlendAlpha')] ?? THREE.OneFactor) : null;
     m.blendDstAlpha = separate ? ((BLEND_FACTOR[str('DestBlendAlpha')] ?? THREE.ZeroFactor) as THREE.BlendingDstFactor) : null;
     m.blendEquationAlpha = separate ? (BLEND_OP[str('BlendOpAlpha')] ?? THREE.AddEquation) : null;
-    if (v.BlendFactor !== undefined) {
-      // D3DCOLOR (0xAARRGGBB)
-      const c = num('BlendFactor') >>> 0;
-      m.blendColor.setRGB(((c >>> 16) & 255) / 255, ((c >>> 8) & 255) / 255, (c & 255) / 255, THREE.LinearSRGBColorSpace);
-      m.blendAlpha = ((c >>> 24) & 255) / 255;
-    }
+    // BlendFactor は D3DCOLOR (0xAARRGGBB)
+    const c = num('BlendFactor') >>> 0;
+    m.blendColor.setRGB(((c >>> 16) & 255) / 255, ((c >>> 8) & 255) / 255, (c & 255) / 255, THREE.LinearSRGBColorSpace);
+    m.blendAlpha = ((c >>> 24) & 255) / 255;
   } else {
     m.blending = THREE.NoBlending;
   }
@@ -136,7 +135,7 @@ export function applyStates(m: THREE.Material, states: RenderState[], flipY: 1 |
     const msg = UNSUPPORTED_ON[s.name];
     if (msg !== undefined) {
       if (v[s.name] === true && !warnings.includes(msg)) warnings.push(msg);
-    } else if (!(s.name in D3D_DEFAULTS) && s.name !== 'ColorWriteEnable' && s.name !== 'BlendFactor' && !IGNORED.has(s.name)) {
+    } else if (!(s.name in D3D_DEFAULTS) && s.name !== 'ColorWriteEnable' && !IGNORED.has(s.name)) {
       const msg2 = `知らないステート ${s.name} を無視します`;
       if (!warnings.includes(msg2)) warnings.push(msg2);
     }
@@ -148,7 +147,7 @@ export function applyStates(m: THREE.Material, states: RenderState[], flipY: 1 |
 function baseStates(base: BaseState): RenderState[] {
   if (base.kind === 'post') {
     return [
-      { name: 'AlphaBlendEnable', value: false }, { name: 'ZEnable', value: false },
+      { name: 'AlphaBlendEnable', value: false }, { name: 'SrcBlend', value: 'SRCALPHA' }, { name: 'DestBlend', value: 'INVSRCALPHA' }, { name: 'ZEnable', value: false },
       { name: 'ZWriteEnable', value: false }, { name: 'CullMode', value: 'NONE' },
     ];
   }
@@ -161,20 +160,8 @@ function baseStates(base: BaseState): RenderState[] {
 }
 
 // --- uniform の値 ---
-interface Shape { rows: number; cols: number; matrix: boolean; elems: number; array: boolean }
-
-// 型の名前 (float4・float4x3・float2[8] など) の形。知らない型は null
-function shapeOf(type: string): Shape | null {
-  const m = /^[a-z]+?([1-4])?(?:x([1-4]))?((?:\[\d+\])*)$/.exec(type);
-  if (!m) return null;
-  const elems = (m[3].match(/\d+/g) ?? []).reduce((n, x) => n * Number(x), 1);
-  const array = m[3] !== '';
-  if (m[2]) return { rows: Number(m[1]), cols: Number(m[2]), matrix: true, elems, array };
-  return { rows: 1, cols: m[1] ? Number(m[1]) : 1, matrix: false, elems, array };
-}
-
 function countOf(type: string): number {
-  const s = shapeOf(type);
+  const s = typeShape(type);
   return s ? s.elems * s.rows * s.cols : 1;
 }
 
@@ -187,7 +174,7 @@ function fitLength(values: number[], n: number): number[] {
 
 // three.js に渡す値。スカラーは数、非正方の行列は 1 つを 16 個に詰める (HLSL の r 行 c 列 → r * 4 + c、残りは 0)
 function uniformValue(u: UniformRef, values: number[]): number | number[] {
-  const s = shapeOf(u.type);
+  const s = typeShape(u.type);
   if (!s) return values.length === 1 ? values[0] : values;
   const n = s.rows * s.cols;
   const v = fitLength(values, s.elems * n);
@@ -217,6 +204,8 @@ export async function decodeTexture(bytes: Uint8Array, path: string): Promise<TH
     tex = new THREE.DataTexture(d.data, d.width, d.height);
   } else if (ext === 'dds') {
     const d = new DDSLoader().parse(bufferOf(bytes), true);
+    // 読めない dds は例外でなく空の結果になる (console.error は DDSLoader が出す)
+    if (d.mipmaps.length === 0 || d.format == null) throw new Error('dds を読めません');
     if (d.isCubemap) {
       const faces = d.mipmaps.length / d.mipmapCount;
       const images = Array.from({ length: faces }, (_, f) => ({
@@ -228,7 +217,9 @@ export async function decodeTexture(bytes: Uint8Array, path: string): Promise<TH
     }
   } else if (MIME[ext]) {
     const blob = new Blob([bytes as Uint8Array<ArrayBuffer>], { type: MIME[ext] });
-    tex = new THREE.Texture(await createImageBitmap(blob, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' }));
+    const bitmap = await createImageBitmap(blob, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
+    tex = new THREE.Texture(bitmap);
+    tex.addEventListener('dispose', () => bitmap.close());
   } else {
     throw new Error(`知らない画像の形式です: .${ext}`);
   }
@@ -236,6 +227,16 @@ export async function decodeTexture(bytes: Uint8Array, path: string): Promise<TH
   tex.flipY = false;
   tex.needsUpdate = true;
   return tex;
+}
+
+// source を共有した写し。CompressedCubeTexture は引数なしでは作れず (images[0] を読む)、mipmaps も undefined
+// (面ごとのミップは image の中) で copy が落ちるので、自分で作り、mipmaps を補った見かけの元から写す (元は変えない)
+export function cloneTexture(t: THREE.Texture): THREE.Texture {
+  if (t instanceof THREE.CompressedCubeTexture) {
+    const from = t.mipmaps ? t : Object.assign(Object.create(t) as THREE.CompressedCubeTexture, { mipmaps: [] });
+    return new THREE.CompressedCubeTexture(t.image, t.format, t.type).copy(from);
+  }
+  return t.clone();
 }
 
 function pixelTexture(rgba: number[]): THREE.DataTexture {
@@ -286,6 +287,7 @@ export class EffectInstance {
   private files = new Map<string, FileTexture>();
   private copies = new Map<THREE.Texture, { bySampler: Map<string, Copy>; onDispose: () => void }>();
   private fallbacks: Record<Fallback, THREE.DataTexture>;
+  private loads: Promise<void>[] = [];
   private disposed = false;
 
   constructor(private effect: LoadedEffect, private requestDraw: () => void, private decode: Decode = decodeTexture) {
@@ -347,6 +349,11 @@ export class EffectInstance {
     return Array.isArray(p.init) ? p.init.slice() : fitLength([], countOf(p.type));
   }
 
+  // 最初に読み始めた画像が全部、読み終えるか失敗したら終わる
+  async ready(): Promise<void> {
+    await Promise.all(this.loads);
+  }
+
   setParam(name: string, values: number[]): void {
     this.overrides.set(name, values.slice());
   }
@@ -400,7 +407,7 @@ export class EffectInstance {
     }
     const mip = annotation(t.annotations, 'MipLevels');
     const mipmaps = !(Array.isArray(mip?.value) && mip.value[0] === 1);
-    this.decode(found.bytes, found.path).then(tex => {
+    const load = this.decode(found.bytes, found.path).then(tex => {
       if (this.disposed) { tex.dispose(); return; }
       tex.colorSpace = THREE.NoColorSpace;
       tex.flipY = false;
@@ -413,6 +420,7 @@ export class EffectInstance {
       this.warn(`テクスチャ ${name} を読めませんでした: ${e instanceof Error ? e.message : String(e)}`);
       this.requestDraw();
     });
+    this.loads.push(load);
   }
 
   // サンプラーに入れるテクスチャ。three.js の空のテクスチャを使わせるときは null
@@ -492,7 +500,7 @@ export class EffectInstance {
       if (c.version !== orig.version) { c.tex.needsUpdate = true; c.version = orig.version; }
       return c.tex;
     }
-    const tex = orig.clone();
+    const tex = cloneTexture(orig);
     tex.colorSpace = THREE.NoColorSpace;
     tex.flipY = false;
     this.applySampler(tex, s, canMip(orig));
