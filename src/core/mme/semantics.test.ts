@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { Matrix4, PerspectiveCamera, Vector3, Vector4 } from 'three';
 import { compileEffect } from '../fx/index.ts';
 import type { EffectDesc } from '../fx/index.ts';
-import { perspectiveD3D, toMmd, viewLH } from './coords.ts';
-import { semanticValue, SHADOW_COLOR, textureRole, type MaterialState, type SemanticContext } from './semantics.ts';
+import { perspectiveD3D, toMmd, toMmdVec, viewLH } from './coords.ts';
+import { LIGHT_DISTANCE, semanticValue, SHADOW_COLOR, textureRole, type MaterialState, type SemanticContext } from './semantics.ts';
 
 const FUNCS = 'float4 VS(float4 p : POSITION) : POSITION { return p; } float4 PS() : COLOR0 { return 1; }';
 const TECH = ` ${FUNCS} technique T { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = compile ps_3_0 PS(); } }`;
@@ -117,6 +117,8 @@ describe('MME のセマンティクスの値', () => {
     expect(val('float3 S : SPECULAR;')).toEqual([0.1, 0.2, 0.3]);
     expect(val('float P : SPECULARPOWER;')).toEqual([12]);
     expect(val('float3 T : TOONCOLOR;')).toEqual([0.6, 0.6, 0.6]);
+    // トゥーンがなければ白
+    expect(val('float3 T : TOONCOLOR;', withMat({ hasToon: false }))).toEqual([1, 1, 1]);
     expect(val('float4 E : EDGECOLOR;')).toEqual([0, 0, 0, 1]);
     expect(val('float4 G : GROUNDSHADOWCOLOR;')).toEqual([0, 0, 0, 0.5]);
     expect(val('float4 A : ADDINGTEXTURE;')).toEqual([0, 0, 0, 0]);
@@ -132,8 +134,16 @@ describe('MME のセマンティクスの値', () => {
     expect(val('float3 L : DIRECTION < string Object = "Light"; >;')).toEqual(close([d.x, d.y, -d.z]));
     // 位置は注視点から光の来る側 (−向き) へ離れた点 (左手系)
     const p = val('float3 L : POSITION < string Object = "Light"; >;');
-    expect(p).toHaveLength(3);
-    expect(new Vector3(...p).normalize().toArray()).toEqual(close([-d.x, -d.y, d.z]));
+    const dir = toMmdVec(d).normalize();
+    expect(p).toEqual(close(toMmdVec(ctx.camera.target).sub(dir.multiplyScalar(LIGHT_DISTANCE)).toArray()));
+  });
+
+  it('3 成分の値を float4 で受けると 4 つ目は 1、値は MaterialState の配列と別物', () => {
+    expect(val('float4 P : POSITION;')).toEqual([0, 10, 30, 1]);
+    expect(val('float4 A : AMBIENT < string Object = "Light"; >;')).toEqual([0.5, 0.6, 0.7, 1]);
+    const r = semanticValue(paramOf('float4 D : DIFFUSE;'), makeCtx());
+    expect(r.kind === 'numbers' && r.values).toEqual(MAT.diffuse);
+    expect(r.kind === 'numbers' && r.values).not.toBe(MAT.diffuse);
   });
 
   it('カメラの POSITION・DIRECTION (左手系)', () => {
@@ -180,6 +190,8 @@ describe('MME のセマンティクスの値', () => {
     const m43 = val('float4x3 M : WORLD;');
     expect(m43).toHaveLength(12);
     expect(m43.slice(3, 6)).toEqual(w.slice(4, 7));
+    const m33 = val('float3x3 M : WORLD;');
+    expect(m33).toEqual([...w.slice(0, 3), ...w.slice(4, 7), ...w.slice(8, 11)]);
     expect(semanticValue(paramOf('float4 D : DIFFUSE;'), makeCtx({ material: null, pass: null }))).toEqual({ kind: 'none' });
     // 行列はポストエフェクトでも計算できる
     expect(val('float4x4 M : VIEW;', { pass: null })).toHaveLength(16);

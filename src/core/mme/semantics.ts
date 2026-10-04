@@ -26,7 +26,7 @@ export type TextureRole = 'material' | 'sphere' | 'toon' | 'colorTarget' | 'dept
 export const SHADOW_COLOR: [number, number, number, number] = [0, 0, 0, 0.5];
 
 // ライトの位置は MME のエフェクトがほぼ使わないので、カメラの注視点から光の来る側へこの距離だけ離した点にする
-const LIGHT_DISTANCE = 1000;
+export const LIGHT_DISTANCE = 1000;
 
 const MATRIX_RE = /^(WORLD|VIEW|PROJECTION|WORLDVIEW|VIEWPROJECTION|WORLDVIEWPROJECTION)(INVERSE|TRANSPOSE|INVERSETRANSPOSE)?$/;
 const UNSUPPORTED = new Set(['CONTROLOBJECT', 'MOUSEPOSITION', 'LEFTMOUSEDOWN', 'MIDDLEMOUSEDOWN', 'RIGHTMOUSEDOWN', 'TEXTUREVALUE']);
@@ -56,7 +56,7 @@ function shapeOf(type: string): { rows: number; cols: number; matrix: boolean } 
 // 値を型の形に合わせる。行列は 4×4 (行ごと) から R 行 C 列を取り、ベクトル・スカラーは先の個数を取る。足りない成分は 1 (不透明度など)
 function fit(values: number[], type: string): number[] {
   const s = shapeOf(type);
-  if (!s) return values;
+  if (!s) return values.slice();
   if (s.matrix) {
     const out: number[] = [];
     for (let r = 0; r < s.rows; r++) for (let c = 0; c < s.cols; c++) out.push(values[r * 4 + c] ?? 0);
@@ -96,6 +96,7 @@ function matrixValue(m: RegExpExecArray, p: Param, ctx: SemanticContext): number
     case 'VIEWPROJECTION': r = new Matrix4().multiplyMatrices(proj, view); break;
     default: r = new Matrix4().multiplyMatrices(proj, view).multiply(w); break;
   }
+  // shadow の pass の W は地面に潰す行列 (特異) を含むので、WORLDINVERSE などの逆行列は 0 の行列になる
   const kind = m[2] ?? '';
   if (kind.startsWith('INVERSE')) r = r.clone().invert();
   if (kind.endsWith('TRANSPOSE')) r = r.clone().transpose();
@@ -119,7 +120,7 @@ function materialValue(sem: string, mat: MaterialState): number[] | null {
     case 'EMISSIVE': return mat.ambient;             // MME の決まり (環境色)
     case 'SPECULAR': return mat.specular;
     case 'SPECULARPOWER': return [mat.power];
-    case 'TOONCOLOR': return mat.toon;
+    case 'TOONCOLOR': return mat.hasToon ? mat.toon : [1, 1, 1];  // トゥーンがなければ白
     case 'EDGECOLOR': return mat.edgeColor;
     case 'GROUNDSHADOWCOLOR': return mat.groundShadowColor;
     // 材質モーフ (この計画ではなし): 加算は 0、乗算は 1
