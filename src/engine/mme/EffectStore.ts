@@ -1,7 +1,7 @@
 import { t } from '../../core/i18n';
 import { Emitter } from '../../core/events';
 import { compileEffect, type EffectResult } from '../../core/fx/index.ts';
-import { normalizePath, resolveFile } from '../../core/fx/source.ts';
+import { normalizePath } from '../../core/fx/source.ts';
 import type { UiChannel } from '../UiChannel';
 import DEFAULT_FX from './default.fx?raw';
 
@@ -28,12 +28,30 @@ function relativePaths(files: File[]): { paths: string[]; folder: string } {
   return { paths: full.map(p => p.slice(folder.length + 1)), folder };
 }
 
-// フォルダの中のパスを、コンパイラの #include と同じく大文字小文字と '\' を無視して探す。なければ null
-const FOUND = new Uint8Array(0);
+// フォルダの索引: 小文字にしたパス → フォルダの本当のパス (同じものがいくつかあれば一覧の先のもの。コンパイラの resolveFile と同じ)。
+// 割り当ては毎フレーム材質ごとに引くので、大文字小文字の違うパス (Ray-MMD の DefaultEffect の materials/… と Materials/ など) で
+// 毎回ファイルの一覧をなめない。フォルダの中身を変えたら (addFolder・restore) dropIndex で捨て、次に引くときに作り直す
+const indexes = new WeakMap<EffectFolder, Map<string, string>>();
+function indexOf(folder: EffectFolder): Map<string, string> {
+  let index = indexes.get(folder);
+  if (index) return index;
+  index = new Map();
+  for (const p of new Set([...folder.files.keys(), ...folder.text.keys()])) {
+    const key = normalizePath(p).toLowerCase();
+    if (!index.has(key)) index.set(key, p);
+  }
+  indexes.set(folder, index);
+  return index;
+}
+function dropIndex(folder: EffectFolder): void {
+  indexes.delete(folder);
+}
+
+// フォルダの中のパスを、コンパイラの #include と同じく大文字小文字と '\' を無視して探す (書かれたとおりのものが先)。なければ null
 export function findFile(folder: EffectFolder, path: string): string | null {
-  const has = (p: string) => folder.files.has(p) || folder.text.has(p);
-  const listFiles = () => [...new Set([...folder.files.keys(), ...folder.text.keys()])];
-  return resolveFile({ readFile: p => (has(p) ? FOUND : null), listFiles }, path)?.path ?? null;
+  const norm = normalizePath(path);
+  if (folder.files.has(norm) || folder.text.has(norm)) return norm;
+  return indexOf(folder).get(norm.toLowerCase()) ?? null;
 }
 
 // 画像などを File から読む (大文字小文字を無視して探す)。読んだら used に足す。なければ null
@@ -124,6 +142,7 @@ export class EffectStore {
       changed = true;
     }
     if (changed) {
+      dropIndex(folder);
       this.compiled.delete(folder.id);
       this.folderChanges++;
       this.recompilePosts([folder]);
@@ -145,6 +164,7 @@ export class EffectStore {
       if (isText(path)) folder.text.set(path, new Uint8Array(await file.arrayBuffer()));
     }
     for (const folder of made) {
+      dropIndex(folder);
       this.list = this.list.filter(f => f.id !== folder.id);
       this.list.push(folder);
       this.compiled.delete(folder.id);
@@ -158,7 +178,10 @@ export class EffectStore {
   // 読み込んだフォルダを全部消す (最初の状態に戻すとき。default.fx は残す。id は使い回さない)
   clearFolders(): void {
     if (this.list.length === 0) return;
-    for (const f of this.list) this.compiled.delete(f.id);
+    for (const f of this.list) {
+      dropIndex(f);
+      this.compiled.delete(f.id);
+    }
     this.list = [];
     this.folderChanges++;
   }

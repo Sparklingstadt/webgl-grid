@@ -3,7 +3,7 @@ import { compileEffect } from '../../core/fx/index.ts';
 import { pickTechnique, type TechniqueQuery } from '../../core/mme/technique.ts';
 import type { MmdPass } from '../../core/mme/semantics.ts';
 import type { UiChannel } from '../UiChannel';
-import { EffectStore, readBinary } from './EffectStore.ts';
+import { EffectStore, findFile, readBinary } from './EffectStore.ts';
 
 // compileEffect の呼ばれた数を数える (中身はそのまま)
 vi.mock('../../core/fx/index.ts', async importOriginal => {
@@ -126,6 +126,33 @@ describe('EffectStore', () => {
     expect(store.folders()).toEqual([folder]); // (読み込んだフォルダだけ)
     expect(store.folder(folder.id)).toBe(folder);
     expect(store.folder('nothing')).toBeNull();
+  });
+
+  it('findFile: 大文字小文字・\'\\\' の違うパスも、フォルダの索引で (毎回ファイルの一覧をなめずに) 本当のパスにする。書かれたとおりのパスが先。フォルダの中身が変わると索引を作り直す', async () => {
+    const store = new EffectStore(fakeUi());
+    const folder = await store.addFolder([fileAt('Ray/Materials/a.fx', ''), fileAt('Ray/Shadow/s.png', 'x'), fileAt('Ray/materials/A.fx', '')]);
+    expect(findFile(folder, 'Materials/a.fx')).toBe('Materials/a.fx');
+    expect(findFile(folder, 'materials/A.fx')).toBe('materials/A.fx'); // (書かれたとおりのものがあれば、それ)
+    expect(findFile(folder, 'MATERIALS\\a.FX')).toBe('Materials/a.fx'); // (なければ、一覧の先のもの)
+    expect(findFile(folder, './shadow/S.PNG')).toBe('Shadow/s.png');
+    expect(findFile(folder, 'none.fx')).toBeNull();
+    // 2 回目からは一覧を作らない
+    const files = vi.spyOn(folder.files, 'keys');
+    const text = vi.spyOn(folder.text, 'keys');
+    for (let i = 0; i < 100; i++) expect(findFile(folder, 'shadow/s.png')).toBe('Shadow/s.png');
+    expect(findFile(folder, 'nothing/here.fx')).toBeNull();
+    expect(files).not.toHaveBeenCalled();
+    expect(text).not.toHaveBeenCalled();
+    files.mockRestore();
+    text.mockRestore();
+    // まとめて読み直して足したパスも見つかる
+    await store.addFolder([fileAt('Ray/Outline/o.fx', '')]);
+    expect(findFile(folder, 'outline/O.fx')).toBe('Outline/o.fx');
+    // 開き直したフォルダ (restore) も
+    await store.restore([{ id: folder.id, name: 'Ray' }], [{ folder: folder.id, path: 'Lighting/l.fx', file: new File([''], 'l.fx') }]);
+    const restored = store.folder(folder.id)!;
+    expect(findFile(restored, 'lighting/L.FX')).toBe('Lighting/l.fx');
+    expect(findFile(restored, 'outline/o.fx')).toBeNull();
   });
 
   it('画像は addFolder では読まず、readBinary で (大文字小文字を無視して) 読んで used に足す', async () => {
