@@ -267,11 +267,11 @@ describe('EffectStore', () => {
 
   it('ポストエフェクトの並べ替え・オン・オフ・外す・全部外す', async () => {
     const store = new EffectStore(fakeUi());
-    const changed = vi.fn();
-    store.events.on('changed', changed);
     const a = store.effect(await store.addFolder([fileAt('A/a.fx', '')]), 'a.fx');
     const b = store.effect(await store.addFolder([fileAt('B/b.fx', '')]), 'b.fx');
     const c = store.effect(await store.addFolder([fileAt('C/c.fx', '')]), 'c.fx');
+    const changed = vi.fn();
+    store.events.on('changed', changed);
 
     store.addPost(a); store.addPost(b); store.addPost(c);
     expect(store.posts.map(p => p.effect)).toEqual([a, b, c]);
@@ -364,12 +364,30 @@ describe('EffectStore', () => {
     expect(changed).toHaveBeenCalledTimes(1);
   });
 
-  it('setPosts はポストエフェクトの一覧を置き換え、1 回だけ知らせる', async () => {
+  it('フォルダの中身が変わると (ポストエフェクトがなくても) 1 回知らせる (物の .fx を読み直したら、すぐ描き直す)。変わらなければ知らせない', async () => {
     const store = new EffectStore(fakeUi());
     const changed = vi.fn();
     store.events.on('changed', changed);
+    const folder = await store.addFolder([fileAt('Fx/a.fx', 'technique A { }', 1)]);
+    expect(changed).toHaveBeenCalledTimes(1);
+    await store.addFolder([fileAt('Fx/a.fx', 'technique A { }', 1)]);
+    expect(changed).toHaveBeenCalledTimes(1);
+    await store.addFolder([fileAt('Fx/a.fx', 'technique B { }', 2)]);
+    expect(changed).toHaveBeenCalledTimes(2);
+    await store.restore([{ id: folder.id, name: 'Fx' }], []);
+    expect(changed).toHaveBeenCalledTimes(3);
+    store.clearFolders();
+    expect(changed).toHaveBeenCalledTimes(4);
+    store.clearFolders(); // (フォルダがなければ何も変わらない)
+    expect(changed).toHaveBeenCalledTimes(4);
+  });
+
+  it('setPosts はポストエフェクトの一覧を置き換え、1 回だけ知らせる', async () => {
+    const store = new EffectStore(fakeUi());
     const a = store.effect(await store.addFolder([fileAt('A/a.fx', '')]), 'a.fx');
     const b = store.effect(await store.addFolder([fileAt('B/b.fx', '')]), 'b.fx');
+    const changed = vi.fn();
+    store.events.on('changed', changed);
     store.setPosts([{ effect: a, enabled: false }, { effect: b, enabled: true }]);
     expect(store.posts).toEqual([{ effect: a, enabled: false }, { effect: b, enabled: true }]);
     expect(changed).toHaveBeenCalledTimes(1);

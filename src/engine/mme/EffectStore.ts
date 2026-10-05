@@ -86,7 +86,7 @@ function compile(folder: EffectFolder, entry: string): EffectResult {
 }
 
 export class EffectStore {
-  readonly events = new Emitter<{ changed: [] }>();
+  readonly events = new Emitter<{ changed: [] }>(); // ポストエフェクトの一覧か、フォルダの中身が変わった
   readonly defaultEffect: LoadedEffect;
   readonly posts: { effect: LoadedEffect; enabled: boolean }[] = [];
   private builtin: EffectFolder;
@@ -146,6 +146,7 @@ export class EffectStore {
       this.compiled.delete(folder.id);
       this.folderChanges++;
       this.recompilePosts([folder]);
+      this.events.emit('changed');
     }
     return folder;
   }
@@ -173,6 +174,7 @@ export class EffectStore {
     }
     this.folderChanges++;
     this.recompilePosts(made);
+    this.events.emit('changed');
   }
 
   // 読み込んだフォルダを全部消す (最初の状態に戻すとき。default.fx は残す。id は使い回さない)
@@ -184,6 +186,7 @@ export class EffectStore {
     }
     this.list = [];
     this.folderChanges++;
+    this.events.emit('changed');
   }
 
   folder(id: string): EffectFolder | null {
@@ -224,16 +227,12 @@ export class EffectStore {
 
   // 中身を変えたフォルダの .fx のポストエフェクトを、新しい中身でコンパイルし直したものにする (並びとオン・オフはそのまま)。
   // (割り当ては描くときに引き直すが、ポストエフェクトの一覧は LoadedEffect を持つので。開いたときに見つからなかった .fx も、
-  // 同じフォルダを読み直すと直る)
+  // 同じフォルダを読み直すと直る。知らせるのは呼ぶ側 (フォルダの中身が変わったら、いつも知らせる))
   private recompilePosts(folders: EffectFolder[]): void {
-    let replaced = false;
     for (const p of this.posts) {
       const folder = folders.find(f => f.id === p.effect.folder.id);
-      if (!folder) continue;
-      p.effect = this.effect(folder, p.effect.entry);
-      replaced = true;
+      if (folder) p.effect = this.effect(folder, p.effect.entry);
     }
-    if (replaced) this.events.emit('changed');
   }
 
   // 一覧を置き換える (プロジェクトを開くとき)
