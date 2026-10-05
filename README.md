@@ -435,7 +435,7 @@ MME の .fx そのものを動かすモードです。.fx を WebGL2 の GLSL ES
 
 **Ray-MMD を使う**
 
-Ray-MMD 1.5.2 の標準の構成（`ray.conf` のまま）に、ライトとフォグを足したものを動かします。MME に渡す世界は MMD の単位なので（下の「座標の大きさ」）、太陽の陰影と影・材質（肌・髪の SSS など）・ライト・フォグは Ray-MMD の決まりどおりに描かれます。空（Time of day）は、Ray-MMD の Mie 散乱の係数の式を MMD の絵に合うように書き換えて（`core/fx/compat.ts`）、MMD と同じ青い空になります。
+Ray-MMD 1.5.2 の標準の構成（`ray.conf` のまま）に、ライトとフォグを足したものを動かします。MME に渡す世界は MMD の単位なので（下の「座標の大きさ」）、太陽の陰影と影・材質（肌・髪の SSS など）・ライト・フォグが描かれるようになりました。空（Time of day）は、Ray-MMD の Mie 散乱の係数の式を MMD の絵に合うように書き換えて（`core/fx/compat.ts`）、MMD と同じ青い空になります。
 
 1. [Ray-MMD 1.5.2](https://github.com/ray-cast/ray-mmd/tree/1.5.2)（MIT ライセンス）を `fx/ray-mmd-1.5.2/` に置きます（[fx/README.md](fx/README.md)）。
 2. レンダーエンジンを「MME 互換」にして、「ポストエフェクト」の「足す…」で `fx/ray-mmd-1.5.2` のフォルダを選び、`ray.fx` を選びます。`ray.x` と `ray_controller.pmx` は読み込みません（`ray_controller.pmx` の値は「コントローラー」のスライダーで入れます）。
@@ -443,7 +443,7 @@ Ray-MMD 1.5.2 の標準の構成（`ray.conf` のまま）に、ライトとフ�
 4. ライトは `Lighting/` の .pmx（`PointLight.pmx` など）を、フォグは `Fog/` の .pmx を読み込みます。`LightMap` のタブの既定（`DefaultEffect`）で、ライトの種類ごとのフォルダの `Default/`（LED は `Default LED/`）の .fx が、`FogMap` のタブの既定で、フォグの種類ごとのフォルダの .fx が当たります。色や強さは、その .pmx のモーフ（`R+`・`G+`・`B+`・`Intensity+` など）で決まります。
 5. 空（`Skybox/Time of day/Time of day.pmx`）を読み込むと、大きいのでステージになります（原点に置かれ、いちばん先に描かれます。Ray-MMD の説明の「model disply order」のとおり）。エフェクト割当の「ステージ」の行に、Ray-MMD の説明（同じフォルダの `README.png`）のとおり、Main に `Time of day.fx`・`FogMap` に `Time of fog.fx`・`EnvLightMap` に `Time of lighting.fx`・`MaterialMap` に `Materials/material_skybox.fx` を割り当てます。ステージは 1 つだけなので、空をステージにすると、ほかのステージ（会場の .pmx）は同時に使えません。
 
-手元（Apple M3 Max・Chrome（Playwright の Chromium）・GPU で描く）で、ray.fx・材質の .fx 3 つ・空・ライト 10 種類・フォグ 4 種類を置いた場面を 1280×720 で描くと、1 フレーム **14 ms 前後（71 fps ほど）** でした（`e2e/ray-mmd-local.spec.ts` が測って出します）。
+手元（Apple M3 Max・Chrome（Playwright の Chromium）・GPU で描く）で、ray.fx・材質の .fx 3 つ・空・ライト 10 種類・フォグ 4 種類を置いた場面を 1280×720 で描くと、1 フレームは、全部見えているとき **8 ms 前後（125 fps ほど）**、ライト 8 種類とフォグ 3 種類を書き出しで隠して、点光源・スポットライト・グラウンドフォグ・空に絞ったとき **5.3 ms 前後（190 fps ほど）** でした（`e2e/ray-mmd-local.spec.ts` が両方を測って出します）。
 
 **いまできること**
 
@@ -490,7 +490,7 @@ npm run lint           # lint (oxlint。Rust 製で、全体を 0.3 秒ほどで
 npm run test:all       # 型チェック・lint・単体テスト・e2e を同時に動かす (Mac で 10 秒ほど)
 ```
 
-- **GitHub Actions**（`.github/workflows/test.yml`）: main への push と pull request のたびに `npm run test:all` を流します（Linux・ソフトウェア描画で 2 分ほど）。失敗したときは e2e の記録（スクリーンショット・トレース）を残します。公開（GitHub Pages）はしません。
+- **GitHub Actions**（`.github/workflows/test.yml`）: main への push と pull request のたびに `npm run test:all` を流します（Linux・ソフトウェア描画）。失敗したときは e2e の記録（スクリーンショット・トレース）を残します。公開（GitHub Pages）はしません。
 - **lint**: oxlint（`.oxlintrc.json`）で、間違いになりやすい書き方（correctness）を誤り、怪しい書き方（suspicious）と React Hooks の依存配列の不足を警告にし、警告も失敗にします。見た目・好みだけのルールは使いません。TypeScript 7（Go 製）は ESLint の TypeScript 対応（typescript-eslint）では読めないので、oxlint を使っています。
 
 - **単体テスト**（`src/**/*.test.ts(x)`）: ノードツリー（つなぐ・外す・輪にならない・消す）、ノードからの GLSL の組み立て、マテリアル（共有・値だけの変更ではシェーダーを作り直さない・設定と輪郭線・自動で作ったものの片付け・名前の付け方）、物のマテリアルスロット（新規・複製・外す・共有）、MMD の材質の変換と .pmx の値への書き戻し、.pmx の材質の書き換え（ほかの部分を変えない）、髪の錘の見つけ方、タイムライン（`Clock`）、描画先なしで組み立てたエンジン（追加・積み重ね・削除・選択・最初の状態に戻す・キーフレームの挿入と補間・移動・削除・前後のキーへの移動）、チャンネルごとのキーフレーム（補間曲線・打ち方・ずらす・消す・前の形からの変換）、積み重ねの判定と高さ・空いている場所の探し方、.vpd の書き出しと読み取り（左手系との変換、MMD の書式）、Shift-JIS への変換、ストア、タイムラインの目盛りと拡大縮小、スライダーと数値の欄・選択肢・チェック・色選び（jsdom + Testing Library）、色の変換 (HSV・16 進)、参照しているファイルの対応づけ、外部からの命令、MME の .fx のコンパイラ（`src/core/fx/`。前処理・構文解析・型チェック・書き出しと、Ray-MMD 1.5.2 の .fx 全部が誤りなく変換できること）、MME 互換の実行部（`src/core/mme/`: セマンティクスの値・座標と D3D の行列・technique の選び方・Script の実行・レンダーターゲットの大きさと形式・CPU の変形と頂点モーフと輪郭線の広げ方。`src/engine/mme/`: .fx の読み込みと割り当て・材質とテクスチャとステート・レンダーターゲットとフレームバッファ・MMD モデルの変形した形・レンダーエンジンの切り替えと保存）。

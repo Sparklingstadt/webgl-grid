@@ -296,6 +296,7 @@ test('Ray-MMD 1.5.2 の標準の構成 + ライト (すべての種類) とフ�
   const all = await exportPng(page, 'ray-mmd-all.png');
   const p = await problems(page);
   if (process.env.RAY_MMD_LOG) console.log(JSON.stringify(p, null, 2));
+  const msAll = await frameTime(page); // (全部見えている: ライト 10・フォグ 4・空)
 
   // 絞った絵: 点光源・スポットライト・グラウンドフォグ・空 (ほかのライトとフォグは書き出しで隠す)
   await page.evaluate(({ hide }) => {
@@ -306,7 +307,7 @@ test('Ray-MMD 1.5.2 の標準の構成 + ライト (すべての種類) とフ�
   // 光と光のにじみだけで「真っ黒でない」にならないよう、人形 (原点の四角柱の、カメラに向いた 2 つの面の真ん中) と、
   // 空 (絵の上の端の 3 か所。ライトから離れている) の明るさを見る
   const region = await patches(page, [[0, 1, 0.2], [0.2, 1, 0]], [[0.25, 0.05], [0.5, 0.05], [0.75, 0.05]]);
-  const ms = await frameTime(page);
+  const msFocus = await frameTime(page); // (絞った絵: 点光源・スポットライト・グラウンドフォグ・空)
   // 動画にも書き出せる (3 コマ)
   const video = await page.evaluate(async () => {
     const { engine } = window as Win;
@@ -316,7 +317,8 @@ test('Ray-MMD 1.5.2 の標準の構成 + ライト (すべての種類) とフ�
   });
   console.log(`PNG: ${all.file} (平均の明るさ ${all.mean.toFixed(3)}), ${focus.file} (${focus.mean.toFixed(3)})`);
   console.log(`人形の面: ${region.world.map(v => v.toFixed(3)).join(', ')}、空: ${region.image.map(v => v.toFixed(3)).join(', ')} (赤・青: ${region.imageRb.map(c => `${c.r.toFixed(2)}・${c.b.toFixed(2)}`).join(', ')})`);
-  console.log(`1 フレーム (${W}×${H}): ${ms.toFixed(1)} ms (${(1000 / ms).toFixed(1)} fps)`);
+  const fps = (ms: number) => `${ms.toFixed(1)} ms (${(1000 / ms).toFixed(1)} fps)`;
+  console.log(`1 フレーム (${W}×${H}): 全部見えている ${fps(msAll)}、絞った絵 ${fps(msFocus)}`);
 
   const unsupported = (list: string[]) => list.filter(w => /対応|止め|使えない|見つからない|できない|読めない/.test(w));
   expect(unsupported([...p.warnings, ...p.uiWarnings, ...p.compile])).toEqual([]);
