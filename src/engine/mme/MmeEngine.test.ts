@@ -1260,6 +1260,33 @@ technique Post { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = comp
     expect(e.mme.paramsOf('stage')[0].params[0]).toMatchObject({ name: 'Strength', value: [1] });
   });
 
+  it('ステージの最後の割り当てを外すとパラメータの値も捨て、そのあと別のステージに割り当てても引き継がない', async () => {
+    const e = new Engine();
+    const fx = await e.mme.loadEffect([fileAt('Fx/param.fx', paramFx())], 'param.fx');
+    stageNamed(e, 'Day.pmx');
+    e.mme.assignStage('Main', null, ref(fx));
+    e.mme.setParam('stage', fx.folder.id, 'param.fx', 'Strength', [3]);
+    e.mme.assignStage('Main', null, null);
+    expect(e.mme.saveScene().stage).toBeUndefined();
+    expect(e.mme.saveScene().stageParams).toBeUndefined();
+    stageNamed(e, 'Night.pmx');
+    e.mme.assignStage('Main', null, ref(fx));
+    expect(e.mme.paramsOf('stage')[0].params[0]).toMatchObject({ name: 'Strength', value: [1] });
+  });
+
+  it('.emm でステージの割り当てを全部入れ替えても、ステージのパラメータの値は途中で捨てない', async () => {
+    const e = new Engine();
+    const fx = await e.mme.loadEffect([fileAt('Fx/param.fx', paramFx()), fileAt('Fx/sky.fx', 'technique T { }')], 'param.fx');
+    stageNamed(e, 'Day.pmx');
+    e.mme.assignStage('Main', null, ref(e.mme.store.effect(fx.folder, 'sky.fx')));
+    e.mme.setParam('stage', fx.folder.id, 'param.fx', 'Strength', [3]); // (まだ当てていない .fx の値も置ける)
+    const ch = `${fx.folder.id}/param.fx:Strength`;
+    expect(e.mme.saveScene().stageParams).toEqual({ [ch]: 3 });
+    e.mme.importEmm(encodeShiftJis('[Object]\r\nPmd1 = Day.pmx\r\n[Effect]\r\nPmd1 = Fx\\param.fx\r\n'));
+    expect(e.mme.saveScene().stage).toEqual({ name: 'Day.pmx', effects: { Main: { object: ref(fx) } } });
+    expect(e.mme.paramsOf('stage')[0].params[0]).toMatchObject({ name: 'Strength', value: [3] });
+  });
+
   it('loadScene: 第 4 の計画の形の stage (名前がない) は、いっしょに読み込んだステージのものとして読み、名前つきの stage はその名前のまま読む', async () => {
     const e = new Engine();
     const fx = await e.mme.loadEffect([fileAt('Fx/sky.fx', 'technique T { }')], 'sky.fx');

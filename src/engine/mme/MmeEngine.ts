@@ -503,12 +503,12 @@ export class MmeEngine {
 
   // ステージのタブの、物全体 (materialIndex が null) か材質の割り当てを変える (slot が null なら外して既定に戻す)。
   // 場面の値なので、元に戻すの対象にしない。残っている割り当てが別の名前のステージのものなら、それは捨てて (パラメータの値も)
-  // いまのステージの名前で置き直す (何も変わらなければ捨てない)
+  // いまのステージの名前で置き直す (何も変わらなければ捨てない)。最後の割り当てを外したときもパラメータの値を捨てる
   assignStage(tab: string, materialIndex: number | null, slot: SavedSlot | null): void {
     const old = this.activeStage();
     const next = normalizeObjectEffects(withSlot(old ?? {}, tab, materialIndex, slot));
     if (same(old, next)) return;
-    if (!old && this.stageData) this.stageParams = {};
+    if (!next || (!old && this.stageData)) this.stageParams = {};
     this.stageData = next ? { name: stageNameOf(this.deps.stage()) ?? this.stageData?.name ?? '', effects: next } : null;
     this.changed();
   }
@@ -558,12 +558,14 @@ export class MmeEngine {
     return this.renderer.posts(all ? 'all' : 'drawn');
   }
 
-  // エフェクトの割り当て (場面にある物 (アクセサリのポストエフェクトも) とステージの割り当て) を全部外す (最初の状態に戻すとき・プロジェクトを開くとき)
+  // エフェクトの割り当て (場面にある物 (アクセサリのポストエフェクトも) とステージの割り当て。ステージのパラメータの値も) を全部外す
+  // (最初の状態に戻すとき・プロジェクトを開くとき)
   clearEffects(): void {
     const assigned = this.deps.world.objects.filter(o => o.mme);
     for (const obj of assigned) obj.mme = undefined;
     const stage = this.stageData !== null;
     this.stageData = null;
+    this.stageParams = {};
     if (assigned.length > 0 || stage) this.changed();
   }
 
@@ -673,16 +675,18 @@ export class MmeEngine {
     return { applied, warnings };
   }
 
-  // ステージの割り当てを effects に置き換える (assignStage で 1 つずつ。場面の値なので取り消しの対象にしない)
+  // ステージの割り当てを effects に置き換える (assignStage で 1 つずつ。場面の値なので取り消しの対象にしない)。
+  // 先に当ててから外す (途中で割り当てがなくなって、パラメータの値を捨てないように)
   private replaceStageEffects(effects: ObjectEffects): void {
     const want = normalizeObjectEffects(effects) ?? {};
-    for (const [tab, old] of Object.entries(this.activeStage() ?? {})) {
-      if (old.object && !want[tab]?.object) this.assignStage(tab, null, null);
-      for (const m of Object.keys(old.materials ?? {})) if (!want[tab]?.materials?.[m]) this.assignStage(tab, Number(m), null);
-    }
+    const old = this.activeStage() ?? {};
     for (const [tab, effects] of Object.entries(want)) {
       if (effects.object) this.assignStage(tab, null, effects.object);
       for (const [m, slot] of Object.entries(effects.materials ?? {})) this.assignStage(tab, Number(m), slot);
+    }
+    for (const [tab, slots] of Object.entries(old)) {
+      if (slots.object && !want[tab]?.object) this.assignStage(tab, null, null);
+      for (const m of Object.keys(slots.materials ?? {})) if (!want[tab]?.materials?.[m]) this.assignStage(tab, Number(m), null);
     }
   }
 
@@ -833,7 +837,6 @@ export class MmeEngine {
   // 最初の状態に戻す: 割り当てとパラメータの値 (ステージのものも)・読み込んだフォルダを消し、既定の設定にする
   // (ポストエフェクトのアクセサリ・仮のコントローラーの値・物のパラメータの値は物なので、物といっしょに消える)
   resetScene(): void {
-    this.stageParams = {};
     this.clearEffects();
     this.store.clearFolders();
     this.set({ ...MME_DEFAULTS });
