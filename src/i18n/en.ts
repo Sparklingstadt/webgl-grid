@@ -1277,5 +1277,12 @@ const dict: Dictionary = {
   "DefaultEffect に空の項があるので無視します": "DefaultEffect has an empty item, so it is ignored",
   "DefaultEffect の項 \"{item}\" に = がないので無視します": "DefaultEffect item \"{item}\" has no =, so it is ignored",
   "DefaultEffect の項 \"{item}\" のパターンか動作が空なので無視します": "DefaultEffect item \"{item}\" has an empty pattern or action, so it is ignored",
+  "DDS のファイルではありません": "Not a DDS file",
+  "DDS のヘッダーが壊れています": "The DDS header is broken",
+  "キューブマップの DDS に 6 面がそろっていません": "The cube map DDS doesn't have all 6 faces",
+  "ボリュームテクスチャの DDS は読めません": "Volume texture DDS files can't be read",
+  "DDS の形式 {format} は読めません": "DDS format {format} can't be read",
+  "配列テクスチャの DDS は読めません": "Array texture DDS files can't be read",
+  "DDS の画素のデータが足りません": "The DDS pixel data is incomplete",
 };
 export default dict;

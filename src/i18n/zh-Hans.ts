@@ -1277,5 +1277,12 @@ const dict: Dictionary = {
   "DefaultEffect に空の項があるので無視します": "DefaultEffect 中有空项，已忽略",
   "DefaultEffect の項 \"{item}\" に = がないので無視します": "DefaultEffect 的项 \"{item}\" 没有 =，已忽略",
   "DefaultEffect の項 \"{item}\" のパターンか動作が空なので無視します": "DefaultEffect 的项 \"{item}\" 的模式或动作为空，已忽略",
+  "DDS のファイルではありません": "不是 DDS 文件",
+  "DDS のヘッダーが壊れています": "DDS 头部已损坏",
+  "キューブマップの DDS に 6 面がそろっていません": "立方体贴图 DDS 没有齐全的 6 个面",
+  "ボリュームテクスチャの DDS は読めません": "无法读取体积纹理的 DDS",
+  "DDS の形式 {format} は読めません": "无法读取 DDS 格式 {format}",
+  "配列テクスチャの DDS は読めません": "无法读取数组纹理的 DDS",
+  "DDS の画素のデータが足りません": "DDS 的像素数据不足",
 };
 export default dict;
