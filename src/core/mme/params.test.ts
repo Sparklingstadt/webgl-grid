@@ -28,6 +28,12 @@ describe('effectParams', () => {
     expect(ps.map(p => [p.min, p.max])).toEqual([[-1, 6], [0, 10]]);
   });
 
+  it('名前で値が決まる変数 (use_texture・parthf など。MME が材質の値を入れる) は、初期値があってもパラメータにしない', () => {
+    const names = ['use_texture', 'use_spheremap', 'use_toon', 'use_subtexture', 'parthf', 'transp', 'spadd', 'opadd'];
+    const ps = effectParams(compile(`${names.map(n => `bool ${n} = true;`).join(' ')} float Use_Texture = 1; float Strength = 1;`));
+    expect(ps.map(p => p.name)).toEqual(['Use_Texture', 'Strength']); // (名前は大文字小文字を区別する)
+  });
+
   it('UIWidget = "Color" の float3・float4 は color、範囲は成分の最小・最大から', () => {
     const ps = effectParams(compile(`
       float3 Col < string UIWidget = "Color"; > = {1, 0.5, 0};

@@ -1,6 +1,8 @@
-// エフェクトの「いじれるパラメータ」(初期値を持つ uniform の数値でセマンティクスのないもの) の一覧と、アニメーションのチャンネルの名前
+// エフェクトの「いじれるパラメータ」(初期値を持つ uniform の数値でセマンティクスがなく、名前で値が決まる変数でないもの) の一覧と、
+// アニメーションのチャンネルの名前
 import type { EffectDesc, Param } from '../fx/desc.ts';
 import { annotation } from './annotations.ts';
+import { NAMED_VALUES } from './semantics.ts';
 
 export type ParamUiType = 'float' | 'float2' | 'float3' | 'float4' | 'int' | 'bool';
 
@@ -47,7 +49,7 @@ function paramUi(p: Param, init: number[]): ParamUi {
 export function effectParams(desc: EffectDesc): ParamUi[] {
   const out: ParamUi[] = [];
   for (const p of desc.params) {
-    if (p.storage !== 'uniform' || p.semantic !== null) continue;
+    if (p.storage !== 'uniform' || p.semantic !== null || NAMED_VALUES.includes(p.name)) continue;
     if (!PARAM_TYPES.includes(p.type) || !Array.isArray(p.init)) continue;
     if ((numberAnnotation(p, 'UIHidden') ?? 0) !== 0) continue;
     out.push(paramUi(p, p.init));

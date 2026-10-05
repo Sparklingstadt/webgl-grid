@@ -142,7 +142,10 @@ function materialValue(sem: string, mat: MaterialState): number[] | null {
   }
 }
 
-// セマンティクスのない変数の、名前で決まる値
+// 名前で値が決まる (セマンティクスのない) 変数の名前 (namedValue。大文字小文字を区別する)
+export const NAMED_VALUES: readonly string[] = ['parthf', 'transp', 'spadd', 'use_texture', 'use_spheremap', 'use_toon', 'use_subtexture', 'opadd'];
+
+// セマンティクスのない変数の、名前で決まる値 (NAMED_VALUES)
 function namedValue(name: string, ctx: SemanticContext): number[] | null {
   const mat = ctx.material;
   const b = (x: boolean | undefined) => [x ? 1 : 0];
