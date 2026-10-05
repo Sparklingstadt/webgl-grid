@@ -571,7 +571,8 @@ export class MmeEngine {
   // .emm を読んで割り当てを戻す。[Object] のファイル名を、大文字小文字を無視して場面の物の名前 (objectName) とステージの .pmx の
   // ファイル名に照らす (同じ名前は .emm の番号の順に、場面の並びの順。ステージは最後)。場面にない .x はその名前の仮のアクセサリを置き、
   // ほかの合わない物は飛ばす。合った物の割り当ては .emm のものに置き換える (.show = false・hide は描かない、none は外す。
-  // .fx は読み込んだフォルダで後ろの部分がいちばん長く合うもの)。アクセサリの Main に物全体の行がなければ、MME が自動で読む
+  // .fx は読み込んだフォルダで後ろの部分がいちばん長く合うもの。見つからない .fx の行の場所はいまの割り当てのままにし、見つかった行も
+  // none の行もない物は変えない)。アクセサリの Main に物全体の行がなければ、MME が自動で読む
   // .x と同じ名前の .fx を当てる (見つからなくても警告しない)。物の割り当てと置いたアクセサリは 1 回の取り消しで戻る
   // (ステージの割り当ては場面の値なので戻らない)。合わない物・見つからない .fx・置けないアクセサリは警告にまとめ、お知らせにも出す
   importEmm(bytes: Uint8Array): { applied: number; warnings: string[] } {
@@ -607,20 +608,29 @@ export class MmeEngine {
     const folders = this.store.folders().map(f => ({ id: f.id, name: f.name, files: [...f.text.keys()].filter(p => /\.fx(sub)?$/i.test(p)).sort() }));
     const next = new Map<Target, ObjectEffects>([...targets.values()].map(target => [target, {}]));
     const lost = new Set<string>();
+    // (.fx が見つからなかった行の場所。そこはいまの割り当てのままにする。見つかった行・none の行が 1 つもない物は置き換えない)
+    const unresolved = new Map<Target, { tab: string; material: number | null }[]>();
+    const resolved = new Set<Target>();
     let applied = 0;
     const put = (target: Target, tab: string, material: number | null, slot: SavedSlot) => {
       const effects = (next.get(target)![tab] ??= {});
       if (material === null) effects.object = slot;
       else (effects.materials ??= {})[material] = slot;
+      resolved.add(target);
       applied++;
     };
     for (const [tab, entries] of Object.entries(doc.tabs)) {
       for (const { object, material, value, show } of entries) {
         const target = targets.get(object);
-        if (target === undefined || (value === 'none' && show !== false)) continue;
+        if (target === undefined) continue;
+        if (value === 'none' && show !== false) { resolved.add(target); continue; }
         const slot = show === false || value === 'hide' ? 'hide' : matchFxPath(value, folders);
         if (slot) put(target, tab, material, slot);
-        else lost.add(value);
+        else {
+          lost.add(value);
+          if (!unresolved.has(target)) unresolved.set(target, []);
+          unresolved.get(target)!.push({ tab, material });
+        }
       }
     }
     for (const { index, file } of doc.objects) {
@@ -633,6 +643,16 @@ export class MmeEngine {
 
     let edited = false;
     for (const [target, effects] of next) {
+      const keep = unresolved.get(target) ?? [];
+      if (keep.length > 0 && !resolved.has(target)) continue;
+      const current = target === STAGE ? this.activeStage() : target.mme;
+      for (const { tab, material } of keep) {
+        const old = material === null ? current?.[tab]?.object : current?.[tab]?.materials?.[material];
+        if (old === undefined) continue;
+        const slots = (effects[tab] ??= {});
+        if (material === null) slots.object ??= old;
+        else (slots.materials ??= {})[material] ??= old;
+      }
       if (target === STAGE) { this.replaceStageEffects(effects); continue; }
       const v = normalizeObjectEffects(effects);
       if (same(target.mme ?? null, v)) continue;

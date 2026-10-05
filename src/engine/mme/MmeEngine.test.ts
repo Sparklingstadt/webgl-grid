@@ -1694,6 +1694,44 @@ describe('MmeEngine の .emm', () => {
     expect(e.mme.saveScene().stage).toEqual(expected);
   });
 
+  it('importEmm: 見つからない .fx の行はステージのその割り当てを変えない (全部の行が見つからなければステージに触らない)。警告に出す', async () => {
+    const e = new Engine();
+    const { at } = await rayFolder(e);
+    const mesh = new THREE.SkinnedMesh(new THREE.BoxGeometry(), [new THREE.MeshBasicMaterial(), new THREE.MeshBasicMaterial(), new THREE.MeshBasicMaterial()]);
+    mesh.userData.sourceFile = new File([], 'Stage.pmx');
+    const stage = new THREE.Group();
+    stage.add(mesh);
+    e.stage.model = stage;
+    e.mme.assignStage('Main', null, at('Main/main.fx'));
+    e.mme.assignStage('Main', 2, 'hide');
+    const before = e.mme.saveScene().stage;
+    const lost = '.emm の .fx Pack\\Sky\\sky.fx は読み込んだフォルダにないので、その割り当てを飛ばしました';
+    expect(e.mme.importEmm(sjis(['[Object]', 'Pmd1 = stage.pmx', '[Effect]', 'Pmd1 = Pack\\Sky\\sky.fx']))).toEqual({ applied: 0, warnings: [lost] });
+    expect(e.mme.saveScene().stage).toEqual(before);
+    // (見つかった行と none の行の割り当ては置き換え、.emm にない割り当ては外し、見つからない行の割り当てはそのまま)
+    const result = e.mme.importEmm(sjis(['[Object]', 'Pmd1 = stage.pmx', '[Effect]', 'Pmd1 = Pack\\Sky\\sky.fx', 'Pmd1[0] = ray-mmd-1.5.2\\Materials\\material_2.0.fx']));
+    expect(result).toEqual({ applied: 1, warnings: [lost] });
+    expect(e.mme.saveScene().stage).toEqual({ name: 'Stage.pmx', effects: { Main: { object: at('Main/main.fx'), materials: { 0: at('Materials/material_2.0.fx') } } } });
+  });
+
+  it('importEmm: 見つからない .fx の行は物のその割り当てを変えない (全部の行が見つからなければ物に触らない)', async () => {
+    const e = new Engine();
+    const { at } = await rayFolder(e);
+    const a = model(e, 'a.pmx'), b = model(e, 'b.pmx');
+    e.mme.assign(a, 'Main', null, at('Main/main.fx'));
+    e.mme.assign(a, 'MaterialMap', 0, at('Materials/Skin/material_skin.fx'));
+    e.mme.assign(b, 'Main', null, at('Main/main.fx'));
+    e.mme.assign(b, 'Main', 2, 'hide');
+    const aBefore = structuredClone(a.mme);
+    const edited = vi.spyOn(e.history, 'soon');
+    const result = e.mme.importEmm(sjis(['[Object]', 'Pmd1 = a.pmx', 'Pmd2 = b.pmx', '[Effect]', 'Pmd1 = Pack\\Main\\sky.fx',
+      'Pmd2 = Pack\\Main\\sky.fx', 'Pmd2[0] = ray-mmd-1.5.2\\Materials\\material_2.0.fx']));
+    expect(result).toEqual({ applied: 1, warnings: ['.emm の .fx Pack\\Main\\sky.fx は読み込んだフォルダにないので、その割り当てを飛ばしました'] });
+    expect(a.mme).toEqual(aBefore);
+    expect(b.mme).toEqual({ Main: { object: at('Main/main.fx'), materials: { 0: at('Materials/material_2.0.fx') } } });
+    expect(edited).toHaveBeenCalledTimes(1);
+  });
+
   it('importEmm: 置ける数を超えるアクセサリは置かずに警告 (同じ名前は 1 つ、多ければ数)。読めないファイルでも例外にならない', async () => {
     const e = new Engine();
     vi.spyOn(e.world, 'full', 'get').mockReturnValue(true);
