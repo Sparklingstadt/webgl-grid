@@ -46,6 +46,10 @@ export async function readBinary(folder: EffectFolder, path: string): Promise<Ui
   return bytes;
 }
 
+function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
+  return a.length === b.length && a.every((x, i) => x === b[i]);
+}
+
 // 文字のファイルだけからコンパイルし、読んだパスを used に足す
 function compile(folder: EffectFolder, entry: string): EffectResult {
   const readFile = (p: string) => {
@@ -80,24 +84,26 @@ export class EffectStore {
   }
 
   // フォルダを読み込む (文字のファイルだけ読む)。同じ名前のフォルダがあれば、それにまとめる: ないパスは足し、
-  // 同じパスで大きさが違えば新しいほうにする。中身が変わったら、そのフォルダのコンパイル結果を捨てる。
+  // 同じパスで変わったもの (大きさ・更新日時。文字のファイルは中身も比べる) は新しいほうにする。
+  // 中身が変わったら、そのフォルダのコンパイル結果を捨てる。共通のフォルダの名前がない (名前が '') ときは、毎回別のフォルダにする。
   // 読めなければ (File.arrayBuffer の失敗など) 何も変えずに例外を投げる
   async addFolder(files: File[]): Promise<EffectFolder> {
     const { paths, folder: name } = relativePaths(files);
-    const named = () => this.list.find(f => f.name === name);
-    const differs = (folder: EffectFolder | undefined, path: string, file: File) => folder?.files.get(path)?.size !== file.size;
-    const before = named();
-    const incoming = files.map((f, i) => [paths[i], f] as const).filter(([path, f]) => differs(before, path, f));
     const text = new Map<string, Uint8Array>();
-    for (const [path, f] of incoming) if (isText(path)) text.set(path, new Uint8Array(await f.arrayBuffer()));
+    for (const [i, f] of files.entries()) if (isText(paths[i])) text.set(paths[i], new Uint8Array(await f.arrayBuffer()));
     // (読んでいるあいだに同じ名前のフォルダができていれば、それにまとめる)
-    let folder = named();
+    let folder = name ? this.list.find(f => f.name === name) : undefined;
     if (!folder) this.list.push((folder = { id: `folder${this.nextFolderId++}`, name, files: new Map(), text: new Map(), used: new Set() }));
     let changed = false;
-    for (const [path, f] of incoming) {
-      if (!differs(folder, path, f)) continue;
-      folder.files.set(path, f);
+    for (const [i, f] of files.entries()) {
+      const path = paths[i];
+      const old = folder.files.get(path);
       const bytes = text.get(path);
+      const oldText = folder.text.get(path);
+      const same = old !== undefined && old.size === f.size && old.lastModified === f.lastModified
+        && (bytes === undefined ? oldText === undefined : oldText !== undefined && sameBytes(oldText, bytes));
+      if (same) continue;
+      folder.files.set(path, f);
       if (bytes) folder.text.set(path, bytes);
       else folder.text.delete(path);
       changed = true;

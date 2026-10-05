@@ -15,9 +15,9 @@ function fakeUi() {
   return { toast: vi.fn() } as unknown as UiChannel & { toast: ReturnType<typeof vi.fn> };
 }
 
-// フォルダから選んだファイル (webkitRelativePath は 'フォルダ/…')
-function fileAt(path: string, text: string): File {
-  const f = new File([text], path.slice(path.lastIndexOf('/') + 1));
+// フォルダから選んだファイル (webkitRelativePath は 'フォルダ/…')。更新日時は決まった値 (同じファイルを読み直したとき)
+function fileAt(path: string, text: string, lastModified = 1000): File {
+  const f = new File([text], path.slice(path.lastIndexOf('/') + 1), { lastModified });
   Object.defineProperty(f, 'webkitRelativePath', { value: path });
   return f;
 }
@@ -147,7 +147,7 @@ describe('EffectStore', () => {
     expect([...folder.used]).toEqual(['Tex/Stone.png']);
   });
 
-  it('同じ名前のフォルダを 2 回読むと 1 つにまとめ、ないファイルだけ足す。大きさが変わったファイルは新しいほうにする。変わったらコンパイルし直す', async () => {
+  it('同じ名前のフォルダを 2 回読むと 1 つにまとめ、ないファイルだけ足す。変わったファイル (大きさ・更新日時・文字のファイルの中身) は新しいほうにしてコンパイルし直す', async () => {
     const store = new EffectStore(fakeUi());
     const first = await store.addFolder([fileAt('Ray/a.fx', 'technique T { }'), fileAt('Ray/tex.png', 'x')]);
     const a = store.effect(first, 'a.fx');
@@ -173,6 +173,21 @@ describe('EffectStore', () => {
     expect(store.effect(first, 'c.fx').result.ok).toBe(false);
     await store.addFolder([fileAt('Ray/inc.fxsub', '')]);
     expect(store.effect(first, 'c.fx').result.ok).toBe(true);
+    // 大きさが同じでも、中身・更新日時が変われば新しいほうにしてコンパイルし直す
+    const red = store.effect(first, 'Lighting/b.fx');
+    await store.addFolder([fileAt('Ray/Lighting/b.fx', 'technique U { }', 2000)]);
+    const blue = store.effect(first, 'Lighting/b.fx');
+    expect(blue).not.toBe(red);
+    expect(new TextDecoder().decode(first.text.get('Lighting/b.fx'))).toBe('technique U { }');
+    expect(blue.result.ok && blue.result.effect.techniques.map(x => x.name)).toEqual(['U']);
+    // 中身は同じでも更新日時が違う画像は新しいほう
+    const png = fileAt('Ray/tex.png', 'y', 3000);
+    await store.addFolder([png]);
+    expect(first.files.get('tex.png')).toBe(png);
+    // 更新日時が同じでも、文字のファイルは中身を比べる
+    await store.addFolder([fileAt('Ray/Lighting/b.fx', 'technique V { }', 2000)]);
+    expect(new TextDecoder().decode(first.text.get('Lighting/b.fx'))).toBe('technique V { }');
+    expect(store.effect(first, 'Lighting/b.fx')).not.toBe(blue);
     // 名前の違うフォルダは別
     const other = await store.addFolder([fileAt('Other/a.fx', 'technique T { }')]);
     expect(other).not.toBe(first);
@@ -182,6 +197,17 @@ describe('EffectStore', () => {
     const [p, q] = await Promise.all([store.addFolder([fileAt('New/a.fx', '')]), store.addFolder([fileAt('New/b.fx', '')])]);
     expect(p).toBe(q);
     expect([...p.files.keys()].sort()).toEqual(['a.fx', 'b.fx']);
+  });
+
+  it('共通のフォルダの名前がないもの (1 つだけ落としたファイルなど) は、読むたびに別のフォルダ', async () => {
+    const store = new EffectStore(fakeUi());
+    const one = await store.addFolder([new File(['technique A { }'], 'a.fx')]);
+    const two = await store.addFolder([new File(['technique B { }'], 'a.fx')]);
+    expect(one).not.toBe(two);
+    expect(store.folders()).toEqual([one, two]);
+    const a = store.effect(one, 'a.fx'), b = store.effect(two, 'a.fx');
+    expect([a.result.ok && a.result.effect.techniques[0].name, b.result.ok && b.result.effect.techniques[0].name]).toEqual(['A', 'B']);
+    expect(a.name).toBe('a.fx');
   });
 
   it('effect に失敗しても LoadedEffect を返し、初めてのときだけお知らせに最初のエラーを出す', async () => {
