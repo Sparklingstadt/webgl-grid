@@ -307,6 +307,10 @@ test('エフェクト割当: タブは tablist / tab / tabpanel で、矢印キ�
   await expect(tabs.nth(0)).toBeFocused();
   await page.keyboard.press('End');
   await expect(tabs.nth(1)).toBeFocused();
+  // (Alt・Ctrl・Meta との矢印キーはタブを動かさず、ブラウザに任せる (Alt+← の「戻る」など))
+  expect(await tabs.nth(1).evaluate(tab => (['altKey', 'ctrlKey', 'metaKey'] as const).map(mod =>
+    tab.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', [mod]: true, bubbles: true, cancelable: true }))))).toEqual([true, true, true]);
+  await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
   // (矢印キーは場面のフレーム送りにしない。Tab で止まるのは選んだタブだけ = tabIndex が 0)
   expect(await page.evaluate(() => (window as Win).engine.clock.frame)).toBe(0);
   expect(await tabs.evaluateAll(list => list.map(tab => tab.tabIndex))).toEqual([-1, 0]);

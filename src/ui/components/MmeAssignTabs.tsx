@@ -84,8 +84,10 @@ export function MmeAssignTabs() {
     const obj = engine.world.find(row.objId);
     if (obj) engine.mme.assign(obj, tab.name, row.material, slotOf(value));
   };
-  // タブの矢印キー (←→ で前後 (端は反対側へ)・Home・End)。移ったタブを選んで、キーの操作もそのタブに移す
+  // タブの矢印キー (←→ で前後 (端は反対側へ)・Home・End)。移ったタブを選んで、キーの操作もそのタブに移す。
+  // Alt・Ctrl・Meta といっしょのものはブラウザに任せる (Alt+← の「戻る」など)
   const onTabKey = (e: React.KeyboardEvent, i: number) => {
+    if (e.altKey || e.ctrlKey || e.metaKey) return;
     const n = mme.tabs.length;
     const to = e.key === 'ArrowRight' ? (i + 1) % n : e.key === 'ArrowLeft' ? (i + n - 1) % n : e.key === 'Home' ? 0 : e.key === 'End' ? n - 1 : -1;
     if (to < 0) return;
