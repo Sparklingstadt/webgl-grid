@@ -668,6 +668,41 @@ technique Post { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = comp
     }
   });
 
+  it('同じページで .wgpj を開き直しても (間にほかのプロジェクトを開いても)、MME のフォルダのファイルを名前と大きさだけで取り違えない', async () => {
+    const e = new Engine();
+    await twinPosts(e);
+    const bytes = await e.project.save('reference');
+    const f = new Engine();
+    await f.project.open(bytes, { pick: async () => twins() });
+    expect(techniques(f)).toEqual(['A', 'B']);
+    // ほかのプロジェクトを開く (MME のフォルダは空になる) → 開き直す。このページで覚えたファイルから、フォルダの中のパスで探す
+    await f.project.open(await new Engine().project.save('reference'));
+    expect(f.mme.store.folders()).toEqual([]);
+    const pick = vi.fn(async () => 'skip' as const);
+    await f.project.open(bytes, { pick });
+    expect(pick).not.toHaveBeenCalled();
+    expect(techniques(f)).toEqual(['A', 'B']);
+  });
+
+  it('.wgpj を開いて相対パスのないファイルを選んだときは、同じ名前・大きさのものが 2 つある MME のファイルを名前で当てない (取り違えるより、見つからないほうにする)', async () => {
+    const e = new Engine();
+    await twinPosts(e);
+    const bytes = await e.project.save('reference');
+    const loose = () => twins().map(f => new File([f], f.name)); // (webkitRelativePath のないファイル)
+    const f = new Engine();
+    const answers: (File[] | 'skip')[] = [loose(), 'skip'];
+    await f.project.open(bytes, { pick: async () => answers.shift() ?? 'cancel' });
+    expect(answers).toEqual([]); // (2 回目も聞かれた = 名前では当てなかった)
+    expect(techniques(f)).toEqual([null, null]);
+    // 1 つしかないものは、相対パスがなくても名前と大きさで当てる
+    const g = new Engine();
+    const id = await buildMmeScene(g);
+    const ref2 = await g.project.save('reference');
+    const h = new Engine();
+    await h.project.open(ref2, { pick: async () => fxFolder().map(x => new File([x], x.name)) });
+    await expectMmeScene(h, id);
+  });
+
   it('.wgpj で見つからないファイルは、そのファイルなしでフォルダを作る (割り当てとポストエフェクトは残し、描かない)', async () => {
     const e = new Engine();
     const id = await buildMmeScene(e);

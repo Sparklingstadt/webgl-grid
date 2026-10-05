@@ -1,6 +1,6 @@
 import { strFromU8 } from 'fflate';
 import { animationFromJson, animationFromPoseKeys, animationToJson, isEmpty } from '../../core/animation';
-import { matchAssetPaths, matchAssets } from '../../core/assetMatch';
+import { matchAssetPaths, matchAssets, nameKey } from '../../core/assetMatch';
 import { FPS } from '../../core/constants';
 import { errorText } from '../../core/errors';
 import { t } from '../../core/i18n';
@@ -24,10 +24,15 @@ function mmeAssetPaths(data: ProjectData): Map<string, { folder: string; path: s
   return new Map(savedMmeFiles(data).map(m => [m.asset, { folder: names.get(m.folder) ?? '', path: m.path }]));
 }
 
+const mmeKey = (folder: string, path: string, size: number | undefined) => `${folder.normalize('NFC')}\0${path.normalize('NFC')}\0${size}`;
+
 // --- プロジェクト: 場面とプロジェクトのデータ (format.ts) の行き来と、保存・開く画面の操作 ---
 export class ProjectIO {
   // このページで読み込んだファイル (名前と大きさ → File)。参照だけのプロジェクトを開くとき、まずここから探す
   private known = new Map<string, File>();
+  // このページで開いたプロジェクトの MME のフォルダのファイル (フォルダの名前・パス・大きさ → File)。
+  // Ray-MMD には名前も大きさも同じで中身の違うファイルがあるので、MME のファイルは known (名前と大きさ) では探さない
+  private knownMme = new Map<string, File>();
 
   constructor(private engine: Engine) {}
 
@@ -91,6 +96,14 @@ export class ProjectIO {
   // --- データ ---
   remember(files: File[]) {
     for (const f of files) this.known.set(`${f.name.normalize('NFC')}\0${f.size}`, f);
+  }
+  // 開いたプロジェクトの MME のフォルダのファイルを、フォルダの名前とパスで覚える (名前のないフォルダのものは、どれのものか分からないので覚えない)
+  private rememberMme(data: ProjectData, files: Map<string, File>) {
+    const sizes = new Map(data.assets.map(a => [a.id, a.size]));
+    for (const [id, m] of mmeAssetPaths(data)) {
+      const f = files.get(id);
+      if (f && m.folder) this.knownMme.set(mmeKey(m.folder, m.path, sizes.get(id)), f);
+    }
   }
 
   // いまの場面を .wgp (ZIP) か .wgpj (JSON) のバイト列にする。
@@ -183,6 +196,7 @@ export class ProjectIO {
   }
 
   // .wgpj: 参照しているファイルを、渡されたもの → このページで読んだもの → 選んでもらったもの、の順に探す。
+  // MME のフォルダのファイルは、このページで読んだものもフォルダの名前とパスで探し、名前と大きさ (known) では探さない。
   // 選んでもらったものは、MME のフォルダのファイルなら先に相対パス ('フォルダの名前/パス'、'パス') で探す (Ray-MMD のように、
   // 別のフォルダに名前も大きさも同じファイルがあっても取り違えない)。ほかは名前と大きさで
   private async readReference(bytes: Uint8Array, opts: { provided?: Map<string, File>; pick?: PickMissing }) {
@@ -191,7 +205,9 @@ export class ProjectIO {
     const effects = this.effectFilesInPage(data);
     const mme = mmeAssetPaths(data);
     for (const a of data.assets) {
-      const f = opts.provided?.get(a.id) ?? effects.get(a.id) ?? this.known.get(`${a.name.normalize('NFC')}\0${a.size}`);
+      const m = mme.get(a.id);
+      const inPage = m ? (m.folder ? this.knownMme.get(mmeKey(m.folder, m.path, a.size)) : undefined) : this.known.get(`${a.name.normalize('NFC')}\0${a.size}`);
+      const f = opts.provided?.get(a.id) ?? effects.get(a.id) ?? inPage;
       if (f) files.set(a.id, f);
     }
     for (;;) {
@@ -205,7 +221,17 @@ export class ProjectIO {
         return m ? [{ id: a.id, size: a.size, paths: m.folder ? [`${m.folder}/${m.path}`, m.path] : [m.path] }] : [];
       }), picked);
       for (const [id, f] of byPath) files.set(id, f);
-      for (const [id, f] of matchAssets(missing.filter(a => !byPath.has(a.id)), picked)) files.set(id, f);
+      // 相対パスで見つからなかったものは名前と大きさで探す。ただし MME のフォルダのファイルは、プロジェクトの中にも選んだファイルの中にも
+      // 同じ名前・大きさのものが 1 つしかないときだけ (Ray-MMD の同じ名前のファイルを取り違えるくらいなら、見つからないほうにする)
+      const count = (list: { name: string; size?: number }[]) => {
+        const n = new Map<string, number>();
+        for (const x of list) n.set(`${nameKey(x.name)}\0${x.size}`, (n.get(`${nameKey(x.name)}\0${x.size}`) ?? 0) + 1);
+        return (x: { name: string; size?: number }) => n.get(`${nameKey(x.name)}\0${x.size}`) ?? 0;
+      };
+      const inProject = count(data.assets.filter(a => mme.has(a.id)));
+      const inPicked = count(picked);
+      const rest = missing.filter(a => !byPath.has(a.id) && (!mme.has(a.id) || (inProject(a) === 1 && inPicked(a) <= 1)));
+      for (const [id, f] of matchAssets(rest, picked)) files.set(id, f);
     }
     return { data, files };
   }
@@ -233,6 +259,7 @@ export class ProjectIO {
     const e = this.engine, lib = e.library;
     const { data, files } = bytes[0] === 0x7b /* { */ ? await this.readReference(bytes, opts) : await readEmbedded(bytes);
     this.remember([...files.values()]);
+    this.rememberMme(data, files);
     const fileOf = (id: string | null | undefined) => (id ? files.get(id) ?? null : null);
     const filesOf = (ids: string[] | undefined) => (ids ?? []).map(fileOf).filter((f): f is File => !!f);
 
