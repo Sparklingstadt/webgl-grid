@@ -303,6 +303,22 @@ describe('MmeEngine', () => {
     expect(e.mme.renderer.drawnEffects()).toContain(a);
   });
 
+  it('書き出しの前の whenReady は、書き出しで隠していないポストエフェクトを待つ (書き出しの前で outputting でなくても、ビューポートだけで隠したものは待ち、書き出しで隠したものは待たない)', async () => {
+    const e = new Engine();
+    const fx = await e.mme.loadEffect([fileAt('P/a.fx', 'technique A { }'), fileAt('P/b.fx', 'technique B { }')], 'a.fx');
+    const viewOnly = e.mme.addPost(fx)!, renderOff = e.mme.addPost(e.mme.store.effect(fx.folder, 'b.fx'))!;
+    e.setVisibility(viewOnly, { hidden: true });
+    e.setVisibility(renderOff, { hideRender: true });
+    const [a, b] = e.mme.posts(true).map(p => p.effect);
+    expect(e.viewport.outputting).toBe(false);
+    const ready = vi.spyOn(EffectInstance.prototype, 'ready');
+    await e.mme.whenReady();
+    const r = e.mme.renderer as unknown as Internals;
+    const waited = [...r.instances].filter(([, inst]) => ready.mock.contexts.includes(inst as unknown as EffectInstance)).map(([x]) => x);
+    expect(waited).toContain(a);
+    expect(waited).not.toContain(b);
+  });
+
   it('addPostEffect は .fx を読んで、アクセサリの物 (名前は .fx のファイル名の拡張子を .x にしたもの) を場面の最後に置いて Main に当てる。選んでいる物は変えない。1 回の取り消しで消え、置けなければ知らせる', async () => {
     const e = new Engine();
     const box = e.world.addShape(0, 0, 0, 0);

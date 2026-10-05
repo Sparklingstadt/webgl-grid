@@ -35,6 +35,9 @@ export interface MmeRendererDeps {
 }
 
 export type { DrawTarget, FrameState, PostEffect };
+// どのポストエフェクトか: drawn はいま描くもの (書き出し中は書き出しで隠していないもの、ほかはビューポートで隠していないもの)、
+// output は書き出しで隠していないもの (書き出しの前の用意。書き出しを始める前でも)、all は隠したものも
+export type PostFilter = 'drawn' | 'output' | 'all';
 
 // セルフシャドウの深度マップの大きさと、影の範囲の既定 (標準のエンジンの太陽の影と同じ範囲になる値)
 const SHADOW_SIZE = 2048;
@@ -181,12 +184,11 @@ export class MmeRenderer {
 
   // ポストエフェクト (設計書「仮のアクセサリ」): 場面の並びのアクセサリの物のうち、Main の物の割り当てが .fx のもの (最後がいちばん外側)。
   // 割り当ては呼ぶたびに引き直す (フォルダを読み直すと、新しい中身でコンパイルしたものになる)。フォルダがなければ飛ばし、ファイルが
-  // なければコンパイルできないものとして入れる (画面にエラーを出す。描かない)。all でなければ、隠している物 (書き出し中は、書き出しで
-  // 隠す物) を飛ばす (オン・オフ = 隠す)
-  posts(all = false): PostEffect[] {
+  // なければコンパイルできないものとして入れる (画面にエラーを出す。描かない)。隠している物は filter (PostFilter) で飛ばす (オン・オフ = 隠す)
+  posts(filter: PostFilter = 'drawn'): PostEffect[] {
     const out: PostEffect[] = [];
     for (const obj of this.d.world.objects) {
-      if (obj.mmeObj?.kind !== 'accessory' || (!all && this.hiddenNow(obj))) continue;
+      if (obj.mmeObj?.kind !== 'accessory' || this.hidden(obj, filter)) continue;
       const saved = obj.mme?.Main?.object;
       if (!saved || saved === 'hide') continue;
       const folder = this.d.store.folder(saved.folder);
@@ -195,9 +197,10 @@ export class MmeRenderer {
     return out;
   }
 
-  // いま描くときに隠している物 (書き出し中は書き出しで隠す物)
-  private hiddenNow(obj: Obj): boolean {
-    return this.d.viewport.outputting ? !!obj.hideRender : !!(obj.hidden || obj.colHidden);
+  // filter で飛ばす (隠している) 物
+  private hidden(obj: Obj, filter: PostFilter): boolean {
+    if (filter === 'all') return false;
+    return filter === 'output' || this.d.viewport.outputting ? !!obj.hideRender : !!(obj.hidden || obj.colHidden);
   }
 
   // 描く (隠していない・コンパイルできて・止めていない) ポストエフェクト。レンダーターゲットも用意する。
@@ -220,10 +223,11 @@ export class MmeRenderer {
     for (const w of fb.prepare(e, screen)) if (!inst.warnings.includes(w)) inst.warnings.push(w);
   }
 
-  // 使う .fx のテクスチャと、MMD モデルの .pmx の読み込みが終わる (失敗しても) まで待つ。
-  // (オフスクリーンの DefaultEffect で描く .fx も、まだ描いていなくても待つ。開いてすぐ書き出しても画像が入るように)
+  // 書き出しの前に: 使う .fx のテクスチャと、MMD モデルの .pmx の読み込みが終わる (失敗しても) まで待つ。
+  // (オフスクリーンの DefaultEffect で描く .fx も、まだ描いていなくても待つ。開いてすぐ書き出しても画像が入るように。
+  // ポストエフェクトは書き出しで隠していないもの: PNG の書き出しは書き出しを始める前に呼ぶので、outputting によらない)
   async whenReady(): Promise<void> {
-    const effects = [this.d.store.defaultEffect, ...this.reachable(false)].filter(e => e.result.ok && !this.stopped(e));
+    const effects = [this.d.store.defaultEffect, ...this.reachable('output')].filter(e => e.result.ok && !this.stopped(e));
     await Promise.all([this.scenePass.whenReady(), ...effects.map(e => this.instance(e).ready())]);
   }
 
@@ -231,15 +235,15 @@ export class MmeRenderer {
   // used に入れる (コンパイルで読む文字のファイルは、reachable を集めるときにコンパイルして入る)。画像は読まない
   // (保存するときにファイルから読む。標準のエンジンのときに資源を作らず、自動保存のたびに画像を開かない)
   async whenFilesRead(): Promise<void> {
-    for (const e of this.reachable(true)) for (const path of resourcePaths(e)) markUsed(e.folder, path);
+    for (const e of this.reachable('all')) for (const path of resourcePaths(e)) markUsed(e.folder, path);
   }
 
-  // 割り当てた (全部のタブ)・ポストエフェクト (offPosts なら隠したアクセサリのものも)・前のフレームにオフスクリーンで使った .fx と、
+  // 割り当てた (全部のタブ)・ポストエフェクト (posts の filter のもの)・前のフレームにオフスクリーンで使った .fx と、
   // それらが宣言するオフスクリーンの DefaultEffect が、場面の物かステージを描く .fx (その宣言も、たどる)。見つからない .fx は入れない
-  private reachable(offPosts: boolean): Set<LoadedEffect> {
+  private reachable(posts: PostFilter): Set<LoadedEffect> {
     const found = new Set<LoadedEffect>(this.offscreen.effects());
     for (const e of this.referenced()) found.add(e);
-    for (const p of this.posts(offPosts)) found.add(p.effect);
+    for (const p of this.posts(posts)) found.add(p.effect);
     const names = this.sceneNames();
     const queue = [...found];
     for (let e = queue.pop(); e; e = queue.pop()) {
@@ -268,7 +272,7 @@ export class MmeRenderer {
   prune(): void {
     this.scenePass.prune();
     const used = new Set<LoadedEffect>([
-      this.d.store.defaultEffect, ...this.referenced(), ...this.posts(true).map(p => p.effect),
+      this.d.store.defaultEffect, ...this.referenced(), ...this.posts('all').map(p => p.effect),
       ...this.offscreen.effects(),
     ]);
     for (const [e, inst] of this.instances) {

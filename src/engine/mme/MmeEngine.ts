@@ -157,7 +157,7 @@ export class MmeEngine {
     const rest: Omit<MmeUiState, keyof AssignUi | 'controllers'> = {
       settings: { ...this.settings },
       object: fx ? this.effectUi(fx) : null,
-      posts: this.renderer.posts(true).map(({ obj, effect }) => ({
+      posts: this.renderer.posts('all').map(({ obj, effect }) => ({
         ...this.effectUi(effect), enabled: !obj.hidden && !obj.colHidden && !obj.hideRender, objId: obj.id, accessory: objectName(obj),
       })),
       warnings: [...this.renderer.warnings],
@@ -362,9 +362,10 @@ export class MmeEngine {
     return obj;
   }
 
-  // ポストエフェクト (場面の並びのアクセサリの物と、それに当てた .fx。最後がいちばん外側)。all でなければ隠しているものを飛ばす
+  // ポストエフェクト (場面の並びのアクセサリの物と、それに当てた .fx。最後がいちばん外側)。all でなければ、いま描くときに隠しているもの
+  // (書き出し中は書き出しで隠すもの) を飛ばす
   posts(all = false): PostEffect[] {
-    return this.renderer.posts(all);
+    return this.renderer.posts(all ? 'all' : 'drawn');
   }
 
   // エフェクトの割り当て (場面にある物 (アクセサリのポストエフェクトも) とステージの割り当て) を全部外す (最初の状態に戻すとき・プロジェクトを開くとき)
