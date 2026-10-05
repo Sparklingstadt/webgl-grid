@@ -1273,5 +1273,6 @@ const dict: Dictionary = {
   "選んだフォルダに .fx がありません": "所选文件夹中没有 .fx",
   "選んでいる物の .fx": "所选物体的 .fx",
   "GPU で使えないので止めました": "无法在 GPU 上使用，已停用",
+  ".fx を読めませんでした: {error}": "无法读取 .fx：{error}",
 };
 export default dict;

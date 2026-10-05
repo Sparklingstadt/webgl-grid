@@ -80,6 +80,8 @@ describe('MmeEngine', () => {
     effectOf(obj: unknown): unknown;
     instance(e: unknown): { stopped: boolean };
     light(): { shadowProjection: THREE.Matrix4 };
+    warnFor(e: unknown, message: string): void;
+    instances: Map<unknown, unknown>;
   };
 
   it('ステージを先に (背景として) 描き、それから置いた物を置いた順に描く', () => {
@@ -214,7 +216,7 @@ describe('MmeEngine', () => {
 
     e.mme.store.addPost(good);
     e.mme.store.setPostEnabled(0, false);
-    expect(e.ui.state.mme.posts).toEqual([{ name: 'Fx/good.fx', ok: true, errors: [], warnings: [], enabled: false }]);
+    expect(e.ui.state.mme.posts).toEqual([{ id: good.id, name: 'Fx/good.fx', ok: true, errors: [], errorCount: 0, warnings: [], enabled: false }]);
     // 描いたときの警告: エフェクトの警告はその行に、ほかは全体の警告に
     const r = e.mme.renderer as unknown as Internals;
     vi.spyOn(e.mme.renderer, 'render').mockImplementation(() => {
@@ -244,6 +246,9 @@ describe('MmeEngine', () => {
     e.mme.store.addPost(fx);
     expect(e.ui.state.mme.posts[0].ok).toBe(false);
     expect(e.ui.state.mme.posts[0].errors).toHaveLength(20);
+    // 数はコンパイラの誤りの全部 (20 個のあとに「多いので止めました」)
+    expect(fx.result.ok ? 0 : fx.result.errors.length).toBe(21);
+    expect(e.ui.state.mme.posts[0].errorCount).toBe(21);
   });
 
   it('画面の操作: 選んでいる物に .fx を読む・外す、ポストエフェクトを足す、フォルダの .fx の一覧', async () => {
@@ -265,5 +270,50 @@ describe('MmeEngine', () => {
     expect(e.ui.state.mme.object).toBeNull();
     await e.mme.addPostEffect([fileAt('P/post.fx', 'technique T { }')], 'post.fx');
     expect(e.ui.state.mme.posts.map(p => [p.name, p.enabled])).toEqual([['P/post.fx', true]]);
+  });
+
+  it('読めないファイルはお知らせを出す (例外を外に出さない)', async () => {
+    const e = new Engine();
+    const obj = e.world.addShape(0, 0, 0, 0);
+    e.selection.select(obj);
+    const broken = fileAt('Fx/a.fx', '');
+    broken.arrayBuffer = () => Promise.reject(new Error('読めない'));
+    await expect(e.mme.loadObjectEffect([broken], 'a.fx')).resolves.toBeUndefined();
+    expect(e.ui.state.toast?.text).toContain('読めない');
+    expect(e.mme.store.objectEffect(obj.id)).toBeNull();
+    e.ui.hideToast();
+    await expect(e.mme.addPostEffect([broken], 'a.fx')).resolves.toBeUndefined();
+    expect(e.ui.state.toast?.text).toContain('読めない');
+    expect(e.mme.store.posts).toEqual([]);
+  });
+
+  it('まだ資源のないエフェクトの警告は、資源を作らずに全体の警告にする', async () => {
+    const e = new Engine();
+    const fx = await e.mme.loadEffect([fileAt('Fx/a.fx', 'technique T { }')], 'a.fx');
+    const r = e.mme.renderer as unknown as Internals;
+    r.warnFor(fx, 'まだ描いていない');
+    expect(r.instances.has(fx)).toBe(false);
+    expect(e.mme.renderer.warnings).toEqual(['Fx/a.fx: まだ描いていない']);
+    r.instance(fx);
+    r.warnFor(fx, '描いている');
+    expect(e.mme.renderer.warningsOf(fx)).toEqual(['描いている']);
+  });
+
+  it('最初の状態に戻す (新しいプロジェクト・プロジェクトを開く) と、エフェクトの割り当ても消える', async () => {
+    const e = new Engine();
+    const obj = e.world.addShape(0, 0, 0, 0);
+    const fx = await e.mme.loadEffect([fileAt('Fx/a.fx', 'technique T { }')], 'a.fx');
+    const assign = () => { e.mme.store.setObjectEffect(obj.id, fx); e.mme.store.addPost(fx); };
+    assign();
+    e.resetAll();
+    expect(e.mme.store.objectEffect(obj.id)).toBeNull();
+    expect(e.mme.store.posts).toEqual([]);
+    expect(e.ui.state.mme.posts).toEqual([]);
+    // プロジェクトを開いても (開く前に最初の状態に戻す)
+    const bytes = await e.project.save('reference');
+    assign();
+    await e.project.open(bytes);
+    expect(e.mme.store.posts).toEqual([]);
+    expect(e.mme.store.objectEffect(obj.id)).toBeNull();
   });
 });

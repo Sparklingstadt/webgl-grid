@@ -38,8 +38,11 @@ export function registerBuiltins(e: Engine) {
     save: () => e.markers.list.map(m => ({ ...m })), load: raw => e.markers.replace(normalizeMarkers(raw)), reset: () => e.markers.replace([]),
   });
   sceneData.add({ key: 'output', label: msg('出力'), save: () => ({ ...e.output.settings }), load: raw => e.output.set(normalizeOutput(raw)) });
-  // レンダーエンジン (標準 / MME 互換) とセルフシャドウ・地面の影。エフェクトの割り当ては保存しない
-  sceneData.add({ key: 'mme', label: msg('MME 互換'), save: () => ({ ...e.mme.settings }), load: raw => e.mme.set(normalizeMme(raw)), reset: () => e.mme.set({ ...MME_DEFAULTS }) });
+  // レンダーエンジン (標準 / MME 互換) とセルフシャドウ・地面の影。エフェクトの割り当ては保存せず、最初の状態に戻す (プロジェクトを開く) と外す
+  sceneData.add({
+    key: 'mme', label: msg('MME 互換'), save: () => ({ ...e.mme.settings }), load: raw => e.mme.set(normalizeMme(raw)),
+    reset: () => { e.mme.clearEffects(); e.mme.set({ ...MME_DEFAULTS }); },
+  });
   // 外 (MCP) から使える操作
   for (const [key, run] of Object.entries(COMMANDS)) commands.add({ key, run });
 }

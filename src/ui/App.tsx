@@ -72,9 +72,10 @@ export default function App() {
     const over = (e: DragEvent) => { if (e.dataTransfer?.types.includes('Files')) { e.preventDefault(); setDropping(true); } };
     const leave = (e: DragEvent) => { if (!e.relatedTarget) setDropping(false); };
     const drop = (e: DragEvent) => {
-      if (!e.dataTransfer?.types.includes('Files') || (e.target as HTMLElement).closest?.('.modal, .mme-drop')) return; // (MME 互換の .fx は、その欄に落とす)
+      if (!e.dataTransfer?.types.includes('Files')) return;
+      setDropping(false); // (落としたあとは dragleave が来ないので、どこに落としても消す)
+      if ((e.target as HTMLElement).closest?.('.modal, .mme-drop')) return; // (窓の中と、MME 互換の .fx の欄は、その場所で受け取る)
       e.preventDefault();
-      setDropping(false);
       void filesFromDrop(e.dataTransfer).then(files => {
         const project = files.find(f => /\.wgpj?$/i.test(f.name));
         if (project) engine.project.openFile(project);

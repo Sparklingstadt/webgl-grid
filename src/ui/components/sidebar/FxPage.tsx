@@ -23,7 +23,7 @@ const FX_ROWS: { key: FxKey; title: string; sliders: { k: keyof FxLevel; label: 
 function FxResult({ fx }: { fx: MmeEffectUi }) {
   const status = fx.ok ? t('コンパイルできました') : t('コンパイルできませんでした');
   if (!fx.errors.length && !fx.warnings.length) return <div className="note">{status}</div>;
-  const counts = fx.errors.length ? t('エラー {errors}・警告 {warnings}', { errors: fx.errors.length, warnings: fx.warnings.length }) : t('警告 {warnings}', { warnings: fx.warnings.length });
+  const counts = fx.errorCount ? t('エラー {errors}・警告 {warnings}', { errors: fx.errorCount, warnings: fx.warnings.length }) : t('警告 {warnings}', { warnings: fx.warnings.length });
   return (
     <details className="mme-diag">
       <summary className={fx.ok ? 'note' : 'note mme-error'}>{status} ({counts})</summary>
@@ -38,13 +38,13 @@ function FxResult({ fx }: { fx: MmeEffectUi }) {
 // MME 互換 (レンダーエンジンが MME 互換のときだけ): 選んでいる物の .fx とポストエフェクトの一覧
 function MmePanel() {
   const engine = useEngine();
-  const sel = useUi(s => s.sel);
+  const selected = useUi(s => s.sel !== null); // (動かしているあいだの位置の変化では描き直さない)
   const mme = useUi(s => s.mme);
   const { store } = engine.mme;
   return (
     <Panel title={t('MME 互換')}>
       <div className="mme-head">{t('選んでいる物の .fx')}</div>
-      {sel ? (
+      {selected ? (
         <MmeEffectPicker label={t('読み込む…')} inputLabel={t('物の .fx のフォルダを選ぶ')} onPick={(files, entry) => void engine.mme.loadObjectEffect(files, entry)}
                          buttons={<button type="button" className="bbtn" disabled={!mme.object} onClick={() => engine.mme.removeObjectEffect()}>{t('外す')}</button>}>
           <div className="mme-name" title={mme.object?.name}>{mme.object ? mme.object.name : t('なし (default.fx で描きます)')}</div>
@@ -56,7 +56,7 @@ function MmePanel() {
         {mme.posts.length ? (
           <ul className="mme-posts" aria-label={t('ポストエフェクトの一覧')}>
             {mme.posts.map((p, i) => (
-              <li key={`${i}:${p.name}`}>
+              <li key={p.id}>
                 <div className="mme-post-row">
                   <BCheck checked={p.enabled} label={t('{name} を使う', { name: p.name })} onChange={on => store.setPostEnabled(i, on)} />
                   <span className="mme-name" title={p.name}>{p.name}</span>

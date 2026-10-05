@@ -18,8 +18,9 @@ export interface SelInfo {
   camera: CameraSettings | null; // カメラの設定 (カメラだけ)
   x: number; y: number; z: number; r: number; scale: number; animated: boolean;
 }
-// MME 互換のエフェクト 1 つのコンパイルの結果 (errors は最大 20)。warnings はコンパイラの警告と、描いたときのそのエフェクトの警告
-export interface MmeEffectUi { name: string; ok: boolean; errors: { code: string; where: string; message: string }[]; warnings: string[] }
+// MME 互換のエフェクト 1 つのコンパイルの結果 (errors は最大 20。errorCount は全部の数)。warnings はコンパイラの警告と、描いたときのそのエフェクトの警告。
+// id は読んだエフェクトごとに違う (一覧の行の key)
+export interface MmeEffectUi { id: string; name: string; ok: boolean; errors: { code: string; where: string; message: string }[]; errorCount: number; warnings: string[] }
 // warnings: どのエフェクトのものでもない、描くときの警告 (セルフシャドウを切った・モデルを描けないなど)
 export interface MmeUiState { settings: MmeSettings; object: MmeEffectUi | null /* 選んでいる物の .fx */; posts: (MmeEffectUi & { enabled: boolean })[]; warnings: string[] }
 export interface UiState {

@@ -151,13 +151,20 @@ test('ポストエフェクトを足し、上下に並べ替え、オフにし�
   await expect.poll(() => rgb(page)).toEqual([51, 102, 153]);
   await panel(page).getByRole('button', { name: 'Invert/invert.fx を外す' }).click();
   await expect(panel(page)).toContainText('ポストエフェクトはありません');
-  // ポストエフェクトの欄にファイルを落としても足せる (モデルとしては読まない)
+  // ポストエフェクトの欄にファイルを落としても足せる (モデルとしては読まない)。落としたら「落とすと読み込みます」は消える
   await page.evaluate(source => {
-    const dt = new DataTransfer();
-    dt.items.add(new File([source], 'dropped.fx'));
-    const target = [...document.querySelectorAll('.mme-drop')].find(el => el.textContent?.includes('ポストエフェクトはありません'))!;
-    target.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+    const w = window as Win;
+    w.__dt = new DataTransfer();
+    w.__dt.items.add(new File([source], 'dropped.fx'));
+    w.__target = [...document.querySelectorAll('.mme-drop')].find(el => el.textContent?.includes('ポストエフェクトはありません'))!;
+    w.__target.dispatchEvent(new DragEvent('dragover', { dataTransfer: w.__dt, bubbles: true, cancelable: true }));
   }, filterFx('return float4(1.0 - c.rgb, 1.0);'));
+  await expect(page.locator('.drop-hint')).toHaveCount(1);
+  await page.evaluate(() => {
+    const w = window as Win;
+    w.__target.dispatchEvent(new DragEvent('drop', { dataTransfer: w.__dt, bubbles: true, cancelable: true }));
+  });
+  await expect(page.locator('.drop-hint')).toHaveCount(0);
   await expect(rows).toHaveCount(1);
   await expect(rows.nth(0)).toContainText('dropped.fx');
   await expect.poll(async () => near(await rgb(page), [204, 153, 102])).toBe(true);

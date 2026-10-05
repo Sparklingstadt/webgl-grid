@@ -285,7 +285,7 @@ export class MmeRenderer {
   private framebuffers(renderer: THREE.WebGLRenderer): Framebuffers {
     if (this.fb) return this.fb;
     const fb = new Framebuffers(renderer, {
-      warn: (m, e) => (e ? this.instance(e).warn(m) : this.warn(m)),
+      warn: (m, e) => (e ? this.warnFor(e, m) : this.warn(m)),
       broken: effects => {
         for (const e of effects) {
           const inst = this.instances.get(e);
@@ -677,5 +677,12 @@ export class MmeRenderer {
 
   private warn(message: string): void {
     if (!this.warnings.includes(message)) this.warnings.push(message);
+  }
+
+  // エフェクトの警告。まだ資源 (EffectInstance) がなければ作らずに、名前を付けて全体の警告にする
+  private warnFor(e: LoadedEffect, message: string): void {
+    const inst = this.instances.get(e);
+    if (inst) inst.warn(message);
+    else this.warn(`${e.name}: ${message}`);
   }
 }

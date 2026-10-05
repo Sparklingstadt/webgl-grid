@@ -1247,7 +1247,7 @@ const dict: Dictionary = {
   "{name} を外す": "Remove {name}",
   "どの .fx を読みますか": "Which .fx file do you want to load?",
   "なし (default.fx で描きます)": "None (drawn with default.fx)",
-  "エラー {errors}・警告 {warnings}": "{errors} errors, {warnings} warnings",
+  "エラー {errors}・警告 {warnings}": "errors: {errors}, warnings: {warnings}",
   "エンジン": "Engine",
   "コンパイルできました": "Compiled",
   "コンパイルできませんでした": "Couldn't compile",
@@ -1268,10 +1268,11 @@ const dict: Dictionary = {
   "物の .fx のフォルダを選ぶ": "Choose the folder of the object's .fx",
   "物を選ぶと、その物に .fx を読み込めます": "Select an object to load an .fx file for it",
   "見つかった .fx": "Found .fx files",
-  "警告 {warnings}": "{warnings} warnings",
+  "警告 {warnings}": "warnings: {warnings}",
   "足す…": "Add…",
   "選んだフォルダに .fx がありません": "The chosen folder has no .fx files",
   "選んでいる物の .fx": "Selected object's .fx",
   "GPU で使えないので止めました": "Stopped because it can't be used on the GPU",
+  ".fx を読めませんでした: {error}": "Couldn't read the .fx file: {error}",
 };
 export default dict;

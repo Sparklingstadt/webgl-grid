@@ -72,6 +72,14 @@ export class EffectStore {
     this.events.emit('changed');
   }
 
+  // 割り当てを全部外す
+  clear(): void {
+    if (this.objects.size === 0 && this.posts.length === 0) return;
+    this.objects.clear();
+    this.posts.length = 0;
+    this.events.emit('changed');
+  }
+
   // 物を消したとき
   forgetObject(objId: number): void {
     if (this.objects.delete(objId)) this.events.emit('changed');
