@@ -20,7 +20,7 @@ import { EffectInstance, type BaseState, type TextureSource } from './EffectInst
 import type { EffectStore, LoadedEffect } from './EffectStore';
 import { CANVAS, Framebuffers, type DrawTarget } from './Framebuffers';
 import { mmdSourceOf, type MmdData } from './mmdData';
-import type { MmeSettings } from './MmeEngine';
+import type { MmeSettings } from '../../core/mme/settings.ts';
 import { builtins, PostChain, ScriptTargets, type FrameState } from './PostChain';
 import { Skinner, type MmeGeometry } from './Skinner';
 
@@ -387,6 +387,11 @@ export class MmeRenderer {
   private effectOf(obj: Obj): LoadedEffect {
     const e = this.d.store.objectEffect(obj.id);
     return e?.result.ok && !this.stopped(e) ? e : this.d.store.defaultEffect;
+  }
+
+  // そのエフェクトの描いたときの警告 (まだ描いていなければ空)
+  warningsOf(e: LoadedEffect): string[] {
+    return [...(this.instances.get(e)?.warnings ?? [])];
   }
 
   // そのエフェクトを GPU で使えないので止めたか (ポストエフェクトは飛ばす)

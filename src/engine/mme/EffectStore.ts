@@ -13,18 +13,14 @@ export interface LoadedEffect {
   bytes: Map<string, Uint8Array>; // 読んだファイルの中身 (テクスチャもここから)
 }
 
-// フォルダからの相対パス。webkitRelativePath の先頭のフォルダ名を取る (フォルダでなく 1 つだけ選んだファイルは名前のまま)
-function relativePath(f: File): string {
-  const p = normalizePath(f.webkitRelativePath || f.name);
-  const i = p.indexOf('/');
-  return i < 0 ? p : p.slice(i + 1);
-}
-
-// 選んだフォルダの名前 (なければ '')
-function folderOf(files: File[]): string {
-  const p = files.length > 0 ? normalizePath(files[0].webkitRelativePath || '') : '';
-  const i = p.indexOf('/');
-  return i < 0 ? '' : p.slice(0, i);
+// フォルダからの相対パス (files と同じ順) と、選んだフォルダの名前 (なければ '')。
+// 先頭のフォルダが全部のファイルで同じときだけ取る (いくつかのフォルダ・ファイルをまとめて落としたときは、そのままのパス)
+function relativePaths(files: File[]): { paths: string[]; folder: string } {
+  const full = files.map(f => normalizePath(f.webkitRelativePath || f.name));
+  const first = full.map(p => (p.includes('/') ? p.slice(0, p.indexOf('/')) : null));
+  const folder = first[0] ?? '';
+  if (!folder || first.some(f => f !== folder)) return { paths: full, folder: '' };
+  return { paths: full.map(p => p.slice(folder.length + 1)), folder };
 }
 
 function compile(entry: string, bytes: Map<string, Uint8Array>): EffectResult {
@@ -47,15 +43,15 @@ export class EffectStore {
 
   // フォルダの中の .fx の相対パス
   static fxFilesIn(files: File[]): string[] {
-    return files.map(relativePath).filter(p => p.toLowerCase().endsWith('.fx')).sort();
+    return relativePaths(files).paths.filter(p => p.toLowerCase().endsWith('.fx')).sort();
   }
 
   // 失敗しても LoadedEffect を返し、最初のエラーをお知らせに出す
   async load(files: File[], entry: string): Promise<LoadedEffect> {
+    const { paths, folder } = relativePaths(files);
     const bytes = new Map<string, Uint8Array>();
-    for (const f of files) bytes.set(relativePath(f), new Uint8Array(await f.arrayBuffer()));
+    for (const [i, f] of files.entries()) bytes.set(paths[i], new Uint8Array(await f.arrayBuffer()));
     const path = normalizePath(entry);
-    const folder = folderOf(files);
     const name = folder ? `${folder}/${path}` : path;
     const result = compile(path, bytes);
     if (!result.ok) {

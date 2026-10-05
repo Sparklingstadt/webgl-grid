@@ -1176,5 +1176,6 @@ const dict: Dictionary = {
   "MME 互換で描けなかったので、標準のエンジンで描きました: {error}": "无法以 MME 兼容方式绘制，已改用标准引擎绘制: {error}",
   "{name} のシェーダーを GPU で使えないので止めました": "{name} 的着色器无法在 GPU 上使用，已停用",
   "{name} のレンダーターゲットを GPU で使えないので止めました": "{name} 的渲染目标无法在 GPU 上使用，已停用",
+  "MME 互換": "MME 兼容",
 };
 export default dict;

@@ -63,7 +63,7 @@ export interface ProjectData {
   music: string | null;
   timeline: { start: number; end: number; frame: number };
   selected: number | null;
-  // ほかに、場面の値 (Addons.sceneData) を、その key で入れる: output (出力)・scene (シーン)。古いプロジェクトにはない。
+  // ほかに、場面の値 (Addons.sceneData) を、その key で入れる: output (出力)・scene (シーン)・mme (レンダーエンジン)。古いプロジェクトにはない。
   // アドオンのものは "アドオンの id.名前"
   [data: string]: unknown;
 }

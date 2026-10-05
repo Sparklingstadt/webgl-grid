@@ -6,16 +6,16 @@ import type { MaterialLibrary } from '../materials/MaterialLibrary';
 import type { RenderOutput } from '../output/RenderOutput';
 import type { SceneGraph } from '../render/SceneGraph';
 import type { Viewport } from '../render/Viewport';
-import type { UiChannel } from '../UiChannel';
+import { MME_DEFAULTS, type MmeSettings } from '../../core/mme/settings.ts';
+import type { MmeEffectUi, MmeUiState, UiChannel } from '../UiChannel';
 import type { Selection } from '../world/Selection';
 import type { World } from '../world/World';
 import { EffectStore, type LoadedEffect } from './EffectStore';
 import { MmeRenderer } from './MmeRenderer';
 
 // --- レンダーエンジン (標準 / MME 互換) の切り替えと設定。MME 互換のあいだは Viewport.drawOverride に描画を差し込む ---
-export interface MmeSettings { engine: 'standard' | 'mme'; selfShadow: boolean; shadowDistance: number; groundShadow: boolean }
-// shadowDistance: セルフシャドウの範囲 (8875 で標準のエンジンの太陽の影と同じ。大きいほど広い)
-export const MME_DEFAULTS: MmeSettings = { engine: 'standard', selfShadow: true, shadowDistance: 8875, groundShadow: true };
+export { MME_DEFAULTS, normalizeMme, type MmeSettings } from '../../core/mme/settings.ts';
+const MAX_ERRORS = 20; // 画面に出すエラーの数
 
 export interface MmeDeps {
   viewport: Viewport; graph: SceneGraph; world: World; selection: Selection; clock: Clock; library: MaterialLibrary; ui: UiChannel;
@@ -28,6 +28,7 @@ export class MmeEngine {
   readonly settings: MmeSettings = { ...MME_DEFAULTS };
   readonly renderer: MmeRenderer;
   private reported = new Set<string>(); // お知らせに出した例外の文
+  private shown = ''; // 画面に出した状態 (JSON。同じなら知らせない)
 
   constructor(private deps: MmeDeps) {
     this.store = new EffectStore(deps.ui);
@@ -38,9 +39,12 @@ export class MmeEngine {
     deps.output.waitReady = () => (this.settings.engine === 'mme' ? this.whenReady() : null);
     this.store.events.on('changed', () => {
       this.renderer.prune();
+      this.publish();
       deps.viewport.requestDraw();
     });
     deps.world.events.on('removed', obj => this.store.forgetObject(obj.id));
+    deps.selection.events.on('changed', () => this.publish());
+    this.publish();
   }
 
   // 変えたら描き直す。標準に戻したら、MME の資源 (GPU のものと変形した形) を片付ける
@@ -48,7 +52,32 @@ export class MmeEngine {
     const was = this.settings.engine;
     Object.assign(this.settings, patch);
     if (was === 'mme' && this.settings.engine !== 'mme') this.renderer.dispose();
+    this.publish();
     this.deps.viewport.requestDraw();
+  }
+
+  // 画面に設定・選んでいる物の .fx・ポストエフェクトの一覧を知らせる (変わったときだけ)
+  publish(): void {
+    const sel = this.deps.selection.current;
+    const fx = sel ? this.store.objectEffect(sel.id) : null;
+    const state: MmeUiState = {
+      settings: { ...this.settings },
+      object: fx ? this.effectUi(fx) : null,
+      posts: this.store.posts.map(p => ({ ...this.effectUi(p.effect), enabled: p.enabled })),
+      warnings: [...this.renderer.warnings],
+    };
+    const json = JSON.stringify(state);
+    if (json === this.shown) return;
+    this.shown = json;
+    this.deps.ui.set({ mme: state });
+  }
+
+  // コンパイルの結果と警告 (コンパイラの警告のあとに、描いたときのそのエフェクトの警告)
+  private effectUi(e: LoadedEffect): MmeEffectUi {
+    const r = e.result;
+    const errors = r.ok ? [] : r.errors.slice(0, MAX_ERRORS).map(d => ({ code: d.code, where: `${d.file}:${d.line}`, message: d.message }));
+    const warnings = [...r.warnings.map(d => `${d.file}:${d.line} ${d.message}`), ...this.renderer.warningsOf(e)];
+    return { name: e.name, ok: r.ok, errors, warnings };
   }
 
   // .fx が入っているフォルダのファイルを読んでコンパイルする (失敗したらお知らせを出す)
@@ -64,12 +93,15 @@ export class MmeEngine {
   // 描画先を作り直すとき (描画先の資源は使えなくなる)
   reset(): void {
     this.renderer.dispose();
+    this.publish();
   }
 
   // MME 互換で描く。例外を出したら false (そのフレームは標準のエンジンと効果で描く。同じ例外のお知らせは 1 回)
   private draw(): boolean {
     try {
-      return this.renderer.render();
+      const drawn = this.renderer.render();
+      this.publish(); // (描いたときの警告)
+      return drawn;
     } catch (err) {
       console.error(err);
       const error = errorText(err);

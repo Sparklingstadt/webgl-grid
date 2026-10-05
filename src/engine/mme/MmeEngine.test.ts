@@ -2,7 +2,14 @@ import * as THREE from 'three';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Engine } from '../Engine';
 import { EffectInstance } from './EffectInstance';
-import { MME_DEFAULTS } from './MmeEngine';
+import { MME_DEFAULTS, normalizeMme } from './MmeEngine';
+
+// フォルダから選んだファイル (webkitRelativePath は 'フォルダ/…')
+function fileAt(path: string, text: string): File {
+  const f = new File([text], path.slice(path.lastIndexOf('/') + 1));
+  Object.defineProperty(f, 'webkitRelativePath', { value: path });
+  return f;
+}
 
 // 描画先なしで、レンダーエンジンの切り替えと Viewport.drawOverride の差し替えを確かめる
 describe('MmeEngine', () => {
@@ -118,5 +125,116 @@ describe('MmeEngine', () => {
     e.mme.set({ shadowDistance: 0 });
     const p = (e.mme.renderer as unknown as Internals).light().shadowProjection;
     expect(p.elements.every(Number.isFinite)).toBe(true);
+  });
+
+  it('レンダーエンジンの設定をプロジェクトの場面の値として保存し、開き直すと戻る', async () => {
+    const e = new Engine();
+    const saved = { engine: 'mme', selfShadow: false, shadowDistance: 1200, groundShadow: false } as const;
+    e.mme.set(saved);
+    const bytes = await e.project.save('reference');
+    const f = new Engine();
+    await f.project.open(bytes);
+    expect(f.mme.settings).toEqual(saved);
+    expect(f.ui.state.mme.settings).toEqual(saved);
+    // 最初の状態に戻すと既定
+    f.resetAll();
+    expect(f.mme.settings).toEqual(MME_DEFAULTS);
+    expect(f.ui.state.mme.settings).toEqual(MME_DEFAULTS);
+    // 前のプロジェクト (mme がない) は既定
+    const g = new Engine();
+    g.mme.set(saved);
+    await g.project.open(await f.project.save('reference').then(b => {
+      const json = JSON.parse(new TextDecoder().decode(b)) as Record<string, unknown>;
+      expect(json.mme).toEqual(MME_DEFAULTS);
+      delete json.mme;
+      return new TextEncoder().encode(JSON.stringify(json));
+    }));
+    expect(g.mme.settings).toEqual(MME_DEFAULTS);
+  });
+
+  it('normalizeMme: 知らない値は既定、影の距離は 0〜9999', () => {
+    for (const raw of [undefined, null, 'mme', 3, []]) expect(normalizeMme(raw)).toEqual(MME_DEFAULTS);
+    expect(normalizeMme({ engine: 'mme', selfShadow: false, shadowDistance: 100, groundShadow: false }))
+      .toEqual({ engine: 'mme', selfShadow: false, shadowDistance: 100, groundShadow: false });
+    expect(normalizeMme({ engine: 'dx11', selfShadow: 'yes', shadowDistance: 'far', groundShadow: 1 })).toEqual(MME_DEFAULTS);
+    expect(normalizeMme({ shadowDistance: -5 }).shadowDistance).toBe(0);
+    expect(normalizeMme({ shadowDistance: 1e6 }).shadowDistance).toBe(9999);
+    expect(normalizeMme({ shadowDistance: Number.NaN }).shadowDistance).toBe(MME_DEFAULTS.shadowDistance);
+    expect(normalizeMme({ shadowDistance: Infinity }).shadowDistance).toBe(MME_DEFAULTS.shadowDistance);
+    expect(normalizeMme(undefined)).not.toBe(MME_DEFAULTS); // (写しを返す)
+  });
+
+  it('MME 互換 → 標準 → MME 互換と行き来しても、標準に戻したときに MME の資源を片付ける', async () => {
+    const e = new Engine();
+    const fx = await e.mme.loadEffect([new File(['technique T { }'], 'post.fx')], 'post.fx');
+    e.mme.store.addPost(fx);
+    const r = e.mme.renderer as unknown as Internals;
+    const standard = await e.project.save('reference'); // (標準のエンジンのプロジェクト)
+    for (let round = 0; round < 2; round++) {
+      e.mme.set({ engine: 'mme' });
+      const inst = r.instance(fx) as unknown as EffectInstance; // (描くときに作る資源)
+      const dispose = vi.spyOn(inst, 'dispose');
+      const skinner = vi.spyOn(e.mme.renderer.skinner, 'dispose');
+      e.mme.set({ selfShadow: round === 0 }); // MME 互換のまま設定を変えても捨てない
+      expect(dispose).not.toHaveBeenCalled();
+      e.mme.set({ engine: 'standard' });
+      expect(dispose).toHaveBeenCalledTimes(1);
+      expect(skinner).toHaveBeenCalledTimes(1);
+      e.mme.set({ engine: 'standard' }); // (標準のままなら何もしない)
+      expect(dispose).toHaveBeenCalledTimes(1);
+    }
+    // 標準のエンジンのプロジェクトを開いても片付ける
+    e.mme.set({ engine: 'mme' });
+    const inst = r.instance(fx) as unknown as EffectInstance;
+    const dispose = vi.spyOn(inst, 'dispose');
+    await e.project.open(standard);
+    expect(e.mme.settings.engine).toBe('standard');
+    expect(dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it('画面に、設定・選んでいる物の .fx・ポストエフェクトの一覧とコンパイルの結果・描くときの警告を出す', async () => {
+    const e = new Engine();
+    expect(e.ui.state.mme).toEqual({ settings: MME_DEFAULTS, object: null, posts: [], warnings: [] });
+    e.mme.set({ engine: 'mme' });
+    expect(e.ui.state.mme.settings.engine).toBe('mme');
+    const obj = e.world.addShape(0, 0, 0, 0);
+    e.selection.select(obj);
+    const good = await e.mme.loadEffect([fileAt('Fx/good.fx', 'technique T { }')], 'good.fx');
+    const bad = await e.mme.loadEffect([fileAt('Fx/bad.fx', 'float4 x = ;')], 'bad.fx');
+    e.mme.store.setObjectEffect(obj.id, bad);
+    const object = e.ui.state.mme.object!;
+    expect(object).toMatchObject({ name: 'Fx/bad.fx', ok: false, warnings: [] });
+    expect(object.errors.length).toBeGreaterThan(0);
+    expect(object.errors[0]).toEqual({ code: expect.stringMatching(/^FX-/), where: 'bad.fx:1', message: expect.any(String) });
+    e.selection.select(null);
+    expect(e.ui.state.mme.object).toBeNull();
+    e.selection.select(obj);
+    e.mme.store.setObjectEffect(obj.id, null);
+    expect(e.ui.state.mme.object).toBeNull();
+
+    e.mme.store.addPost(good);
+    e.mme.store.setPostEnabled(0, false);
+    expect(e.ui.state.mme.posts).toEqual([{ name: 'Fx/good.fx', ok: true, errors: [], warnings: [], enabled: false }]);
+    // 描いたときの警告: エフェクトの警告はその行に、ほかは全体の警告に
+    const r = e.mme.renderer as unknown as Internals;
+    vi.spyOn(e.mme.renderer, 'render').mockImplementation(() => {
+      (r.instance(good) as unknown as EffectInstance).warnings.push('テクスチャ a.png が見つかりません');
+      e.mme.renderer.warnings.push('全体の警告');
+      return true;
+    });
+    e.viewport.drawOverride!();
+    expect(e.ui.state.mme.posts[0].warnings).toEqual(['テクスチャ a.png が見つかりません']);
+    expect(e.ui.state.mme.warnings).toEqual(['全体の警告']);
+  });
+
+  it('エラーは 20 個まで', async () => {
+    const e = new Engine();
+    const funcs = Array.from({ length: 30 }, (_, i) => `float4 f${i}() { return undefined${i}; }`).join('\n');
+    const src = `${funcs}\nfloat4 PS() : COLOR0 { return ${Array.from({ length: 30 }, (_, i) => `f${i}()`).join(' + ')}; }\n`
+      + 'technique T { pass P { PixelShader = compile ps_3_0 PS(); } }';
+    const fx = await e.mme.loadEffect([fileAt('Fx/many.fx', src)], 'many.fx');
+    e.mme.store.addPost(fx);
+    expect(e.ui.state.mme.posts[0].ok).toBe(false);
+    expect(e.ui.state.mme.posts[0].errors).toHaveLength(20);
   });
 });

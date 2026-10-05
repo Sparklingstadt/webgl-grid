@@ -6,6 +6,7 @@ import { normalizeScene, type SceneSettings } from '../core/scene';
 import { createStore, type Store } from '../core/store';
 import type { AddonInfo } from './addons/Addons';
 import { getLang, langEvents, msg, type Lang } from '../core/i18n';
+import { MME_DEFAULTS, type MmeSettings } from '../core/mme/settings.ts';
 import { FX_LEVEL_DEFAULT, type FxLevel, type FxState } from './render/postfx';
 import type { ShadingMode } from './render/Viewport';
 
@@ -17,6 +18,10 @@ export interface SelInfo {
   camera: CameraSettings | null; // カメラの設定 (カメラだけ)
   x: number; y: number; z: number; r: number; scale: number; animated: boolean;
 }
+// MME 互換のエフェクト 1 つのコンパイルの結果 (errors は最大 20)。warnings はコンパイラの警告と、描いたときのそのエフェクトの警告
+export interface MmeEffectUi { name: string; ok: boolean; errors: { code: string; where: string; message: string }[]; warnings: string[] }
+// warnings: どのエフェクトのものでもない、描くときの警告 (セルフシャドウを切った・モデルを描けないなど)
+export interface MmeUiState { settings: MmeSettings; object: MmeEffectUi | null /* 選んでいる物の .fx */; posts: (MmeEffectUi & { enabled: boolean })[]; warnings: string[] }
 export interface UiState {
   mode: 'orbit' | 'pan';
   sel: SelInfo | null;   // アクティブな物
@@ -61,6 +66,7 @@ export interface UiState {
   modelPicker: boolean;     // models フォルダのモデルの一覧を出している
   addonsVersion: number;       // アドオンのメニュー・パネル・値が変わった
   sceneVersion: number;        // 置いた物 (増減・名前・表示) が変わった (アウトライナー)
+  mme: MmeUiState;             // レンダーエンジン (標準 / MME 互換) と MME 互換のエフェクト
 }
 type Version = 'modelVersion' | 'values' | 'keysVersion' | 'materialsVersion' | 'addonsVersion' | 'sceneVersion';
 
@@ -72,6 +78,7 @@ export class UiChannel {
     toast: null, palette: null, viewInfo: '', hairHang: null, materialsVersion: 0, projectName: null,
     output: { ...OUTPUT_DEFAULT }, rendering: null, renderResult: null, remote: 'off', missingFiles: null, missingTextures: null, history: { labels: [msg('最初')], index: 0 }, recovery: null, scene: normalizeScene(undefined),
     addons: [], addonsVersion: 0, lang: getLang(), poseMode: false, poseTool: 'rotate', rigShown: false, modelPicker: false, sceneVersion: 0,
+    mme: { settings: { ...MME_DEFAULTS }, object: null, posts: [], warnings: [] },
   });
   constructor() {
     langEvents.on('changed', lang => this.set({ lang }));

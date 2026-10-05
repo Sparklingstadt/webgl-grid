@@ -65,6 +65,21 @@ describe('EffectStore', () => {
     expect(EffectStore.fxFilesIn([new File([''], 'one.fx')])).toEqual(['one.fx']);
   });
 
+  it('いくつかの物をまとめて落としたとき: 先頭のフォルダが全部で同じときだけ取り、違えばそのままのパス', async () => {
+    // 2 つのフォルダ (と、フォルダの外のファイル) をまとめて落とした
+    const mixed = [fileAt('A/a.fx', ''), fileAt('B/sub/b.fx', ''), new File([''], 'c.fx')];
+    expect(EffectStore.fxFilesIn(mixed)).toEqual(['A/a.fx', 'B/sub/b.fx', 'c.fx']);
+    const store = new EffectStore(fakeUi());
+    const e = await store.load([fileAt('A/a.fx', '#include "../B/inc.fxsub"\ntechnique T { }'), fileAt('B/inc.fxsub', '')], 'A/a.fx');
+    expect([...e.bytes.keys()].sort()).toEqual(['A/a.fx', 'B/inc.fxsub']);
+    expect(e.result.ok).toBe(true);
+    expect(e.name).toBe('A/a.fx');
+    // 1 つのフォルダなら、その名前を取る (名前は「フォルダ/パス」)
+    const one = await store.load([fileAt('Fx/sub/a.fx', 'technique T { }'), fileAt('Fx/tex.png', '')], 'sub/a.fx');
+    expect([...one.bytes.keys()].sort()).toEqual(['sub/a.fx', 'tex.png']);
+    expect(one.name).toBe('Fx/sub/a.fx');
+  });
+
   it('load: サブフォルダの #include を大文字小文字を無視して読む', async () => {
     const ui = fakeUi();
     const store = new EffectStore(ui);
