@@ -146,7 +146,8 @@ export function parseDds(bytes: Uint8Array): DdsImage {
     const levels: DdsLevel[] = [];
     for (const [w, h] of dims) {
       const n = levelBytes(w, h, layout);
-      const copy = bytes.slice(at, at + n); // 元のバイト列と別の、位置がそろったバッファ
+      // 元のバイト列と別の、位置がそろったバッファ。Buffer の slice は写さず同じ領域を見るので、Uint8Array の slice を指名する
+      const copy = Uint8Array.prototype.slice.call(bytes, at, at + n) as Uint8Array;
       at += n;
       const data = layout.array === 'u8' ? copy : layout.array === 'u16' ? new Uint16Array(copy.buffer) : new Float32Array(copy.buffer);
       levels.push({ width: w, height: h, data });

@@ -173,6 +173,18 @@ describe('parseDds', () => {
   });
 });
 
+describe('parseDds (Node の Buffer)', () => {
+  it('Buffer を渡しても、プールの別の位置ではなく、このファイルの画素を返す', () => {
+    const payload = bytesOf(new Uint16Array(4 * 4 * 4).map((_, i) => 0x3c00 + i));
+    const dds = buildDds({ format: 'A16B16G16R16F', width: 4, height: 4, payload });
+    const img = parseDds(Buffer.from(dds));
+    const d = img.faces[0][0].data as Uint16Array;
+    expect(d).toHaveLength(64);
+    expect([...d.subarray(0, 3)]).toEqual([0x3c00, 0x3c01, 0x3c02]);
+    expect(d.buffer.byteLength).toBe(128); // 画素だけの別のバッファ (Buffer のプールの一部ではない)
+  });
+});
+
 describe('ddsHeader', () => {
   it('形式・大きさ・ミップ・キューブ・ボリューム', () => {
     expect(ddsHeader(buildDds({ format: 'A16B16G16R16F', width: 8, height: 4, mips: 4 })))

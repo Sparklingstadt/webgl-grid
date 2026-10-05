@@ -4,7 +4,22 @@
 
 ## 1. DDS の形式
 
-fx/ray-mmd-1.5.2/ がないので未調査
+.dds は 13 個 (fx/ray-mmd-1.5.2/)。形式・大きさ・ミップ・キューブごとにまとめた。
+
+| 形式 | 大きさ | ミップ | キューブ | ボリューム | 個数 | parseDds | 例 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| bgra8 | 512×256 | 1 |  |  | 3 | 読める | Lighting/SphereLight/Default IBL/texture/skydiff_hdr.dds |
+| bgra8 | 1024×512 | 7 |  |  | 3 | 読める | Lighting/SphereLight/Default IBL/texture/skyspec_hdr.dds |
+| bgra8 | 512×512 | 1 |  |  | 1 | 読める | Materials/Metallic/Ingot Bricks/bricks_ao.dds |
+| bgra8 | 512×512 | 10 |  |  | 1 | 読める | Materials/Metallic/Ingot Bricks/bricks_n.dds |
+| bgra8 | 3200×1600 | 1 |  |  | 1 | 読める | Skybox/Helipad GoldenHour/texture/skybox.dds |
+| r8 | 64×16 | 1 |  |  | 1 | 読める | Shader/textures/smaa_search.dds |
+| rg8 | 160×560 | 1 |  |  | 1 | 読める | Shader/textures/smaa_area.dds |
+| rgba16f | 64×64 | 1 |  |  | 2 | 読める | Shader/textures/ltc_1.dds |
+
+形式ごとの個数: bgra8 9、r8 1、rg8 1、rgba16f 2
+
+すべて parseDds で読める。
 
 ## 2. レンダーターゲット
 
