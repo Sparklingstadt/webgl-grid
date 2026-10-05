@@ -1319,5 +1319,6 @@ const dict: Dictionary = {
   "MME の値": "MME 值",
   "MME の物": "MME 物体",
   "MME の物には名前が要ります": "MME 物体需要名称",
+  "古いプロジェクトのコントローラー {name} の値を移せませんでした (これ以上置けません)": "无法迁移旧项目中控制器 {name} 的值（无法再放置更多物体）",
 };
 export default dict;

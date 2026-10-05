@@ -103,6 +103,7 @@ async function buildScene(page: Page) {
     mme.assign(o, 'Main', null, obj);
     mme.assign(o, 'OffMap', null, off);
     mme.store.addPost(mme.store.effect(mme.store.folder(mix.folder), mix.path));
+    engine.addMmeObject({ kind: 'controller', name: 'TestCtrl.pmx' });
     mme.setControl('TestCtrl.pmx', 'Si', 0.75);
   }, { box, obj: obj!, off: off!, mix: mix! });
   return { fx, post };
@@ -130,7 +131,9 @@ test('.wgp: 割り当て・オフスクリーンのタブ・ポストエフェ�
   const bytes = await readFile((await download.path())!);
   const data = JSON.parse(strFromU8(unzipSync(new Uint8Array(bytes))['project.json']));
   expect(data.mmeFiles.map((m: { path: string }) => m.path).sort()).toEqual(['green.fx', 'obj.fx', 'post.fx', 'tex.png']);
-  expect(data.mme.controls).toEqual({ 'TestCtrl.pmx': { Si: 0.75 } });
+  expect(data.mme.controls).toBeUndefined(); // (コントローラーの値は物の値)
+  expect(data.objects.filter((o: { kind: string }) => o.kind === 'mme').map((o: { mmeObj: unknown; mmeValues: unknown }) => [o.mmeObj, o.mmeValues]))
+    .toEqual([[{ kind: 'controller', name: 'TestCtrl.pmx' }, { Si: 0.75 }]]);
 
   await resetAndOpen(page, { name: 'mme.wgp', mimeType: 'application/zip', buffer: bytes });
   await opened(page, 'mme.wgp');

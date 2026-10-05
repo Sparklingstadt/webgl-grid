@@ -274,10 +274,13 @@ test('エフェクト割当: モデルの行を開くと材質の行が出て、
   expect(errors).toEqual([]);
 });
 
-test('コントローラーの欄: 場面にない ray_controller.pmx の項目のスライダーが出て、動かすと色が変わる', async ({ page }) => {
+test('コントローラーの欄: 置いたコントローラーの物 ray_controller.pmx の項目のスライダーが出て、動かすと色が変わる', async ({ page }) => {
   const errors = await boxScene(page);
   expect(await assignFx(page, 0, redFrom('ray_controller.pmx', 'Red'))).toBe(true);
   const controller = panel(page).getByRole('group', { name: 'ray_controller.pmx' });
+  await expect(controller).toHaveCount(0); // (場面に物がない名前は出さない)
+  expect(await page.evaluate(() => (window as Win).engine.mme.missingControllers())).toEqual([{ name: 'ray_controller.pmx', items: ['Red'] }]);
+  await page.evaluate(() => { (window as Win).engine.addMmeObject({ kind: 'controller', name: 'ray_controller.pmx' }); });
   const slider = controller.getByRole('slider', { name: 'Red' });
   await expect(slider).toBeHidden(); // (見出しを押して開く)
   await controller.getByText('ray_controller.pmx (1 項目)').click();
@@ -289,6 +292,6 @@ test('コントローラーの欄: 場面にない ray_controller.pmx の項目�
   await input.press('Enter');
   await expect(slider).toHaveAttribute('aria-valuenow', '1');
   await expect.poll(() => rgb(page)).toEqual([255, 0, 0]);
-  expect(await page.evaluate(() => (window as Win).engine.mme.controllers.values.get('ray_controller.pmx').get('Red'))).toBe(1);
+  expect(await page.evaluate(() => (window as Win).engine.mme.controllers.controller('ray_controller.pmx').mmeValues.Red)).toBe(1);
   expect(errors).toEqual([]);
 });

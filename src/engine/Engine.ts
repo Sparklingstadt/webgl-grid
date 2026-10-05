@@ -99,7 +99,8 @@ export class Engine {
   // レンダーエンジン「MME 互換」(.fx で描く)。効果のあとに作り、その描画 (drawOverride) を包む
   readonly mme = new MmeEngine({
     viewport: this.viewport, graph: this.graph, world: this.world, selection: this.selection, clock: this.clock,
-    library: this.library, ui: this.ui, output: this.output, stage: () => this.stage.model,
+    library: this.library, ui: this.ui, output: this.output, keyframes: this.keyframes, mmeObjects: this.mmeObjects,
+    stage: () => this.stage.model,
     edited: () => this.history.soon(),
     sceneEdited: () => this.autosave.schedule(),
   });

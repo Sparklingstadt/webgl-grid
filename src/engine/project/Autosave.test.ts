@@ -85,10 +85,9 @@ describe('Autosave', () => {
   });
 
   // (MME の場面の値は元に戻すの対象にしないので、履歴の changed では保存されない)
-  it('MME の場面の値 (ステージの割り当て・仮のコントローラーのスライダー・設定) を変えただけでも保存する', async () => {
+  it('MME の場面の値 (ステージの割り当て・設定) を変えただけでも保存する', async () => {
     const edits: [string, (e: Engine) => void][] = [
       ['ステージの割り当て', e => e.mme.assignStage('Main', null, 'hide')],
-      ['スライダー', e => e.mme.setControl('ray_controller.pmx', 'SunLight+', 0.5)],
       ['設定', e => e.mme.set({ engine: 'mme' })],
     ];
     for (const [what, edit] of edits) {
@@ -109,5 +108,22 @@ describe('Autosave', () => {
     await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY);
     await a.autosave.saveNow();
     expect(await store.sessions()).toHaveLength(0);
+  });
+
+  // (仮のコントローラーの値はコントローラーの物の値なので、元に戻すの手になり、履歴の changed で保存される)
+  it('仮のコントローラーのスライダーを動かすと、履歴の手になって保存する', async () => {
+    const store = memoryStore();
+    const a = engineWithCube();
+    const obj = a.addMmeObject({ kind: 'controller', name: 'ray_controller.pmx' });
+    a.history.checkpoint();
+    await a.autosave.start(store);
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY);
+    await a.autosave.saveNow();
+    const saved = async () => (await store.sessions()).map(x => JSON.parse(x.json).objects.find((o: { kind: string }) => o.kind === 'mme')?.mmeValues ?? null);
+    expect(await saved()).toEqual([null]);
+    a.mme.setControl('ray_controller.pmx', 'SunLight+', 0.5);
+    expect(obj.mmeValues).toEqual({ 'SunLight+': 0.5 });
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY + 100); // (履歴の手になってから、自動保存の待ち時間)
+    expect(await saved()).toEqual([{ 'SunLight+': 0.5 }]);
   });
 });

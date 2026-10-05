@@ -31,7 +31,7 @@ export const STAGE_ROW_ID = -1;
 // warnings: どのエフェクトのものでもない、描くときの警告 (セルフシャドウを切った・モデルを描けないなど)。
 // folders: 読み込んだフォルダと、その中の .fx (フォルダからの相対パス)。tabs: エフェクト割当のタブ (先頭は Main。オフスクリーンは
 // 使っているエフェクトが宣言するもの)。rows: タブごとの行 (描く宣言のないオフスクリーンのタブは載せない。そのタブの割り当ては効かない)。
-// controllers: 仮のコントローラー (場面にない CONTROLOBJECT の名前) ごとの、スライダーにする項目と値 (0〜1)
+// controllers: 置いた仮のコントローラー (コントローラーの物。CONTROLOBJECT の名前) ごとの、スライダーにする項目と値 (0〜1)
 export interface MmeUiState {
   settings: MmeSettings; object: MmeEffectUi | null /* 選んでいる物の .fx */; posts: (MmeEffectUi & { enabled: boolean })[]; warnings: string[];
   folders: { id: string; name: string; fx: string[] }[];

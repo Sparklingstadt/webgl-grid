@@ -26,14 +26,81 @@ describe('MmeEngine', () => {
     expect(new Engine().mme.settings).toEqual(MME_DEFAULTS);
   });
 
-  it('setControl は仮のコントローラーの値を (0〜1 に収めて) 入れ、描き直す。元に戻すの手にはしない', () => {
+  it('setControl はその名前のコントローラーの物の値 (0〜1 に収める) とチャンネルを書き、描き直す。物の値なので元に戻せる。物がなければ何もしない', async () => {
     const e = new Engine();
+    e.mme.setControl('ray_controller.pmx', 'SSAO+', 0.5);
+    expect(e.world.objects).toEqual([]); // (勝手には置かない)
+    const obj = e.addMmeObject({ kind: 'controller', name: 'ray_controller.pmx' });
+    e.history.checkpoint();
     const draw = vi.spyOn(e.viewport, 'requestDraw');
     const edited = vi.spyOn(e.history, 'soon');
-    e.mme.setControl('ray_controller.pmx', 'SSAO+', 3);
-    expect(e.mme.controllers.values.get('ray_controller.pmx')?.get('SSAO+')).toBe(1);
+    const sceneEdited = vi.spyOn(e.autosave, 'schedule');
+    e.mme.setControl('RAY_CONTROLLER.pmx', 'SSAO+', 3);
+    expect(obj.mmeValues).toEqual({ 'SSAO+': 1 });
+    expect(obj.mmeChannels).toEqual(['SSAO+']);
     expect(draw).toHaveBeenCalled();
-    expect(edited).not.toHaveBeenCalled();
+    expect(edited).toHaveBeenCalled();
+    expect(sceneEdited).not.toHaveBeenCalled(); // (自動保存は履歴の手から)
+    e.mme.setControl('ray_controller.pmx', 'SSAO+', -1);
+    e.mme.setControl('ray_controller.pmx', 'Bloom+', Number.NaN);
+    expect(obj.mmeValues).toEqual({ 'SSAO+': 0, 'Bloom+': 0 });
+    expect(obj.mmeChannels).toEqual(['SSAO+', 'Bloom+']);
+    e.history.checkpoint();
+    await e.history.undo();
+    expect(obj.mmeValues).toBeUndefined();
+    await e.history.redo();
+    expect(obj.mmeValues).toEqual({ 'SSAO+': 0, 'Bloom+': 0 });
+  });
+
+  const ctl = (item: string) => ({ param: 'p', name: 'ray_controller.pmx', item, type: 'float' as const });
+
+  it('CONTROLOBJECT はコントローラーの物の値を読む。同じ名前の物が 2 つなら場面の並びで最初の物', () => {
+    const e = new Engine();
+    const a = e.addMmeObject({ kind: 'controller', name: 'ray_controller.pmx' });
+    const b = e.addMmeObject({ kind: 'controller', name: 'ray_controller.pmx' });
+    b.mmeValues = { 'SSAO+': 1 };
+    expect(e.mme.controllers.value(ctl('SSAO+'), null, null)).toEqual([0]);
+    e.mme.setControl('ray_controller.pmx', 'SSAO+', 0.5);
+    expect([a.mmeValues, b.mmeValues]).toEqual([{ 'SSAO+': 0.5 }, { 'SSAO+': 1 }]);
+    expect(e.mme.controllers.value(ctl('SSAO+'), null, null)).toEqual([0.5]);
+    e.setOrder([b.id, a.id]);
+    expect(e.mme.controllers.value(ctl('SSAO+'), null, null)).toEqual([1]);
+  });
+
+  it('コントローラーの物のキーフレームで、CONTROLOBJECT の値と画面の値がフレームごとに変わる (描き直す)', async () => {
+    const e = new Engine();
+    const box = e.world.addShape(0, 0, 0, 0);
+    const fx = await e.mme.loadEffect([fileAt('Fx/ctl.fx', 'float m : CONTROLOBJECT < string name = "ray_controller.pmx"; string item = "SSAO+"; >;\ntechnique T { }')], 'ctl.fx');
+    e.mme.assign(box, 'Main', null, ref(fx));
+    const obj = e.addMmeObject({ kind: 'controller', name: 'ray_controller.pmx' });
+    e.mme.setControl('ray_controller.pmx', 'SSAO+', 0);
+    e.keyframes.insertMme(obj, 0, ['SSAO+']);
+    e.mme.setControl('ray_controller.pmx', 'SSAO+', 1);
+    e.keyframes.insertMme(obj, 30, ['SSAO+']);
+    const draw = vi.spyOn(e.viewport, 'requestDraw');
+    e.keyframes.applyAll(0, true); // (0 フレーム)
+    expect(e.mme.controllers.value(ctl('SSAO+'), null, null)).toEqual([0]);
+    expect(e.ui.state.mme.controllers).toEqual([{ name: 'ray_controller.pmx', items: [{ item: 'SSAO+', value: 0 }] }]);
+    draw.mockClear();
+    e.keyframes.applyAll(1, true); // (30 フレーム = 1 秒)
+    expect(e.mme.controllers.value(ctl('SSAO+'), null, null)).toEqual([1]);
+    expect(e.ui.state.mme.controllers).toEqual([{ name: 'ray_controller.pmx', items: [{ item: 'SSAO+', value: 1 }] }]);
+    expect(draw).toHaveBeenCalled();
+  });
+
+  it('missingControllers: 描いているエフェクトが読む仮のコントローラーのうち、場面に物がない名前と項目', async () => {
+    const e = new Engine();
+    const box = e.world.addShape(0, 0, 0, 0);
+    const decl = (v: string, name: string, item: string) => `float ${v} : CONTROLOBJECT < string name = "${name}"; string item = "${item}"; >;`;
+    const fx = await e.mme.loadEffect([fileAt('Fx/ctl.fx', `${decl('a', 'ray_controller.pmx', 'SSAO+')}\n${decl('b', 'ray_controller.pmx', 'Bloom+')}\n${decl('c', 'other.pmx', 'On')}\ntechnique T { }`)], 'ctl.fx');
+    expect(e.mme.missingControllers()).toEqual([]);
+    e.mme.assign(box, 'Main', null, ref(fx));
+    expect(e.mme.missingControllers()).toEqual([{ name: 'other.pmx', items: ['On'] }, { name: 'ray_controller.pmx', items: ['Bloom+', 'SSAO+'] }]);
+    expect(e.ui.state.mme.controllers).toEqual([]); // (画面のスライダーは置いた物だけ)
+    e.addMmeObject({ kind: 'controller', name: 'Ray_Controller.pmx' });
+    e.mme.publish();
+    expect(e.mme.missingControllers()).toEqual([{ name: 'other.pmx', items: ['On'] }]);
+    expect(e.ui.state.mme.controllers).toEqual([{ name: 'ray_controller.pmx', items: [{ item: 'Bloom+', value: 0 }, { item: 'SSAO+', value: 0 }] }]);
   });
 
   it('engine を mme にすると drawOverride が MME の描画を呼び、standard に戻すと前の描画に戻る', () => {
@@ -395,9 +462,12 @@ describe('MmeEngine', () => {
     e.mme.publish();
     e.mme.publish();
     expect(fallbackFor).not.toHaveBeenCalled();
-    // 仮のコントローラー: 描いているエフェクトの、場面にない名前の float の項目と値
+    // 仮のコントローラー: 描いているエフェクトの、コントローラーの物がある名前の float の項目と値
     e.mme.assign(obj, 'Main', null, { folder: good.folder.id, path: 'sub/ctl.fx' });
     expect(fallbackFor).toHaveBeenCalled(); // (割り当てが変わったので作り直した)
+    expect(e.ui.state.mme.controllers).toEqual([]);
+    e.addMmeObject({ kind: 'controller', name: 'ray_controller.pmx' });
+    e.mme.publish();
     expect(e.ui.state.mme.controllers).toEqual([{ name: 'ray_controller.pmx', items: [{ item: 'Red', value: 0 }] }]);
     e.mme.setControl('RAY_CONTROLLER.pmx', 'Red', 0.25);
     expect(e.ui.state.mme.controllers).toEqual([{ name: 'ray_controller.pmx', items: [{ item: 'Red', value: 0.25 }] }]);
@@ -407,6 +477,7 @@ describe('MmeEngine', () => {
     const e = new Engine();
     const obj = e.world.addShape(0, 0, 0, 0);
     const good = await e.mme.loadEffect([fileAt('Fx/good.fx', 'technique T { }')], 'good.fx');
+    e.addMmeObject({ kind: 'controller', name: 'ray_controller.pmx' });
     e.mme.set({ engine: 'mme' });
     vi.spyOn(e.mme.renderer, 'render').mockReturnValue(true);
     const rows = vi.spyOn(e.mme as unknown as { rows(...a: unknown[]): unknown[] }, 'rows'); // (物ごとの行を作る)
@@ -589,6 +660,7 @@ technique Post { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = comp
     e.mme.assign(obj, 'Main', null, ref(a));
     e.mme.store.addPost(e.mme.store.effect(a.folder, 'post.fx'));
     e.mme.store.setPostEnabled(0, false);
+    e.addMmeObject({ kind: 'controller', name: 'Ctrl' });
     e.mme.setControl('Ctrl', 'Si', 0.7);
     e.mme.set({ engine: 'mme', selfShadow: false });
     return a.folder.id;
@@ -599,7 +671,7 @@ technique Post { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = comp
     expect(await textOf(folder.files.get('a.fx'))).toBe(TEX_FX('tex.png'));
     expect(new Uint8Array(await folder.files.get('tex.png')!.arrayBuffer())).toEqual(new Uint8Array([9, 8, 7]));
     expect(e.mme.store.posts.map(p => [p.effect.folder.id, p.effect.entry, p.effect.result.ok, p.enabled])).toEqual([[id, 'post.fx', true, false]]);
-    expect(e.mme.controllers.get('Ctrl', 'Si')).toBeCloseTo(0.7, 6);
+    expect(e.mme.controllers.controller('Ctrl')?.mmeValues?.Si).toBeCloseTo(0.7, 6);
     expect(e.mme.settings).toMatchObject({ engine: 'mme', selfShadow: false });
     const [obj] = e.world.objects;
     expect(obj.mme).toEqual({ Main: { object: { folder: id, path: 'a.fx' } } });
@@ -613,8 +685,8 @@ technique Post { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = comp
     const { data } = await readEmbedded(bytes);
     expect(data.mme).toEqual({
       settings: { ...MME_DEFAULTS, engine: 'mme', selfShadow: false }, folders: [{ id, name: 'Fx' }],
-      posts: [{ effect: { folder: id, path: 'post.fx' }, enabled: false }], controls: { Ctrl: { Si: 0.7 } },
-    });
+      posts: [{ effect: { folder: id, path: 'post.fx' }, enabled: false }],
+    }); // (コントローラーの値は物の値。場面の値 controls は書かない)
     // (使わない .fx は入れない。画像は、まだ描いていなくても入る)
     const mmeFiles = data.mmeFiles as { folder: string; path: string; asset: string }[];
     expect(mmeFiles.map(m => [m.folder, m.path])).toEqual([[id, 'a.fx'], [id, 'post.fx'], [id, 'tex.png']]);
@@ -819,12 +891,50 @@ technique Post { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = comp
     expect(f.ui.state.toast).toBeNull();
   });
 
+  it('第 4 の計画の形の mme (場面の値 controls) のプロジェクトを開くと、名前ごとにコントローラーの物を作って値を移す (開いた状態の一部で、元に戻す手にしない)', async () => {
+    const e = new Engine();
+    e.world.addShape(0, 0, 0, 0);
+    const json = JSON.parse(new TextDecoder().decode(await e.project.save('reference')));
+    expect('controls' in json.mme).toBe(false);
+    json.mme.controls = { Ctrl: { Si: 0.7, Tr: 2 }, 'ray_controller.pmx': { 'SSAO+': 0.25 } };
+    const f = new Engine();
+    await f.project.open(new TextEncoder().encode(JSON.stringify(json)));
+    const controllers = f.world.objects.filter(o => o.mmeObj);
+    expect(controllers.map(o => [o.mmeObj, o.mmeValues, o.mmeChannels])).toEqual([
+      [{ kind: 'controller', name: 'Ctrl' }, { Si: 0.7, Tr: 1 }, ['Si', 'Tr']],
+      [{ kind: 'controller', name: 'ray_controller.pmx' }, { 'SSAO+': 0.25 }, ['SSAO+']],
+    ]);
+    expect(f.mme.controllers.value({ param: 'm', name: 'Ctrl', item: 'Si', type: 'float' }, null, null)).toEqual([0.7]);
+    expect(f.history.canUndo).toBe(false);
+    expect(f.ui.state.toast).toBeNull();
+    expect('controls' in f.mme.saveScene()).toBe(false);
+    // 名前がもうコントローラーの物にあれば、その物に入れる (作らない)
+    const g = new Engine();
+    const own = g.addMmeObject({ kind: 'controller', name: 'ctrl' });
+    g.mme.loadScene({ ...g.mme.saveScene(), controls: { Ctrl: { Si: 0.5 } } });
+    expect(g.world.objects).toEqual([own]);
+    expect(own.mmeValues).toEqual({ Si: 0.5 });
+  });
+
+  it('古い controls の名前が場面のほかの物にある (値は使われていなかった) なら移さない。置ける数を超えるなら知らせて移さない', () => {
+    const e = new Engine();
+    e.world.addShape(0, 0, 0, 0);
+    e.renameObj(e.world.objects[0], 'Taken');
+    e.mme.loadScene({ ...e.mme.saveScene(), controls: { taken: { Si: 0.5 } } });
+    expect(e.world.objects.filter(o => o.mmeObj)).toEqual([]);
+    const full = vi.spyOn(e.world, 'full', 'get').mockReturnValue(true);
+    e.mme.loadScene({ ...e.mme.saveScene(), controls: { Ctrl: { Si: 0.5 } } });
+    expect(e.world.objects.filter(o => o.mmeObj)).toEqual([]);
+    expect(e.ui.state.toast?.text).toContain('Ctrl');
+    full.mockRestore();
+  });
+
   it('最初の状態に戻すと、フォルダ・仮のコントローラーの値・ポストエフェクト・割り当て・設定を消す', async () => {
     const e = new Engine();
     await buildMmeScene(e);
     e.resetAll();
     expect(e.mme.store.folders()).toEqual([]);
-    expect(e.mme.controllers.values.size).toBe(0);
+    expect(e.world.objects).toEqual([]); // (コントローラーの物も)
     expect(e.mme.store.posts).toEqual([]);
     expect(e.mme.settings).toEqual(MME_DEFAULTS);
     expect(e.ui.state.mme.folders).toEqual([]);

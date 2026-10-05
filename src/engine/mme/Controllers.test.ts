@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ControlRef } from '../../core/mme/controllers.ts';
 import { MMD_UNITS } from '../../core/constants';
 import { toMmd } from '../../core/mme/coords.ts';
+import { MME_OBJ_KIND } from '../../core/mme/settings.ts';
 import { MODEL_KIND } from '../../core/shapes';
 import type { Obj } from '../types';
 import type { World } from '../world/World';
@@ -37,6 +38,9 @@ function model(id: number, file: string, { morphs = {}, bones = {}, at = [0, 0, 
   return { id, s: MODEL_KIND, model: mesh, node, hidden } as unknown as Obj;
 }
 const shape = (id: number, name: string): Obj => ({ id, s: 0, name, node: new THREE.Group() } as unknown as Obj);
+// コントローラーの物 (値は mmeValues)
+const controller = (id: number, name: string, values?: Record<string, number>): Obj =>
+  ({ id, s: MME_OBJ_KIND, name, mmeObj: { kind: 'controller', name }, mmeValues: values, node: new THREE.Group() } as unknown as Obj);
 
 function setup(objects: Obj[], stage: THREE.Object3D | null = null) {
   const warn = vi.fn();
@@ -44,23 +48,18 @@ function setup(objects: Obj[], stage: THREE.Object3D | null = null) {
   return { c, warn };
 }
 
-describe('Controllers: 仮のコントローラー', () => {
-  it('set した値を返し、0〜1 に収める。なければ 0。名前の大文字小文字は問わない', () => {
-    const { c } = setup([]);
-    expect(c.value(ref('ray_controller.pmx', 'SSAO+'), null, null)).toEqual([0]);
-    c.set('ray_controller.pmx', 'SSAO+', 0.5);
+describe('Controllers: 仮のコントローラー (コントローラーの物)', () => {
+  it('名前が合うコントローラーの物の mmeValues を読む。値がない・物がなければ 0。名前の大文字小文字は問わない', () => {
+    expect(setup([]).c.value(ref('ray_controller.pmx', 'SSAO+'), null, null)).toEqual([0]);
+    const { c } = setup([controller(1, 'ray_controller.pmx', { 'SSAO+': 0.5 })]);
     expect(c.value(ref('ray_controller.pmx', 'SSAO+'), null, null)).toEqual([0.5]);
     expect(c.value(ref('Ray_Controller.pmx', 'SSAO+'), null, null)).toEqual([0.5]);
-    c.set('ray_controller.pmx', 'SSAO+', 2);
-    expect(c.value(ref('ray_controller.pmx', 'SSAO+'), null, null)).toEqual([1]);
-    c.set('ray_controller.pmx', 'SSAO+', -3);
-    expect(c.value(ref('ray_controller.pmx', 'SSAO+'), null, null)).toEqual([0]);
-    expect(c.values.get('ray_controller.pmx')?.get('SSAO+')).toBe(0);
+    expect(c.value(ref('ray_controller.pmx', 'Bloom+'), null, null)).toEqual([0]);
+    expect(setup([controller(1, 'ray_controller.pmx')]).c.value(ref('ray_controller.pmx', 'SSAO+'), null, null)).toEqual([0]);
   });
 
   it('bool は 0 より大きければ 1。項目のないもの・float 以外は null (0)', () => {
-    const { c } = setup([]);
-    c.set('ctl.pmx', 'On', 0.2);
+    const { c } = setup([controller(1, 'ctl.pmx', { On: 0.2 })]);
     expect(c.value(ref('ctl.pmx', 'On', 'bool'), null, null)).toEqual([1]);
     expect(c.value(ref('ctl.pmx', 'Off', 'bool'), null, null)).toEqual([0]);
     expect(c.value(ref('ctl.pmx', null), null, null)).toBeNull();
@@ -68,10 +67,21 @@ describe('Controllers: 仮のコントローラー', () => {
     expect(c.value(ref('ctl.pmx', null, 'float4x4'), null, null)).toBeNull();
   });
 
-  it('場面にその名前の物があれば、仮のコントローラーは使わない', () => {
-    const { c } = setup([model(1, 'Ray_Controller.pmx', { morphs: { 'SSAO+': 0.25 } })]);
-    c.set('ray_controller.pmx', 'SSAO+', 1);
-    expect(c.value(ref('ray_controller.pmx', 'SSAO+'), null, null)).toEqual([0.25]);
+  it('同じ名前の物が 2 つなら、場面の並びで最初の物 (コントローラーでもモデルでも)', () => {
+    const a = controller(1, 'ray_controller.pmx', { 'SSAO+': 0.25 }), b = controller(2, 'RAY_CONTROLLER.pmx', { 'SSAO+': 0.75 });
+    expect(setup([a, b]).c.value(ref('ray_controller.pmx', 'SSAO+'), null, null)).toEqual([0.25]);
+    expect(setup([b, a]).c.value(ref('ray_controller.pmx', 'SSAO+'), null, null)).toEqual([0.75]);
+    const m = model(3, 'Ray_Controller.pmx', { morphs: { 'SSAO+': 0.5 } });
+    expect(setup([m, a]).c.value(ref('ray_controller.pmx', 'SSAO+'), null, null)).toEqual([0.5]);
+    expect(setup([a, m]).c.value(ref('ray_controller.pmx', 'SSAO+'), null, null)).toEqual([0.25]);
+  });
+
+  it('controller(name) は名前が合う最初の物がコントローラーの物ならそれ。アクセサリ・モデルが先なら null', () => {
+    const a = controller(1, 'ctl.pmx'), m = model(2, 'Ctl.pmx'), acc = { ...controller(3, 'ctl.pmx'), mmeObj: { kind: 'accessory', name: 'ctl.pmx' } } as Obj;
+    expect(setup([a, m]).c.controller('CTL.pmx')).toBe(a);
+    expect(setup([m, a]).c.controller('ctl.pmx')).toBeNull();
+    expect(setup([acc, a]).c.controller('ctl.pmx')).toBeNull();
+    expect(setup([]).c.controller('ctl.pmx')).toBeNull();
   });
 });
 
@@ -157,8 +167,6 @@ describe('Controllers: 場面の物', () => {
     stage.add(stageMesh);
     const { c } = setup([], stage);
     expect(c.value(ref('stage.pmx', 'M'), null, null)).toEqual([0.5]);
-    c.set('stage.pmx', 'M', 1);
-    expect(c.value(ref('stage.pmx', 'M'), null, null)).toEqual([0.5]);
     // ステージを描いているとき・ステージが持ち主のときは、(self)・(OffscreenOwner) がステージ
     expect(c.value(ref('(self)', 'M'), STAGE, null)).toEqual([0.5]);
     expect(c.value(ref('(OffscreenOwner)', 'M'), null, STAGE)).toEqual([0.5]);
@@ -172,14 +180,15 @@ describe('Controllers.catalog', () => {
     return { id: 'e', name: 'a.fx', entry: 'a.fx', result: r } as unknown as LoadedEffect;
   };
 
-  it('描いているエフェクトの項目から、場面にない名前のスライダーの元を作る', () => {
-    const { c } = setup([model(1, 'Present.pmx')]);
+  it('描いているエフェクトの項目から、仮のコントローラーの名前ごとのスライダーの元を作る (コントローラーの物がある名前も載せる。ほかの物がある名前は載せない)', () => {
+    const { c } = setup([model(1, 'Present.pmx'), controller(2, 'Placed.pmx')]);
     const e = effect(`
       float a : CONTROLOBJECT<string name = "ray_controller.pmx"; string item = "SSAO+";>;
       float b : CONTROLOBJECT<string name = "ray_controller.pmx"; string item = "Bloom+";>;
       float c : CONTROLOBJECT<string name = "present.pmx"; string item = "X";>;
-      float d : CONTROLOBJECT<string name = "(self)"; string item = "R+";>;`);
-    expect([...c.catalog([e])]).toEqual([['ray_controller.pmx', ['Bloom+', 'SSAO+']]]);
+      float d : CONTROLOBJECT<string name = "(self)"; string item = "R+";>;
+      float f : CONTROLOBJECT<string name = "placed.pmx"; string item = "On";>;`);
+    expect([...c.catalog([e])]).toEqual([['ray_controller.pmx', ['Bloom+', 'SSAO+']], ['placed.pmx', ['On']]]);
     expect(c.catalog([])).toEqual(new Map());
   });
 });

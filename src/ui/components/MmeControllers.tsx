@@ -2,8 +2,9 @@ import { t } from '../../core/i18n';
 import { useEngine, useUi } from '../EngineContext';
 import { BSlider } from './BSlider';
 
-// --- MME 互換の「コントローラー」: 場面にない CONTROLOBJECT の名前 (ray_controller.pmx など。読み込まない) ごとに、
-// 項目のスライダー (0〜1) をまとめて出す (Ray-MMD は 50 ほどあるので、見出しを押して開く)。値は場面の値 (元に戻すの対象にしない) ---
+// --- MME 互換の「コントローラー」: 仮のコントローラー (ray_controller.pmx など。読み込まない) のうち、場面に置いたコントローラーの物ごとに、
+// 項目のスライダー (0〜1) をまとめて出す (Ray-MMD は 50 ほどあるので、見出しを押して開く)。値はその物の値 (元に戻せる)。
+// 場面に物がない名前 (engine.mme.missingControllers) は出さない ---
 export function MmeControllers() {
   const engine = useEngine();
   const controllers = useUi(s => s.mme.controllers);

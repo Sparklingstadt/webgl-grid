@@ -4,6 +4,8 @@ import { getLang, t } from '../../core/i18n';
 import { MME_DEFAULTS, normalizeObjectEffects, type MmeScene, type MmeSettings, type ObjectEffects, type SavedSlot, type TabEffects } from '../../core/mme/settings.ts';
 import { same } from '../addons/registry';
 import type { Clock } from '../anim/Clock';
+import type { Keyframes } from '../anim/Keyframes';
+import { mmeChannel } from '../anim/mmeChannels';
 import type { MaterialLibrary } from '../materials/MaterialLibrary';
 import type { RenderOutput } from '../output/RenderOutput';
 import type { SceneGraph } from '../render/SceneGraph';
@@ -12,6 +14,7 @@ import { isModel, type Obj } from '../types';
 import { STAGE_ROW_ID, type MmeEffectUi, type MmeRowUi, type MmeUiState, type UiChannel } from '../UiChannel';
 import { nameOf } from '../world/Selection';
 import type { Selection } from '../world/Selection';
+import type { MmeObjects } from '../world/MmeObjects';
 import type { World } from '../world/World';
 import { pmxName, STAGE, type DefaultsOf, type Owner } from './Assignments';
 import { Controllers } from './Controllers';
@@ -49,10 +52,11 @@ function withSlot(all: ObjectEffects, tab: string, materialIndex: number | null,
 
 export interface MmeDeps {
   viewport: Viewport; graph: SceneGraph; world: World; selection: Selection; clock: Clock; library: MaterialLibrary; ui: UiChannel;
-  output: RenderOutput;
+  output: RenderOutput; keyframes: Keyframes;
+  mmeObjects: MmeObjects; // MME の物を置く (古いプロジェクトの仮のコントローラーの値を移すとき)
   stage: () => THREE.Object3D | null; // ステージ (MMD モデル。割り当ては場面の値 stageEffects)
-  edited: () => void; // 画面から割り当てを変えた (元に戻すの手にする)
-  // 元に戻すの対象にしない場面の値 (ステージの割り当て・ポストエフェクト・フォルダ・仮のコントローラーの値・設定) を変えた (自動保存する)。
+  edited: () => void; // 画面から物の値 (割り当て・仮のコントローラーの値) を変えた (元に戻すの手にする。自動保存は履歴の手から)
+  // 元に戻すの対象にしない場面の値 (ステージの割り当て・ポストエフェクト・フォルダ・設定) を変えた (自動保存する)。
   // 毎フレームの publish では呼ばない
   sceneEdited: () => void;
 }
@@ -61,7 +65,7 @@ export class MmeEngine {
   readonly store: EffectStore;
   readonly settings: MmeSettings = { ...MME_DEFAULTS };
   readonly renderer: MmeRenderer;
-  readonly controllers: Controllers; // CONTROLOBJECT の値 (仮のコントローラーの値は場面の値)
+  readonly controllers: Controllers; // CONTROLOBJECT の値 (仮のコントローラーの値はコントローラーの物の値)
   // ステージの割り当て (場面の値。ポストエフェクトと同じく元に戻すの対象にしない。ステージを差し替えても残る)
   private stageEffects: ObjectEffects | null = null;
   private reported = new Set<string>(); // お知らせに出した例外の文
@@ -73,9 +77,10 @@ export class MmeEngine {
   private assignUi: AssignUi = { folders: [], tabs: [], rows: {} };
   private assignJson = '';
   private catalog = new Map<string, string[]>();
-  // 仮のコントローラーの項目と値と JSON (項目を作り直したか、値を変えたときだけ並べ直す)
-  private controlVersion = -1;
+  // 画面のスライダー (置いたコントローラーの物の項目と値) と、その物 (並びは controlUi と同じ) と JSON
+  // (項目を作り直したか、値が変わったときだけ並べ直す)
   private controlUi: MmeUiState['controllers'] = [];
+  private controlObjs: Obj[] = [];
   private controlJson = '';
 
   constructor(private deps: MmeDeps) {
@@ -94,6 +99,8 @@ export class MmeEngine {
     // (物の割り当ては物に残す (元に戻すと戻る)。その物だけが使っていた .fx の資源と、そのモデルのトゥーンの画像を捨てる)
     deps.world.events.on('removed', () => this.renderer.prune());
     deps.selection.events.on('changed', () => this.publish());
+    // キーフレームで仮のコントローラーの値が変わった (再生・フレームを動かした): 画面の値を並べ直して描き直す
+    deps.keyframes.events.on('mmeChanged', () => { this.publish(); deps.viewport.requestDraw(); });
     this.publish();
   }
 
@@ -108,12 +115,26 @@ export class MmeEngine {
     this.deps.viewport.requestDraw();
   }
 
-  // 仮のコントローラー (場面にない CONTROLOBJECT の名前) の項目の値 (0〜1) を変えて描き直す。場面の値なので、元に戻すの対象にしない
+  // 仮のコントローラーの項目の値 (0〜1 に収める) を、その名前のコントローラーの物 (CONTROLOBJECT が読む物) に書いて描き直す。
+  // 項目は物の MME のチャンネルにする (キーを打てる)。物の値なので元に戻すの手になる。物がなければ何もしない (勝手には置かない)
   setControl(name: string, item: string, v: number): void {
-    this.controllers.set(name, item, v);
-    this.deps.sceneEdited();
+    const obj = this.controllers.controller(name);
+    if (!obj) return;
+    this.writeControl(obj, item, v);
+    this.deps.edited();
     this.publish();
     this.deps.viewport.requestDraw();
+  }
+
+  // 描いているエフェクトが読む仮のコントローラーのうち、場面に物がない名前と項目 (名前の順。画面の「置く」の元)
+  missingControllers(): { name: string; items: string[] }[] {
+    return [...this.catalog].filter(([name]) => !this.controllers.controller(name)).map(([name, items]) => ({ name, items }))
+      .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  }
+
+  private writeControl(obj: Obj, item: string, v: number): void {
+    mmeChannel(obj, item);
+    (obj.mmeValues ??= {})[item] = Number.isNaN(v) ? 0 : Math.min(Math.max(v, 0), 1);
   }
 
   // 割り当て・ポストエフェクト・フォルダが変わった: 使わなくなった資源を捨てて、画面に知らせて描き直す (自動保存もする)
@@ -145,15 +166,29 @@ export class MmeEngine {
       this.assignInputs = inputs;
       this.rebuild(tabs);
     }
-    if (rebuilt || this.controllers.version !== this.controlVersion) {
-      this.controlVersion = this.controllers.version;
-      this.controlUi = [...this.catalog].map(([name, items]) => ({ name, items: items.map(item => ({ item, value: this.controllers.get(name, item) })) }));
-      this.controlJson = JSON.stringify(this.controlUi);
-    }
+    if (rebuilt || this.controlValuesChanged()) this.rebuildControls();
     const json = `${JSON.stringify(rest)}\n${this.assignJson}\n${this.controlJson}`;
     if (json === this.shown) return;
     this.shown = json;
     this.deps.ui.set({ mme: { ...rest, ...this.assignUi, controllers: this.controlUi } });
+  }
+
+  // 画面のスライダー: 仮のコントローラーの名前のうち、コントローラーの物があるものの項目と値
+  private rebuildControls(): void {
+    this.controlUi = [];
+    this.controlObjs = [];
+    for (const [name, items] of this.catalog) {
+      const obj = this.controllers.controller(name);
+      if (!obj) continue;
+      this.controlUi.push({ name, items: items.map(item => ({ item, value: obj.mmeValues?.[item] ?? 0 })) });
+      this.controlObjs.push(obj);
+    }
+    this.controlJson = JSON.stringify(this.controlUi);
+  }
+
+  // 画面のスライダーの値が、物の値 (setControl・元に戻す・キーフレームで変わる) と違う (毎フレーム呼ぶので、作らずに比べる)
+  private controlValuesChanged(): boolean {
+    return this.controlUi.some((c, i) => c.items.some(({ item, value }) => (this.controlObjs[i].mmeValues?.[item] ?? 0) !== value));
   }
 
   // 割り当ての行と仮のコントローラーの項目の元。物の数によらず、版の数 (言語・フォルダ・割り当てとポストエフェクト・場面の物 (足す・消す・
@@ -336,30 +371,42 @@ export class MmeEngine {
       settings: { ...this.settings },
       folders: this.store.folders().map(f => ({ id: f.id, name: f.name })),
       posts: this.store.posts.map(p => ({ effect: { folder: p.effect.folder.id, path: p.effect.entry }, enabled: p.enabled })),
-      controls: Object.fromEntries([...this.controllers.values].map(([name, items]) => [name, Object.fromEntries(items)])),
       ...(this.stageEffects ? { stage: structuredClone(this.stageEffects) } : {}),
     };
   }
 
-  // 開いたプロジェクトの設定・ポストエフェクトの並び・仮のコントローラーの値・ステージの割り当てにする (フォルダは戻してある)。
-  // フォルダがないポストエフェクトは捨てる。ファイルがないものは、一覧に残して描かない (コンパイルできない)
+  // 開いたプロジェクトの設定・ポストエフェクトの並び・ステージの割り当てにする (フォルダと物は戻してある)。
+  // フォルダがないポストエフェクトは捨てる。ファイルがないものは、一覧に残して描かない (コンパイルできない)。
+  // 第 4 の計画の形の仮のコントローラーの値 (controls) は、コントローラーの物に移す
   loadScene(scene: MmeScene): void {
     const posts = scene.posts.flatMap(({ effect: ref, enabled }) => {
       const folder = this.store.folder(ref.folder);
       return folder ? [{ effect: this.store.effect(folder, ref.path), enabled }] : [];
     });
     this.stageEffects = scene.stage ? structuredClone(scene.stage) : null;
-    this.controllers.clear();
-    for (const [name, items] of Object.entries(scene.controls)) for (const [item, v] of Object.entries(items)) this.controllers.set(name, item, v);
+    for (const [name, items] of Object.entries(scene.controls ?? {})) this.migrateControls(name, items);
     this.store.setPosts(posts);
     this.set(scene.settings);
   }
 
-  // 最初の状態に戻す: 割り当て (ステージのものも)・ポストエフェクト・読み込んだフォルダ・仮のコントローラーの値を消し、既定の設定にする
+  // 古いプロジェクトの仮のコントローラー name の値を、その名前のコントローラーの物 (なければ置く) に入れる。
+  // 名前が場面のほかの物・ステージに合う (値は使われていなかった) なら移さない (同じ絵のまま)。置けなければ知らせる
+  private migrateControls(name: string, items: Record<string, number>): void {
+    let obj = this.controllers.controller(name);
+    if (!obj && this.controllers.has(name)) return;
+    if (!obj && this.deps.world.full) {
+      this.deps.ui.toast(t('古いプロジェクトのコントローラー {name} の値を移せませんでした (これ以上置けません)', { name }), 8000);
+      return;
+    }
+    obj ??= this.deps.mmeObjects.add({ kind: 'controller', name });
+    for (const [item, v] of Object.entries(items)) this.writeControl(obj, item, v);
+  }
+
+  // 最初の状態に戻す: 割り当て (ステージのものも)・ポストエフェクト・読み込んだフォルダを消し、既定の設定にする
+  // (仮のコントローラーの値は物の値なので、物といっしょに消える)
   resetScene(): void {
     this.clearEffects();
     this.store.clearFolders();
-    this.controllers.clear();
     this.set({ ...MME_DEFAULTS });
   }
 
