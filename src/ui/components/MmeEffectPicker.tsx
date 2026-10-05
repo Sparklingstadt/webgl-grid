@@ -48,6 +48,7 @@ export function MmeEffectPicker({ label, inputLabel, onPick, buttons, children }
     try {
       const files = await fetchFxFiles(folder, (done, total) => setLoading({ name: folder.name, done, total }));
       setFxOpen(false);
+      if (folder.truncated) engine.ui.toast(t('{name} はファイルが多いか深すぎるので、一部だけ読み込みました', { name: folder.name }), 8000);
       take(files);
     } catch (err) {
       engine.ui.toast(t('{name} を読み込めませんでした: {error}', { name: folder.name, error: errorText(err) }), 8000);
@@ -89,7 +90,7 @@ export function MmeEffectPicker({ label, inputLabel, onPick, buttons, children }
             {fxList.folders.map(f => (
               <button key={f.dir} type="button" className="bbtn" disabled={!!loading} onClick={() => void loadFx(f)}>
                 {f.name}
-                <span className="note"> {t('.fx {n} 個', { n: f.fx.length })} · {mb(f.size)}</span>
+                <span className="note"> {t('.fx {n} 個', { n: f.fx.length })} · {mb(f.size)}{f.truncated && <> · {t('一部だけ')}</>}</span>
               </button>
             ))}
           </div>

@@ -21,6 +21,7 @@ npm run dev
 
 - 中身はブラウザ版と同じで、アプリを 127.0.0.1（17458 番から空いているポート）で配って窓に開きます。設定や自動保存はアプリの中に覚えます。
 - models フォルダは「書類/webgl-grid/models」です（メニューの「ファイル > models フォルダを開く」で開けます。環境変数 `WEBGL_GRID_MODELS_DIR` で変えられます）。ここにモデルのフォルダ（.pmx とテクスチャ）・.vmd・.vpd・曲を置くと、ブラウザ版の `models/` と同じように使えます。
+- fx フォルダも同じく「書類/webgl-grid/fx」です（メニューの「ファイル > fx フォルダを開く」で開けます。環境変数 `WEBGL_GRID_FX_DIR` で変えられます）。エフェクトの一式ごとのフォルダ（.fx とそれが読むファイル）を置くと、「効果」のタブの「MME 互換」の欄の「fx/ から選ぶ」から読めます（[fx/README.md](fx/README.md)）。
 - MCP サーバー（`npm run mcp`）が動いていれば、「ファイル > 外部から操作 (MCP) を受け付ける」でつながります。
 - 自分で作るときは `npm run electron`（ビルドして開く）・`npm run electron:build`（Mac の .dmg・.zip と Windows の .zip を `release/` に作る）。Windows のインストーラー（NSIS）は、Apple Silicon の Mac では Rosetta がないと作れないので作っていません。
 

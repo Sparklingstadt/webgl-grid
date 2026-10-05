@@ -17,7 +17,7 @@ export default defineConfig({
   // 出力 (dist) をどのフォルダに置いても開けるように、相対パスで参照する
   base: './',
   test: {
-    // 単体テスト (src の中の *.test.ts(x))。e2e (e2e/) は Playwright で別に動かす
-    include: ['src/**/*.test.{ts,tsx}'],
+    // 単体テスト (src の中の *.test.ts(x) と、サーバー (mcp/) の *.test.ts)。e2e (e2e/) は Playwright で別に動かす
+    include: ['src/**/*.test.{ts,tsx}', 'mcp/**/*.test.ts'],
   },
 })

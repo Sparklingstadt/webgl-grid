@@ -2,8 +2,9 @@
 // サーバー (mcp/fx.ts) が fx/ を調べて一覧とファイルを渡し、アプリは一覧から選んだフォルダを、フォルダを選んで読み込んだときと同じように読み込む
 export const FX_PATH = '__fx';            // 一覧 (アプリからは、ページからの相対パス)
 export const FX_FILE_PATH = '__fx/file';  // ファイル (?path= fx/ から見た場所)
-// fx/ の直下のファイルをまとめたフォルダの名前 (fx/ 自身の名前)
+// fx/ の直下のファイルをまとめたフォルダの名前 (fx/ 自身の名前)。fx/ の中に同じ名前のフォルダがあれば、重ならないよう FX_ROOT_NAME_ALT にする
 export const FX_ROOT_NAME = 'fx';
+export const FX_ROOT_NAME_ALT = 'fx (直下のファイル)';
 
 export interface FxFolderEntry {
   name: string;     // フォルダの名前 (fx/ の直下のフォルダの名前。直下のファイルをまとめたものは FX_ROOT_NAME)
@@ -11,6 +12,7 @@ export interface FxFolderEntry {
   files: string[];  // 中のファイル全部 (フォルダから見た場所。/ 区切り)
   fx: string[];     // そのうちの .fx
   size: number;     // ファイルの大きさの合計 (バイト)
+  truncated?: boolean; // ファイルが多すぎる・深すぎるので、一部だけの一覧 (サーバーの上限。ないときは省く)
 }
 export interface FxListing { folders: FxFolderEntry[] }
 
@@ -18,8 +20,9 @@ export interface FxListing { folders: FxFolderEntry[] }
 const hasHidden = (rel: string) => rel.split('/').some(s => s.startsWith('.'));
 
 // fx/ の中のファイル (fx/ から見た場所、/ 区切り) を、fx/ の直下のフォルダごとにまとめる。
-// 直下のファイルは FX_ROOT_NAME のフォルダ 1 つに。.fx のないフォルダは出さない。名前の順
-export function groupFxFolders(files: readonly { rel: string; size: number }[]): FxFolderEntry[] {
+// 直下のファイルは FX_ROOT_NAME のフォルダ 1 つに (同じ名前のフォルダがあれば FX_ROOT_NAME_ALT)。.fx のないフォルダは出さない。名前の順。
+// truncated: 上限で一部しか見ていないフォルダの dir (直下のファイルは '')
+export function groupFxFolders(files: readonly { rel: string; size: number }[], truncated: ReadonlySet<string> = new Set()): FxFolderEntry[] {
   const groups = new Map<string, { rel: string; size: number }[]>();
   for (const f of files) {
     if (hasHidden(f.rel)) continue;
@@ -33,7 +36,8 @@ export function groupFxFolders(files: readonly { rel: string; size: number }[]):
   for (const [dir, list] of groups) {
     const fx = list.filter(f => /\.fx$/i.test(f.rel)).map(f => f.rel).sort();
     if (!fx.length) continue;
-    out.push({ name: dir || FX_ROOT_NAME, dir, files: list.map(f => f.rel).sort(), fx, size: list.reduce((s, f) => s + f.size, 0) });
+    const name = dir || (groups.has(FX_ROOT_NAME) ? FX_ROOT_NAME_ALT : FX_ROOT_NAME);
+    out.push({ name, dir, files: list.map(f => f.rel).sort(), fx, size: list.reduce((s, f) => s + f.size, 0), ...(truncated.has(dir) ? { truncated: true } : {}) });
   }
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -41,7 +45,7 @@ export function groupFxFolders(files: readonly { rel: string; size: number }[]):
 // サーバーに渡すよう頼む場所 (fx/ から見た場所)
 export const fxServerPath = (folder: Pick<FxFolderEntry, 'dir'>, rel: string) => (folder.dir ? `${folder.dir}/${rel}` : rel);
 // File の webkitRelativePath (フォルダの名前/フォルダの中のパス)。フォルダを選んだときと同じ形で、EffectStore.addFolder にそのまま渡せる
-export const fxFileTarget = (folder: Pick<FxFolderEntry, 'name' | 'dir'>, rel: string) => `${folder.name || FX_ROOT_NAME}/${rel}`;
+export const fxFileTarget = (folder: Pick<FxFolderEntry, 'name'>, rel: string) => `${folder.name}/${rel}`;
 
 // 渡してよい場所か: fx/ から見た、隠れていない相対パスで、.. ・ . ・空の部分・絶対パス・ドライブ名・\ ・NUL を含まないもの
 export function isServableFxPath(rel: string): boolean {

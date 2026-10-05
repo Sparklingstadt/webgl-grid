@@ -10,31 +10,47 @@ import { FX_FILE_PATH, FX_PATH, groupFxFolders, isServableFxPath, type FxListing
 // 渡すのは fx/ の中だけ (外のファイルは見せない)。場所は環境変数 WEBGL_GRID_FX_DIR で変えられる (テスト用)
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const fxDir = () => path.resolve(process.env.WEBGL_GRID_FX_DIR || path.join(ROOT, 'fx'));
-// 1 つのフォルダに数える上限。Ray-MMD 1.5.2 は 897 ファイル・深さ 4 (約 88 MB) で、その 5 倍の余裕を見て
-// (モデルが入ったりテクスチャが多かったりする一式も入るように)。上限を超えたら、それ以上は見ない (いつまでも歩かないため)
-const MAX_FILES = 5000, MAX_DEPTH = 8;
+// 1 つのフォルダ (fx/ の直下のフォルダ 1 つ。直下のファイル全部で 1 つ) に数える上限。Ray-MMD 1.5.2 は 897 ファイル・深さ 4 (約 88 MB) で、
+// その 5 倍の余裕を見て (モデルが入ったりテクスチャが多かったりする一式も入るように)。上限は、いつまでも歩かないためのもの。
+// 超えたフォルダは、一部だけの一覧にして truncated を付ける (ほかのフォルダには響かない)
+export const FX_LIMITS = { maxFiles: 5000, maxDepth: 8 };
+type Limits = typeof FX_LIMITS;
+interface Found { rel: string; size: number }
 
-// フォルダの中のファイル (fx/ から見た場所、/ 区切り) と大きさ。隠しファイル・隠しフォルダは見ない
-async function walk(dir: string, rel: string, out: { rel: string; size: number }[], depth = 0) {
-  if (depth > MAX_DEPTH || out.length >= MAX_FILES) return;
-  for (const e of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
-    if (e.name.startsWith('.')) continue;
+// フォルダの中のファイル (fx/ から見た場所、/ 区切り) と大きさを out に足す。隠しファイル・隠しフォルダは見ない。上限で見残したら true
+async function walk(dir: string, rel: string, out: Found[], limits: Limits, depth = 0): Promise<boolean> {
+  const entries = (await readdir(dir, { withFileTypes: true }).catch(() => [])).filter(e => !e.name.startsWith('.'));
+  if (depth > limits.maxDepth) return entries.length > 0;
+  let truncated = false;
+  for (const e of entries) {
     const p = path.join(dir, e.name), r = `${rel}/${e.name}`;
-    if (e.isDirectory()) await walk(p, r, out, depth + 1);
-    else if (e.isFile()) out.push({ rel: r, size: (await stat(p).catch(() => null))?.size ?? 0 });
-    if (out.length >= MAX_FILES) return;
+    if (e.isDirectory()) truncated = await walk(p, r, out, limits, depth + 1) || truncated;
+    else if (e.isFile()) {
+      if (out.length >= limits.maxFiles) return true;
+      out.push({ rel: r, size: (await stat(p).catch(() => null))?.size ?? 0 });
+    }
+    if (truncated && out.length >= limits.maxFiles) return true;
   }
+  return truncated;
 }
 
-// エフェクトの一覧: fx/ の直下のフォルダごとに (直下のファイルは fx/ の名前の 1 つのフォルダに)、中の .fx とファイル。.fx のないものは出さない
-export async function listFx(dir = fxDir()): Promise<FxListing> {
-  const all: { rel: string; size: number }[] = [];
+// エフェクトの一覧: fx/ の直下のフォルダごとに (直下のファイルは fx/ の名前の 1 つのフォルダに)、中の .fx とファイル。.fx のないものは出さない。
+// 上限 (limits) はフォルダごと
+export async function listFx(dir = fxDir(), limits: Limits = FX_LIMITS): Promise<FxListing> {
+  const all: Found[] = [], truncated = new Set<string>();
+  const loose: Found[] = [];
   for (const e of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
     if (e.name.startsWith('.')) continue;
-    if (e.isDirectory()) await walk(path.join(dir, e.name), e.name, all);
-    else if (e.isFile()) all.push({ rel: e.name, size: (await stat(path.join(dir, e.name)).catch(() => null))?.size ?? 0 });
+    if (e.isDirectory()) {
+      const files: Found[] = [];
+      if (await walk(path.join(dir, e.name), e.name, files, limits)) truncated.add(e.name);
+      all.push(...files);
+    } else if (e.isFile()) {
+      if (loose.length >= limits.maxFiles) truncated.add('');
+      else loose.push({ rel: e.name, size: (await stat(path.join(dir, e.name)).catch(() => null))?.size ?? 0 });
+    }
   }
-  return { folders: groupFxFolders(all) };
+  return { folders: groupFxFolders([...all, ...loose], truncated) };
 }
 
 // fx/ の中のファイルの、本当の場所 (外を指していれば・隠しファイルなら・なければ null)。

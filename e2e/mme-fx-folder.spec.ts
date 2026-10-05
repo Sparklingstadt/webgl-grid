@@ -152,3 +152,28 @@ test('サーバーが一覧を答えないとき (静的に配っている・fx/
   await expect(panel(page).getByRole('button', { name: '読み込む…' })).toBeVisible();
   await expect(panel(page).getByRole('button', { name: 'fx/ から選ぶ' })).toHaveCount(0);
 });
+
+test('一部だけの一覧 (truncated) のフォルダは、一覧に「一部だけ」と出て、読み込むとお知らせが出る。fx/ の中の fx フォルダと直下のファイルは混ざらない', async ({ page }) => {
+  await put({ 'fx/inner.fx': BLUE });
+  // (サーバーの上限は大きいので、一覧の答えを書き換えて、自作/ を一部だけにする)
+  const real = await (await page.request.get('__fx')).json();
+  expect(real.folders.map((f: { name: string }) => f.name).sort()).toEqual(['Multi', 'fx', 'fx (直下のファイル)', '自作']);
+  await page.route('**/__fx', r => r.fulfill({ json: { folders: real.folders.map((f: { name: string }) => (f.name === '自作' ? { ...f, truncated: true } : f)) } }));
+  const errors = await boxScene(page);
+  const p = panel(page);
+  await p.getByRole('button', { name: 'fx/ から選ぶ' }).first().click();
+  const list = page.getByRole('dialog', { name: 'fx/ のフォルダ' }).getByRole('group', { name: 'fx/ のフォルダの一覧' });
+  await expect(list.getByRole('button', { name: /^自作/ })).toContainText('一部だけ');
+  await expect(list.getByRole('button', { name: /^Multi/ })).not.toContainText('一部だけ');
+  await list.getByRole('button', { name: /^自作/ }).click();
+  await expect(page.getByRole('status').filter({ hasText: '一部だけ読み込みました' })).toContainText('自作 はファイルが多いか深すぎるので');
+  // 別のフォルダ: fx/inner.fx (フォルダ fx) と 単体.fx (フォルダ fx (直下のファイル)) は別のフォルダ
+  await p.getByRole('button', { name: 'fx/ から選ぶ' }).first().click();
+  await list.getByRole('button', { name: /^fx \(直下のファイル\)/ }).click();
+  await expect(p).toContainText('fx (直下のファイル)/単体.fx');
+  await p.getByRole('button', { name: 'fx/ から選ぶ' }).first().click();
+  await list.getByRole('button', { name: /^fx\s+\.fx/ }).click();
+  await expect(p).toContainText('fx/inner.fx');
+  expect(await page.evaluate(() => (window as Win).engine.mme.store.folders().map((f: Win) => f.name).sort())).toEqual(['fx', 'fx (直下のファイル)', '自作']);
+  expect(errors).toEqual([]);
+});

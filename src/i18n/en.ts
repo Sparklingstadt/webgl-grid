@@ -1367,5 +1367,7 @@ const dict: Dictionary = {
   "fx/ のフォルダの一覧": "List of fx/ folders",
   ".fx {n} 個": "{n} .fx files",
   "。": ". ",
+  "{name} はファイルが多いか深すぎるので、一部だけ読み込みました": "{name} has too many files or is too deep, so only part of it was loaded",
+  "一部だけ": "Partial",
 };
 export default dict;
