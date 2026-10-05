@@ -85,7 +85,8 @@ interface Entry {
 export class Offscreen {
   private frameNo = 0;
   private entries = new Map<string, Entry>(); // 'shared|名前' か 'エフェクトの id|名前|持ち主の id'
-  private decls = new Map<LoadedEffect, { screen: string; decls: OffscreenDecl[] }>();
+  // エフェクトの宣言と、その警告 (差し替えた・外したエフェクトのものは持ち続けない)
+  private decls = new WeakMap<LoadedEffect, { screen: string; decls: OffscreenDecl[]; warnings: string[] }>();
   private declared = new Map<string, string>(); // このフレームに使ったエフェクトが宣言するオフスクリーンの名前 → Description
   // このフレームにオフスクリーンの名前ごとの、最初に描く宣言 (DefaultEffect のあるもの) と、それを宣言したエフェクトで描く物 (ポストエフェクトは null)
   private drawers = new Map<string, { decl: OffscreenDecl; owners: Set<Owner> }>();
@@ -143,10 +144,15 @@ export class Offscreen {
     return out;
   }
 
+  // そのエフェクトの宣言の警告 (まだ宣言を読んでいなければ空)。エフェクトの資源を作り直したときに、また出すため
+  declWarnings(effect: LoadedEffect): string[] {
+    return [...(this.decls.get(effect)?.warnings ?? [])];
+  }
+
   // 覚えているものを忘れる (ターゲットは Framebuffers.dispose が捨てる)
   dispose(): void {
     this.entries.clear();
-    this.decls.clear();
+    this.decls = new WeakMap();
     this.declared.clear();
     this.drawers.clear();
     this.warned.clear();
@@ -248,7 +254,7 @@ export class Offscreen {
     if (old && old.screen === size) return old.decls;
     const { decls, warnings } = offscreenDecls(effect, screen);
     for (const w of warnings) this.d.warn(w, effect);
-    this.decls.set(effect, { screen: size, decls });
+    this.decls.set(effect, { screen: size, decls, warnings });
     return decls;
   }
 

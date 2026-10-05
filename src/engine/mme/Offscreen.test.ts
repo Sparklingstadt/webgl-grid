@@ -128,6 +128,22 @@ describe('Offscreen', () => {
     expect(draws(h.log)).toEqual(['B', 'A', 'B', 'A']);
   });
 
+  it('宣言の警告は宣言を読んだときに 1 回出し、declWarnings で後からも引ける (dispose で忘れる)', async () => {
+    const { store, fx } = await load({ 'e.fx': offscreenFx(decl('A', 'bool AntiAlias = true; string DefaultEffect = "* = hide;";')) });
+    const h = harness(store);
+    const e = fx('e.fx');
+    const warning = 'オフスクリーン A の AntiAlias には対応していないので、アンチエイリアスなしで描きます';
+    expect(h.offscreen.declWarnings(e)).toEqual([]);
+    for (const n of [1, 2]) {
+      h.offscreen.begin(n);
+      h.offscreen.ensure(e, null, frameOf(n));
+    }
+    expect(h.warnings).toEqual([`fx/e.fx: ${warning}`]);
+    expect(h.offscreen.declWarnings(e)).toEqual([warning]);
+    h.offscreen.dispose();
+    expect(h.offscreen.declWarnings(e)).toEqual([]);
+  });
+
   it('描く前に ClearColor・ClearDepth (とステンシル 0) で消し、オフスクリーンを既定の描画先にして描き、終わったら元の描画先に戻す', async () => {
     const { store, fx } = await load({ 'e.fx': offscreenFx(decl('A', 'float4 ClearColor = {0, 0, 1, 1}; float ClearDepth = 0.5;')) });
     const h = harness(store);

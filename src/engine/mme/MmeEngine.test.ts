@@ -704,6 +704,23 @@ technique Post { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = comp
     expect((data.mmeFiles as { path: string }[]).map(m => m.path)).toEqual(['a.fx']);
   });
 
+  it('オフスクリーンの宣言の警告は、使わなくなって資源 (EffectInstance) を捨てたあとに作り直しても、またそのエフェクトの警告に出る', async () => {
+    const e = new Engine();
+    const post = await e.mme.loadEffect([fileAt('Off/post.fx', OFF_POST('broken;*=hide;'))], 'post.fx');
+    const warning = 'OffMap: DefaultEffect の項 "broken" に = がないので無視します';
+    const r = e.mme.renderer as unknown as Internals & { offscreen: { declsOf(e: LoadedEffect, screen: [number, number]): unknown } };
+    e.mme.store.addPost(post);
+    r.instance(post);
+    r.offscreen.declsOf(post, [64, 64]); // (描くときに宣言を読む)
+    expect(e.mme.renderer.warningsOf(post)).toEqual([warning]);
+    e.mme.store.removePost(0); // (使わなくなったので資源を捨てる)
+    expect(r.instances.has(post)).toBe(false);
+    e.mme.store.addPost(post);
+    r.instance(post);
+    r.offscreen.declsOf(post, [64, 64]); // (宣言は覚えているので、読み直さない)
+    expect(e.mme.renderer.warningsOf(post)).toEqual([warning]);
+  });
+
   it('第 2 の計画の形の mme (設定だけ) のプロジェクトも、お知らせなしで開ける', async () => {
     const e = new Engine();
     const json = JSON.parse(new TextDecoder().decode(await e.project.save('reference')));

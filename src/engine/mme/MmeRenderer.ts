@@ -414,10 +414,12 @@ export class MmeRenderer {
     return this.instances.get(e)?.stopped ?? false;
   }
 
+  // (作り直したときは、覚えているオフスクリーンの宣言の警告をまた出す。宣言は読み直さないので)
   private instance(e: LoadedEffect): EffectInstance {
     let inst = this.instances.get(e);
     if (!inst) {
       inst = new EffectInstance(e, () => this.d.viewport.requestDraw());
+      for (const w of this.offscreen.declWarnings(e)) inst.warn(w);
       this.instances.set(e, inst);
     }
     return inst;
