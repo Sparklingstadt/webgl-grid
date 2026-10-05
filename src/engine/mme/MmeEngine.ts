@@ -1,7 +1,7 @@
 import type * as THREE from 'three';
 import { errorText } from '../../core/errors';
 import { getLang, t } from '../../core/i18n';
-import { MME_DEFAULTS, normalizeObjectEffects, type MmeSettings, type ObjectEffects, type SavedSlot } from '../../core/mme/settings.ts';
+import { MME_DEFAULTS, normalizeObjectEffects, type MmeScene, type MmeSettings, type ObjectEffects, type SavedSlot } from '../../core/mme/settings.ts';
 import { same } from '../addons/registry';
 import type { Clock } from '../anim/Clock';
 import type { MaterialLibrary } from '../materials/MaterialLibrary';
@@ -43,7 +43,7 @@ export class MmeEngine {
   readonly store: EffectStore;
   readonly settings: MmeSettings = { ...MME_DEFAULTS };
   readonly renderer: MmeRenderer;
-  readonly controllers: Controllers; // CONTROLOBJECT の値 (仮のコントローラーの値は場面の値。保存は Task 14)
+  readonly controllers: Controllers; // CONTROLOBJECT の値 (仮のコントローラーの値は場面の値)
   private reported = new Set<string>(); // お知らせに出した例外の文
   private logged: string | null = null; // 続けて出ている例外の文 (コンソールに 1 回だけ書く。描けたら忘れる)
   private shown = ''; // 画面に出した状態 (JSON。同じなら知らせない)
@@ -234,7 +234,7 @@ export class MmeEngine {
     this.deps.edited();
   }
 
-  // --- 画面の操作 (ポストエフェクトの一覧は保存せず、元に戻すの対象にもしない) ---
+  // --- 画面の操作 (ポストエフェクトの一覧は場面の値で、元に戻すの対象にしない) ---
   // フォルダの中の .fx (フォルダからの相対パス)
   fxFilesIn(files: File[]): string[] {
     return EffectStore.fxFilesIn(files);
@@ -275,6 +275,43 @@ export class MmeEngine {
       this.deps.ui.toast(t('.fx を読めませんでした: {error}', { error: errorText(err) }), 8000);
       return null;
     }
+  }
+
+  // --- プロジェクトの場面の値 'mme' (フォルダの中のファイルは ProjectIO が mmeFiles として持ち、開くときに EffectStore.restore で先に戻す) ---
+  saveScene(): MmeScene {
+    return {
+      settings: { ...this.settings },
+      folders: this.store.folders().map(f => ({ id: f.id, name: f.name })),
+      posts: this.store.posts.map(p => ({ effect: { folder: p.effect.folder.id, path: p.effect.entry }, enabled: p.enabled })),
+      controls: Object.fromEntries([...this.controllers.values].map(([name, items]) => [name, Object.fromEntries(items)])),
+    };
+  }
+
+  // 開いたプロジェクトの設定・ポストエフェクトの並び・仮のコントローラーの値にする (フォルダは戻してある)。
+  // フォルダがないポストエフェクトは捨てる。ファイルがないものは、一覧に残して描かない (コンパイルできない)
+  loadScene(scene: MmeScene): void {
+    const posts = scene.posts.flatMap(({ effect: ref, enabled }) => {
+      const folder = this.store.folder(ref.folder);
+      return folder ? [{ effect: this.store.effect(folder, ref.path), enabled }] : [];
+    });
+    this.controllers.clear();
+    for (const [name, items] of Object.entries(scene.controls)) for (const [item, v] of Object.entries(items)) this.controllers.set(name, item, v);
+    this.store.setPosts(posts);
+    this.set(scene.settings);
+  }
+
+  // 最初の状態に戻す: 割り当て・ポストエフェクト・読み込んだフォルダ・仮のコントローラーの値を消し、既定の設定にする
+  resetScene(): void {
+    this.clearEffects();
+    this.store.clearFolders();
+    this.controllers.clear();
+    this.set({ ...MME_DEFAULTS });
+  }
+
+  // 保存の前に: 割り当てた .fx (全部のタブ)・ポストエフェクト・それらのオフスクリーンの DefaultEffect で描く .fx と、その画像を、
+  // 描いていなくても読んだファイル (EffectStore のフォルダの used) にする (保存するファイル)
+  whenFilesRead(): Promise<void> {
+    return this.renderer.whenFilesRead();
   }
 
   // 書き出しの前に:使う .fx のテクスチャと、MMD モデルの .pmx を読み終える (失敗しても) まで待つ

@@ -63,6 +63,8 @@ export interface ProjectData {
   music: string | null;
   timeline: { start: number; end: number; frame: number };
   selected: number | null;
+  // MME 互換で読んだ .fx のフォルダのファイル (実際に読んだもの)。folder: フォルダの id (場面の値 mme の folders)、path: フォルダからの相対パス
+  mmeFiles?: { folder: string; path: string; asset: string }[];
   // ほかに、場面の値 (Addons.sceneData) を、その key で入れる: output (出力)・scene (シーン)・mme (レンダーエンジン)。古いプロジェクトにはない。
   // アドオンのものは "アドオンの id.名前"
   [data: string]: unknown;
@@ -70,6 +72,12 @@ export interface ProjectData {
 
 // 本体からアドオンに移した、前の版の物ごとの値 (名前 → アドオンの id)
 export const MOVED_TO_ADDONS: Record<string, string> = { cloner: 'cinema4d', deformers: 'cinema4d' };
+
+// 保存した mmeFiles (壊れた項は捨てる)
+export function savedMmeFiles(data: ProjectData): { folder: string; path: string; asset: string }[] {
+  const str = (v: unknown) => typeof v === 'string' && v !== '';
+  return (Array.isArray(data.mmeFiles) ? data.mmeFiles : []).filter(m => m && str(m.folder) && str(m.path) && str(m.asset));
+}
 
 export const projectBaseName = (name: string) => name.replace(/\.wgpj?$/i, '');
 

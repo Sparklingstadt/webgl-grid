@@ -50,7 +50,7 @@ export class Autosave {
     const store = this.store;
     if (!store || !this.dirty) return;
     this.dirty = false;
-    const { bytes, files } = this.project.saveReference();
+    const { bytes, files } = await this.project.saveReference();
     const map: Record<string, string> = {};
     for (const [id, f] of files) {
       const key = fileKey(f);

@@ -64,6 +64,16 @@ export class Assignments {
     return [...out];
   }
 
+  // DefaultEffect の規則が描く、見つかる .fx (規則の順。同じものは 1 つ)。警告は出さない
+  defaultEffects(defaults: DefaultsOf): LoadedEffect[] {
+    const out = new Set<LoadedEffect>();
+    for (const { action } of defaults.rules) {
+      const e = action.kind === 'effect' ? this.find({ folder: defaults.folder.id, path: joinPath(defaults.base, action.path) }, false) : null;
+      if (e) out.add(e);
+    }
+    return [...out];
+  }
+
   // 割り当てた .fx (見つからなければ null。警告は出さない)
   effectOf(ref: EffectRef): LoadedEffect | null {
     return this.find(ref, false);

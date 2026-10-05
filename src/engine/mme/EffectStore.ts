@@ -46,6 +46,13 @@ export async function readBinary(folder: EffectFolder, path: string): Promise<Ui
   return bytes;
 }
 
+// 使うファイル (画像など) として used に足す (読まない。保存するファイルを決めるため)。大文字小文字を無視して探し、なければ false
+export function markUsed(folder: EffectFolder, path: string): boolean {
+  const found = findFile(folder, path);
+  if (found !== null) folder.used.add(found);
+  return found !== null;
+}
+
 function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
   return a.length === b.length && a.every((x, i) => x === b[i]);
 }
@@ -123,6 +130,37 @@ export class EffectStore {
     return folder;
   }
 
+  // 保存したフォルダを、保存したときの id と名前で作り直す (プロジェクトを開くとき。同じ id のフォルダは置き換える)。
+  // files: フォルダからの相対パスと File (見つからなければ null で、そのファイルなしで作る。保存したフォルダにないものは捨てる)。
+  // 文字のファイルは読んでおく。次に読むフォルダの id は、作り直したものと重ならないようにする。
+  // 読めなければ (File.arrayBuffer の失敗など) 何も変えずに例外を投げる
+  async restore(folders: { id: string; name: string }[], files: { folder: string; path: string; file: File | null }[]): Promise<void> {
+    const made = folders.map(({ id, name }): EffectFolder => ({ id, name, files: new Map(), text: new Map(), used: new Set() }));
+    for (const { folder: id, path: raw, file } of files) {
+      const folder = made.find(f => f.id === id);
+      if (!folder || !file) continue;
+      const path = normalizePath(raw);
+      folder.files.set(path, file);
+      if (isText(path)) folder.text.set(path, new Uint8Array(await file.arrayBuffer()));
+    }
+    for (const folder of made) {
+      this.list = this.list.filter(f => f.id !== folder.id);
+      this.list.push(folder);
+      this.compiled.delete(folder.id);
+      const n = /^folder(\d+)$/.exec(folder.id);
+      if (n) this.nextFolderId = Math.max(this.nextFolderId, Number(n[1]) + 1);
+    }
+    this.folderChanges++;
+  }
+
+  // 読み込んだフォルダを全部消す (最初の状態に戻すとき。default.fx は残す。id は使い回さない)
+  clearFolders(): void {
+    if (this.list.length === 0) return;
+    for (const f of this.list) this.compiled.delete(f.id);
+    this.list = [];
+    this.folderChanges++;
+  }
+
   folder(id: string): EffectFolder | null {
     if (id === this.builtin.id) return this.builtin;
     return this.list.find(f => f.id === id) ?? null;
@@ -156,6 +194,12 @@ export class EffectStore {
   clear(): void {
     if (this.posts.length === 0) return;
     this.posts.length = 0;
+    this.events.emit('changed');
+  }
+
+  // 一覧を置き換える (プロジェクトを開くとき)
+  setPosts(posts: { effect: LoadedEffect; enabled: boolean }[]): void {
+    this.posts.splice(0, this.posts.length, ...posts.map(p => ({ ...p })));
     this.events.emit('changed');
   }
 

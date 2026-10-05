@@ -5,6 +5,7 @@ import { convertMmdMesh } from '../materials/fromMmd';
 import { parseDefaultEffect } from '../../core/mme/defaultEffect.ts';
 import { EffectInstance } from './EffectInstance';
 import type { LoadedEffect } from './EffectStore';
+import { readEmbedded } from '../project/format';
 import { MME_DEFAULTS, normalizeMme } from './MmeEngine';
 
 // フォルダから選んだファイル (webkitRelativePath は 'フォルダ/…')
@@ -272,7 +273,7 @@ describe('MmeEngine', () => {
     g.mme.set(saved);
     await g.project.open(await f.project.save('reference').then(b => {
       const json = JSON.parse(new TextDecoder().decode(b)) as Record<string, unknown>;
-      expect(json.mme).toEqual(MME_DEFAULTS);
+      expect(json.mme).toMatchObject({ settings: MME_DEFAULTS }); // (MmeScene の settings)
       delete json.mme;
       return new TextEncoder().encode(JSON.stringify(json));
     }));
@@ -541,5 +542,161 @@ describe('MmeEngine', () => {
     await e.project.open(bytes);
     expect(e.mme.store.posts).toEqual([]);
     expect(e.world.objects.map(o => o.mme)).toEqual([undefined]);
+  });
+  // --- プロジェクト: MME の場面 (フォルダ・ポストエフェクト・仮のコントローラーの値) と、読んだファイル ---
+  const TEX_FX = (image: string) => `
+float4x4 WVP : WORLDVIEWPROJECTION;
+texture Tex < string ResourceName = "${image}"; >;
+sampler S = sampler_state { texture = <Tex>; };
+float4 VS(float4 p : POSITION) : POSITION { return mul(p, WVP); }
+float4 PS() : COLOR0 { return tex2D(S, float2(0.5, 0.5)); }
+technique T < string MMDPass = "object"; > { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = compile ps_3_0 PS(); } }`;
+  const OFF_POST = (defaultEffect: string) => `
+texture OffMap : OFFSCREENRENDERTARGET < float2 ViewportRatio = { 1.0, 1.0 }; string DefaultEffect = "${defaultEffect}"; >;
+sampler OffSamp = sampler_state { texture = <OffMap>; };
+float4 VS(float4 p : POSITION) : POSITION { return p; }
+float4 PS() : COLOR0 { return tex2D(OffSamp, float2(0.5, 0.5)); }
+technique Post { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = compile ps_3_0 PS(); } }`;
+  const bin = (path: string, bytes: number[]) => {
+    const f = new File([new Uint8Array(bytes)], path.slice(path.lastIndexOf('/') + 1));
+    Object.defineProperty(f, 'webkitRelativePath', { value: path });
+    return f;
+  };
+  // フォルダ Fx: 画像を使う物の .fx・ポストエフェクト・使わない .fx・画像
+  const fxFolder = () => [
+    fileAt('Fx/a.fx', TEX_FX('tex.png')), fileAt('Fx/post.fx', OFF_POST('*=hide;')), fileAt('Fx/unused.fx', 'technique U { }'), bin('Fx/tex.png', [9, 8, 7]),
+  ];
+  const textOf = async (f: File | undefined) => (f ? new TextDecoder().decode(await f.arrayBuffer()) : null);
+  async function buildMmeScene(e: Engine) {
+    const obj = e.world.addShape(0, 0, 0, 0);
+    const a = await e.mme.loadEffect(fxFolder(), 'a.fx');
+    e.mme.assign(obj, 'Main', null, ref(a));
+    e.mme.store.addPost(e.mme.store.effect(a.folder, 'post.fx'));
+    e.mme.store.setPostEnabled(0, false);
+    e.mme.setControl('Ctrl', 'Si', 0.7);
+    e.mme.set({ engine: 'mme', selfShadow: false });
+    return a.folder.id;
+  }
+  async function expectMmeScene(e: Engine, id: string) {
+    expect(e.mme.store.folders().map(f => [f.id, f.name, [...f.files.keys()].sort()])).toEqual([[id, 'Fx', ['a.fx', 'post.fx', 'tex.png']]]);
+    const folder = e.mme.store.folder(id)!;
+    expect(await textOf(folder.files.get('a.fx'))).toBe(TEX_FX('tex.png'));
+    expect(new Uint8Array(await folder.files.get('tex.png')!.arrayBuffer())).toEqual(new Uint8Array([9, 8, 7]));
+    expect(e.mme.store.posts.map(p => [p.effect.folder.id, p.effect.entry, p.effect.result.ok, p.enabled])).toEqual([[id, 'post.fx', true, false]]);
+    expect(e.mme.controllers.get('Ctrl', 'Si')).toBeCloseTo(0.7, 6);
+    expect(e.mme.settings).toMatchObject({ engine: 'mme', selfShadow: false });
+    const [obj] = e.world.objects;
+    expect(obj.mme).toEqual({ Main: { object: { folder: id, path: 'a.fx' } } });
+    expect(e.mme.renderer.assignments.referenced(obj).map(x => x.result.ok)).toEqual([true]);
+  }
+
+  it('MME の場面と、実際に読んだファイル (描く前の画像も) を .wgp に入れ、開き直すと同じ id のフォルダ・ポストエフェクト・コントローラーの値に戻る', async () => {
+    const e = new Engine();
+    const id = await buildMmeScene(e);
+    const bytes = await e.project.save('embedded');
+    const { data } = await readEmbedded(bytes);
+    expect(data.mme).toEqual({
+      settings: { ...MME_DEFAULTS, engine: 'mme', selfShadow: false }, folders: [{ id, name: 'Fx' }],
+      posts: [{ effect: { folder: id, path: 'post.fx' }, enabled: false }], controls: { Ctrl: { Si: 0.7 } },
+    });
+    // (使わない .fx は入れない。画像は、まだ描いていなくても入る)
+    const mmeFiles = data.mmeFiles as { folder: string; path: string; asset: string }[];
+    expect(mmeFiles.map(m => [m.folder, m.path])).toEqual([[id, 'a.fx'], [id, 'post.fx'], [id, 'tex.png']]);
+    expect(mmeFiles.map(m => data.assets.find(a => a.id === m.asset)?.name)).toEqual(['a.fx', 'post.fx', 'tex.png']);
+
+    const f = new Engine();
+    await f.project.open(bytes);
+    await expectMmeScene(f, id);
+    expect(f.ui.state.toast).toBeNull(); // (エラーのお知らせはない)
+    // 次に読むフォルダは、開いたフォルダと別の id
+    expect((await f.mme.store.addFolder([fileAt('Other/o.fx', '')])).id).not.toBe(id);
+  });
+
+  it('.wgpj: このページで読んだフォルダのファイル (フォルダの名前とパスと大きさ) を使い、なければ探してもらったファイルを使う', async () => {
+    const e = new Engine();
+    const id = await buildMmeScene(e);
+    const bytes = await e.project.save('reference');
+    // 同じページ: 探してもらわない
+    const pick = vi.fn(async () => 'skip' as const);
+    await e.project.open(bytes, { pick });
+    expect(pick).not.toHaveBeenCalled();
+    await expectMmeScene(e, id);
+    // ほかのページ: 探してもらったファイル (名前と大きさで照らし合わせる)
+    const f = new Engine();
+    const picked = vi.fn(async () => fxFolder());
+    await f.project.open(bytes, { pick: picked });
+    expect(picked).toHaveBeenCalledTimes(1);
+    await expectMmeScene(f, id);
+  });
+
+  it('.wgpj で見つからないファイルは、そのファイルなしでフォルダを作る (割り当てとポストエフェクトは残し、描かない)', async () => {
+    const e = new Engine();
+    const id = await buildMmeScene(e);
+    const bytes = await e.project.save('reference');
+    const f = new Engine();
+    // (a.fx だけ見つかる。まだ見つからないものがあると、もう一度聞かれるので、見つかったものだけで開く)
+    const answers: (File[] | 'skip')[] = [[fxFolder()[0]], 'skip'];
+    await f.project.open(bytes, { pick: async () => answers.shift() ?? 'cancel' });
+    expect(f.mme.store.folders().map(x => [x.id, [...x.files.keys()]])).toEqual([[id, ['a.fx']]]);
+    expect(f.world.objects[0].mme).toEqual({ Main: { object: { folder: id, path: 'a.fx' } } });
+    expect(f.mme.store.posts.map(p => [p.effect.entry, p.effect.result.ok])).toEqual([['post.fx', false]]);
+    // 保存し直しても、ポストエフェクトの参照は残る
+    const again = JSON.parse(new TextDecoder().decode(await f.project.save('reference')));
+    expect(again.mme.posts).toEqual([{ effect: { folder: id, path: 'post.fx' }, enabled: false }]);
+  });
+
+  it('保存の前に、ポストエフェクトのオフスクリーンの DefaultEffect で描く .fx とその画像も (まだ描いていなくても) 読んだファイルにする', async () => {
+    const e = new Engine();
+    e.world.addShape(0, 0, 0, 0);
+    const post = await e.mme.loadEffect([fileAt('P/post.fx', OFF_POST('*=sub/off.fx;')), fileAt('P/sub/off.fx', TEX_FX('off.png')), bin('P/sub/off.png', [1])], 'post.fx');
+    e.mme.store.addPost(post);
+    const { data } = await readEmbedded(await e.project.save('embedded'));
+    expect((data.mmeFiles as { path: string }[]).map(m => m.path)).toEqual(['post.fx', 'sub/off.fx', 'sub/off.png']);
+    // (画像は読まず、標準のエンジンのあいだは MME の資源を作らない)
+    expect((e.mme.renderer as unknown as Internals).instances.size).toBe(0);
+  });
+
+  it('whenReady (書き出しの前) も、オフスクリーンの DefaultEffect で描く .fx の画像を、まだ描いていなくても待つ。オフのポストエフェクトのものは待たない', async () => {
+    const e = new Engine();
+    const on = await e.mme.loadEffect([fileAt('On/post.fx', OFF_POST('*=off.fx;')), fileAt('On/off.fx', TEX_FX('on.png')), bin('On/on.png', [1])], 'post.fx');
+    const off = await e.mme.loadEffect([fileAt('Off/post.fx', OFF_POST('*=off.fx;')), fileAt('Off/off.fx', TEX_FX('off.png')), bin('Off/off.png', [2])], 'post.fx');
+    e.mme.store.addPost(on);
+    e.mme.store.addPost(off);
+    e.mme.store.setPostEnabled(1, false);
+    await e.mme.whenReady();
+    expect([...on.folder.used].sort()).toEqual(['off.fx', 'on.png', 'post.fx']);
+    expect([...off.folder.used].sort()).toEqual(['post.fx']);
+  });
+
+  it('used にあってフォルダにないパスは保存しない (例外にならない)', async () => {
+    const e = new Engine();
+    const fx = await e.mme.loadEffect([fileAt('Fx/a.fx', 'technique T { }')], 'a.fx');
+    e.mme.store.addPost(fx);
+    fx.folder.used.add('ghost.png');
+    const { data } = await readEmbedded(await e.project.save('embedded'));
+    expect((data.mmeFiles as { path: string }[]).map(m => m.path)).toEqual(['a.fx']);
+  });
+
+  it('第 2 の計画の形の mme (設定だけ) のプロジェクトも、お知らせなしで開ける', async () => {
+    const e = new Engine();
+    const json = JSON.parse(new TextDecoder().decode(await e.project.save('reference')));
+    json.mme = { engine: 'mme', selfShadow: false, shadowDistance: 5000, groundShadow: true };
+    delete json.mmeFiles;
+    const f = new Engine();
+    await f.project.open(new TextEncoder().encode(JSON.stringify(json)));
+    expect(f.mme.settings).toEqual(json.mme);
+    expect(f.mme.store.folders()).toEqual([]);
+    expect(f.ui.state.toast).toBeNull();
+  });
+
+  it('最初の状態に戻すと、フォルダ・仮のコントローラーの値・ポストエフェクト・割り当て・設定を消す', async () => {
+    const e = new Engine();
+    await buildMmeScene(e);
+    e.resetAll();
+    expect(e.mme.store.folders()).toEqual([]);
+    expect(e.mme.controllers.values.size).toBe(0);
+    expect(e.mme.store.posts).toEqual([]);
+    expect(e.mme.settings).toEqual(MME_DEFAULTS);
+    expect(e.ui.state.mme.folders).toEqual([]);
   });
 });

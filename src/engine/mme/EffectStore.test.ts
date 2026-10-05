@@ -266,4 +266,63 @@ describe('EffectStore', () => {
     store.clear(); // (何もなければ知らせない)
     expect(changed).toHaveBeenCalledTimes(3 + 2 + 1 + 1 + 1);
   });
+  it('restore: 保存したときの id と名前でフォルダを作り (名前のないフォルダがいくつあっても id で分ける)、文字のファイルは読んでおく。ないファイル (null) は飛ばす', async () => {
+    const store = new EffectStore(fakeUi());
+    const before = store.version;
+    const png = new File([new Uint8Array([1, 2, 3])], 'tex.png');
+    await store.restore([{ id: 'folder3', name: 'Fx' }, { id: 'folder7', name: '' }, { id: 'folder8', name: '' }], [
+      { folder: 'folder3', path: 'a.fx', file: new File(['#include "sub/common.fxsub"\ntechnique T { }'], 'a.fx') },
+      { folder: 'folder3', path: 'sub/common.fxsub', file: new File(['float x = 1;'], 'common.fxsub') },
+      { folder: 'folder3', path: 'tex.png', file: png },
+      { folder: 'folder3', path: 'gone.png', file: null },
+      { folder: 'folder7', path: 'b.fx', file: new File(['technique B { }'], 'b.fx') },
+      { folder: 'folder9', path: 'c.fx', file: new File(['technique C { }'], 'c.fx') }, // (保存したフォルダにないものは捨てる)
+    ]);
+    expect(store.folders().map(f => [f.id, f.name, [...f.files.keys()], [...f.text.keys()]])).toEqual([
+      ['folder3', 'Fx', ['a.fx', 'sub/common.fxsub', 'tex.png'], ['a.fx', 'sub/common.fxsub']],
+      ['folder7', '', ['b.fx'], ['b.fx']],
+      ['folder8', '', [], []],
+    ]);
+    expect(store.version).toBeGreaterThan(before);
+    const fx = store.effect(store.folder('folder3')!, 'a.fx');
+    expect(fx.result.ok).toBe(true);
+    expect(store.folder('folder3')!.files.get('tex.png')).toBe(png);
+    expect(await readBinary(store.folder('folder3')!, 'TEX.PNG')).toEqual(new Uint8Array([1, 2, 3]));
+    // 次に読むフォルダは、保存した id と重ならない id。同じ名前のフォルダは、戻したものにまとめる
+    const next = await store.addFolder([fileAt('Other/o.fx', '')]);
+    expect(next.id).toBe('folder9');
+    const merged = await store.addFolder([fileAt('Fx/new.fx', '')]);
+    expect(merged.id).toBe('folder3');
+    expect([...merged.files.keys()]).toContain('new.fx');
+  });
+
+  it('restore: 同じ id のフォルダは置き換え、そのフォルダのコンパイル結果も捨てる。clearFolders はフォルダを全部消す (default.fx は残る)', async () => {
+    const store = new EffectStore(fakeUi());
+    const old = await store.addFolder([fileAt('Fx/a.fx', 'technique Old { }')]);
+    const oldFx = store.effect(old, 'a.fx');
+    await store.restore([{ id: old.id, name: 'Fx' }], [{ folder: old.id, path: 'a.fx', file: new File(['technique New { }'], 'a.fx') }]);
+    expect(store.folders()).toHaveLength(1);
+    const fx = store.effect(store.folder(old.id)!, 'a.fx');
+    expect(fx).not.toBe(oldFx);
+    expect(fx.result.ok && fx.result.effect.techniques[0].name).toBe('New');
+    const before = store.version;
+    store.clearFolders();
+    expect(store.folders()).toEqual([]);
+    expect(store.folder(old.id)).toBeNull();
+    expect(store.version).toBeGreaterThan(before);
+    expect(store.folder('builtin')).not.toBeNull();
+    expect(store.effect(store.folder('builtin')!, 'default.fx')).toBe(store.defaultEffect);
+    expect((await store.addFolder([fileAt('Fx/a.fx', '')])).id).not.toBe(old.id); // (id は使い回さない)
+  });
+
+  it('setPosts はポストエフェクトの一覧を置き換え、1 回だけ知らせる', async () => {
+    const store = new EffectStore(fakeUi());
+    const changed = vi.fn();
+    store.events.on('changed', changed);
+    const a = store.effect(await store.addFolder([fileAt('A/a.fx', '')]), 'a.fx');
+    const b = store.effect(await store.addFolder([fileAt('B/b.fx', '')]), 'b.fx');
+    store.setPosts([{ effect: a, enabled: false }, { effect: b, enabled: true }]);
+    expect(store.posts).toEqual([{ effect: a, enabled: false }, { effect: b, enabled: true }]);
+    expect(changed).toHaveBeenCalledTimes(1);
+  });
 });

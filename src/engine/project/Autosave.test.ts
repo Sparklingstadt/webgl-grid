@@ -51,7 +51,7 @@ describe('Autosave', () => {
       const e = engineWithCube();
       await e.autosave.start(store);
       // 参照するファイルがある場面のかわりに、保存の中身を差し替える
-      vi.spyOn(e.project, 'saveReference').mockReturnValue({ bytes: new TextEncoder().encode('{}'), files: new Map([['a1', i < 4 ? file : new File(['x'], 'b.pmx', { lastModified: 2 })]]) });
+      vi.spyOn(e.project, 'saveReference').mockResolvedValue({ bytes: new TextEncoder().encode('{}'), files: new Map([['a1', i < 4 ? file : new File(['x'], 'b.pmx', { lastModified: 2 })]]) });
       e.addShape(0);
       e.history.checkpoint();
       await e.autosave.saveNow();

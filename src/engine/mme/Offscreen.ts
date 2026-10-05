@@ -261,7 +261,7 @@ export class Offscreen {
 }
 
 // 宣言の DefaultEffect (規則のパスは、宣言しているエフェクトのエントリーの .fx があるフォルダから)
-function defaultsOf(decl: OffscreenDecl): DefaultsOf {
+export function defaultsOf(decl: OffscreenDecl): DefaultsOf {
   return { rules: decl.rules, base: dirname(decl.effect.entry), folder: decl.effect.folder };
 }
 

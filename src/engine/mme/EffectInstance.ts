@@ -242,6 +242,18 @@ function fitsDim(dim: SamplerDecl['dim'], t: THREE.Texture): boolean {
 
 const EMPTY: EffectDesc = { params: [], textures: [], samplers: [], techniques: [] };
 
+// ResourceName の画像の、フォルダからのパス (エフェクトのファイルのフォルダから。大文字小文字と '\' は読むときに問わない)
+function resourcePath(effect: LoadedEffect, decl: TextureDecl): { name: string; path: string } {
+  const a = annotation(decl.annotations, 'ResourceName');
+  const name = typeof a?.value === 'string' ? a.value : '';
+  return { name, path: joinPath(dirname(effect.entry), name) };
+}
+
+// エフェクトが ResourceName で読む画像の、フォルダからのパス (保存するファイルを決めるため)
+export function resourcePaths(effect: LoadedEffect): string[] {
+  return effect.result.ok ? effect.result.effect.textures.filter(t => textureRole(t) === 'file').map(t => resourcePath(effect, t).path) : [];
+}
+
 export class EffectInstance {
   readonly warnings: string[] = [];
   stopped = false; // GPU で使えない (シェーダーをリンクできない)。物は default.fx で描き、ポストエフェクトは飛ばす
@@ -366,11 +378,9 @@ export class EffectInstance {
 
   // ResourceName をエフェクトのファイルのフォルダから探して読む (大文字小文字と '\' は問わない)
   private loadFile(decl: TextureDecl): void {
-    const a = annotation(decl.annotations, 'ResourceName');
-    const name = typeof a?.value === 'string' ? a.value : '';
+    const { name, path } = resourcePath(this.effect, decl);
     const entry: FileTexture = { label: name, tex: null, failed: false };
     this.files.set(decl.name, entry);
-    const path = joinPath(dirname(this.effect.entry), name);
     const mip = annotation(decl.annotations, 'MipLevels');
     const mipmaps = !(Array.isArray(mip?.value) && mip.value[0] === 1);
     const load = readBinary(this.effect.folder, path).then(bytes => (bytes && !this.disposed ? this.decode(bytes, path) : null)).then(tex => {

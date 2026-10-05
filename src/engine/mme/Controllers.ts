@@ -64,6 +64,12 @@ export class Controllers {
     items.set(item, Number.isNaN(v) ? 0 : Math.min(Math.max(v, 0), 1));
   }
 
+  // 仮のコントローラーの値を全部消す (最初の状態に戻すとき・プロジェクトを開くとき)
+  clear(): void {
+    this.changes++;
+    this.values.clear();
+  }
+
   // 仮のコントローラーの項目の値 (入れていなければ 0。名前は大文字小文字を問わない)
   get(name: string, item: string): number {
     return this.values.get(this.key(name))?.get(item) ?? 0;

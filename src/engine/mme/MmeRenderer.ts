@@ -13,10 +13,10 @@ import type { Selection } from '../world/Selection';
 import type { World } from '../world/World';
 import { Assignments } from './Assignments';
 import type { Controllers } from './Controllers';
-import { EffectInstance } from './EffectInstance';
-import type { EffectStore, LoadedEffect } from './EffectStore';
+import { EffectInstance, resourcePaths } from './EffectInstance';
+import { markUsed, type EffectStore, type LoadedEffect } from './EffectStore';
 import { CANVAS, Framebuffers, type DrawTarget } from './Framebuffers';
-import { Offscreen } from './Offscreen';
+import { defaultsOf, Offscreen, offscreenDecls } from './Offscreen';
 import { SHADOW_DISTANCE_MAX, type MmeSettings } from '../../core/mme/settings.ts';
 import { scriptOrder } from '../../core/mme/technique.ts';
 import { PostChain, type FrameState } from './PostChain';
@@ -197,16 +197,39 @@ export class MmeRenderer {
     for (const w of fb.prepare(e, screen)) if (!inst.warnings.includes(w)) inst.warnings.push(w);
   }
 
-  // 使う .fx のテクスチャと、MMD モデルの .pmx の読み込みが終わる (失敗しても) まで待つ
+  // 使う .fx のテクスチャと、MMD モデルの .pmx の読み込みが終わる (失敗しても) まで待つ。
+  // (オフスクリーンの DefaultEffect で描く .fx も、まだ描いていなくても待つ。開いてすぐ書き出しても画像が入るように)
   async whenReady(): Promise<void> {
-    const waits: Promise<void>[] = [this.scenePass.whenReady()];
-    const effects = new Set<LoadedEffect>([this.d.store.defaultEffect]);
-    for (const obj of this.d.world.objects) for (const e of this.assignments.referenced(obj)) if (e.result.ok && !this.stopped(e)) effects.add(e);
-    for (const p of this.d.store.posts) if (p.enabled && p.effect.result.ok) effects.add(p.effect);
-    // (オフスクリーンに描くエフェクトは、前のフレームで描いたもの)
-    for (const e of this.offscreen.effects()) if (e.result.ok && !this.stopped(e)) effects.add(e);
-    for (const e of effects) waits.push(this.instance(e).ready());
-    await Promise.all(waits);
+    const effects = [this.d.store.defaultEffect, ...this.reachable(false)].filter(e => e.result.ok && !this.stopped(e));
+    await Promise.all([this.scenePass.whenReady(), ...effects.map(e => this.instance(e).ready())]);
+  }
+
+  // 保存の前に: 使う・使うかもしれない .fx (reachable。オフのポストエフェクトも) の画像を、描いていなくても EffectStore のフォルダの
+  // used に入れる (コンパイルで読む文字のファイルは、reachable を集めるときにコンパイルして入る)。画像は読まない
+  // (保存するときにファイルから読む。標準のエンジンのときに資源を作らず、自動保存のたびに画像を開かない)
+  async whenFilesRead(): Promise<void> {
+    for (const e of this.reachable(true)) for (const path of resourcePaths(e)) markUsed(e.folder, path);
+  }
+
+  // 割り当てた (全部のタブ)・ポストエフェクトの一覧にある (offPosts ならオフのものも)・前のフレームにオフスクリーンで使った .fx と、
+  // それらが宣言するオフスクリーンの DefaultEffect が描く .fx (その宣言も、たどる)。見つからない .fx は入れない
+  private reachable(offPosts: boolean): Set<LoadedEffect> {
+    const found = new Set<LoadedEffect>(this.offscreen.effects());
+    for (const obj of this.d.world.objects) for (const e of this.assignments.referenced(obj)) found.add(e);
+    for (const p of this.d.store.posts) if (offPosts || p.enabled) found.add(p.effect);
+    const queue = [...found];
+    for (let e = queue.pop(); e; e = queue.pop()) {
+      // (規則だけを見るので、画面の大きさは何でもよい)
+      for (const decl of offscreenDecls(e, [1, 1]).decls) {
+        if (!decl.draws) continue;
+        for (const x of this.assignments.defaultEffects(defaultsOf(decl))) {
+          if (found.has(x)) continue;
+          found.add(x);
+          queue.push(x);
+        }
+      }
+    }
+    return found;
   }
 
   // どの物にも割り当てていない・ポストエフェクトの一覧にない・オフスクリーンで使っていない .fx の資源と、場面にないモデルのトゥーンの画像を捨てる
