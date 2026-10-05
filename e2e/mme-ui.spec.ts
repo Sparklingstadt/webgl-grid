@@ -77,7 +77,7 @@ test('出力のタブでレンダーエンジンを MME 互換にでき、効果
   await page.getByRole('tab', { name: '効果' }).click();
   await expect(panel(page)).toBeVisible();
   await expect(panel(page)).toContainText('物を選ぶと、その物に .fx を読み込めます');
-  await expect(panel(page)).toContainText('割り当てはページを開き直すと消えます');
+  await expect(panel(page)).toContainText('割り当てはプロジェクトに保存されます');
   // 標準に戻すと欄は消える
   await setEngine(page, '標準');
   await expect(page.getByRole('checkbox', { name: 'セルフシャドウ' })).toHaveCount(0);

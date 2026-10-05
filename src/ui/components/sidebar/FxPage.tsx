@@ -81,7 +81,7 @@ function MmePanel() {
           <ul aria-label={t('描くときの警告')}>{mme.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
         </details>
       )}
-      <div className="note">{t('.fx が入っているフォルダを選ぶか、ここに落とします。割り当てはページを開き直すと消えます')}</div>
+      <div className="note">{t('.fx が入っているフォルダを選ぶか、ここに落とします。割り当てはプロジェクトに保存されます')}</div>
     </Panel>
   );
 }

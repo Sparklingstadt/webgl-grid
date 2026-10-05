@@ -1241,7 +1241,7 @@ const dict: Dictionary = {
   "LoopGetIndex はループの中でだけ使えます。無視します": "LoopGetIndex can only be used inside a loop. Ignoring it",
   "Script の命令を知りません: {cmd}": "Unknown Script command: {cmd}",
   "レンダーターゲット {name} の形式 {format} は使えないので既定にします": "Format {format} of render target {name} can't be used, so the default is used",
-  ".fx が入っているフォルダを選ぶか、ここに落とします。割り当てはページを開き直すと消えます": "Choose a folder containing .fx files, or drop it here. Assignments are lost when the page is reloaded",
+  ".fx が入っているフォルダを選ぶか、ここに落とします。割り当てはプロジェクトに保存されます": "Choose a folder containing .fx files, or drop it here. Assignments are saved in the project",
   ".fx を選ぶ": "Choose an .fx file",
   "MME 互換で描いているあいだは、下の効果はかかりません": "While drawing with the MME-compatible engine, the effects below are not applied",
   "MME 互換は、MikuMikuEffect の .fx で描きます。.fx は「効果」のタブで読み込みます": "The MME-compatible engine draws with MikuMikuEffect .fx files. Load .fx files in the Effects tab",
