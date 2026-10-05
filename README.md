@@ -482,7 +482,7 @@ Ray-MMD 1.5.2 の標準の構成（`ray.conf` のまま）に、ライトとフ�
 
 MCP からも同じ構成を組めます（`e2e/mme-mcp-local.spec.ts` が、この順に組んで書き出します）: `mme_set`（`engine: "mme"`）→ `mme_list_fx`・`mme_load_folder`（`ray-mmd-1.5.2`）→ `load_files`（モデル・ライト・フォグの .pmx と空の .pmx）→ `mme_add_accessory`（`name: "ray.x"`・`fx: { folder: "ray-mmd-1.5.2", path: "ray.fx" }`）→ `mme_state` の `tabs` に `MaterialMap` などが出るのを待つ（ray.fx を一度描くと出ます）→ `mme_assign`（モデルの Main・材質ごとの `MaterialMap`、`object: "stage"` の Main・`EnvLightMap`・`FogMap`・`MaterialMap`）→ `mme_add_controller`（`ray_controller.pmx`）→ `mme_set_values`・`insert_keyframe`（`channels: ["Exposure+"]`）→ `render_image`・`render_animation`。
 
-手元（Apple M3 Max・Chrome（Playwright の Chromium）・GPU で描く）で、ray.fx・材質の .fx 3 つ・空・ライト 10 種類・フォグ 4 種類を置いた場面を 1280×720 で描くと、1 フレームは、全部見えているとき **8 ms 前後（125 fps ほど）**、ライト 8 種類とフォグ 3 種類を書き出しで隠して、点光源・スポットライト・グラウンドフォグ・空に絞ったとき **5.3 ms 前後（190 fps ほど）** でした（`e2e/ray-mmd-local.spec.ts` が両方を測って出します）。
+手元（Apple M3 Max・Chrome（Playwright の Chromium）・GPU で描く）で、ray.fx・材質の .fx 3 つ・空・ライト 10 種類・フォグ 4 種類を置いた場面を 1280×720 で描くと、1 フレームは、全部見えているとき **8 ms 前後（125 fps ほど）**、ライト 8 種類とフォグ 3 種類を書き出しで隠して、点光源・スポットライト・グラウンドフォグ・空に絞ったとき **5.7 ms 前後（175 fps ほど）** でした（どちらもアクセサリ `ray.x` とコントローラーの物 `ray_controller.pmx` で組んだ場面。`e2e/ray-mmd-local.spec.ts` が両方を測って出します）。
 
 **いまできること**
 
