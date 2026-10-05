@@ -1,30 +1,22 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { parseDds } from '../src/core/mme/dds.ts';
 import { makePmx } from './fixtures/pmx';
 import { expect, test, type Page } from './fixtures/test';
 import type { Win } from './helpers';
 import { addPmx, diff, objectFx, openMme, setCamera, shoot } from './mme-helpers';
+import { HAS_RAY, RAY_FOLDER as FOLDER, RAY_OUT as OUT, RAY_ROOT as ROOT, RAY_SKIP, SKY, problems, serveFx, threeParts, unsupported } from './ray-mmd-helpers';
 
-// 手元だけの e2e: 本物の Ray-MMD 1.5.2 (Git に入れない fx/ray-mmd-1.5.2/) を、標準の構成 + ライトとフォグで読み込んで描く。
-// 「未対応」の警告・リンクの失敗が 0 で、書き出した絵が真っ黒でない (人形に光が当たり、空が青く見える) ことを確かめ、絵を test-results/ray-mmd/ に
+// 手元だけの e2e: 本物の Ray-MMD 1.5.2 (Git に入れない fx/ray-mmd-1.5.2/) を、fx/ の一覧から読み込み (「足す…」の「fx/ から選ぶ」で ray.fx。
+// アクセサリ ray.x に当たる)、標準の構成 + ライトとフォグと、コントローラーの物 ray_controller.pmx (MME の欄の「置く」) で描く。
+// 「未対応」の警告・リンクの失敗が 0 で、書き出した絵が真っ黒でない (人形に光が当たり、空が青く見える) ことと、コントローラーの
+// Exposure+ に打ったキーフレームで、書き出した動画の最初と最後のコマの明るさが違うことを確かめ、絵を test-results/ray-mmd/ に
 // 保存する (目で比べるため)。警告などの一覧は RAY_MMD_LOG=1 のときだけ出す。
 // fx/ray-mmd-1.5.2/ray.fx がなければ (CI など) 飛ばす
 
-const ROOT = path.resolve('fx/ray-mmd-1.5.2');
-const OUT = path.resolve('test-results/ray-mmd');
-const FOLDER = 'ray-mmd-1.5.2';
 const W = 1280, H = 720;
 
-test.skip(!existsSync(path.join(ROOT, 'ray.fx')), 'fx/ray-mmd-1.5.2 がない (Ray-MMD 1.5.2 を置いたときだけ動く)');
-
-// フォルダの中のすべてのファイル (フォルダからの相対パス。'/' 区切り。.git は除く)
-function listFiles(dir: string, base = ''): string[] {
-  return readdirSync(dir).filter(name => name !== '.git').flatMap(name => {
-    const rel = base ? `${base}/${name}` : name;
-    return statSync(path.join(dir, name)).isDirectory() ? listFiles(path.join(dir, name), rel) : [rel];
-  });
-}
+test.skip(!HAS_RAY, RAY_SKIP);
 
 // ライト (Lighting の .pmx のすべての種類) と、その色 (モーフ R+・G+・B+)。x, z は置く場所
 const LIGHTS: { file: string; at: [number, number]; rgb: [number, number, number] }[] = [
@@ -45,42 +37,16 @@ const FOGS: { file: string; at: [number, number] }[] = [
   { file: 'VolumetricCube.pmx', at: [-3, -2.5] },
   { file: 'VolumetricSphere.pmx', at: [3.6, -2.8] },
 ];
-const SKY = 'Skybox/Time of day/Time of day.pmx';
 const EDITOR = 'Materials/Editor/Standard/material_editor_1.pmx';
 // 絞った絵に残すもの (点光源・スポットライト・グラウンドフォグ)。テスト用のモデルと材質のエディタと、空 (ステージ) はいつも残す
 const FOCUS = new Set(['PointLight.pmx', 'SpotLight.pmx', 'GroundFog.pmx']);
 
-// テスト用のモデル (makePmx の四角柱) の面を 3 つの材質に分ける: 前と右の面・後ろと左の面・上と下
-function threeParts() {
-  const inward = [0, 1, 5, 0, 5, 4, 1, 2, 6, 1, 6, 5, 2, 3, 7, 2, 7, 6, 3, 0, 4, 3, 4, 7, 4, 5, 6, 4, 6, 7, 0, 2, 1, 0, 3, 2];
-  const outward = inward.map((_, k) => inward[k % 3 === 0 ? k : k % 3 === 1 ? k + 1 : k - 1]);
-  return [outward.slice(0, 12), outward.slice(12, 24), outward.slice(24)].map(faces => ({ faces, edgeSize: 0 }));
-}
-
-// Ray-MMD のファイルをページに配り (/__ray/ の下)、ページの中で File の並びにして window.__ray に置く
-async function serveRay(page: Page) {
-  const paths = listFiles(ROOT);
-  await page.route('**/__ray/**', route => {
-    const rel = decodeURIComponent(new URL(route.request().url()).pathname.replace(/^\/__ray\//, ''));
-    route.fulfill({ body: readFileSync(path.join(ROOT, rel)), contentType: 'application/octet-stream' });
-  });
-  await page.evaluate(async ({ paths, folder }) => {
-    const w = window as Win;
-    w.__ray = await Promise.all(paths.map(async (p: string) => {
-      const blob = await (await fetch(`/__ray/${p.split('/').map(encodeURIComponent).join('/')}`)).blob();
-      const f = new File([blob], p.slice(p.lastIndexOf('/') + 1));
-      Object.defineProperty(f, 'webkitRelativePath', { value: `${folder}/${p}` });
-      return f;
-    }));
-  }, { paths, folder: FOLDER });
-  return paths;
-}
-
-// Ray-MMD の .pmx (フォルダからの相対パス) を読み込んで (x, z) に置く。物の番号を返す
+// Ray-MMD の .pmx (フォルダからの相対パス。fx/ の一覧から読み込んだフォルダのファイル) を読み込んで (x, z) に置く。物の番号を返す
 async function placePmx(page: Page, rel: string, at: [number, number]) {
   return page.evaluate(async ({ rel, at, folder }) => {
-    const w = window as Win, { engine } = w;
-    const files = (w.__ray as File[]).filter(f => (f as Win).webkitRelativePath === `${folder}/${rel}`);
+    const { engine } = window as Win;
+    const file = engine.mme.store.folders().find((f: Win) => f.name === folder)?.files.get(rel);
+    const files = file ? [file] : [];
     const before = engine.world.objects.length;
     await engine.loadFiles(files, { askTextures: false });
     if (engine.world.objects.length === before) return -1; // (ステージになった)
@@ -97,8 +63,9 @@ async function placePmx(page: Page, rel: string, at: [number, number]) {
 // Time of day の README.png の「model disply order」のとおり)。ステージになったかを返す
 async function loadStage(page: Page, rel: string) {
   return page.evaluate(async ({ rel, folder }) => {
-    const w = window as Win, { engine } = w;
-    const files = (w.__ray as File[]).filter(f => (f as Win).webkitRelativePath === `${folder}/${rel}`);
+    const { engine } = window as Win;
+    const file = engine.mme.store.folders().find((f: Win) => f.name === folder)?.files.get(rel);
+    const files = file ? [file] : [];
     const before = engine.world.objects.length;
     await engine.loadFiles(files, { askTextures: false });
     return engine.stage.model !== null && engine.world.objects.length === before;
@@ -134,13 +101,13 @@ async function setMorphs(page: Page, i: number, values: Record<string, number>) 
 
 // 物 i (ステージは 'stage') のタブ tab の、物全体 (material が null) か材質に、Ray-MMD のフォルダの .fx を割り当てる
 async function assign(page: Page, i: number | 'stage', tab: string, material: number | null, fx: string) {
-  await page.evaluate(({ i, tab, material, fx }) => {
+  await page.evaluate(({ i, tab, material, fx, name }) => {
     const { engine } = window as Win, { mme } = engine;
-    const folder = mme.store.folders()[0];
+    const folder = mme.store.folders().find((f: Win) => f.name === name);
     const slot = { folder: folder.id, path: fx };
     if (i === 'stage') mme.assignStage(tab, material, slot);
     else mme.assign(engine.world.objects[i], tab, material, slot);
-  }, { i, tab, material, fx });
+  }, { i, tab, material, fx, name: FOLDER });
 }
 
 // 書き出した絵の、世界の点 (world) と絵の上の位置 (image: 幅・高さに対する割合) のまわり (r 画素四方) の平均の明るさ (0〜1)
@@ -227,37 +194,31 @@ async function frameTime(page: Page, n = 20) {
   }, n);
 }
 
-// 描いたときの警告とコンパイルの警告、止めたエフェクト (リンクの失敗・レンダーターゲットを作れない)、コンパイルできないエフェクト
-async function problems(page: Page) {
-  return page.evaluate(() => {
-    const { engine } = window as Win, { mme } = engine;
-    const drawn = mme.renderer.drawnEffects();
-    return {
-      warnings: mme.renderer.allWarnings() as string[],
-      uiWarnings: engine.ui.state.mme.warnings as string[],
-      compile: drawn.flatMap((e: Win) => e.result.warnings.map((d: Win) => `${e.name}: ${d.file}:${d.line} ${d.message}`)) as string[],
-      failed: drawn.filter((e: Win) => !e.result.ok).map((e: Win) => `${e.name}: ${e.result.errors.slice(0, 3).map((d: Win) => `${d.file}:${d.line} ${d.message}`).join(' / ')}`) as string[],
-      stopped: mme.renderer.stoppedEffects().map((e: Win) => e.name) as string[],
-      drawn: drawn.map((e: Win) => e.name) as string[],
-      tabs: mme.renderer.offscreenTabs().map((t: Win) => t.name) as string[],
-    };
-  });
-}
-
-test('Ray-MMD 1.5.2 の標準の構成 + ライト (すべての種類) とフォグ (4 種類): 未対応の警告とリンクの失敗が 0 で、書き出せる', async ({ page }) => {
+test('Ray-MMD 1.5.2 を fx/ の一覧から読み、アクセサリ ray.x (ray.fx) とコントローラーの物 ray_controller.pmx で、標準の構成 + ライト (すべての種類) とフォグ (4 種類) を組む: 未対応の警告とリンクの失敗が 0 で、書き出せ、コントローラーのキーフレームで動画の明るさが変わる', async ({ page }) => {
   test.setTimeout(600_000);
+  await serveFx(page); // (fx/ の一覧は、ふだんの fx/)
   const errors = await openMme(page, { width: W, height: H });
-  const paths = await serveRay(page);
-  for (const known of ['ray.fx', 'ray.conf', SKY, 'Main/main.fx', 'Materials/material_2.0.fx']) expect(paths, known).toContain(known);
 
-  // 1. Ray-MMD のフォルダと、ポストエフェクトの ray.fx
-  const rayOk = await page.evaluate(async folder => {
-    const w = window as Win, { mme } = w.engine;
-    const e = await mme.loadEffect(w.__ray, 'ray.fx');
-    mme.addPost(e); // (アクセサリ ray.x に ray.fx)
-    return e.result.ok && e.folder.name === folder;
-  }, FOLDER);
-  expect(rayOk).toBe(true);
+  // 1. 「効果」のタブの MME 互換の欄で、ポストエフェクトの「足す…」の「fx/ から選ぶ」から ray-mmd-1.5.2 を読み、ray.fx を選ぶ
+  // (アクセサリ ray.x を場面の最後に置いて、その Main に当たる)
+  await page.getByRole('tab', { name: '効果' }).click();
+  const panel = page.locator('details.panel').filter({ has: page.locator('summary', { hasText: /^MME 互換$/ }) });
+  const postPicker = panel.locator('.mme-drop').filter({ has: page.getByRole('button', { name: '足す…' }) });
+  await postPicker.getByRole('button', { name: 'fx/ から選ぶ' }).click();
+  const folders = page.getByRole('dialog', { name: 'fx/ のフォルダ' });
+  await folders.getByRole('group', { name: 'fx/ のフォルダの一覧' }).getByRole('button', { name: new RegExp(`^${FOLDER.replace(/\./g, '\\.')}`) }).click();
+  const choice = page.getByRole('dialog', { name: '.fx を選ぶ' });
+  await expect(choice).toBeVisible({ timeout: 120_000 }); // (897 ファイル・約 88 MB を読む)
+  await choice.getByRole('button', { name: 'ray.fx', exact: true }).click();
+  await expect(panel.getByRole('list', { name: 'ポストエフェクトの一覧' })).toContainText(`${FOLDER}/ray.fx`);
+  const post = await page.evaluate(async () => {
+    const { engine } = window as Win;
+    await engine.mme.whenReady();
+    const [p] = engine.mme.posts();
+    return { accessory: p.obj.mmeObj, ok: p.effect.result.ok as boolean, folder: p.effect.folder.name as string, files: p.effect.folder.files.size as number };
+  });
+  expect(post).toMatchObject({ accessory: { kind: 'accessory', name: 'ray.x' }, ok: true, folder: FOLDER });
+  expect(post.files, 'フォルダのファイルが全部入る').toBeGreaterThan(800);
 
   // 2. モデル: テスト用のモデル (材質ごとに 肌・髪・material_2.0) と、材質のエディタの .pmx
   const doll = await placeDoll(page, [0, 0]);
@@ -290,6 +251,16 @@ test('Ray-MMD 1.5.2 の標準の構成 + ライト (すべての種類) とフ�
   await assign(page, 'stage', 'FogMap', null, 'Skybox/Time of day/Time of fog.fx');
   await assign(page, 'stage', 'MaterialMap', null, 'Materials/material_skybox.fx');
 
+  // 5. コントローラー: ray.fx が読む ray_controller.pmx が MME の欄の「コントローラー」に並ぶので、「置く」で置く
+  await page.getByRole('tab', { name: '効果' }).click();
+  await panel.getByRole('button', { name: 'ray_controller.pmx を置く' }).click();
+  const controller = await page.evaluate(() => {
+    const { engine } = window as Win;
+    const o = engine.world.objects.find((x: Win) => x.mmeObj?.kind === 'controller');
+    return o ? { name: o.mmeObj.name as string, index: engine.world.objects.indexOf(o) as number } : null;
+  });
+  expect(controller?.name).toBe('ray_controller.pmx');
+
   await setCamera(page, { yaw: Math.PI / 2 + 0.35, pitch: 0.12, dist: 7, tx: 0, ty: 0.8, tz: -0.6 });
   // 2 回書き出す (1 回目でオフスクリーンのタブ・画像の読み込みがそろう)
   await exportPng(page, null);
@@ -308,22 +279,49 @@ test('Ray-MMD 1.5.2 の標準の構成 + ライト (すべての種類) とフ�
   // 空 (絵の上の端の 3 か所。ライトから離れている) の明るさを見る
   const region = await patches(page, [[0, 1, 0.2], [0.2, 1, 0]], [[0.25, 0.05], [0.5, 0.05], [0.75, 0.05]]);
   const msFocus = await frameTime(page); // (絞った絵: 点光源・スポットライト・グラウンドフォグ・空)
-  // 動画にも書き出せる (3 コマ)
-  const video = await page.evaluate(async () => {
+
+  // 6. コントローラーの Exposure+ に、フレーム 0 で 0・フレーム 2 で 1 のキーフレームを打って、動画 (3 コマ) に書き出す。
+  // 書き出す各コマの絵 (動画に入れる前の絵) の平均の明るさを見る (最初と最後のコマは PNG にして保存する)
+  const video = await page.evaluate(async index => {
     const { engine } = window as Win;
+    const ctl = engine.world.objects[index];
     engine.clock.setRange(0, 2);
-    const v = await engine.output.renderVideo();
-    return { frames: v.frames as number, size: v.bytes.length as number };
-  });
+    engine.clock.seekFrame(0); engine.mme.setControl('ray_controller.pmx', 'Exposure+', 0); engine.keyframes.insertMme(ctl, 0, ['Exposure+']);
+    engine.clock.seekFrame(2); engine.mme.setControl('ray_controller.pmx', 'Exposure+', 1); engine.keyframes.insertMme(ctl, 2, ['Exposure+']);
+    engine.clock.seekFrame(1);
+    const out = engine.output as Win;
+    const flatten = out.flatten.bind(out);
+    const means: number[] = [], pngs: string[] = [];
+    out.flatten = (to: HTMLCanvasElement) => {
+      flatten(to);
+      const d = to.getContext('2d')!.getImageData(0, 0, to.width, to.height).data;
+      let sum = 0;
+      for (let i = 0; i < d.length; i += 4) sum += (d[i] + d[i + 1] + d[i + 2]) / 3;
+      means.push(sum / (d.length / 4) / 255);
+      pngs.push(to.toDataURL('image/png'));
+    };
+    try {
+      const v = await engine.output.renderVideo();
+      return { frames: v.frames as number, size: v.bytes.length as number, means, first: pngs[0], last: pngs[pngs.length - 1] };
+    } finally {
+      out.flatten = flatten;
+    }
+  }, controller!.index);
   console.log(`PNG: ${all.file} (平均の明るさ ${all.mean.toFixed(3)}), ${focus.file} (${focus.mean.toFixed(3)})`);
   console.log(`人形の面: ${region.world.map(v => v.toFixed(3)).join(', ')}、空: ${region.image.map(v => v.toFixed(3)).join(', ')} (赤・青: ${region.imageRb.map(c => `${c.r.toFixed(2)}・${c.b.toFixed(2)}`).join(', ')})`);
   const fps = (ms: number) => `${ms.toFixed(1)} ms (${(1000 / ms).toFixed(1)} fps)`;
   console.log(`1 フレーム (${W}×${H}): 全部見えている ${fps(msAll)}、絞った絵 ${fps(msFocus)}`);
+  const frameFiles = (['first', 'last'] as const).map(k => {
+    const file = path.join(OUT, `ray-mmd-video-${k}.png`);
+    writeFileSync(file, Buffer.from(video[k].slice(video[k].indexOf(',') + 1), 'base64'));
+    return file;
+  });
+  console.log(`動画のコマの平均の明るさ (Exposure+ 0 → 1): ${video.means.map(v => v.toFixed(3)).join(', ')} (最初と最後のコマ: ${frameFiles.join(', ')})`);
 
-  const unsupported = (list: string[]) => list.filter(w => /対応|止め|使えない|見つからない|できない|読めない/.test(w));
   expect(unsupported([...p.warnings, ...p.uiWarnings, ...p.compile])).toEqual([]);
   expect(p.failed).toEqual([]);
   expect(p.stopped).toEqual([]);
+  expect(p.drawn).toContain(`${FOLDER}/ray.fx`);
   expect(video.frames).toBe(3);
   expect(video.size).toBeGreaterThan(0);
   expect(errors).toEqual([]);
@@ -333,6 +331,9 @@ test('Ray-MMD 1.5.2 の標準の構成 + ライト (すべての種類) とフ�
   expect(Math.max(...region.world), '人形の面のどちらかに光が当たる').toBeGreaterThan(0.1);
   expect(Math.min(...region.image), '空が見える (上の端が黒くない)').toBeGreaterThan(0.05);
   expect(region.imageRb.map(c => c.b - c.r).filter(d => d > 0).length, `空が青みがかる (青 > 赤): ${JSON.stringify(region.imageRb)}`).toBe(region.imageRb.length);
+  // コントローラーのキーフレーム: 最後のコマ (Exposure+ = 1) は最初のコマ (0) より明るい
+  expect(video.means).toHaveLength(3);
+  expect(video.means[2] - video.means[0], `動画のコマの明るさ: ${video.means}`).toBeGreaterThan(0.02);
 });
 
 test('ミップを持つ .dds (Ray-MMD の skyspec_hdr.dds。1024×512・7 段) を GPU に送り、tex2Dlod で段ごとに .dds のその段の色を読む', async ({ page }) => {

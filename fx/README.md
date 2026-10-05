@@ -36,8 +36,9 @@ fx/
 ```
 
 - 取ってくるには、たとえば `git clone --depth 1 --branch 1.5.2 https://github.com/ray-cast/ray-mmd.git fx/ray-mmd-1.5.2` のあと `fx/ray-mmd-1.5.2/.git` を消します（約 88 MB）。
-- アプリでは、「効果」のタブの「MME 互換」の欄で、このフォルダごと選びます（「fx/ から選ぶ」の `ray-mmd-1.5.2`。使い方は README の「Ray-MMD を使う」）。
-- 置くと、手元だけの e2e `npx playwright test e2e/ray-mmd-local.spec.ts` が動きます（置いていなければ飛ばします）。描いた絵は `test-results/ray-mmd/` に保存されます。
+- アプリでは、「効果」のタブの「MME 互換」の欄で、このフォルダごと選びます（ポストエフェクトの「fx/ から選ぶ」の `ray-mmd-1.5.2` で `ray.fx` を選ぶと、アクセサリ `ray.x` に当たります。`ray_controller.pmx` は「コントローラー」の「置く」で置きます。使い方は README の「Ray-MMD を使う」）。MCP からは `mme_list_fx`・`mme_load_folder` で読み込めます。
+- 置くと、手元だけの e2e `npx playwright test e2e/ray-mmd-local.spec.ts e2e/mme-mcp-local.spec.ts` が動きます（置いていなければ飛ばします）。`ray-mmd-local` は画面の「fx/ から選ぶ」で、`mme-mcp-local` は MCP のコマンドだけで組みます（どちらも、この `fx/` の一覧から読みます。ほかの e2e は `WEBGL_GRID_FX_DIR` のテスト用のフォルダを使います）。描いた絵（PNG と、動画の最初と最後のコマ）は `test-results/ray-mmd/` に保存されます。
+- 割り当てを MMD に持っていくときは、アプリの「.emm を書き出す」で書いた .emm を使います。.fx のパスは `ray-mmd-1.5.2\Main\main.fx` のように「このフォルダの名前\フォルダの中のパス」なので、MMD のフォルダ（`MikuMikuDance.exe` のあるフォルダ）の直下に `ray-mmd-1.5.2` を置いて読みます（README の「.emm」）。
 - `npm run ray:survey` は、ここにある .dds の形式と、Ray-MMD の .fx が宣言するレンダーターゲットの形式を調べて、`docs/superpowers/notes/2026-10-05-ray-mmd-survey.md` に書きます。
 
 **このフォルダの中身は Git に入りません**（`.gitignore` で、この README 以外を除いています）。
