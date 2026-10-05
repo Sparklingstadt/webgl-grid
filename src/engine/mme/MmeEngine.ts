@@ -12,6 +12,7 @@ import type { Obj } from '../types';
 import type { MmeEffectUi, MmeUiState, UiChannel } from '../UiChannel';
 import type { Selection } from '../world/Selection';
 import type { World } from '../world/World';
+import { Controllers } from './Controllers';
 import { EffectStore, type LoadedEffect } from './EffectStore';
 import { MmeRenderer } from './MmeRenderer';
 
@@ -30,13 +31,17 @@ export class MmeEngine {
   readonly store: EffectStore;
   readonly settings: MmeSettings = { ...MME_DEFAULTS };
   readonly renderer: MmeRenderer;
+  readonly controllers: Controllers; // CONTROLOBJECT の値 (仮のコントローラーの値は場面の値。保存は Task 14)
   private reported = new Set<string>(); // お知らせに出した例外の文
   private logged: string | null = null; // 続けて出ている例外の文 (コンソールに 1 回だけ書く。描けたら忘れる)
   private shown = ''; // 画面に出した状態 (JSON。同じなら知らせない)
 
   constructor(private deps: MmeDeps) {
     this.store = new EffectStore(deps.ui);
-    this.renderer = new MmeRenderer({ ...deps, store: this.store, settings: this.settings });
+    this.controllers = new Controllers({
+      world: deps.world, stage: deps.stage, warn: m => this.renderer.warn(m), outputting: () => deps.viewport.outputting,
+    });
+    this.renderer = new MmeRenderer({ ...deps, store: this.store, settings: this.settings, controllers: this.controllers });
     // 前の描画 (効果の後処理) は、標準のエンジンのときに使う
     const prev = deps.viewport.drawOverride;
     deps.viewport.drawOverride = () => (this.settings.engine === 'mme' ? this.draw() || (prev?.() ?? false) : prev?.() ?? false);
@@ -54,6 +59,12 @@ export class MmeEngine {
     Object.assign(this.settings, patch);
     if (was === 'mme' && this.settings.engine !== 'mme') this.renderer.dispose();
     this.publish();
+    this.deps.viewport.requestDraw();
+  }
+
+  // 仮のコントローラー (場面にない CONTROLOBJECT の名前) の項目の値 (0〜1) を変えて描き直す。場面の値なので、元に戻すの対象にしない
+  setControl(name: string, item: string, v: number): void {
+    this.controllers.set(name, item, v);
     this.deps.viewport.requestDraw();
   }
 

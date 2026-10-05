@@ -27,6 +27,8 @@ class Writer {
 // uvs: 頂点ごとの UV (下の 4 つ、上の 4 つの順。なければ全部 (0, 0))
 // diffuse: 材質の拡散色と不透明度 (なければ (0.9, 0.7, 0.5, 1))。edgeSize: parts がないときの輪郭線の太さ (なければ 1)
 // outward: parts がないときの面を、MMD の決まりどおり外向き (外から見て時計回り) にする
+// morphs: 「まばたき」のあとに足す表情の名前 (頂点の動きのない頂点モーフ。分類は「その他」で、表示枠の「表情」に入れる)
+// boneNames: ボーンの名前 (センター・右腕・頭・髪・髪錘の順に置き換える。足りない分は元のまま)
 export interface PmxOptions {
   physics?: boolean;
   texture?: string;
@@ -38,8 +40,10 @@ export interface PmxOptions {
   diffuse?: [number, number, number, number];
   edgeSize?: number;
   outward?: boolean;
+  morphs?: string[];
+  boneNames?: string[];
 }
-export function makePmx(name = 'テスト人形', { physics = false, texture, flags = 0x01 | 0x10, sdef = false, parts, edgeRatios, uvs, diffuse = [0.9, 0.7, 0.5, 1], edgeSize = 1, outward = false }: PmxOptions = {}): Uint8Array {
+export function makePmx(name = 'テスト人形', { physics = false, texture, flags = 0x01 | 0x10, sdef = false, parts, edgeRatios, uvs, diffuse = [0.9, 0.7, 0.5, 1], edgeSize = 1, outward = false, morphs = [], boneNames = [] }: PmxOptions = {}): Uint8Array {
   const w = new Writer();
   // ヘッダー: 文字コード UTF-16、追加 UV なし、インデックスはすべて 4 バイト
   for (const c of 'PMX ') w.u8(c.charCodeAt(0));
@@ -93,8 +97,9 @@ export function makePmx(name = 'テスト人形', { physics = false, texture, fl
   }
 
   // ボーン: フラグは 回転 0x02・移動 0x04・表示 0x08・操作 0x10
+  let boneNo = 0;
   const bone = (n: string, pos: number[], parent: number, flags: number) => {
-    w.text(n); w.text('');
+    w.text(boneNames[boneNo++] ?? n); w.text('');
     w.f32(...pos);
     w.i32(parent);
     w.i32(0);         // 変形の順番
@@ -109,13 +114,19 @@ export function makePmx(name = 'テスト人形', { physics = false, texture, fl
   bone('髪', [0, 18, 0], 2, 0x02);
   bone('髪錘', [-3, 9, 0], 3, 0x02);
 
-  // 表情: まばたき (目)。上の頂点を少し下げる
-  w.i32(1);
+  // 表情: まばたき (目)。上の頂点を少し下げる。morphs の表情はあとに、頂点の動きなしで足す
+  w.i32(1 + morphs.length);
   w.text('まばたき'); w.text('blink');
   w.u8(2);   // 分類: 目
   w.u8(1);   // 頂点モーフ
   w.i32(4);
   for (let i = 4; i < 8; i++) { w.i32(i); w.f32(0, -2, 0); }
+  for (const m of morphs) {
+    w.text(m); w.text(m);
+    w.u8(4);   // 分類: その他
+    w.u8(1);   // 頂点モーフ
+    w.i32(0);
+  }
 
   // 表示枠: Root (センター)、表情 (まばたき)、腕 (右腕)
   w.i32(3);
@@ -125,7 +136,7 @@ export function makePmx(name = 'テスト人形', { physics = false, texture, fl
     for (const [target, index] of items) { w.u8(target); w.i32(index); }
   };
   frame('Root', 1, [[0, 0]]);
-  frame('表情', 1, [[1, 0]]);
+  frame('表情', 1, [[1, 0], ...morphs.map((_, i): [number, number] => [1, i + 1])]);
   frame('腕', 0, [[0, 1]]);
 
   if (!physics) {

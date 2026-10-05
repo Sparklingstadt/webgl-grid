@@ -16,7 +16,7 @@ export interface DefaultsOf { rules: DefaultRule[]; base: string; folder: Effect
 const HIDE: Slot = { kind: 'hide' };
 
 // .pmx のファイル名 (形に登録した .pmx、なければ読み込んだときの File)。分からなければ null
-function pmxName(mesh: { geometry: object; userData: Record<string, unknown> }): string | null {
+export function pmxName(mesh: { geometry: object; userData: Record<string, unknown> }): string | null {
   const src = mmdSourceOf(mesh.geometry) ?? mesh.userData.sourceFile;
   return src instanceof File ? src.name : null;
 }

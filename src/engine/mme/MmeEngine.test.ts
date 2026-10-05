@@ -24,6 +24,16 @@ describe('MmeEngine', () => {
     expect(new Engine().mme.settings).toEqual(MME_DEFAULTS);
   });
 
+  it('setControl は仮のコントローラーの値を (0〜1 に収めて) 入れ、描き直す。元に戻すの手にはしない', () => {
+    const e = new Engine();
+    const draw = vi.spyOn(e.viewport, 'requestDraw');
+    const edited = vi.spyOn(e.history, 'soon');
+    e.mme.setControl('ray_controller.pmx', 'SSAO+', 3);
+    expect(e.mme.controllers.values.get('ray_controller.pmx')?.get('SSAO+')).toBe(1);
+    expect(draw).toHaveBeenCalled();
+    expect(edited).not.toHaveBeenCalled();
+  });
+
   it('engine を mme にすると drawOverride が MME の描画を呼び、standard に戻すと前の描画に戻る', () => {
     const e = new Engine();
     // 前の描画 (効果の後処理)

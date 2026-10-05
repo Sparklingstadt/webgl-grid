@@ -27,4 +27,13 @@ describe('makePmx', () => {
     const inward = new MMDParser.Parser().parsePmx(makePmx('t').buffer as ArrayBuffer, false);
     expect(inward.faces[0].indices).toEqual([0, 1, 5]);
   });
+  it('表情 (頂点の動きなし) とボーンの名前を選べる', () => {
+    const d = new MMDParser.Parser().parsePmx(makePmx('t', { physics: true, morphs: ['R+', 'Green'], boneNames: ['Position', 'Arm'] }).buffer as ArrayBuffer, false);
+    expect(d.morphs.map((m: { name: string }) => m.name)).toEqual(['まばたき', 'R+', 'Green']);
+    expect(d.morphs.map((m: { elementCount: number }) => m.elementCount)).toEqual([4, 0, 0]);
+    expect(d.morphs.map((m: { panel: number }) => m.panel)).toEqual([2, 4, 4]);
+    expect(d.bones.map((b: { name: string }) => b.name)).toEqual(['Position', 'Arm', '頭', '髪', '髪錘']); // (足りない分は元の名前)
+    expect(d.frames.find((f: { name: string }) => f.name === '表情').elements.map((e: { index: number }) => e.index)).toEqual([0, 1, 2]);
+    expect(d.rigidBodies).toHaveLength(5); // (後ろの剛体まで読める)
+  });
 });

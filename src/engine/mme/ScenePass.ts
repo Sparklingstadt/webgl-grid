@@ -3,6 +3,7 @@ import type { Pass } from '../../core/fx/index.ts';
 import { t } from '../../core/i18n';
 import type { Color3 } from '../../core/materials/nodes';
 import { inputLink, surfaceShader, upstreamOrder } from '../../core/materials/tree';
+import type { ControlRef } from '../../core/mme/controllers.ts';
 import { runTechnique } from '../../core/mme/script.ts';
 import { SHADOW_COLOR, type MaterialState, type MmdPass, type SemanticContext } from '../../core/mme/semantics.ts';
 import type { MmeSettings } from '../../core/mme/settings.ts';
@@ -48,6 +49,7 @@ export interface ScenePassDeps {
   // エフェクトが宣言したオフスクリーンのテクスチャ (owner はそのエフェクトで描く物。描いていなければ null)
   offscreen(effect: LoadedEffect, name: string, owner: Obj | null): THREE.Texture | null;
   warn(message: string): void; // どのエフェクトのものでもない警告
+  control(ref: ControlRef, self: Obj | null, owner: Obj | null): number[] | null; // CONTROLOBJECT の値 (self はいま描いている物)
 }
 
 // PMX の材質のフラグ
@@ -421,6 +423,7 @@ export class ScenePass {
     const ctx: SemanticContext = {
       camera: frame.camera, light: frame.light, world: item.mesh.matrixWorld, material: sub.state, pass,
       time: frame.time, elapsed: frame.elapsed, screen: frame.screen, selfShadow: frame.selfShadow, owner: table.owner,
+      control: ref => this.d.control(ref, item.obj, table.owner),
     };
     const { textures: t } = sub;
     const fb = this.d.fb();

@@ -3,6 +3,7 @@ import type { EffectDesc, Param, Pass, RenderState, SamplerDecl, StateValue, Tex
 import { dirname, joinPath } from '../../core/fx/source.ts';
 import { msg, t } from '../../core/i18n.ts';
 import { annotation } from '../../core/mme/annotations.ts';
+import { controlRef } from '../../core/mme/controllers.ts';
 import { semanticValue, textureRole, type SemanticContext } from '../../core/mme/semantics.ts';
 import { typeShape } from '../../core/mme/typeShape.ts';
 import { readBinary, type LoadedEffect } from './EffectStore.ts';
@@ -351,6 +352,10 @@ export class EffectInstance {
     if (!values) {
       values = Array.isArray(p.init) ? p.init : null;
       if (ctx) {
+        // (項目にならない CONTROLOBJECT は、型が合わないか name がない。値は 0)
+        if (p.semantic?.toUpperCase() === 'CONTROLOBJECT' && !controlRef(p)) {
+          this.warn(t('CONTROLOBJECT の変数 {name} は、型か name の注釈が合わないので、0 を渡します', { name: p.name }));
+        }
         const r = semanticValue(p, ctx);
         if (r.kind === 'numbers') values = r.values;
         else if (r.kind === 'unsupported') this.warn(t('セマンティクス {semantic} には値を入れません ({name})', { semantic: r.what, name: p.name }));

@@ -12,6 +12,7 @@ import type { UiChannel } from '../UiChannel';
 import type { Selection } from '../world/Selection';
 import type { World } from '../world/World';
 import { Assignments } from './Assignments';
+import type { Controllers } from './Controllers';
 import { EffectInstance } from './EffectInstance';
 import type { EffectStore, LoadedEffect } from './EffectStore';
 import { CANVAS, Framebuffers, type DrawTarget } from './Framebuffers';
@@ -27,6 +28,7 @@ import { Skinner } from './Skinner';
 export interface MmeRendererDeps {
   viewport: Viewport; graph: SceneGraph; world: World; selection: Selection; clock: Clock; library: MaterialLibrary;
   store: EffectStore; settings: MmeSettings; stage: () => THREE.Object3D | null; ui: UiChannel;
+  controllers: Controllers; // CONTROLOBJECT の値
 }
 
 export type { DrawTarget, FrameState };
@@ -81,6 +83,7 @@ export class MmeRenderer {
       shadowMap: () => this.shadow?.texture ?? null,
       offscreen: (e, name, owner) => this.offscreen.texture(e, name, owner),
       warn: m => this.warn(m),
+      control: (ref, self, owner) => d.controllers.value(ref, self, owner),
     });
     this.offscreen = new Offscreen({
       fb: () => this.fb!,
@@ -209,6 +212,7 @@ export class MmeRenderer {
   dispose(): void {
     this.warnings.length = 0;
     this.assignments.clearWarnings();
+    this.d.controllers.clearWarnings();
     for (const inst of this.instances.values()) inst.dispose();
     this.instances.clear();
     this.skinner.dispose();
@@ -248,6 +252,7 @@ export class MmeRenderer {
       render: (m, geometry) => renderer.renderBufferDirect(this.d.graph.camera, null as unknown as THREE.Scene, geometry, m, this.proxy, null as unknown as THREE.GeometryGroup),
       checkLink: (m, inst, effect) => this.scenePass.checkLink(m, inst, effect),
       offscreen: (e, name) => this.offscreen.texture(e, name, null),
+      control: ref => this.d.controllers.value(ref, null, null),
     });
     return fb;
   }
@@ -447,7 +452,7 @@ export class MmeRenderer {
     }
   }
 
-  private warn(message: string): void {
+  warn(message: string): void {
     if (!this.warnings.includes(message)) this.warnings.push(message);
   }
 

@@ -1190,6 +1190,8 @@ const dict: Dictionary = {
   "この GPU は DXT (S3TC) の圧縮テクスチャに対応していません": "此 GPU 不支援 DXT (S3TC) 壓縮紋理",
   "知らない画像の形式です: .{ext}": "未知的影像格式：.{ext}",
   "セマンティクス {semantic} には値を入れません ({name})": "不為語意 {semantic} 提供值（{name}）",
+  "CONTROLOBJECT の項目 {item} (アクセサリの値) には対応していないので、0 を渡します": "不支援 CONTROLOBJECT 的項 {item}（配件的值），改為提供 0",
+  "CONTROLOBJECT の変数 {name} は、型か name の注釈が合わないので、0 を渡します": "CONTROLOBJECT 變數 {name} 的型別或 name 註解不符，改為提供 0",
   "テクスチャ {name} が見つかりません": "找不到紋理 {name}",
   "テクスチャ {name} を読めませんでした: {error}": "無法讀取紋理 {name}：{error}",
   "サンプラー {name} の形 ({dim}) とテクスチャの形が合いません": "取樣器 {name} 的類型（{dim}）與紋理不符",

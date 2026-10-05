@@ -247,6 +247,33 @@ describe('EffectInstance', () => {
     expect(inst.warnings.filter(x => x.includes('MOUSEPOSITION'))).toHaveLength(1);
   });
 
+  it('bind: CONTROLOBJECT は ctx.control の値 (null は 0)。項目にならない宣言 (型が合わない・name がない) は 0 にして 1 回だけ警告', () => {
+    const fx = `
+float mA : CONTROLOBJECT < string name = "ctl.pmx"; string item = "A"; >;
+float3 mP : CONTROLOBJECT < string name = "ctl.pmx"; string item = "P"; >;
+float2 mBad : CONTROLOBJECT < string name = "ctl.pmx"; string item = "B"; >;
+float mNoName : CONTROLOBJECT < string item = "C"; >;
+float4 VS(float4 p : POSITION) : POSITION { return p + float4(mA + mNoName, mP.y, mBad.x, 0); }
+float4 PS() : COLOR0 { return 1; }
+technique T { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = compile ps_3_0 PS(); } }`;
+    const e = loadEffect(fx, []);
+    const inst = new EffectInstance(e, () => {}, async () => pixel([0, 0, 0, 255]));
+    const pass = passOf(e, 'P');
+    const m = inst.material(pass, -1, OBJECT)!;
+    const control = vi.fn((ref: { param: string }) => (ref.param === 'mA' ? [0.5] : null));
+    for (let k = 0; k < 2; k++) inst.bind(m, pass, { ...makeCtx(), control }, BUILTINS, noTextures());
+    const u = (name: string) => m.uniforms[glslOf(pass.program!, name)].value as unknown;
+    expect(u('mA')).toBe(0.5);
+    expect(u('mP')).toEqual([0, 0, 0]);
+    expect(u('mBad')).toEqual([0, 0]);
+    expect(u('mNoName')).toBe(0);
+    expect(control.mock.calls.map(c => c[0].param)).toEqual(['mA', 'mP', 'mA', 'mP']); // (項目にならないものには聞かない)
+    expect(inst.warnings.filter(w => w.includes('CONTROLOBJECT'))).toEqual([
+      'CONTROLOBJECT の変数 mBad は、型か name の注釈が合わないので、0 を渡します',
+      'CONTROLOBJECT の変数 mNoName は、型か name の注釈が合わないので、0 を渡します',
+    ]);
+  });
+
   it('ResourceName のテクスチャをサブフォルダから大文字小文字と \\ を無視して探す (読めなければ赤紫と警告)', async () => {
     const e = loadEffect();
     const decoded = pixel([1, 2, 3, 4]);
