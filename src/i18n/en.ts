@@ -1313,5 +1313,6 @@ const dict: Dictionary = {
   "{name} の材質を開く": "Show materials of {name}",
   "コントローラー": "Controllers",
   "{name} ({n} 項目)": "{name} ({n} items)",
+  "{name} は GPU で使えないので止めました": "Stopped {name} because it can't be used on the GPU",
 };
 export default dict;

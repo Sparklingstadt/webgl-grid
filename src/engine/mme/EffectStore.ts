@@ -69,12 +69,18 @@ export class EffectStore {
   private compiled = new Map<string, Map<string, LoadedEffect>>(); // フォルダの id → パス → コンパイルしたもの
   private nextId = 1;
   private nextFolderId = 1;
+  private folderChanges = 0;
 
   constructor(private ui: UiChannel) {
     const text = new Map([['default.fx', new TextEncoder().encode(DEFAULT_FX)]]);
     this.builtin = { id: 'builtin', name: '', files: new Map(), text, used: new Set() };
     this.defaultEffect = this.effect(this.builtin, 'default.fx');
     if (!this.defaultEffect.result.ok) throw new Error(`default.fx: ${this.defaultEffect.result.errors[0]?.message}`);
+  }
+
+  // フォルダを足した・中身を変えた回数 (画面のフォルダの .fx の一覧を作り直すため)
+  get version(): number {
+    return this.folderChanges;
   }
 
   // フォルダの中の .fx の相対パス
@@ -92,8 +98,11 @@ export class EffectStore {
     for (const [i, f] of files.entries()) if (isText(paths[i])) text.set(paths[i], new Uint8Array(await f.arrayBuffer()));
     // (読んでいるあいだに同じ名前のフォルダができていれば、それにまとめる)
     let folder = name ? this.list.find(f => f.name === name) : undefined;
-    if (!folder) this.list.push((folder = { id: `folder${this.nextFolderId++}`, name, files: new Map(), text: new Map(), used: new Set() }));
     let changed = false;
+    if (!folder) {
+      this.list.push((folder = { id: `folder${this.nextFolderId++}`, name, files: new Map(), text: new Map(), used: new Set() }));
+      changed = true;
+    }
     for (const [i, f] of files.entries()) {
       const path = paths[i];
       const old = folder.files.get(path);
@@ -107,7 +116,10 @@ export class EffectStore {
       else folder.text.delete(path);
       changed = true;
     }
-    if (changed) this.compiled.delete(folder.id);
+    if (changed) {
+      this.compiled.delete(folder.id);
+      this.folderChanges++;
+    }
     return folder;
   }
 

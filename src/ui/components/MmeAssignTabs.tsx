@@ -6,7 +6,8 @@ import { useEngine, useUi } from '../EngineContext';
 import { BSelect, type SelectGroup, type SelectOption } from './controls/BSelect';
 
 // --- MME 互換の「エフェクト割当」(MME のエフェクト割当の窓): Main とオフスクリーンのタブ。タブごとに場面の物が並び、
-// MMD モデルは開くと材質が並ぶ。行ごとに、読み込んだフォルダの .fx・非表示・既定に戻すを選ぶ。選んでいない行は、既定で描くものを薄い字で出す ---
+// MMD モデルは開くと材質が並ぶ。行ごとに、読み込んだフォルダの .fx・非表示・既定に戻すを選ぶ。選んでいない行は、既定で描くものを薄い字で出す。
+// 行で描くはずの .fx を GPU で止めていれば、そのことも書く ---
 
 // 選択の値: '' は既定 (割り当てなし)、'hide' は非表示、フォルダの .fx は 'フォルダの id\nパス'
 const DEFAULT = '';
@@ -89,6 +90,7 @@ export function MmeAssignTabs() {
                   <span className="mme-name" title={name}>{name}</span>
                   <BSelect value={value} options={options} label={label} onChange={v => assign(row, v)} />
                   {row.assigned === null && <span className="note mme-fallback" title={shown(row.fallback)}>{shown(row.fallback)}</span>}
+                  {row.stopped && <span className="note mme-error mme-stopped">{t('{name} は GPU で使えないので止めました', { name: row.stopped })}</span>}
                 </li>
               );
             })}

@@ -64,6 +64,11 @@ export class Assignments {
     return [...out];
   }
 
+  // 割り当てた .fx (見つからなければ null。警告は出さない)
+  effectOf(ref: EffectRef): LoadedEffect | null {
+    return this.find(ref, false);
+  }
+
   // 出した警告を忘れる (描くときの警告を捨てたあと、また出す)
   clearWarnings(): void {
     this.warned.clear();

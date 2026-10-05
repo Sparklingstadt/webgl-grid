@@ -45,12 +45,19 @@ export class Controllers {
   // 仮のコントローラー: 名前 → 項目 → 値 (0〜1)
   readonly values = new Map<string, Map<string, number>>();
   private warned = new Set<string>();
+  private changes = 0;
   private stageFound: { root: THREE.Object3D; mesh: THREE.SkinnedMesh | null } | null = null;
 
   constructor(private d: ControllersDeps) {}
 
+  // 仮のコントローラーの値を入れた回数 (画面の値を並べ直すため)
+  get version(): number {
+    return this.changes;
+  }
+
   // 仮のコントローラーの値を入れる (0〜1 に収める)
   set(name: string, item: string, v: number): void {
+    this.changes++;
     const key = this.key(name);
     let items = this.values.get(key);
     if (!items) this.values.set(key, (items = new Map()));

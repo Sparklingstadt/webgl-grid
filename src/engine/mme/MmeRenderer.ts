@@ -374,6 +374,11 @@ export class MmeRenderer {
     return [...(this.instances.get(e)?.warnings ?? [])];
   }
 
+  // GPU で使えないので止めたエフェクト
+  stoppedEffects(): LoadedEffect[] {
+    return [...this.instances].filter(([, inst]) => inst.stopped).map(([e]) => e);
+  }
+
   // そのエフェクトを GPU で使えないので止めたか (ポストエフェクトは飛ばす)
   stopped(e: LoadedEffect): boolean {
     return this.instances.get(e)?.stopped ?? false;

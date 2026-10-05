@@ -13,7 +13,7 @@ import type { MmeEffectUi, MmeRowUi, MmeUiState, UiChannel } from '../UiChannel'
 import { nameOf } from '../world/Selection';
 import type { Selection } from '../world/Selection';
 import type { World } from '../world/World';
-import { objectName, type DefaultsOf } from './Assignments';
+import type { DefaultsOf } from './Assignments';
 import { Controllers } from './Controllers';
 import { EffectStore, findFile, type EffectFolder, type LoadedEffect } from './EffectStore';
 import { MmeRenderer } from './MmeRenderer';
@@ -30,6 +30,7 @@ const assignable = (o: Obj) => !o.light && !o.camera;
 // フォルダの中の .fx (フォルダからの相対パス)
 const fxIn = (f: EffectFolder) => [...f.text.keys()].filter(p => p.toLowerCase().endsWith('.fx')).sort();
 const slotName = (s: Slot) => (s.kind === 'hide' ? 'hide' : s.effect.name);
+const sameList = (a: unknown[], b: unknown[]) => a.length === b.length && a.every((x, i) => x === b[i]);
 
 export interface MmeDeps {
   viewport: Viewport; graph: SceneGraph; world: World; selection: Selection; clock: Clock; library: MaterialLibrary; ui: UiChannel;
@@ -46,13 +47,16 @@ export class MmeEngine {
   private reported = new Set<string>(); // お知らせに出した例外の文
   private logged: string | null = null; // 続けて出ている例外の文 (コンソールに 1 回だけ書く。描けたら忘れる)
   private shown = ''; // 画面に出した状態 (JSON。同じなら知らせない)
-  private folderVersion = 0; // フォルダを読み込んだ回数 (読み直すとコンパイルし直すので、割り当ての行を作り直す)
-  // エフェクト割当のタブ・行と、作ったときの元 (割り当て・物・タブ・フォルダ) と JSON。元が変わったときだけ作り直す
+  private changes = 0; // 割り当て・ポストエフェクトを変えた回数 (changed)
+  // エフェクト割当のタブ・行と JSON、仮のコントローラーの項目。作ったときの元 (inputs) が変わったときだけ作り直す
+  private assignInputs: unknown[] = [];
   private assignUi: AssignUi = { folders: [], tabs: [], rows: {} };
-  private assignKey = '';
   private assignJson = '';
-  private catalog = new Map<string, string[]>(); // 仮のコントローラーの項目 (描いているエフェクトか場面の物の名前が変わったときだけ作り直す)
-  private catalogKey = '';
+  private catalog = new Map<string, string[]>();
+  // 仮のコントローラーの項目と値と JSON (項目を作り直したか、値を変えたときだけ並べ直す)
+  private controlVersion = -1;
+  private controlUi: MmeUiState['controllers'] = [];
+  private controlJson = '';
 
   constructor(private deps: MmeDeps) {
     this.store = new EffectStore(deps.ui);
@@ -89,63 +93,87 @@ export class MmeEngine {
 
   // 割り当て・ポストエフェクトが変わった: 使わなくなった資源を捨てて、画面に知らせて描き直す
   private changed(): void {
+    this.changes++;
     this.renderer.prune();
     this.publish();
     this.deps.viewport.requestDraw();
   }
 
   // 画面に設定・選んでいる物の .fx (Main の物の割り当て)・ポストエフェクトの一覧・エフェクト割当のタブと行・仮のコントローラーを知らせる
-  // (変わったときだけ。毎フレーム呼ばれるので、割り当ての行は元が変わったときだけ作り、その JSON も使い回す)
+  // (変わったときだけ)。毎フレーム呼ばれるので、割り当ての行と仮のコントローラーの項目は元 (inputs) が変わったときだけ作り、
+  // 仮のコントローラーの値は値を変えたときだけ並べ直す。どちらも JSON を使い回す
   publish(): void {
     const saved = this.deps.selection.current?.mme?.Main?.object;
     const ref = saved && saved !== 'hide' ? saved : null;
     const folder = ref && this.store.folder(ref.folder);
     const fx = ref && folder ? this.store.effect(folder, ref.path) : null;
-    const rest: Omit<MmeUiState, keyof AssignUi> = {
+    const rest: Omit<MmeUiState, keyof AssignUi | 'controllers'> = {
       settings: { ...this.settings },
       object: fx ? this.effectUi(fx) : null,
       posts: this.store.posts.map(p => ({ ...this.effectUi(p.effect), enabled: p.enabled })),
       warnings: [...this.renderer.warnings],
-      controllers: this.controllerUi(),
     };
-    this.updateAssignUi();
-    const json = `${JSON.stringify(rest)}\n${this.assignJson}`;
+    const tabs = [{ name: 'Main', description: '' }, ...this.renderer.offscreenTabs().filter(x => x.name !== 'Main')];
+    const inputs = this.inputs(tabs);
+    const rebuilt = !sameList(inputs, this.assignInputs);
+    if (rebuilt) {
+      this.assignInputs = inputs;
+      this.rebuild(tabs);
+    }
+    if (rebuilt || this.controllers.version !== this.controlVersion) {
+      this.controlVersion = this.controllers.version;
+      this.controlUi = [...this.catalog].map(([name, items]) => ({ name, items: items.map(item => ({ item, value: this.controllers.get(name, item) })) }));
+      this.controlJson = JSON.stringify(this.controlUi);
+    }
+    const json = `${JSON.stringify(rest)}\n${this.assignJson}\n${this.controlJson}`;
     if (json === this.shown) return;
     this.shown = json;
-    this.deps.ui.set({ mme: { ...rest, ...this.assignUi } });
+    this.deps.ui.set({ mme: { ...rest, ...this.assignUi, controllers: this.controlUi } });
   }
 
-  // エフェクト割当: タブ (Main と、前のフレームに使ったエフェクトが宣言したオフスクリーン)、タブごとの物と材質の行、フォルダの .fx
-  private updateAssignUi(): void {
-    const tabs = [{ name: 'Main', description: '' }, ...this.renderer.offscreenTabs().filter(x => x.name !== 'Main')];
-    const drawn = new Map(tabs.slice(1).map(x => [x.name, this.renderer.offscreenDefaults(x.name)]));
+  // 割り当ての行と仮のコントローラーの項目の元。物の数によらず、版の数 (言語・フォルダ・割り当てとポストエフェクト・場面の物 (足す・消す・
+  // 名前・ステージ)・マテリアル) と、前のフレームのオフスクリーンのタブ (名前・説明・DefaultEffect の規則 (宣言ごとに同じ配列)・持ち主) と、
+  // GPU で止めたエフェクト。中身は参照で比べる
+  private inputs(tabs: { name: string; description: string }[]): unknown[] {
+    const ui = this.deps.ui.state;
+    const out: unknown[] = [getLang(), this.store.version, this.changes, ui.sceneVersion, ui.materialsVersion];
+    for (const tab of tabs) {
+      const d = tab.name === 'Main' ? null : this.renderer.offscreenDefaults(tab.name);
+      out.push(tab.name, tab.description, d?.defaults.rules ?? null, d?.defaults.base ?? null, d?.defaults.folder ?? null, ...(d?.owners ?? []), '|');
+    }
+    out.push(...this.renderer.stoppedEffects());
+    return out;
+  }
+
+  // エフェクト割当 (タブ・タブごとの物と材質の行・フォルダの .fx) と、仮のコントローラーの項目 (描いているエフェクトの、場面にない名前のもの) を作る
+  private rebuild(tabs: { name: string; description: string }[]): void {
     const objects = this.deps.world.objects.filter(assignable);
-    const folders = this.store.folders();
-    const key = JSON.stringify([
-      getLang(), this.folderVersion, folders.map(f => f.id), tabs,
-      [...drawn.values()].map(d => d && [d.defaults.folder.id, d.defaults.base, d.defaults.rules, [...d.owners].map(o => o?.id ?? null)]),
-      objects.map(o => [o.id, nameOf(o), objectName(o), o.mme ?? null, this.materialNames(o)]),
-    ]);
-    if (key === this.assignKey) return;
-    this.assignKey = key;
     const rows: Record<string, MmeRowUi[]> = {};
     for (const tab of tabs) {
-      const d = tab.name === 'Main' ? { defaults: null, owners: new Set<Obj | null>() } : drawn.get(tab.name);
+      const d = tab.name === 'Main' ? { defaults: null, owners: new Set<Obj | null>() } : this.renderer.offscreenDefaults(tab.name);
       if (d) rows[tab.name] = objects.flatMap(o => this.rowsOf(o, tab.name, d.defaults, d.owners.has(o)));
     }
-    this.assignUi = { folders: folders.map(f => ({ id: f.id, name: f.name, fx: fxIn(f) })), tabs, rows };
+    this.assignUi = { folders: this.store.folders().map(f => ({ id: f.id, name: f.name, fx: fxIn(f) })), tabs, rows };
     this.assignJson = JSON.stringify(this.assignUi);
+    this.catalog = this.controllers.catalog(this.renderer.drawnEffects());
   }
 
-  // 物の行と、MMD モデルなら材質の行。既定の欄は Assignments の決め方 (割り当てがないときに描くもの)
+  // 物の行と、MMD モデルなら材質の行。既定の欄は Assignments の決め方 (割り当てがないときに描くもの)。
+  // GPU で止めたエフェクトは、描くときと同じく Main では default.fx、オフスクリーンでは描かない (hide) にして、止めたことを行に書く
   private rowsOf(obj: Obj, tab: string, defaults: DefaultsOf | null, isOwner: boolean): MmeRowUi[] {
     const effects = obj.mme?.[tab];
-    const fallback = (i: number | null) => slotName(this.renderer.assignments.fallbackFor(tab, defaults, obj, i, isOwner));
+    const { assignments } = this.renderer;
+    const stoppedIn = (e: LoadedEffect | null) => (e && e.result.ok && this.renderer.stopped(e) ? e.name : null);
+    const row = (label: string, material: number | null, saved: SavedSlot | undefined): MmeRowUi => {
+      const slot = assignments.fallbackFor(tab, defaults, obj, material, isOwner);
+      const fallbackStopped = slot.kind === 'effect' ? stoppedIn(slot.effect) : null;
+      const fallback = fallbackStopped ? (defaults ? 'hide' : this.store.defaultEffect.name) : slotName(slot);
+      const stopped = saved === undefined ? fallbackStopped : saved === 'hide' ? null : stoppedIn(assignments.effectOf(saved));
+      return { objId: obj.id, label, material, assigned: this.savedName(saved), fallback, stopped };
+    };
     return [
-      { objId: obj.id, label: nameOf(obj), material: null, assigned: this.savedName(effects?.object), fallback: fallback(null) },
-      ...this.materialNames(obj).map((name, i) => ({
-        objId: obj.id, label: name || t('材質 {n}', { n: i }), material: i, assigned: this.savedName(effects?.materials?.[i]), fallback: fallback(i),
-      })),
+      row(nameOf(obj), null, effects?.object),
+      ...this.materialNames(obj).map((name, i) => row(name || t('材質 {n}', { n: i }), i, effects?.materials?.[i])),
     ];
   }
 
@@ -165,17 +193,6 @@ export class MmeEngine {
     return folder?.name ? `${folder.name}/${path}` : path;
   }
 
-  // 仮のコントローラーごとの、スライダーにする項目と値
-  private controllerUi(): MmeUiState['controllers'] {
-    const effects = this.renderer.drawnEffects();
-    const key = JSON.stringify([effects.map(e => e.id), this.deps.world.objects.map(objectName), this.deps.stage()?.uuid ?? null]);
-    if (key !== this.catalogKey) {
-      this.catalogKey = key;
-      this.catalog = this.controllers.catalog(effects);
-    }
-    return [...this.catalog].map(([name, items]) => ({ name, items: items.map(item => ({ item, value: this.controllers.get(name, item) })) }));
-  }
-
   // コンパイルの結果と警告 (コンパイラの警告のあとに、描いたときのそのエフェクトの警告。GPU で止めたらそのことも)
   private effectUi(e: LoadedEffect): MmeEffectUi {
     const r = e.result;
@@ -188,7 +205,6 @@ export class MmeEngine {
   // .fx が入っているフォルダを読み込んで (同じ名前のフォルダにはまとめて)、その .fx をコンパイルする (失敗したらお知らせを出す)
   async loadEffect(files: File[], entry: string): Promise<LoadedEffect> {
     const folder = await this.store.addFolder(files);
-    this.folderVersion++;
     const e = this.store.effect(folder, entry);
     this.publish(); // (フォルダの .fx の一覧)
     return e;

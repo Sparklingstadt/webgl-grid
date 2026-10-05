@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Engine } from '../Engine';
 import { convertMmdMesh } from '../materials/fromMmd';
+import { parseDefaultEffect } from '../../core/mme/defaultEffect.ts';
 import { EffectInstance } from './EffectInstance';
 import type { LoadedEffect } from './EffectStore';
 import { MME_DEFAULTS, normalizeMme } from './MmeEngine';
@@ -367,7 +368,7 @@ describe('MmeEngine', () => {
     e.addLight('point'); // (ライトは載せない)
     const good = await e.mme.loadEffect([fileAt('Fx/good.fx', 'technique T { }'), fileAt('Fx/sub/ctl.fx', 'float m : CONTROLOBJECT < string name = "ray_controller.pmx"; string item = "Red"; >;\ntechnique T { }')], 'good.fx');
     expect(e.ui.state.mme.folders).toEqual([{ id: good.folder.id, name: 'Fx', fx: ['good.fx', 'sub/ctl.fx'] }]);
-    expect(e.ui.state.mme.rows.Main).toEqual([{ objId: obj.id, label: '立方体', material: null, assigned: null, fallback: 'default.fx' }]);
+    expect(e.ui.state.mme.rows.Main).toEqual([{ objId: obj.id, label: '立方体', material: null, assigned: null, fallback: 'default.fx', stopped: null }]);
     e.mme.assign(obj, 'Main', null, { folder: good.folder.id, path: 'GOOD.FX' });
     expect(e.ui.state.mme.rows.Main[0]).toMatchObject({ assigned: 'Fx/good.fx', fallback: 'default.fx' });
     e.mme.assign(obj, 'Main', null, 'hide');
@@ -383,6 +384,78 @@ describe('MmeEngine', () => {
     expect(e.ui.state.mme.controllers).toEqual([{ name: 'ray_controller.pmx', items: [{ item: 'Red', value: 0 }] }]);
     e.mme.setControl('RAY_CONTROLLER.pmx', 'Red', 0.25);
     expect(e.ui.state.mme.controllers).toEqual([{ name: 'ray_controller.pmx', items: [{ item: 'Red', value: 0.25 }] }]);
+  });
+
+  it('毎フレームの publish は、元 (割り当て・物・名前・マテリアル・フォルダ・タブ・止めたエフェクト) が変わらなければ物の材質やエフェクトを集め直さない', async () => {
+    const e = new Engine();
+    const obj = e.world.addShape(0, 0, 0, 0);
+    const good = await e.mme.loadEffect([fileAt('Fx/good.fx', 'technique T { }')], 'good.fx');
+    e.mme.set({ engine: 'mme' });
+    vi.spyOn(e.mme.renderer, 'render').mockReturnValue(true);
+    const materialNames = vi.spyOn(e.mme as unknown as { materialNames(o: unknown): string[] }, 'materialNames');
+    const drawnEffects = vi.spyOn(e.mme.renderer, 'drawnEffects');
+    const rebuilt = () => {
+      const n = [materialNames.mock.calls.length, drawnEffects.mock.calls.length];
+      materialNames.mockClear();
+      drawnEffects.mockClear();
+      return n[0] > 0 && n[1] > 0;
+    };
+    e.viewport.drawOverride!(); // (前のフレームのタブを読む)
+    rebuilt();
+    for (let k = 0; k < 3; k++) e.viewport.drawOverride!();
+    expect(rebuilt()).toBe(false);
+    e.mme.setControl('ray_controller.pmx', 'Red', 0.5); // (値だけ: 並べ直すが、集め直さない)
+    expect(rebuilt()).toBe(false);
+    // 変わったら集め直す: 名前・割り当て・物を足す・フォルダ・止めた
+    e.renameObj(obj, '箱');
+    e.viewport.drawOverride!();
+    expect(rebuilt()).toBe(true);
+    expect(e.ui.state.mme.rows.Main[0].label).toBe('箱');
+    e.mme.assign(obj, 'Main', null, ref(good));
+    expect(rebuilt()).toBe(true);
+    e.world.addShape(1, 1, 1, 0);
+    e.viewport.drawOverride!();
+    expect(rebuilt()).toBe(true);
+    await e.mme.store.addFolder([fileAt('Other/x.fx', 'technique T { }')]);
+    e.viewport.drawOverride!();
+    expect(rebuilt()).toBe(true);
+    ((e.mme.renderer as unknown as Internals).instance(good)).stopped = true;
+    e.viewport.drawOverride!();
+    expect(rebuilt()).toBe(true);
+  });
+
+  it('GPU で止めたエフェクトは、描くときと同じく既定の欄を Main では default.fx・オフスクリーンでは hide にして、行に止めたことを書く', async () => {
+    const e = new Engine();
+    const obj = e.world.addShape(0, 0, 0, 0);
+    const good = await e.mme.loadEffect([fileAt('Fx/good.fx', 'technique T { }')], 'good.fx');
+    // オフスクリーン Map (DefaultEffect = "* = good.fx;") を前のフレームに描いたことにする
+    vi.spyOn(e.mme.renderer, 'offscreenTabs').mockReturnValue([{ name: 'Map', description: '' }]);
+    vi.spyOn(e.mme.renderer, 'offscreenDefaults').mockReturnValue({ defaults: { rules: parseDefaultEffect('* = good.fx;').rules, base: '', folder: good.folder }, owners: new Set() });
+    e.mme.assign(obj, 'Main', null, ref(good));
+    expect(e.ui.state.mme.rows.Main[0]).toMatchObject({ assigned: 'Fx/good.fx', fallback: 'default.fx', stopped: null });
+    expect(e.ui.state.mme.rows.Map[0]).toMatchObject({ assigned: null, fallback: 'Fx/good.fx', stopped: null });
+    ((e.mme.renderer as unknown as Internals).instance(good)).stopped = true;
+    e.mme.publish();
+    expect(e.ui.state.mme.rows.Main[0]).toMatchObject({ assigned: 'Fx/good.fx', fallback: 'default.fx', stopped: 'Fx/good.fx' });
+    expect(e.ui.state.mme.rows.Map[0]).toMatchObject({ assigned: null, fallback: 'hide', stopped: 'Fx/good.fx' });
+    // 割り当てで別のもの (hide) にすれば、止めたことは書かない
+    e.mme.assign(obj, 'Map', null, 'hide');
+    expect(e.ui.state.mme.rows.Map[0]).toMatchObject({ assigned: 'hide', fallback: 'hide', stopped: null });
+  });
+
+  it('同じ名前のフォルダを読み直して .fx が増えると、どの読み方 (物の .fx・ポストエフェクト・EffectStore を直接) でもフォルダの .fx の一覧が変わる', async () => {
+    const e = new Engine();
+    const obj = e.world.addShape(0, 0, 0, 0);
+    e.selection.select(obj);
+    await e.mme.loadObjectEffect([fileAt('Fx/a.fx', 'technique T { }')], 'a.fx');
+    expect(e.ui.state.mme.folders.map(f => f.fx)).toEqual([['a.fx']]);
+    await e.mme.addPostEffect([fileAt('Fx/a.fx', 'technique T { }'), fileAt('Fx/b.fx', 'technique T { }')], 'b.fx');
+    expect(e.ui.state.mme.folders.map(f => f.fx)).toEqual([['a.fx', 'b.fx']]);
+    await e.mme.loadObjectEffect([fileAt('Fx/c.fx', 'technique T { }')], 'c.fx');
+    expect(e.ui.state.mme.folders.map(f => f.fx)).toEqual([['a.fx', 'b.fx', 'c.fx']]);
+    await e.mme.store.addFolder([fileAt('Fx/d.fx', 'technique T { }')]);
+    e.mme.publish();
+    expect(e.ui.state.mme.folders.map(f => f.fx)).toEqual([['a.fx', 'b.fx', 'c.fx', 'd.fx']]);
   });
 
   it('エラーは 20 個まで', async () => {

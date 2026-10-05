@@ -23,8 +23,9 @@ export interface SelInfo {
 export interface MmeEffectUi { id: string; name: string; ok: boolean; errors: { code: string; where: string; message: string }[]; errorCount: number; warnings: string[] }
 // エフェクト割当のタブの行 1 つ。物の行 (material が null) のあとに、その物 (MMD モデル) の材質の行が続く (材質の行は、画面で開いたときだけ出す)。
 // assigned: 割り当て ("フォルダ名/パス"・'hide'。なければ null)、fallback: 割り当てがないときに描くもの ("フォルダ名/パス"・'hide'・'default.fx')。
-// 材質の行の fallback は物の割り当て (なければ既定)
-export interface MmeRowUi { objId: number; label: string; material: number | null; assigned: string | null; fallback: string }
+// 材質の行の fallback は物の割り当て (なければ既定)。stopped: 行で描くはずの .fx (割り当てか、なければ既定のもの) を GPU で使えないので
+// 止めていれば、その名前 (描くときと同じく、Main では default.fx、オフスクリーンでは描かない。fallback もそうしたもの)
+export interface MmeRowUi { objId: number; label: string; material: number | null; assigned: string | null; fallback: string; stopped: string | null }
 // warnings: どのエフェクトのものでもない、描くときの警告 (セルフシャドウを切った・モデルを描けないなど)。
 // folders: 読み込んだフォルダと、その中の .fx (フォルダからの相対パス)。tabs: エフェクト割当のタブ (先頭は Main。オフスクリーンは
 // 使っているエフェクトが宣言するもの)。rows: タブごとの行 (描く宣言のないオフスクリーンのタブは載せない。そのタブの割り当ては効かない)。
