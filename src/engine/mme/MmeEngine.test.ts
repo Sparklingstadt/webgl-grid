@@ -1111,11 +1111,11 @@ technique Post { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = comp
     expect(own.mmeValues).toEqual({ Si: 0.5 });
   });
 
-  it('古い controls の名前が場面のほかの物にある (値は使われていなかった) なら移さず、知らせない', () => {
+  it('古い controls の名前が場面のほかの物にある (値は使われていなかった) なら移さず、知らせない (名前を直すと合うものも)', () => {
     const e = new Engine();
     e.world.addShape(0, 0, 0, 0);
     e.renameObj(e.world.objects[0], 'Taken');
-    e.mme.loadScene({ ...e.mme.saveScene(), controls: { taken: { Si: 0.5 } } });
+    e.mme.loadScene({ ...e.mme.saveScene(), controls: { taken: { Si: 0.5 }, ' Taken ': { Si: 0.25 } } });
     expect(e.world.objects.filter(o => o.mmeObj)).toEqual([]);
     expect(e.mme.takeOpenNotes()).toEqual([]);
   });
@@ -1131,9 +1131,10 @@ technique Post { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = comp
   it('古い controls を移せなかった (置ける数を超えた) ことは、開いたお知らせに名前をまとめて添える', async () => {
     const f = new Engine();
     const full = vi.spyOn(f.world, 'full', 'get').mockReturnValue(true);
-    await f.project.openFile(await legacyFile({ A: { Si: 0.5 }, B: { Si: 0.25 } }));
+    await f.project.openFile(await legacyFile({ A: { Si: 0.5 }, ' B ': { Si: 0.25 } }));
     full.mockRestore();
     expect(controllersOf(f)).toEqual([]);
+    // (名前を直したものも、移していないので「直して移した」とは知らせない)
     expect(f.ui.state.toast?.text).toBe('old.wgpj を開きました (古いプロジェクトのコントローラー A・B の値を移せませんでした (これ以上置けません))');
     expect(f.mme.takeOpenNotes()).toEqual([]); // (一度読んだら忘れる)
   });

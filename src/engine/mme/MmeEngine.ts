@@ -798,7 +798,6 @@ export class MmeEngine {
     for (const [raw, items] of Object.entries(controls)) {
       const name = normalizeMmeObj({ kind: 'controller', name: raw })?.name;
       if (!name) { empty.push(JSON.stringify(raw)); continue; }
-      if (name !== raw) renamed.push(JSON.stringify(raw));
       let obj = this.controllers.controller(name);
       if (!obj && this.controllers.has(name)) continue;
       if (!obj && this.deps.world.full) { full.push(name); continue; }
@@ -808,6 +807,7 @@ export class MmeEngine {
         full.push(name);
         continue;
       }
+      if (name !== raw) renamed.push(JSON.stringify(raw)); // (移したものだけ)
       for (const [item, v] of Object.entries(items)) this.writeControl(obj, item, v);
     }
     const names = (l: string[]) => l.join('・');
