@@ -7,7 +7,7 @@ import type { Win } from './helpers';
 import { addPmx, diff, objectFx, openMme, setCamera, shoot } from './mme-helpers';
 
 // 手元だけの e2e: 本物の Ray-MMD 1.5.2 (Git に入れない fx/ray-mmd-1.5.2/) を、標準の構成 + ライトとフォグで読み込んで描く。
-// 「未対応」の警告・リンクの失敗が 0 で、書き出した絵が真っ黒でない (人形に光が当たり、空が見える) ことを確かめ、絵を test-results/ray-mmd/ に
+// 「未対応」の警告・リンクの失敗が 0 で、書き出した絵が真っ黒でない (人形に光が当たり、空が青く見える) ことを確かめ、絵を test-results/ray-mmd/ に
 // 保存する (目で比べるため)。警告などの一覧は RAY_MMD_LOG=1 のときだけ出す。
 // fx/ray-mmd-1.5.2/ray.fx がなければ (CI など) 飛ばす
 
@@ -161,11 +161,23 @@ async function patches(page: Page, world: [number, number, number][], image: [nu
       for (let i = 0; i < d.length; i += 4) sum += (d[i] + d[i + 1] + d[i + 2]) / 3;
       return sum / (d.length / 4) / 255;
     };
+    // 同じ範囲の赤と青の平均 (0〜1)
+    const rb = (cx: number, cy: number) => {
+      const d = g.getImageData(Math.max(cx - r, 0), Math.max(cy - r, 0), 2 * r + 1, 2 * r + 1).data;
+      let red = 0, blue = 0;
+      for (let i = 0; i < d.length; i += 4) { red += d[i]; blue += d[i + 2]; }
+      return { r: red / (d.length / 4) / 255, b: blue / (d.length / 4) / 255 };
+    };
     const fromWorld = world.map(p => {
       const v = new THREE.Vector3(...p).applyMatrix4(view).applyMatrix4(proj);
       return mean(Math.floor((v.x + 1) / 2 * bmp.width), Math.floor((1 - v.y) / 2 * bmp.height));
     });
-    return { world: fromWorld, image: image.map(([fx, fy]) => mean(Math.floor(fx * bmp.width), Math.floor(fy * bmp.height))) };
+    const at = ([fx, fy]: [number, number]) => [Math.floor(fx * bmp.width), Math.floor(fy * bmp.height)] as const;
+    return {
+      world: fromWorld,
+      image: image.map(p => mean(...at(p))),
+      imageRb: image.map(p => rb(...at(p))) as { r: number; b: number }[],
+    };
   }, { world, image, r });
 }
 
@@ -303,7 +315,7 @@ test('Ray-MMD 1.5.2 の標準の構成 + ライト (すべての種類) とフ�
     return { frames: v.frames as number, size: v.bytes.length as number };
   });
   console.log(`PNG: ${all.file} (平均の明るさ ${all.mean.toFixed(3)}), ${focus.file} (${focus.mean.toFixed(3)})`);
-  console.log(`人形の面: ${region.world.map(v => v.toFixed(3)).join(', ')}、空: ${region.image.map(v => v.toFixed(3)).join(', ')}`);
+  console.log(`人形の面: ${region.world.map(v => v.toFixed(3)).join(', ')}、空: ${region.image.map(v => v.toFixed(3)).join(', ')} (赤・青: ${region.imageRb.map(c => `${c.r.toFixed(2)}・${c.b.toFixed(2)}`).join(', ')})`);
   console.log(`1 フレーム (${W}×${H}): ${ms.toFixed(1)} ms (${(1000 / ms).toFixed(1)} fps)`);
 
   const unsupported = (list: string[]) => list.filter(w => /対応|止め|使えない|見つからない|できない|読めない/.test(w));
@@ -313,11 +325,12 @@ test('Ray-MMD 1.5.2 の標準の構成 + ライト (すべての種類) とフ�
   expect(video.frames).toBe(3);
   expect(video.size).toBeGreaterThan(0);
   expect(errors).toEqual([]);
-  // 絵の明るさ (ほかの確かめを止めないよう、最後に soft で)
-  expect.soft(all.mean, '全部の絵の平均').toBeGreaterThan(0.05);
-  expect.soft(focus.mean, '絞った絵の平均').toBeGreaterThan(0.05);
-  expect.soft(Math.max(...region.world), '人形の面のどちらかに光が当たる').toBeGreaterThan(0.1);
-  expect.soft(Math.min(...region.image), '空が見える (上の端が黒くない)').toBeGreaterThan(0.05);
+  // 絵の明るさ。空は D3D9 の Mie 係数の書き換え (compat.ts) で青くなる。外れたときに数が見えるよう、expect の前に出す
+  expect(all.mean, '全部の絵の平均').toBeGreaterThan(0.05);
+  expect(focus.mean, '絞った絵の平均').toBeGreaterThan(0.05);
+  expect(Math.max(...region.world), '人形の面のどちらかに光が当たる').toBeGreaterThan(0.1);
+  expect(Math.min(...region.image), '空が見える (上の端が黒くない)').toBeGreaterThan(0.05);
+  expect(region.imageRb.map(c => c.b - c.r).filter(d => d > 0).length, `空が青みがかる (青 > 赤): ${JSON.stringify(region.imageRb)}`).toBe(region.imageRb.length);
 });
 
 test('ミップを持つ .dds (Ray-MMD の skyspec_hdr.dds。1024×512・7 段) を GPU に送り、tex2Dlod で段ごとに .dds のその段の色を読む', async ({ page }) => {

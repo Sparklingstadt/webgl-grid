@@ -1,4 +1,5 @@
 import { t } from '../i18n.ts';
+import { applyCompat } from './compat.ts';
 import { Diagnostics, FxError, type Loc } from './diagnostics.ts';
 import { lex, numberValue, type Token } from './lexer.ts';
 import { decodeSource, dirname, joinPath, resolveFile, type FileAccess } from './source.ts';
@@ -324,7 +325,7 @@ export function preprocess(entry: string, access: FileAccess, options: Preproces
   interface Cond { active: boolean; parentActive: boolean; taken: boolean; sawElse: boolean; loc: Loc }
 
   function processFile(path: string, bytes: Uint8Array, chain: { file: string; line: number }[], depth: number): void {
-    const toks = lex(decodeSource(bytes), path, diags);
+    const toks = lex(applyCompat(decodeSource(bytes)), path, diags);
     if (chain.length > 0) for (const tok of toks) tok.loc = { ...tok.loc, includedFrom: chain };
     const conds: Cond[] = [];
     const isActive = () => conds.length === 0 || conds[conds.length - 1].active;
