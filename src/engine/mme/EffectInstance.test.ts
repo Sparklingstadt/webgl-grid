@@ -3,10 +3,11 @@ import * as THREE from 'three';
 import { compileEffect, type Pass, type Program, type RenderState } from '../../core/fx/index.ts';
 import { addDictionary, setLang } from '../../core/i18n.ts';
 import en from '../../i18n/en.ts';
+import { buildDds } from '../../core/testing/dds.ts';
 import { semanticValue, SHADOW_COLOR, type MaterialState, type SemanticContext } from '../../core/mme/semantics.ts';
 import type { UiChannel } from '../UiChannel';
 import { EffectStore, type LoadedEffect } from './EffectStore.ts';
-import { applyStates, cloneTexture, cullSide, decodeTexture, EffectInstance, type BaseState, type DrawBuiltins, type TextureSource } from './EffectInstance.ts';
+import { applyStates, cullSide, EffectInstance, type BaseState, type DrawBuiltins, type TextureSource } from './EffectInstance.ts';
 
 const FX = String.raw`
 float4x4 WVP : WORLDVIEWPROJECTION;
@@ -461,24 +462,6 @@ technique T { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = compile
     expect(u('I2')).toEqual([1, 2]);
   });
 
-  it('cloneTexture は Texture の種類ごとに source を共有した写しを作る (圧縮したキューブマップも)', () => {
-    const mip = { data: new Uint8Array(8), width: 4, height: 4 };
-    const faces = Array.from({ length: 6 }, () => ({ mipmaps: [mip], width: 4, height: 4 }));
-    const list: THREE.Texture[] = [
-      pixel([1, 2, 3, 4]),
-      new THREE.CompressedTexture([mip], 4, 4, THREE.RGBA_S3TC_DXT1_Format),
-      new THREE.CompressedCubeTexture(faces as unknown as THREE.CompressedTextureImageData[], THREE.RGBA_S3TC_DXT1_Format),
-      new THREE.CubeTexture([]),
-      new THREE.Data3DTexture(new Uint8Array(4), 1, 1, 1),
-    ];
-    for (const t of list) {
-      const c = cloneTexture(t);
-      expect(c.constructor, t.constructor.name).toBe(t.constructor);
-      expect(c.source).toBe(t.source);
-      expect(c).not.toBe(t);
-    }
-  });
-
   it('ResourceName の dds のキューブマップを samplerCUBE に入れる。読めない dds は赤紫と警告', async () => {
     const CUBE_FX = String.raw`
 texture Sky < string ResourceName = "sky.dds"; >;
@@ -509,25 +492,49 @@ technique T { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = compile
     inst1.bind(m1, pass1, makeCtx(), BUILTINS, noTextures());
     expect(m1.uniforms[glslOf(pass1.program!, 'SkySamp')].value).toBe(sky);
 
-    // 既定の decode: 先頭が DDS でないファイルは three.js の DDSLoader が空の結果を返す → 読めないものとして扱う
-    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
-    try {
-      await expect(decodeTexture(new Uint8Array(128), 'x.dds')).rejects.toThrow();
-      const e2 = loadEffect(CUBE_FX, files);
-      const requestDraw = vi.fn();
-      const inst2 = new EffectInstance(e2, requestDraw);
-      await inst2.ready();
-      expect(requestDraw).toHaveBeenCalled();
-      const pass2 = passOf(e2, 'P');
-      const m2 = inst2.material(pass2, 1, OBJECT)!;
-      inst2.bind(m2, pass2, makeCtx(), BUILTINS, noTextures());
-      const bad = m2.uniforms[glslOf(pass2.program!, 'BadSamp')].value as THREE.DataTexture;
-      expect([...(bad.image.data as Uint8Array)]).toEqual([255, 0, 255, 255]);
-      expect(m2.uniforms[glslOf(pass2.program!, 'SkySamp')].value).toBeNull(); // キューブは three.js の空のテクスチャ
-      expect(inst2.warnings.some(x => x.includes('bad.dds'))).toBe(true);
-      expect(error).toHaveBeenCalled();
-    } finally {
-      error.mockRestore();
+    // 既定の decode: 先頭が DDS でないファイルは読めないものとして扱う (赤紫と警告)
+    const e2 = loadEffect(CUBE_FX, files);
+    const requestDraw = vi.fn();
+    const inst2 = new EffectInstance(e2, requestDraw);
+    await inst2.ready();
+    expect(requestDraw).toHaveBeenCalled();
+    const pass2 = passOf(e2, 'P');
+    const m2 = inst2.material(pass2, 1, OBJECT)!;
+    inst2.bind(m2, pass2, makeCtx(), BUILTINS, noTextures());
+    const bad = m2.uniforms[glslOf(pass2.program!, 'BadSamp')].value as THREE.DataTexture;
+    expect([...(bad.image.data as Uint8Array)]).toEqual([255, 0, 255, 255]);
+    expect(m2.uniforms[glslOf(pass2.program!, 'SkySamp')].value).toBeNull(); // キューブは three.js の空のテクスチャ
+    expect(inst2.warnings.some(x => x.includes('bad.dds'))).toBe(true);
+  });
+
+  it('dds から読んだミップは、MipFilter があれば使い、GL で作り直さない (2D もキューブも)', async () => {
+    const FX2 = String.raw`
+texture Tex < string ResourceName = "t.dds"; >;
+sampler TexSamp = sampler_state { texture = <Tex>; MinFilter = LINEAR; MagFilter = LINEAR; MipFilter = LINEAR; };
+texture Sky < string ResourceName = "sky.dds"; >;
+samplerCUBE SkySamp = sampler_state { texture = <Sky>; MinFilter = LINEAR; MagFilter = LINEAR; MipFilter = LINEAR; };
+float4 VS(float4 p : POSITION, out float3 d : TEXCOORD0) : POSITION { d = p.xyz; return p; }
+float4 PS(float3 d : TEXCOORD0) : COLOR0 { return tex2D(TexSamp, d.xy) + texCUBE(SkySamp, d); }
+technique T { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = compile ps_3_0 PS(); } }
+`;
+    const files: [string, Uint8Array][] = [
+      ['sub/t.dds', buildDds({ format: 'A16B16G16R16F', width: 4, height: 4, mips: 3 })],
+      ['sub/sky.dds', buildDds({ format: 'A16B16G16R16F', width: 4, height: 4, mips: 3, cube: true })],
+    ];
+    const e = loadEffect(FX2, files);
+    const inst = new EffectInstance(e, () => {});
+    await inst.ready();
+    expect(inst.warnings).toEqual([]);
+    const pass = passOf(e, 'P');
+    const m = inst.material(pass, 1, OBJECT)!;
+    inst.bind(m, pass, makeCtx(), BUILTINS, noTextures());
+    const flat = m.uniforms[glslOf(pass.program!, 'TexSamp')].value as THREE.DataTexture;
+    const cube = m.uniforms[glslOf(pass.program!, 'SkySamp')].value as THREE.CubeTexture;
+    expect(flat.isDataTexture).toBe(true);
+    expect(cube.isCubeTexture).toBe(true);
+    for (const tex of [flat, cube]) {
+      expect(tex).toMatchObject({ minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter, generateMipmaps: false, flipY: false, colorSpace: THREE.NoColorSpace });
+      expect(tex.mipmaps.length).toBeGreaterThan(0);
     }
   });
 
@@ -546,28 +553,5 @@ technique T { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = compile
     // 失敗しても終わる
     const failing = new EffectInstance(loadEffect(), () => {}, async () => { throw new Error('x'); });
     await expect(failing.ready()).resolves.toBeUndefined();
-  });
-
-  it('既定の decode で作った ImageBitmap は、テクスチャを捨てると close する', async () => {
-    const close = vi.fn();
-    vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 1, height: 1, close })));
-    try {
-      const t = await decodeTexture(new Uint8Array([1, 2, 3]), 'a.PNG');
-      expect(close).not.toHaveBeenCalled();
-      t.dispose();
-      expect(close).toHaveBeenCalledTimes(1);
-    } finally {
-      vi.unstubAllGlobals();
-    }
-  });
-
-  it('既定の decode は .tga を three.js の TGALoader で読む (上下を返さない)', async () => {
-    // 1×2・32 ビット・左下が原点の TGA (画素は BGRA。ファイルでは下の行 (青) が先)
-    const tga = new Uint8Array([0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 2, 0, 32, 0x08, 255, 0, 0, 255, 0, 0, 255, 255]);
-    const t = await decodeTexture(tga, 'tex/a.TGA') as THREE.DataTexture;
-    expect(t.image).toMatchObject({ width: 1, height: 2 });
-    // 1 行目が画像の上の行 (赤)。D3D と同じく v = 0 が上になる
-    expect([...(t.image.data as Uint8Array)]).toEqual([255, 0, 0, 255, 0, 0, 255, 255]);
-    expect(t).toMatchObject({ flipY: false, colorSpace: THREE.NoColorSpace });
   });
 });

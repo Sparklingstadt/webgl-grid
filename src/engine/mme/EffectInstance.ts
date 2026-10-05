@@ -1,6 +1,4 @@
 import * as THREE from 'three';
-import { DDSLoader } from 'three/examples/jsm/loaders/DDSLoader.js';
-import { TGALoader } from 'three/examples/jsm/loaders/TGALoader.js';
 import type { EffectDesc, Param, Pass, RenderState, SamplerDecl, StateValue, TextureDecl, UniformRef } from '../../core/fx/index.ts';
 import { dirname, joinPath, resolveFile } from '../../core/fx/source.ts';
 import { msg, t } from '../../core/i18n.ts';
@@ -8,6 +6,7 @@ import { annotation } from '../../core/mme/annotations.ts';
 import { semanticValue, textureRole, type SemanticContext } from '../../core/mme/semantics.ts';
 import { typeShape } from '../../core/mme/typeShape.ts';
 import type { LoadedEffect } from './EffectStore.ts';
+import { cloneTexture, decodeTexture } from './textures.ts';
 
 // --- 1 つのエフェクトの GPU の資源: pass ごとの RawShaderMaterial、ResourceName のテクスチャ、パラメータの値 ---
 
@@ -199,56 +198,6 @@ function uniformValue(u: UniformRef, values: number[]): number | number[] {
 }
 
 // --- テクスチャ ---
-const MIME: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', bmp: 'image/bmp', gif: 'image/gif', webp: 'image/webp' };
-
-function bufferOf(bytes: Uint8Array): ArrayBuffer {
-  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
-}
-
-// 画像ファイルを読む (上下は返さない。ガンマ空間のまま)。png・jpg・bmp・gif・webp はブラウザ、tga・dds は three.js のローダー
-export async function decodeTexture(bytes: Uint8Array, path: string): Promise<THREE.Texture> {
-  const ext = path.slice(path.lastIndexOf('.') + 1).toLowerCase();
-  let tex: THREE.Texture;
-  if (ext === 'tga') {
-    const d = new TGALoader().parse(bufferOf(bytes));
-    tex = new THREE.DataTexture(d.data, d.width, d.height);
-  } else if (ext === 'dds') {
-    const d = new DDSLoader().parse(bufferOf(bytes), true);
-    // 読めない dds は例外でなく空の結果になる (console.error は DDSLoader が出す)
-    if (d.mipmaps.length === 0 || d.format == null) throw new Error(t('dds を読めません'));
-    if (d.isCubemap) {
-      const faces = d.mipmaps.length / d.mipmapCount;
-      const images = Array.from({ length: faces }, (_, f) => ({
-        mipmaps: d.mipmaps.slice(f * d.mipmapCount, (f + 1) * d.mipmapCount), width: d.width, height: d.height,
-      }));
-      tex = new THREE.CompressedCubeTexture(images as unknown as THREE.CompressedTextureImageData[], d.format as THREE.CompressedPixelFormat);
-    } else {
-      tex = new THREE.CompressedTexture(d.mipmaps, d.width, d.height, d.format as THREE.CompressedPixelFormat);
-    }
-  } else if (MIME[ext]) {
-    const blob = new Blob([bytes as Uint8Array<ArrayBuffer>], { type: MIME[ext] });
-    const bitmap = await createImageBitmap(blob, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
-    tex = new THREE.Texture(bitmap);
-    tex.addEventListener('dispose', () => bitmap.close());
-  } else {
-    throw new Error(t('知らない画像の形式です: .{ext}', { ext }));
-  }
-  tex.colorSpace = THREE.NoColorSpace;
-  tex.flipY = false;
-  tex.needsUpdate = true;
-  return tex;
-}
-
-// source を共有した写し。CompressedCubeTexture は引数なしでは作れず (images[0] を読む)、mipmaps も undefined
-// (面ごとのミップは image の中) で copy が落ちるので、自分で作り、mipmaps を補った見かけの元から写す (元は変えない)
-export function cloneTexture(t: THREE.Texture): THREE.Texture {
-  if (t instanceof THREE.CompressedCubeTexture) {
-    const from = t.mipmaps ? t : Object.assign(Object.create(t) as THREE.CompressedCubeTexture, { mipmaps: [] });
-    return new THREE.CompressedCubeTexture(t.image, t.format, t.type).copy(from);
-  }
-  return t.clone();
-}
-
 function pixelTexture(rgba: number[]): THREE.DataTexture {
   const t = new THREE.DataTexture(new Uint8Array(rgba), 1, 1);
   t.needsUpdate = true;
@@ -269,11 +218,16 @@ export function minFilter(min: string, mip: string): THREE.MinificationTextureFi
   return linear ? THREE.LinearFilter : THREE.NearestFilter;
 }
 
-// ミップマップを持てるか (圧縮したものは読んだミップだけ)
+// ファイルから読んだミップを持つか (圧縮したもの、dds の無圧縮のもの)。持つなら GL で作り直さない
+function hasOwnMips(t: THREE.Texture): boolean {
+  return t instanceof THREE.CompressedTexture || t.mipmaps.length > 0;
+}
+
+// ミップマップを持てるか (圧縮したものと、dds から読んだものは、読んだミップだけ。ほかは GL が作る)
 function canMip(t: THREE.Texture): boolean {
   if (t instanceof THREE.CompressedCubeTexture) return ((t.image[0] as { mipmaps?: unknown[] } | undefined)?.mipmaps?.length ?? 0) > 1;
   if (t instanceof THREE.CompressedTexture) return t.mipmaps.length > 1;
-  return t.generateMipmaps;
+  return t.generateMipmaps || t.mipmaps.length > 0;
 }
 
 function fitsDim(dim: SamplerDecl['dim'], t: THREE.Texture): boolean {
@@ -423,7 +377,7 @@ export class EffectInstance {
       if (this.disposed) { tex.dispose(); return; }
       tex.colorSpace = THREE.NoColorSpace;
       tex.flipY = false;
-      tex.generateMipmaps = mipmaps && !(tex instanceof THREE.CompressedTexture);
+      tex.generateMipmaps = mipmaps && !hasOwnMips(tex);
       entry.tex = tex;
       this.requestDraw();
     }, (e: unknown) => {
@@ -535,7 +489,7 @@ export class EffectInstance {
     const mip = mipmaps ? String(v.MipFilter) : 'NONE';
     tex.minFilter = minFilter(String(v.MinFilter), mip);
     tex.magFilter = MAG_FILTER[String(v.MagFilter)] ?? THREE.NearestFilter;
-    if (!(tex instanceof THREE.CompressedTexture)) tex.generateMipmaps = mip !== 'NONE';
+    if (!hasOwnMips(tex)) tex.generateMipmaps = mip !== 'NONE';
     const aniso = v.MinFilter === 'ANISOTROPIC' || v.MagFilter === 'ANISOTROPIC';
     tex.anisotropy = aniso ? Math.max(1, Number(v.MaxAnisotropy)) : 1;
     const wrap = (name: string): THREE.Wrapping => {

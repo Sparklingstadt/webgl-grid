@@ -1187,7 +1187,7 @@ const dict: Dictionary = {
   "ColorWriteEnable{i} には対応していないので無視します": "不支援 ColorWriteEnable{i}，已忽略",
   "FillMode = POINT には対応していないので無視します": "不支援 FillMode = POINT，已忽略",
   "知らないステート {name} を無視します": "忽略未知的狀態 {name}",
-  "dds を読めません": "無法讀取 DDS 檔案",
+  "この GPU は DXT (S3TC) の圧縮テクスチャに対応していません": "此 GPU 不支援 DXT (S3TC) 壓縮紋理",
   "知らない画像の形式です: .{ext}": "未知的影像格式：.{ext}",
   "セマンティクス {semantic} には値を入れません ({name})": "不為語意 {semantic} 提供值（{name}）",
   "テクスチャ {name} が見つかりません": "找不到紋理 {name}",
