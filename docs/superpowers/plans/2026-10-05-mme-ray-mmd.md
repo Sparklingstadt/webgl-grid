@@ -472,3 +472,24 @@ Task 15 で本物の Ray-MMD を動かすと、警告とリンクの失敗は 0 
 - [ ] **Step 6: README・ARCHITECTURE・設計書を書く**（MME の空間は MMD の単位、ステージの割り当て、会場と空を同時に使えないこと）
 - [ ] **Step 7: すべてのテストを流す** — `fx/ray-mmd-1.5.2` を一時的によけて `CI=1 E2E_GL=software npm run test:all`（終わったら戻す）
 - [ ] **Step 8: コミット**（Part A・Part B・ドキュメントと計画を分ける）
+
+### Task 17 (追加): Ray-MMD の空の Mie 係数を D3D9 に合わせる
+
+Task 16 のあとも Time of day の空が黒かった。原因は `ComputeWaveLengthMie` の `pow(lambda, U - 2.0)` を標準の HLSL どおりに計算すると Mie 散乱の係数が大きすぎること（D3D9 では `lambda` として働くとみなすと MMD の絵と合う）。コントローラーの決定（Ruling 18）で、`pow` 全体ではなく、名前のついた狭い書き換え表で直す。診断は `.superpowers/sdd/2026-10-05-mme-ray-mmd/sky-diagnosis.md`。
+
+**Files:**
+- Create: `src/core/fx/compat.ts`（`applyCompat`）、`src/core/fx/compat.test.ts`
+- Modify: `src/core/fx/preprocess.ts`（`lex(applyCompat(decodeSource(bytes)), …)`）、`e2e/ray-mmd-local.spec.ts`（絞った絵の明るさ・人形・空を soft でなく必須に、空が青い (青 > 赤) 確かめを足す）、README・ARCHITECTURE・設計書
+
+**Interfaces:**
+- `applyCompat(text: string): string`: 規則（正規表現）で文字列を書き換える。規則は同じ行の中だけを書き換える（行番号がずれない）。当たらなければ同じ文字列を返す。消せる TypeScript の書き方だけ（`scripts/` から import される）
+- 規則は 1 つ: `return mieConst * K / pow(lambda, <名前> - 2[.0])` → `return mieConst * K / lambda`（Ray-MMD。Time of day・Time of night・`AtmosphericFog` が通る）。規則ごとに、どのエフェクトか・D3D9 の何が違うか・証拠をコメントに書く
+
+- [ ] **Step 1: 失敗するテストを書く** — `compat.test.ts`: 本物の関数を含むソースの GLSL に `mieConst * K / lambda` があり `pow(abs(lambda` がない（`U - 2.0`・`U - 2` の両方）、ほかの `pow` は `pow(abs(x), y)` のまま、診断の行番号が変わらない、パターンがなければ同じ文字列
+- [ ] **Step 2: 走らせて失敗を見る** — `npx vitest run src/core/fx/compat.test.ts`
+- [ ] **Step 3: 実装** — `compat.ts` と `preprocess.ts`
+- [ ] **Step 4: 走らせて通るのを見る** — 同じコマンドと `npm run fx:check`（エラー 0 のまま）
+- [ ] **Step 5: 手元の e2e** — `npx playwright test e2e/ray-mmd-local.spec.ts`。絞った絵の平均 > 0.05、人形の面に光が当たり、空の 3 か所が黒くなく青いこと。絵を `test-results/ray-mmd/` に保存し、目で確かめる。1280×720 の fps を測り直し、README の数が動いたら直す
+- [ ] **Step 6: README・ARCHITECTURE・設計書を書く**（黒い空の注意書きを消し、D3D9 の動きをまねている所を 1 行。compat 表と、規則を足す条件。空の決定は Ruling 18）
+- [ ] **Step 7: すべてのテストを流す** — `fx/ray-mmd-1.5.2` を一時的によけて `CI=1 E2E_GL=software npm run test:all`（終わったら戻す）
+- [ ] **Step 8: コミット**（実装とテスト・ドキュメントと計画を分ける）
