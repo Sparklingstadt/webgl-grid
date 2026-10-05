@@ -4,7 +4,8 @@ import { mmdSourceOf, readMmdData, type MmdData } from './mmdData.ts';
 
 // MME に渡す形。座標はすべて MMD の左手系
 export interface MmeGeometry {
-  geometry: THREE.BufferGeometry; // a_POSITION・a_NORMAL・a_TEXCOORD0.. (position は a_POSITION と同じ属性)。index と groups は元の形のもの
+  geometry: THREE.BufferGeometry; // a_POSITION・a_NORMAL・a_TEXCOORD0.. (position は a_POSITION と同じ属性)。groups は元の形のもの。
+                                  // index は元の形の三角形の向きを逆にしたもの (D3D の表は時計回り)
   edge: THREE.BufferGeometry | null; // a_POSITION だけ輪郭線の分だけ広げた形 (ほかは geometry と共有)。MMD モデルだけ
 }
 
@@ -46,7 +47,8 @@ interface Source {
   failed: boolean;
 }
 
-// 作った形 (geometry と、MMD なら輪郭線の形)。owned は、その形が自分で持つ属性 (UV と index は元の形と共有なので入れない)
+// 作った形 (geometry と、MMD なら輪郭線の形)。owned は、その形が自分で持つ属性と index (UV は元の形と共有なので入れない。
+// 輪郭線の形は geometry の index を共有する)
 interface Copy {
   parts: { geometry: THREE.BufferGeometry; owned: Set<THREE.BufferAttribute> }[];
   source: THREE.BufferGeometry;
@@ -70,6 +72,18 @@ const _bone = new THREE.Matrix4();
 const _eye = new THREE.Vector3();
 
 type Attr = THREE.BufferAttribute | THREE.InterleavedBufferAttribute;
+
+// three.js の形は表が反時計回り (MMDLoader も右手系にするときに三角形の向きを逆にしている)。
+// MMD・D3D の表は時計回りなので、三角形ごとに頂点の順を逆にした index を作る (index のない形も作る)
+function d3dIndex(src: THREE.BufferGeometry): THREE.BufferAttribute {
+  const idx = src.index;
+  const n = idx ? idx.count : src.attributes.position?.count ?? 0;
+  const out = (src.attributes.position?.count ?? 0) > 65535 ? new Uint32Array(n) : new Uint16Array(n);
+  const at = (i: number) => (idx ? idx.getX(i) : i);
+  for (let i = 0; i < n; i++) out[i] = at(i);
+  for (let i = 0; i + 2 < n; i += 3) { out[i + 1] = at(i + 2); out[i + 2] = at(i + 1); }
+  return new THREE.BufferAttribute(out, 1);
+}
 
 // 右手系の 3 成分の属性を、z を反転した左手系の配列にする
 function lhArray(a: Attr): Float32Array {
@@ -181,10 +195,18 @@ export class Skinner {
       g.setAttribute('a_NORMAL', nrm);
       owned.add(nrm);
     }
-    this.shareRest(g, geo);
+    const index = d3dIndex(geo);
+    owned.add(index);
+    this.shareRest(g, geo, index);
     const out: MmeGeometry = { geometry: g, edge: null };
     this.plains.set(geo, { out, copy: this.track(geo, [{ geometry: g, owned }]), sources, versions });
     return out;
+  }
+
+  // .pmx の読み込みが終わる (失敗しても) と終わる。まだ読み始めていなければ読み始める。MMD モデルでなければすぐ終わる
+  settled(mesh: THREE.SkinnedMesh): Promise<void> {
+    const file = this.fileOf(mesh);
+    return file && !this.disposed ? this.source(file).promise : Promise.resolve();
   }
 
   // 読み込みに失敗した (.pmx が読めない、または形と頂点の数が合わない)。読み込み中や、まだ呼んでいないときは false
@@ -252,15 +274,15 @@ export class Skinner {
       for (const name of Object.keys(geometry.attributes)) {
         if (!owned.has(geometry.attributes[name] as THREE.BufferAttribute)) geometry.deleteAttribute(name);
       }
-      geometry.setIndex(null);
+      if (geometry.index && !owned.has(geometry.index)) geometry.setIndex(null);
       geometry.dispose();
     }
   }
 
-  // UV (a_TEXCOORDn)・index・groups は元の形のものを共有する
-  private shareRest(g: THREE.BufferGeometry, src: THREE.BufferGeometry): void {
+  // UV (a_TEXCOORDn)・groups は元の形のものを共有する。index は D3D の向きにしたもの
+  private shareRest(g: THREE.BufferGeometry, src: THREE.BufferGeometry, index: THREE.BufferAttribute): void {
     UV_NAMES.forEach((n, i) => { if (src.attributes[n]) g.setAttribute(`a_TEXCOORD${i}`, src.attributes[n]); });
-    g.setIndex(src.index);
+    g.setIndex(index);
     for (const grp of src.groups) g.addGroup(grp.start, grp.count, grp.materialIndex);
   }
 
@@ -281,15 +303,16 @@ export class Skinner {
     geometry.setAttribute('a_POSITION', posAttr);
     geometry.setAttribute('position', posAttr);
     geometry.setAttribute('a_NORMAL', nrmAttr);
-    this.shareRest(geometry, src);
+    const index = d3dIndex(src);
+    this.shareRest(geometry, src, index);
     // 輪郭線は a_POSITION だけ別で、ほかは geometry と同じ属性
     const edge = new THREE.BufferGeometry();
     edge.setAttribute('a_POSITION', edgeAttr);
     edge.setAttribute('position', edgeAttr);
     edge.setAttribute('a_NORMAL', nrmAttr);
-    this.shareRest(edge, src);
+    this.shareRest(edge, src, index);
     const copy = this.track(src, [
-      { geometry, owned: new Set([posAttr, nrmAttr]) },
+      { geometry, owned: new Set([posAttr, nrmAttr, index]) },
       { geometry: edge, owned: new Set([edgeAttr]) },
     ]);
 

@@ -57,6 +57,13 @@ function makeMesh(opts: { relative?: boolean; pmx?: Uint8Array; register?: boole
 
 const eye = new THREE.Vector3(0, 10, 50);
 
+// index は三角形ごとに 2 番目と 3 番目を入れ替えた (D3D の表は時計回り) もの
+function reversed(src: THREE.BufferGeometry): number[] {
+  const n = src.index ? src.index.count : src.attributes.position.count;
+  const at = (i: number) => (src.index ? src.index.getX(i) : i);
+  return Array.from({ length: n }, (_, i) => at(i % 3 === 0 ? i : i % 3 === 1 ? i + 1 : i - 1));
+}
+
 // 読み込みの終わりまで待って、形を返す
 async function ready(sk: Skinner, mesh: THREE.SkinnedMesh, tan = 0.5) {
   const onReady = vi.fn();
@@ -100,11 +107,12 @@ describe('Skinner.mmd', () => {
     expect(n.getX(0)).toBeCloseTo(e.x, 4);
     expect(n.getY(0)).toBeCloseTo(e.y, 4);
     expect(n.getZ(0)).toBeCloseTo(e.z, 4);
-    // position も同じ属性。UV・index・groups は元の形のもの
+    // position も同じ属性。UV・groups は元の形のもの。index は三角形の向きを逆にしたもの
     expect(g.geometry.getAttribute('position')).toBe(p);
     expect(g.geometry.getAttribute('a_TEXCOORD0')).toBe(mesh.geometry.getAttribute('uv'));
     expect(g.geometry.getAttribute('a_TEXCOORD1')).toBeUndefined();
-    expect(g.geometry.index).toBe(mesh.geometry.index);
+    expect(Array.from(g.geometry.index!.array)).toEqual([0, 5, 1, 0, 4, 5, 1, 6, 2]);
+    expect(Array.from(g.geometry.index!.array)).toEqual(reversed(mesh.geometry));
     expect(g.geometry.groups).toEqual(mesh.geometry.groups);
     expect(sk.data(mesh)?.skin.count).toBe(8);
   });
@@ -302,7 +310,7 @@ describe('Skinner.plain', () => {
     expect(g.geometry.getAttribute('position')).toBe(p);
     expect(g.geometry.getAttribute('a_TEXCOORD0')).toBe(src.attributes.uv);
     expect(g.geometry.getAttribute('a_TEXCOORD1')).toBe(src.attributes.uv1);
-    expect(g.geometry.index).toBe(src.index);
+    expect(Array.from(g.geometry.index!.array)).toEqual(reversed(src));
     expect(g.geometry.groups).toEqual(src.groups);
     // 元の形は変えない
     expect(src.attributes.position.getZ(0)).toBe(z0);
@@ -324,6 +332,7 @@ describe('Skinner.plain', () => {
     const g = sk.plain(bare);
     expect(g.geometry.getAttribute('a_NORMAL')).toBeUndefined();
     expect((g.geometry.getAttribute('a_POSITION') as THREE.BufferAttribute).getZ(0)).toBe(-1);
+    expect(Array.from(g.geometry.index!.array)).toEqual([0, 2, 1]); // index のない形にも作る
   });
 
   it('dispose は作った形を捨てる (二重には捨てない)', async () => {
@@ -344,6 +353,7 @@ describe('Skinner.plain', () => {
     const g = sk.plain(mesh);
     const spy = vi.spyOn(g.geometry, 'dispose');
     const ownPos = g.geometry.getAttribute('a_POSITION');
+    const ownIndex = g.geometry.index;
     mesh.geometry = box().geometry; // デフォーマが形を差し替えて、前の形を dispose するのと同じ
     const g2 = sk.plain(mesh);
     expect(g2).not.toBe(g);
@@ -351,8 +361,8 @@ describe('Skinner.plain', () => {
     old.dispose();
     expect(spy).toHaveBeenCalledTimes(1);
     expect(g.geometry.getAttribute('a_POSITION')).toBe(ownPos); // 自分の属性は残る
-    expect(g.geometry.getAttribute('a_TEXCOORD0')).toBeUndefined(); // 共有の UV と index は外してある
-    expect(g.geometry.index).toBeNull();
+    expect(g.geometry.getAttribute('a_TEXCOORD0')).toBeUndefined(); // 共有の UV は外してある
+    expect(g.geometry.index).toBe(ownIndex); // index は自分のもの
     expect(old.attributes.uv).toBeDefined();
     expect(old.index).not.toBeNull();
     // 外れたあとの dispose() は二重に捨てない
