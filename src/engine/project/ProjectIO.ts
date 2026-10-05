@@ -59,7 +59,7 @@ export class ProjectIO {
     let skipped = 0;
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
-      const { missingAddons } = await this.engine.history.batch(() => this.open(bytes, {
+      const { missingAddons, notes: openNotes } = await this.engine.history.batch(() => this.open(bytes, {
         pick: async missing => {
           ui.hideToast();
           const r = await this.askMissing(file.name, missing);
@@ -72,6 +72,7 @@ export class ProjectIO {
       const notes = [
         ...(skipped ? [t('見つからないファイルが {n} 個あります', { n: skipped })] : []),
         ...(missingAddons.length ? [t('アドオン {names} のデータがあります。有効にしてから開き直すと戻ります', { names: missingAddons.join('・') })] : []),
+        ...openNotes,
       ];
       ui.toast(notes.length ? t('{name} を開きました ({notes})', { name: file.name, notes: notes.join('。') }) : t('{name} を開きました', { name: file.name }), notes.length ? 8000 : 4000);
     } catch (err) {
@@ -383,6 +384,6 @@ export class ProjectIO {
     const objectKeys = new Set(e.addons.objectData.list().flatMap(d => [d.key, ...d.aliases ?? []]));
     look(data, k => e.addons.sceneData.has(k));
     for (const so of data.objects) look(so, k => objectKeys.has(k));
-    return { missingAddons: [...missing] };
+    return { missingAddons: [...missing], notes: e.mme.takeOpenNotes() }; // notes: 開いたときに知らせること (古い MME の値の移し替え)
   }
 }

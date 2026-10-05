@@ -916,17 +916,40 @@ technique Post { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = comp
     expect(own.mmeValues).toEqual({ Si: 0.5 });
   });
 
-  it('古い controls の名前が場面のほかの物にある (値は使われていなかった) なら移さない。置ける数を超えるなら知らせて移さない', () => {
+  it('古い controls の名前が場面のほかの物にある (値は使われていなかった) なら移さず、知らせない', () => {
     const e = new Engine();
     e.world.addShape(0, 0, 0, 0);
     e.renameObj(e.world.objects[0], 'Taken');
     e.mme.loadScene({ ...e.mme.saveScene(), controls: { taken: { Si: 0.5 } } });
     expect(e.world.objects.filter(o => o.mmeObj)).toEqual([]);
-    const full = vi.spyOn(e.world, 'full', 'get').mockReturnValue(true);
-    e.mme.loadScene({ ...e.mme.saveScene(), controls: { Ctrl: { Si: 0.5 } } });
-    expect(e.world.objects.filter(o => o.mmeObj)).toEqual([]);
-    expect(e.ui.state.toast?.text).toContain('Ctrl');
+    expect(e.mme.takeOpenNotes()).toEqual([]);
+  });
+
+  // 第 4 の計画の形の controls を持つプロジェクトのファイル
+  const legacyFile = async (controls: Record<string, Record<string, number>>) => {
+    const json = JSON.parse(new TextDecoder().decode(await new Engine().project.save('reference')));
+    json.mme.controls = controls;
+    return new File([JSON.stringify(json)], 'old.wgpj');
+  };
+  const controllersOf = (e: Engine) => e.world.objects.filter(o => o.mmeObj).map(o => [o.mmeObj!.name, o.mmeValues]);
+
+  it('古い controls を移せなかった (置ける数を超えた) ことは、開いたお知らせに名前をまとめて添える', async () => {
+    const f = new Engine();
+    const full = vi.spyOn(f.world, 'full', 'get').mockReturnValue(true);
+    await f.project.openFile(await legacyFile({ A: { Si: 0.5 }, B: { Si: 0.25 } }));
     full.mockRestore();
+    expect(controllersOf(f)).toEqual([]);
+    expect(f.ui.state.toast?.text).toBe('old.wgpj を開きました (古いプロジェクトのコントローラー A・B の値を移せませんでした (これ以上置けません))');
+    expect(f.mme.takeOpenNotes()).toEqual([]); // (一度読んだら忘れる)
+  });
+
+  it('古い controls の名前: 空になるものは移さず、直したもの (前後の空白・64 文字より長い) は直した名前で移して、合わないことを開いたお知らせに添える。開くのはやめない', async () => {
+    const long = 'L'.repeat(70);
+    const f = new Engine();
+    await f.project.openFile(await legacyFile({ '   ': { Si: 0.5 }, ' Ctrl ': { Si: 0.75 }, [long]: { Si: 0.25 }, ok: { Si: 1 } }));
+    expect(controllersOf(f)).toEqual([['Ctrl', { Si: 0.75 }], ['L'.repeat(64), { Si: 0.25 }], ['ok', { Si: 1 }]]);
+    expect(f.ui.state.toast?.text).toBe(`old.wgpj を開きました (古いプロジェクトのコントローラー "   " は名前が空なので、値を移せませんでした。`
+      + `古いプロジェクトのコントローラー " Ctrl "・"${long}" は名前を直して移したので、.fx が読む名前と合いません)`);
   });
 
   it('最初の状態に戻すと、フォルダ・仮のコントローラーの値・ポストエフェクト・割り当て・設定を消す', async () => {

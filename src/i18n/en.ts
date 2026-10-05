@@ -1319,6 +1319,8 @@ const dict: Dictionary = {
   "MME の値": "MME Values",
   "MME の物": "MME Object",
   "MME の物には名前が要ります": "An MME object needs a name",
-  "古いプロジェクトのコントローラー {name} の値を移せませんでした (これ以上置けません)": "Could not move the values of controller {name} from the old project (no more objects can be placed)",
+  "古いプロジェクトのコントローラー {names} の値を移せませんでした (これ以上置けません)": "Could not move the values of controllers {names} from the old project (no more objects can be placed)",
+  "古いプロジェクトのコントローラー {names} は名前が空なので、値を移せませんでした": "Could not move the values of controllers {names} from the old project because their names are empty",
+  "古いプロジェクトのコントローラー {names} は名前を直して移したので、.fx が読む名前と合いません": "Controllers {names} from the old project were moved under corrected names, so they no longer match the names the .fx reads",
 };
 export default dict;

@@ -1,7 +1,7 @@
 import type * as THREE from 'three';
 import { errorText } from '../../core/errors';
 import { getLang, t } from '../../core/i18n';
-import { MME_DEFAULTS, normalizeObjectEffects, type MmeScene, type MmeSettings, type ObjectEffects, type SavedSlot, type TabEffects } from '../../core/mme/settings.ts';
+import { MME_DEFAULTS, normalizeMmeObj, normalizeObjectEffects, type MmeScene, type MmeSettings, type ObjectEffects, type SavedSlot, type TabEffects } from '../../core/mme/settings.ts';
 import { same } from '../addons/registry';
 import type { Clock } from '../anim/Clock';
 import type { Keyframes } from '../anim/Keyframes';
@@ -82,6 +82,7 @@ export class MmeEngine {
   private controlUi: MmeUiState['controllers'] = [];
   private controlObjs: Obj[] = [];
   private controlJson = '';
+  private openNotes: string[] = []; // 開いたときに知らせること (古いプロジェクトの移し替えで合わなかったもの。takeOpenNotes)
 
   constructor(private deps: MmeDeps) {
     this.store = new EffectStore(deps.ui);
@@ -384,22 +385,45 @@ export class MmeEngine {
       return folder ? [{ effect: this.store.effect(folder, ref.path), enabled }] : [];
     });
     this.stageEffects = scene.stage ? structuredClone(scene.stage) : null;
-    for (const [name, items] of Object.entries(scene.controls ?? {})) this.migrateControls(name, items);
+    this.openNotes = this.migrateControls(scene.controls ?? {});
     this.store.setPosts(posts);
     this.set(scene.settings);
   }
 
-  // 古いプロジェクトの仮のコントローラー name の値を、その名前のコントローラーの物 (なければ置く) に入れる。
-  // 名前が場面のほかの物・ステージに合う (値は使われていなかった) なら移さない (同じ絵のまま)。置けなければ知らせる
-  private migrateControls(name: string, items: Record<string, number>): void {
-    let obj = this.controllers.controller(name);
-    if (!obj && this.controllers.has(name)) return;
-    if (!obj && this.deps.world.full) {
-      this.deps.ui.toast(t('古いプロジェクトのコントローラー {name} の値を移せませんでした (これ以上置けません)', { name }), 8000);
-      return;
+  // 開いたときに知らせること (ProjectIO が「開きました」のお知らせに添える)。一度読んだら忘れる
+  takeOpenNotes(): string[] {
+    const notes = this.openNotes;
+    this.openNotes = [];
+    return notes;
+  }
+
+  // 古いプロジェクトの仮のコントローラーの値を、名前ごとにその名前のコントローラーの物 (なければ置く) に入れる。合わなかったものを
+  // 知らせる文 (理由ごとに 1 つ) を返す。名前は MME の物の名前にそろえ (前後の空白を除き 64 文字まで)、空になるものは移さず、
+  // 変わったものは移すが .fx の名前と合わないと知らせる。名前が場面のほかの物・ステージに合う (値は使われていなかった) なら
+  // 移さない (同じ絵のまま)。置けなければ移さない。名前のせいで開くのをやめることはない
+  private migrateControls(controls: Record<string, Record<string, number>>): string[] {
+    const empty: string[] = [], renamed: string[] = [], full: string[] = [];
+    for (const [raw, items] of Object.entries(controls)) {
+      const name = normalizeMmeObj({ kind: 'controller', name: raw })?.name;
+      if (!name) { empty.push(JSON.stringify(raw)); continue; }
+      if (name !== raw) renamed.push(JSON.stringify(raw));
+      let obj = this.controllers.controller(name);
+      if (!obj && this.controllers.has(name)) continue;
+      if (!obj && this.deps.world.full) { full.push(name); continue; }
+      try {
+        obj ??= this.deps.mmeObjects.add({ kind: 'controller', name });
+      } catch {
+        full.push(name);
+        continue;
+      }
+      for (const [item, v] of Object.entries(items)) this.writeControl(obj, item, v);
     }
-    obj ??= this.deps.mmeObjects.add({ kind: 'controller', name });
-    for (const [item, v] of Object.entries(items)) this.writeControl(obj, item, v);
+    const names = (l: string[]) => l.join('・');
+    return [
+      ...(empty.length ? [t('古いプロジェクトのコントローラー {names} は名前が空なので、値を移せませんでした', { names: names(empty) })] : []),
+      ...(renamed.length ? [t('古いプロジェクトのコントローラー {names} は名前を直して移したので、.fx が読む名前と合いません', { names: names(renamed) })] : []),
+      ...(full.length ? [t('古いプロジェクトのコントローラー {names} の値を移せませんでした (これ以上置けません)', { names: names(full) })] : []),
+    ];
   }
 
   // 最初の状態に戻す: 割り当て (ステージのものも)・ポストエフェクト・読み込んだフォルダを消し、既定の設定にする

@@ -167,6 +167,8 @@ describe('Controllers: 場面の物', () => {
     stage.add(stageMesh);
     const { c } = setup([], stage);
     expect(c.value(ref('stage.pmx', 'M'), null, null)).toEqual([0.5]);
+    // 場面に置いた物 (コントローラーの物でも) は、ステージより先 (同じ名前ならステージを隠す)
+    expect(setup([controller(1, 'Stage.pmx', { M: 0.25 })], stage).c.value(ref('stage.pmx', 'M'), null, null)).toEqual([0.25]);
     // ステージを描いているとき・ステージが持ち主のときは、(self)・(OffscreenOwner) がステージ
     expect(c.value(ref('(self)', 'M'), STAGE, null)).toEqual([0.5]);
     expect(c.value(ref('(OffscreenOwner)', 'M'), null, STAGE)).toEqual([0.5]);
