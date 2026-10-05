@@ -26,7 +26,7 @@
 1. **背景**: MME 互換では空（`Environment.drawBackground`）を描かない。場面の描画先を、いまの `renderer.getClearColor()`（ビューポートの灰色。書き出しでは `beginOutput` が決めた色）で消す。MME のエフェクトは空を自分で描くため。
 2. **`object_ss` の technique がないとき**: 同じエフェクトの `object` の technique を使い、それもなければ `default.fx` の `object_ss` を使う。
 3. **セルフシャドウの深度マップ**: `R32F`（`EXT_color_buffer_float` が要る）。描けない環境では、設計書の「RGBA8 に詰める」の代わりに **セルフシャドウを切って警告を出す**（`default.fx` の詰め方の分岐を作らないため。CI の SwiftShader と主なデスクトップは描ける）。
-4. **UV モーフ**: MMDLoader は UV モーフを読まず、表情の一覧（`morphTargetDictionary`）にも出ないので、この計画では扱わない（設計書からの変更。第 5 の計画へ）。頂点モーフは three.js の `morphAttributes.position`（相対）と `morphTargetInfluences` を使う。
+4. **UV モーフ**: MMDLoader は UV モーフを読まず、表情の一覧（`morphTargetDictionary`）にも出ないので、この計画では扱わない（設計書からの変更。第 3 の計画以降へ）。頂点モーフは three.js の `morphAttributes.position`（絶対。MMDLoader は `morphTargetsRelative = false`。Ruling 7）と `morphTargetInfluences` を使う。
 5. **輪郭線の広げ方**: いまの標準のエンジン（three.js の OutlineEffect。`thickness = 輪郭線の太さ / 300` を画面の割合で広げる）とほぼ同じ太さになるよう、物の空間で `位置 + 法線 × (頂点の輪郭線の太さ / 300) × カメラからの距離 × tan(視野の縦の半分)` とする。頂点の輪郭線の太さ = 材質の輪郭線の太さ × 頂点の輪郭線の倍率（その頂点を最初に使う材質の値）。
 6. **非正方の行列の uniform**（three.js には `mat4x3` などの uniform を入れる関数がない）: コンパイラが `uniform mat4 名前;` として宣言し、読むところで `mat{R}x{C}(名前)` に直す（Task 1）。ランタイムは 16 個の数にして渡す: HLSL の r 行 c 列を `r * 4 + c` 番目に置き、残りは 0。
 7. **フレームバッファ**: MME は 1 つの深度・ステンシルのターゲットを、いくつもの色のターゲットと組み合わせる。色のターゲットの組み合わせ（最大 4 つ）と深度のターゲットごとに、`gl` で作ったフレームバッファを `renderer.setRenderTargetFramebuffer` で three.js の `WebGLRenderTarget` に付けて使う（Task 12）。色のテクスチャは three.js の `Texture` として作り、`renderer.initTexture` のあと `renderer.properties.get(tex).__webglTexture` を取り付ける。深度・ステンシルは自分で作る renderbuffer（`DEPTH24_STENCIL8`）。
