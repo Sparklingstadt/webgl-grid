@@ -1274,5 +1274,8 @@ const dict: Dictionary = {
   "選んでいる物の .fx": "Selected object's .fx",
   "GPU で使えないので止めました": "Stopped because it can't be used on the GPU",
   ".fx を読めませんでした: {error}": "Couldn't read the .fx file: {error}",
+  "DefaultEffect に空の項があるので無視します": "DefaultEffect has an empty item, so it is ignored",
+  "DefaultEffect の項 \"{item}\" に = がないので無視します": "DefaultEffect item \"{item}\" has no =, so it is ignored",
+  "DefaultEffect の項 \"{item}\" のパターンか動作が空なので無視します": "DefaultEffect item \"{item}\" has an empty pattern or action, so it is ignored",
 };
 export default dict;
