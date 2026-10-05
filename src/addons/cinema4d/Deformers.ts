@@ -13,7 +13,8 @@ export class Deformers {
 
   // 形を、いまのデフォーマで作り直す (なければ元の形に戻す)
   apply(obj: Obj) {
-    const mesh: THREE.Mesh = isModel(obj) ? obj.model : obj.mesh!;
+    const mesh: THREE.Mesh | undefined = isModel(obj) ? obj.model : obj.mesh;
+    if (!mesh) return; // (形のない物 (ライト・カメラ・MME の物) は変形しない)
     const base: THREE.BufferGeometry = mesh.userData.baseGeometry ?? mesh.geometry;
     const prev = mesh.geometry;
     const active = activeDeformers(this.listOf(obj));

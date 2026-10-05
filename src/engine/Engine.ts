@@ -397,8 +397,9 @@ export class Engine {
     return obj;
   }
   // --- MME の物 (仮のコントローラー・仮のアクセサリ。形がなく、選ぶのはアウトライナーから) ---
-  // 置いて選ぶ (元に戻せる)
+  // 置いて選ぶ (元に戻せる)。置ける数を超えるときは、知らせて例外にする
   addMmeObject(data: MmeObjData): Obj {
+    if (this.world.full) { this.ui.toast(t('これ以上置けません')); throw new Error(t('これ以上置けません')); }
     const obj = this.mmeObjects.add(data);
     this.selection.select(obj);
     this.viewport.requestDraw();

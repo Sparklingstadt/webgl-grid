@@ -1,12 +1,14 @@
 import { msg } from '../../core/i18n';
 import type { AddonModule } from '../../engine/addons/Addons';
 import type { SelInfo } from '../../engine';
-import type { Obj } from '../../engine/types';
+import { isModel, isShape, type Obj } from '../../engine/types';
 import { Cinema4d } from './Cinema4d';
 import type { ClonerSettings } from './cloner';
 import { ClonerPanel } from './ClonerPanel';
 import type { Deformer } from './deform';
 import { DeformerPanel } from './DeformerPanel';
+
+const hasShape = (o: Obj | null | undefined) => isShape(o) || isModel(o);
 
 // --- Cinema 4D: クローナー (MoGraph のエフェクタ付き)・デフォーマ ---
 // 本体から切り出した組み込みのアドオン (最初から有効)。プロパティの「モディファイアー」にパネルを足し、
@@ -23,12 +25,13 @@ const cinema4d: AddonModule = {
     const c4d = new Cinema4d(api);
     const { engine } = api;
     api.expose(c4d);
-    const notLight = (sel: SelInfo | null) => !!sel && sel.kind !== 'light';
-    api.addPanel({ title: msg('デフォーマ'), tab: 'modifier', poll: notLight, component: ({ sel }: { sel: SelInfo }) => <DeformerPanel sel={sel} c4d={c4d} /> });
-    api.addPanel({ title: msg('クローナー'), tab: 'modifier', poll: notLight, component: ({ sel }: { sel: SelInfo }) => <ClonerPanel sel={sel} c4d={c4d} /> });
+    // 使えるのは形のある物 (形と MMD モデル。プロパティの「モディファイアー」のタブと同じ)。ライト・カメラ・MME の物には使えない
+    const modifiable = (sel: SelInfo | null) => sel?.kind === 'shape' || sel?.kind === 'model';
+    api.addPanel({ title: msg('デフォーマ'), tab: 'modifier', poll: modifiable, component: ({ sel }: { sel: SelInfo }) => <DeformerPanel sel={sel} c4d={c4d} /> });
+    api.addPanel({ title: msg('クローナー'), tab: 'modifier', poll: modifiable, component: ({ sel }: { sel: SelInfo }) => <ClonerPanel sel={sel} c4d={c4d} /> });
     api.addMenuItem({
       menu: 'object', label: msg('クローナーにする / やめる'),
-      enabled: () => { const o = engine.selection.current; return !!o && !o.light; },
+      enabled: () => hasShape(engine.selection.current),
       run: () => { const o = engine.selection.current; c4d.setCloner(c4d.cloner(o) ? null : {}, o); },
     });
 
@@ -36,7 +39,7 @@ const cinema4d: AddonModule = {
     const objOf = (id: unknown): Obj => {
       const obj = id === undefined || id === null ? engine.selection.current : engine.world.find(Number(id));
       if (!obj) throw new Error(id === undefined || id === null ? '物を選んでいません。id を指定してください' : `id ${id} の物はありません`);
-      if (obj.light) throw new Error('ライトには使えません');
+      if (!hasShape(obj)) throw new Error('形と MMD モデルにだけ使えます');
       return obj;
     };
     api.addCommand('set_cloner', {

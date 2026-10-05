@@ -57,4 +57,49 @@ describe('Cinema 4D アドオン', () => {
     expect(await runCommand(e, 'run_command', { name: 'cinema4d.bake_cloner', params: { id } })).toEqual({ objects: 4 });
     await expect(runCommand(e, 'set_cloner', {})).rejects.toThrow('知らない命令です');
   });
+
+  it('形のない物 (MME の物・カメラ・ライト) には使えない: パネル・メニュー・MCP で断り、値が来ても作り直しで落ちない', async () => {
+    const { e, c4d } = await engineWithC4d();
+    const mme = e.addMmeObject({ kind: 'accessory', name: 'a.x' });
+    const camera = e.addCamera()!;
+    const light = e.addLight('point')!;
+    e.history.checkpoint();
+    const panels = e.addons.panels.list().filter(p => p.title === 'クローナー' || p.title === 'デフォーマ');
+    const menu = e.addons.menus.list().find(m => m.label === 'クローナーにする / やめる')!;
+    for (const o of [mme, camera, light]) {
+      e.select(o);
+      expect(panels.map(p => p.poll!(e.ui.state.sel))).toEqual([false, false]);
+      expect(menu.enabled!()).toBe(false);
+      await expect(runCommand(e, 'run_command', { name: 'cinema4d.set_cloner', params: { id: o.id } })).rejects.toThrow('形と MMD モデルにだけ使えます');
+      await expect(runCommand(e, 'run_command', { name: 'cinema4d.set_deformers', params: { id: o.id, deformers: [{ kind: 'bend' }] } })).rejects.toThrow('形と MMD モデルにだけ使えます');
+      // 直接呼んでも何もしない
+      c4d.setCloner({}, o);
+      c4d.setDeformers([newDeformer('bend')], o);
+      expect([c4d.cloner(o), c4d.deformerList(o), o.addonData?.['cinema4d.cloner']]).toEqual([null, [], undefined]);
+    }
+    e.select(e.world.objects[0]);
+    expect(panels.map(p => p.poll!(e.ui.state.sel))).toEqual([true, true]);
+    expect(menu.enabled!()).toBe(true);
+    // 前の版・手で書いたプロジェクトなどで値が来ても、作り直しは何もしない (複製・元に戻す・保存して開くも通る)
+    for (const o of [mme, camera]) {
+      o.addonData = { ...o.addonData, 'cinema4d.cloner': { mode: 'linear', count: 3 }, 'cinema4d.deformers': [newDeformer('bend')] };
+      expect(() => { c4d.cloners.rebuild(o); c4d.deformers.apply(o); }).not.toThrow();
+      expect(c4d.count(o)).toBe(0);
+    }
+    e.history.checkpoint();
+    e.selection.setMany([mme, camera]);
+    const copies = await e.duplicateSelected();
+    expect(copies).not.toBeNull();
+    expect(e.world.objects.length).toBe(6);
+    await e.history.undo();
+    expect(e.world.objects.length).toBe(4);
+    e.selection.setMany([mme, camera]);
+    e.deleteSelected();
+    e.history.checkpoint();
+    await e.history.undo();
+    expect(e.world.has(mme) && e.world.has(camera)).toBe(true);
+    const { e: f } = await engineWithC4d();
+    await f.project.open(await e.project.save('reference'));
+    expect(f.world.objects.map(o => o.mmeObj?.name ?? null)).toEqual([null, 'a.x', null, null]);
+  });
 });

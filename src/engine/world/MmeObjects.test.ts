@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { keyFrames } from '../../core/animation';
+import { MAX_BOXES } from '../../core/constants';
 import { normalizeMmeObj } from '../../core/mme/settings.ts';
 import { Engine } from '../Engine';
 import { objectName } from '../mme/Assignments';
@@ -51,6 +52,14 @@ describe('MME の物', () => {
     await e.history.redo();
     expect(e.world.objects[1]).toBe(obj);
     expect(obj.mmeValues!.Si).toBe(1);
+  });
+
+  it('置ける数を超えるときは、知らせて例外にする (何も置かない)', () => {
+    const e = new Engine();
+    for (let i = 0; i < MAX_BOXES; i++) e.world.addShape(0, i * 2, 0);
+    expect(() => e.addMmeObject({ kind: 'accessory', name: 'a.x' })).toThrow('これ以上置けません');
+    expect(e.ui.state.toast?.text).toBe('これ以上置けません');
+    expect(e.world.objects.length).toBe(MAX_BOXES);
   });
 
   it('コントローラーは値を持たずに始まる (項目は描いているエフェクトから集める)', () => {
