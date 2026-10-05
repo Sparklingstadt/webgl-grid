@@ -238,23 +238,13 @@ describe('EffectStore', () => {
     expect(ui.toast).toHaveBeenCalledTimes(1);
   });
 
-  it('物の割り当て・ポストエフェクトの並べ替え・オン・オフ・外す・物を消したら割り当ても消える', async () => {
+  it('ポストエフェクトの並べ替え・オン・オフ・外す・全部外す', async () => {
     const store = new EffectStore(fakeUi());
     const changed = vi.fn();
     store.events.on('changed', changed);
     const a = store.effect(await store.addFolder([fileAt('A/a.fx', '')]), 'a.fx');
     const b = store.effect(await store.addFolder([fileAt('B/b.fx', '')]), 'b.fx');
     const c = store.effect(await store.addFolder([fileAt('C/c.fx', '')]), 'c.fx');
-
-    expect(store.objectEffect(1)).toBeNull();
-    store.setObjectEffect(1, a);
-    store.setObjectEffect(2, b);
-    expect(store.objectEffect(1)).toBe(a);
-    store.setObjectEffect(2, null);
-    expect(store.objectEffect(2)).toBeNull();
-    store.forgetObject(1);
-    expect(store.objectEffect(1)).toBeNull();
-    expect(changed).toHaveBeenCalledTimes(4);
 
     store.addPost(a); store.addPost(b); store.addPost(c);
     expect(store.posts.map(p => p.effect)).toEqual([a, b, c]);
@@ -270,6 +260,10 @@ describe('EffectStore', () => {
     expect(store.posts.map(p => p.enabled)).toEqual([true, false, true]);
     store.removePost(0);
     expect(store.posts).toEqual([{ effect: c, enabled: false }, { effect: a, enabled: true }]);
-    expect(changed).toHaveBeenCalledTimes(4 + 3 + 2 + 1 + 1);
+    expect(changed).toHaveBeenCalledTimes(3 + 2 + 1 + 1);
+    store.clear();
+    expect(store.posts).toEqual([]);
+    store.clear(); // (何もなければ知らせない)
+    expect(changed).toHaveBeenCalledTimes(3 + 2 + 1 + 1 + 1);
   });
 });

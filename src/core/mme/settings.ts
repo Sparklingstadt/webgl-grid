@@ -16,3 +16,42 @@ export function normalizeMme(raw: unknown): MmeSettings {
     groundShadow: bool(o.groundShadow, MME_DEFAULTS.groundShadow),
   };
 }
+
+// --- 物ごと・材質ごとのエフェクトの割り当て (物の値 'mme'。Obj.mme) ---
+// EffectRef: 読み込んだフォルダ (EffectStore のフォルダの id) の中の .fx (フォルダからの相対パス)
+export interface EffectRef { folder: string; path: string }
+// エフェクトか、描かない (hide)
+export type SavedSlot = EffectRef | 'hide';
+// 1 つのタブ ('Main' かオフスクリーン) の割り当て: 物全体と、材質ごと (キーは材質の番号)。材質の割り当てが先
+export interface TabEffects { object?: SavedSlot; materials?: Record<string /* 材質の番号 */, SavedSlot> }
+export type ObjectEffects = Record<string /* 'Main' かオフスクリーンの名前 */, TabEffects>;
+
+function normalizeSlot(raw: unknown): SavedSlot | null {
+  if (raw === 'hide') return 'hide';
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const { folder, path } = raw as Record<string, unknown>;
+  return typeof folder === 'string' && folder !== '' && typeof path === 'string' && path !== '' ? { folder, path } : null;
+}
+
+// 保存されていた割り当てを、使える値にそろえる (壊れた項・材質の番号でないキーは捨てる)。何も残らなければ null
+export function normalizeObjectEffects(raw: unknown): ObjectEffects | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const out: ObjectEffects = {};
+  for (const [tab, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (tab === '' || !value || typeof value !== 'object' || Array.isArray(value)) continue;
+    const v = value as Record<string, unknown>;
+    const effects: TabEffects = {};
+    const object = normalizeSlot(v.object);
+    if (object) effects.object = object;
+    if (v.materials && typeof v.materials === 'object' && !Array.isArray(v.materials)) {
+      const materials: Record<string, SavedSlot> = {};
+      for (const [k, m] of Object.entries(v.materials as Record<string, unknown>)) {
+        const slot = /^(0|[1-9]\d*)$/.test(k) ? normalizeSlot(m) : null;
+        if (slot) materials[k] = slot;
+      }
+      if (Object.keys(materials).length > 0) effects.materials = materials;
+    }
+    if (effects.object || effects.materials) out[tab] = effects;
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}

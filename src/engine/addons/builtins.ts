@@ -1,7 +1,7 @@
 import { msg } from '../../core/i18n';
 import { normalizeCamera } from '../../core/camera';
 import { normalizeLight } from '../../core/light';
-import { MME_DEFAULTS, normalizeMme } from '../../core/mme/settings.ts';
+import { MME_DEFAULTS, normalizeMme, normalizeObjectEffects } from '../../core/mme/settings.ts';
 import { normalizeOutput } from '../../core/output';
 import { normalizeScene } from '../../core/scene';
 import { normalizeMarkers } from '../anim/Markers';
@@ -22,6 +22,8 @@ export function registerBuiltins(e: Engine) {
   objectData.add({ key: 'hideRender', label: msg('レンダリングに写さない'), get: o => o.hideRender ?? null, set: (o, v) => e.setVisibility(o, { hideRender: !!v }), normalize: flag });
   objectData.add({ key: 'scale', label: msg('大きさ'), get: o => o.scale ?? null, set: (o, v) => e.setScale(o, v ?? 1), normalize: raw => (typeof raw === 'number' && Number.isFinite(raw) && raw !== 1 ? Math.min(Math.max(raw, 0.05), 20) : null) });
   objectData.add({ key: 'collection', label: msg('コレクション'), get: o => o.collection ?? null, set: (o, v) => { o.collection = v ?? undefined; }, normalize: raw => (typeof raw === 'string' && raw ? raw.slice(0, 64) : null) });
+  // MME 互換の、物ごと・材質ごとのエフェクトの割り当て
+  objectData.add({ key: 'mme', label: msg('MME のエフェクト'), get: o => o.mme ?? null, set: (o, v) => e.mme.setObjectEffects(o, v), normalize: normalizeObjectEffects });
   // 場面の値
   sceneData.add({
     key: 'collections', label: msg('コレクション'), history: true,
@@ -38,7 +40,8 @@ export function registerBuiltins(e: Engine) {
     save: () => e.markers.list.map(m => ({ ...m })), load: raw => e.markers.replace(normalizeMarkers(raw)), reset: () => e.markers.replace([]),
   });
   sceneData.add({ key: 'output', label: msg('出力'), save: () => ({ ...e.output.settings }), load: raw => e.output.set(normalizeOutput(raw)) });
-  // レンダーエンジン (標準 / MME 互換) とセルフシャドウ・地面の影。エフェクトの割り当ては保存せず、最初の状態に戻す (プロジェクトを開く) と外す
+  // レンダーエンジン (標準 / MME 互換) とセルフシャドウ・地面の影。ポストエフェクトの一覧は保存せず、最初の状態に戻す (プロジェクトを開く) と
+  // エフェクトの割り当て (場面にある物のものも) を外す
   sceneData.add({
     key: 'mme', label: msg('MME 互換'), save: () => ({ ...e.mme.settings }), load: raw => e.mme.set(normalizeMme(raw)),
     reset: () => { e.mme.clearEffects(); e.mme.set({ ...MME_DEFAULTS }); },

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Engine } from '../Engine';
 import { convertMmdMesh } from '../materials/fromMmd';
 import { EffectInstance } from './EffectInstance';
+import type { LoadedEffect } from './EffectStore';
 import { MME_DEFAULTS, normalizeMme } from './MmeEngine';
 
 // フォルダから選んだファイル (webkitRelativePath は 'フォルダ/…')
@@ -11,6 +12,8 @@ function fileAt(path: string, text: string): File {
   Object.defineProperty(f, 'webkitRelativePath', { value: path });
   return f;
 }
+// 読み込んだ .fx を指す割り当て
+const ref = (e: LoadedEffect) => ({ folder: e.folder.id, path: e.entry });
 
 // 描画先なしで、レンダーエンジンの切り替えと Viewport.drawOverride の差し替えを確かめる
 describe('MmeEngine', () => {
@@ -69,14 +72,46 @@ describe('MmeEngine', () => {
     expect(toast).toHaveBeenCalledTimes(2);
   });
 
-  it('物を消すと、その物の .fx の割り当ても消える', async () => {
+  it('割り当てた物を消しても例外にならず、ほかの物の割り当てはそのまま', async () => {
+    const e = new Engine();
+    const a = e.world.addShape(0, 0, 0, 0), b = e.world.addShape(0, 3, 0, 1);
+    const fx = await e.mme.loadEffect([fileAt('Fx/a.fx', 'technique T { }')], 'a.fx');
+    e.mme.assign(a, 'Main', null, ref(fx));
+    e.mme.assign(b, 'Main', 0, ref(fx));
+    const r = e.mme.renderer as unknown as Internals;
+    const dispose = vi.spyOn(r.instance(fx) as unknown as EffectInstance, 'dispose');
+    expect(() => e.world.remove(a)).not.toThrow();
+    expect(dispose).not.toHaveBeenCalled(); // (b が使っている)
+    expect(r.mainSlot(b, b.mesh!, 0)).toEqual({ kind: 'effect', effect: fx });
+    expect(b.mme).toEqual({ Main: { materials: { 0: ref(fx) } } });
+    e.world.remove(b);
+    expect(dispose).toHaveBeenCalledTimes(1); // (もうどの物も使っていない)
+  });
+
+  it('割り当ては物の値 mme: 画面から変えると元に戻すの手になり、元に戻す・やり直す・複製で写る。null は既定に戻す', async () => {
     const e = new Engine();
     const obj = e.world.addShape(0, 0, 0, 0);
-    const fx = await e.mme.loadEffect([new File(['technique T { }'], 'a.fx')], 'a.fx');
-    e.mme.store.setObjectEffect(obj.id, fx);
-    expect(e.mme.store.objectEffect(obj.id)).toBe(fx);
-    e.world.remove(obj);
-    expect(e.mme.store.objectEffect(obj.id)).toBeNull();
+    e.history.checkpoint();
+    const fx = await e.mme.loadEffect([fileAt('Fx/a.fx', 'technique T { }')], 'a.fx');
+    const soon = vi.spyOn(e.history, 'soon');
+    e.mme.assign(obj, 'Main', 1, ref(fx));
+    expect(soon).toHaveBeenCalled();
+    const assigned = { Main: { materials: { 1: ref(fx) } } };
+    expect(obj.mme).toEqual(assigned);
+    await e.history.undo();
+    expect(obj.mme).toBeUndefined();
+    expect(e.ui.state.toast?.text).toContain('MME のエフェクト');
+    await e.history.redo();
+    expect(obj.mme).toEqual(assigned);
+    e.selection.select(obj);
+    const copy = await e.duplicateSelected();
+    expect(copy?.mme).toEqual(assigned);
+    expect(copy?.mme).not.toBe(obj.mme);
+    e.mme.assign(obj, 'Main', null, 'hide');
+    expect(obj.mme).toEqual({ Main: { object: 'hide', materials: { 1: ref(fx) } } });
+    e.mme.assign(obj, 'Main', 1, null);
+    e.mme.assign(obj, 'Main', null, null);
+    expect(obj.mme).toBeUndefined();
   });
 
   it('whenReady は .fx のテクスチャと .pmx の読み込みを待つ (何もなければすぐ終わる)', async () => {
@@ -93,7 +128,8 @@ describe('MmeEngine', () => {
     };
     frame(renderer: unknown): { selfShadow: boolean };
     shadow: THREE.WebGLRenderTarget | null;
-    effectOf(obj: unknown): unknown;
+    mainSlot(obj: unknown, mesh: THREE.Mesh, materialIndex: number): unknown;
+    mainSlots: Map<unknown, unknown>;
     instance(e: unknown): { stopped: boolean };
     light(): { shadowProjection: THREE.Matrix4 };
     warnFor(e: unknown, message: string): void;
@@ -114,11 +150,14 @@ describe('MmeEngine', () => {
     const e = new Engine();
     const obj = e.world.addShape(0, 0, 0, 0);
     const fx = await e.mme.loadEffect([new File(['technique T { }'], 'a.fx')], 'a.fx');
-    e.mme.store.setObjectEffect(obj.id, fx);
+    e.mme.assign(obj, 'Main', null, ref(fx));
     const r = e.mme.renderer as unknown as Internals;
-    expect(r.effectOf(obj)).toBe(fx);
+    expect(r.mainSlot(obj, obj.mesh!, 0)).toEqual({ kind: 'effect', effect: fx });
     r.instance(fx).stopped = true;
-    expect(r.effectOf(obj)).toBe(e.mme.store.defaultEffect);
+    // (そのフレームのうちは変えない。次のフレームから default.fx)
+    expect(r.mainSlot(obj, obj.mesh!, 0)).toEqual({ kind: 'effect', effect: fx });
+    r.mainSlots.clear();
+    expect(r.mainSlot(obj, obj.mesh!, 0)).toEqual({ kind: 'effect', effect: e.mme.store.defaultEffect });
     expect(e.mme.renderer.stopped(fx)).toBe(true);
   });
 
@@ -278,7 +317,7 @@ describe('MmeEngine', () => {
     e.selection.select(obj);
     const good = await e.mme.loadEffect([fileAt('Fx/good.fx', 'technique T { }')], 'good.fx');
     const bad = await e.mme.loadEffect([fileAt('Fx/bad.fx', 'float4 x = ;')], 'bad.fx');
-    e.mme.store.setObjectEffect(obj.id, bad);
+    e.mme.assign(obj, 'Main', null, ref(bad));
     const object = e.ui.state.mme.object!;
     expect(object).toMatchObject({ name: 'Fx/bad.fx', ok: false, warnings: [] });
     expect(object.errors.length).toBeGreaterThan(0);
@@ -286,7 +325,7 @@ describe('MmeEngine', () => {
     e.selection.select(null);
     expect(e.ui.state.mme.object).toBeNull();
     e.selection.select(obj);
-    e.mme.store.setObjectEffect(obj.id, null);
+    e.mme.assign(obj, 'Main', null, null);
     expect(e.ui.state.mme.object).toBeNull();
 
     e.mme.store.addPost(good);
@@ -332,16 +371,16 @@ describe('MmeEngine', () => {
     const files = () => [fileAt('Fx/a.fx', 'technique T { }'), fileAt('Fx/tex.png', '')];
     expect(e.mme.fxFilesIn([fileAt('F/b/c.fx', ''), fileAt('F/a.FX', ''), fileAt('F/t.png', '')])).toEqual(['a.FX', 'b/c.fx']);
     await e.mme.loadObjectEffect(files(), 'a.fx'); // (選んでいなければ何もしない)
-    expect(e.mme.store.objectEffect(obj.id)).toBeNull();
+    expect(obj.mme).toBeUndefined();
     e.selection.select(obj);
     const loading = e.mme.loadObjectEffect(files(), 'a.fx');
     e.selection.select(null); // 読んでいるあいだに選び直しても、押したときの物に当てる
     await loading;
-    expect(e.mme.store.objectEffect(obj.id)?.name).toBe('Fx/a.fx');
+    expect(obj.mme).toEqual({ Main: { object: { folder: e.mme.store.folders()[0].id, path: 'a.fx' } } });
     e.selection.select(obj);
     expect(e.ui.state.mme.object?.name).toBe('Fx/a.fx');
     e.mme.removeObjectEffect();
-    expect(e.mme.store.objectEffect(obj.id)).toBeNull();
+    expect(obj.mme).toBeUndefined();
     expect(e.ui.state.mme.object).toBeNull();
     await e.mme.addPostEffect([fileAt('P/post.fx', 'technique T { }')], 'post.fx');
     expect(e.ui.state.mme.posts.map(p => [p.name, p.enabled])).toEqual([['P/post.fx', true]]);
@@ -355,7 +394,7 @@ describe('MmeEngine', () => {
     broken.arrayBuffer = () => Promise.reject(new Error('読めない'));
     await expect(e.mme.loadObjectEffect([broken], 'a.fx')).resolves.toBeUndefined();
     expect(e.ui.state.toast?.text).toContain('読めない');
-    expect(e.mme.store.objectEffect(obj.id)).toBeNull();
+    expect(obj.mme).toBeUndefined();
     e.ui.hideToast();
     await expect(e.mme.addPostEffect([broken], 'a.fx')).resolves.toBeUndefined();
     expect(e.ui.state.toast?.text).toContain('読めない');
@@ -378,17 +417,22 @@ describe('MmeEngine', () => {
     const e = new Engine();
     const obj = e.world.addShape(0, 0, 0, 0);
     const fx = await e.mme.loadEffect([fileAt('Fx/a.fx', 'technique T { }')], 'a.fx');
-    const assign = () => { e.mme.store.setObjectEffect(obj.id, fx); e.mme.store.addPost(fx); };
+    const assign = () => { e.mme.assign(obj, 'Main', null, ref(fx)); e.mme.store.addPost(fx); };
+    assign();
+    e.mme.clearEffects(); // (場面にある物の割り当ても外す)
+    expect(obj.mme).toBeUndefined();
+    expect(e.mme.store.posts).toEqual([]);
     assign();
     e.resetAll();
-    expect(e.mme.store.objectEffect(obj.id)).toBeNull();
     expect(e.mme.store.posts).toEqual([]);
     expect(e.ui.state.mme.posts).toEqual([]);
     // プロジェクトを開いても (開く前に最初の状態に戻す)
+    const shape = e.world.addShape(0, 0, 0, 0);
     const bytes = await e.project.save('reference');
-    assign();
+    e.mme.assign(shape, 'Main', null, ref(fx));
+    e.mme.store.addPost(fx);
     await e.project.open(bytes);
     expect(e.mme.store.posts).toEqual([]);
-    expect(e.mme.store.objectEffect(obj.id)).toBeNull();
+    expect(e.world.objects.map(o => o.mme)).toEqual([undefined]);
   });
 });

@@ -64,16 +64,16 @@ export async function addShape(page: Page, s: number, at: [number, number], colo
   }, { s, at, color });
 }
 
-// .fx の文字列を読んで (フォルダ fx の中の name)、物 i に割り当てる。コンパイルできたかを返す
-export async function assignFx(page: Page, i: number, source: string, name = 'test.fx') {
-  return page.evaluate(async ({ i, source, name }) => {
+// .fx の文字列を読んで (フォルダ fx の中の name)、物 i の Main に割り当てる (material: 材質の番号。null は物全体)。コンパイルできたかを返す
+export async function assignFx(page: Page, i: number, source: string, name = 'test.fx', material: number | null = null) {
+  return page.evaluate(async ({ i, source, name, material }) => {
     const { engine } = window as Win;
     const file = new File([source], name);
     Object.defineProperty(file, 'webkitRelativePath', { value: `fx/${name}` });
     const e = await engine.mme.loadEffect([file], name);
-    engine.mme.store.setObjectEffect(engine.world.objects[i].id, e);
+    engine.mme.assign(engine.world.objects[i], 'Main', material, { folder: e.folder.id, path: e.entry });
     return e.result.ok as boolean;
-  }, { i, source, name });
+  }, { i, source, name, material });
 }
 
 // ポストエフェクトの .fx の文字列を読んで (フォルダ post の中の name)、一覧の最後 (いちばん外側) に足す。コンパイルできたかを返す

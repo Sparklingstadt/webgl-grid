@@ -5,7 +5,7 @@ import { normalizePath, resolveFile } from '../../core/fx/source.ts';
 import type { UiChannel } from '../UiChannel';
 import DEFAULT_FX from './default.fx?raw';
 
-// --- 読み込んだ .fx のフォルダと、そこからコンパイルした .fx を持つ。物ごとの .fx とポストエフェクトの一覧も持つ ---
+// --- 読み込んだ .fx のフォルダと、そこからコンパイルした .fx を持つ。ポストエフェクトの一覧も持つ (物ごとの割り当ては Obj.mme) ---
 // files・text・used のキーはフォルダからの相対パス ('/' 区切り)。text は文字のファイル (.fx など) を読み込んだときに読んだもの。
 // 画像は使うときに files の File から読む (readBinary)。used はコンパイルで読んだパスと画像として読んだパス (保存するもの)
 export interface EffectFolder { id: string; name: string; files: Map<string, File>; text: Map<string, Uint8Array>; used: Set<string> }
@@ -30,7 +30,7 @@ function relativePaths(files: File[]): { paths: string[]; folder: string } {
 
 // フォルダの中のパスを、コンパイラの #include と同じく大文字小文字と '\' を無視して探す。なければ null
 const FOUND = new Uint8Array(0);
-function findFile(folder: EffectFolder, path: string): string | null {
+export function findFile(folder: EffectFolder, path: string): string | null {
   const has = (p: string) => folder.files.has(p) || folder.text.has(p);
   const listFiles = () => [...new Set([...folder.files.keys(), ...folder.text.keys()])];
   return resolveFile({ readFile: p => (has(p) ? FOUND : null), listFiles }, path)?.path ?? null;
@@ -67,7 +67,6 @@ export class EffectStore {
   private builtin: EffectFolder;
   private list: EffectFolder[] = []; // 読み込んだフォルダ (builtin は入れない)
   private compiled = new Map<string, Map<string, LoadedEffect>>(); // フォルダの id → パス → コンパイルしたもの
-  private objects = new Map<number, LoadedEffect>();
   private nextId = 1;
   private nextFolderId = 1;
 
@@ -141,27 +140,11 @@ export class EffectStore {
     return loaded;
   }
 
-  objectEffect(objId: number): LoadedEffect | null {
-    return this.objects.get(objId) ?? null;
-  }
-
-  setObjectEffect(objId: number, e: LoadedEffect | null): void {
-    if (e) this.objects.set(objId, e);
-    else this.objects.delete(objId);
-    this.events.emit('changed');
-  }
-
-  // 割り当てを全部外す
+  // ポストエフェクトを全部外す
   clear(): void {
-    if (this.objects.size === 0 && this.posts.length === 0) return;
-    this.objects.clear();
+    if (this.posts.length === 0) return;
     this.posts.length = 0;
     this.events.emit('changed');
-  }
-
-  // 物を消したとき
-  forgetObject(objId: number): void {
-    if (this.objects.delete(objId)) this.events.emit('changed');
   }
 
   addPost(e: LoadedEffect): void {

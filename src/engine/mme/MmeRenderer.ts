@@ -11,12 +11,13 @@ import type { Obj } from '../types';
 import type { UiChannel } from '../UiChannel';
 import type { Selection } from '../world/Selection';
 import type { World } from '../world/World';
+import { Assignments } from './Assignments';
 import { EffectInstance } from './EffectInstance';
 import type { EffectStore, LoadedEffect } from './EffectStore';
 import { CANVAS, Framebuffers, type DrawTarget } from './Framebuffers';
 import { SHADOW_DISTANCE_MAX, type MmeSettings } from '../../core/mme/settings.ts';
 import { PostChain, type FrameState } from './PostChain';
-import { ScenePass, toSrgb, type PassTable, type Slot } from './ScenePass';
+import { ScenePass, toSrgb, type PassTable, type Slot, type SlotFor } from './ScenePass';
 import { Skinner } from './Skinner';
 
 // --- MME 互換の 1 フレーム (設計書「1 フレームの流れ」): セルフシャドウの深度 → ポストエフェクトの入れ子 (PostChain) の
@@ -55,12 +56,16 @@ export class MmeRenderer {
   private fb: Framebuffers | null = null; // レンダーターゲット (描画先を作り直したら作り直す)
   private chain: PostChain | null = null;
   private scenePass: ScenePass;
-  // Main の表: 物の .fx (なければ default.fx)。ステージは default.fx
-  private main: PassTable = { name: 'Main', owner: null, slotFor: obj => this.mainSlot(obj) };
-  // このフレームの Main の物ごとの割り当て (フレームの途中でエフェクトを止めても、次のフレームまで変えない)
-  private mainSlots = new Map<Obj | null, Slot>();
+  private assignments: Assignments;
+  // Main の表: 材質・物の割り当て (なければ default.fx)。ステージは default.fx
+  private main: PassTable = { name: 'Main', owner: null, slotFor: (obj, mesh, i) => this.mainSlot(obj, mesh, i) };
+  private mainSlotFor: SlotFor;
+  // このフレームの Main のメッシュ・材質ごとの割り当て (フレームの途中でエフェクトを止めても、次のフレームまで変えない)
+  private mainSlots = new Map<THREE.Mesh, Map<number, Slot>>();
 
   constructor(private d: MmeRendererDeps) {
+    this.assignments = new Assignments(d.store, m => this.warn(m));
+    this.mainSlotFor = this.assignments.slotFor('Main', null, null);
     this.scenePass = new ScenePass({
       graph: d.graph, world: d.world, library: d.library, settings: d.settings, stage: d.stage,
       renderer: () => d.viewport.renderer!,
@@ -161,7 +166,7 @@ export class MmeRenderer {
   async whenReady(): Promise<void> {
     const waits: Promise<void>[] = [this.scenePass.whenReady()];
     const effects = new Set<LoadedEffect>([this.d.store.defaultEffect]);
-    for (const obj of this.d.world.objects) effects.add(this.effectOf(obj));
+    for (const obj of this.d.world.objects) for (const e of this.assignments.referenced(obj)) if (e.result.ok && !this.stopped(e)) effects.add(e);
     for (const p of this.d.store.posts) if (p.enabled && p.effect.result.ok) effects.add(p.effect);
     for (const e of effects) waits.push(this.instance(e).ready());
     await Promise.all(waits);
@@ -171,7 +176,7 @@ export class MmeRenderer {
   prune(): void {
     this.scenePass.prune();
     const used = new Set<LoadedEffect>([
-      this.d.store.defaultEffect, ...this.d.world.objects.map(o => this.effectOf(o)), ...this.d.store.posts.map(p => p.effect),
+      this.d.store.defaultEffect, ...this.d.world.objects.flatMap(o => this.assignments.referenced(o)), ...this.d.store.posts.map(p => p.effect),
     ]);
     for (const [e, inst] of this.instances) {
       if (used.has(e)) continue;
@@ -184,6 +189,7 @@ export class MmeRenderer {
   // GPU の資源と変形した形と警告を捨てる (次に描くときに作り直す)
   dispose(): void {
     this.warnings.length = 0;
+    this.assignments.clearWarnings();
     for (const inst of this.instances.values()) inst.dispose();
     this.instances.clear();
     this.skinner.dispose();
@@ -284,17 +290,15 @@ export class MmeRenderer {
     return this.shadow;
   }
 
-  // .fx を割り当てていない・コンパイルできなかった・GPU で止めた物は default.fx
-  private effectOf(obj: Obj): LoadedEffect {
-    const e = this.d.store.objectEffect(obj.id);
-    return e?.result.ok && !this.stopped(e) ? e : this.d.store.defaultEffect;
-  }
-
-  private mainSlot(obj: Obj | null): Slot {
-    let slot = this.mainSlots.get(obj);
+  // Main で材質を描くもの (Assignments)。GPU で止めたエフェクトは default.fx (そのフレームのうちに止めたものは、次のフレームから)
+  private mainSlot(obj: Obj | null, mesh: THREE.Mesh, materialIndex: number): Slot {
+    let slots = this.mainSlots.get(mesh);
+    if (!slots) this.mainSlots.set(mesh, (slots = new Map()));
+    let slot = slots.get(materialIndex);
     if (!slot) {
-      slot = { kind: 'effect', effect: obj ? this.effectOf(obj) : this.d.store.defaultEffect };
-      this.mainSlots.set(obj, slot);
+      slot = this.mainSlotFor(obj, mesh, materialIndex);
+      if (slot.kind === 'effect' && this.stopped(slot.effect)) slot = { kind: 'effect', effect: this.d.store.defaultEffect };
+      slots.set(materialIndex, slot);
     }
     return slot;
   }

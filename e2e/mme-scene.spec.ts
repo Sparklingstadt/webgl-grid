@@ -269,6 +269,46 @@ test('選んでいる物の輪郭線がビューポートに出る (書き出し
   expect(errors).toEqual([]);
 });
 
+test('材質ごとの割り当て: 材質 1 にだけ赤の .fx を当てると材質 1 だけ赤。取り消すと戻り、複製にも写る', async ({ page }) => {
+  const errors = await openMme(page);
+  await setCamera(page, { yaw: Math.PI / 2, pitch: 0.05, dist: 4.5, ty: 1 });
+  // 外向きの面 (makePmx の outward と同じ)。前の面の左上の三角形だけを材質 1 に、ほかを材質 0 にする
+  const inward = [0, 1, 5, 0, 5, 4, 1, 2, 6, 1, 6, 5, 2, 3, 7, 2, 7, 6, 3, 0, 4, 3, 4, 7, 4, 5, 6, 4, 6, 7, 0, 2, 1, 0, 3, 2];
+  const outward = inward.map((_, k) => inward[k % 3 === 0 ? k : k % 3 === 1 ? k + 1 : k - 1]);
+  const parts = [{ faces: [...outward.slice(0, 3), ...outward.slice(6)], edgeSize: 0 }, { faces: outward.slice(3, 6), edgeSize: 0 }];
+  const i = await addPmx(page, { flags: 0x01, parts });
+  await page.evaluate(() => (window as Win).engine.history.checkpoint()); // (読み込みを先に 1 手にする)
+  // 前の面の、下の真ん中 (材質 0) と上の真ん中 (材質 1)
+  const points = (x: number, z: number): [number, number, number][] => [[x, 0.2, z + 0.2], [x, 1.8, z + 0.2]];
+  const RED = [255, 0, 0, 255];
+  const before = (await shoot(page, 'png', points(0, 0))).pixels;
+  expect(diff(before[1], RED)).toBeGreaterThan(100);
+  expect(await assignFx(page, i, objectFx('return float4(1.0, 0.0, 0.0, 1.0);'), 'red.fx', 1)).toBe(true);
+  const assigned = (await shoot(page, 'png', points(0, 0))).pixels;
+  expect(assigned[0]).toEqual(before[0]); // (材質 0 は default.fx のまま)
+  expect(assigned[1]).toEqual(RED);
+  // 取り消すと元に戻り、やり直すとまた赤
+  await page.evaluate(() => (window as Win).engine.history.undo());
+  expect((await shoot(page, 'png', points(0, 0))).pixels).toEqual(before);
+  await page.evaluate(() => (window as Win).engine.history.redo());
+  expect((await shoot(page, 'png', points(0, 0))).pixels[1]).toEqual(RED);
+  // 複製も材質 1 だけ赤
+  const at = await page.evaluate(async i => {
+    const { engine, THREE } = window as Win;
+    engine.selection.select(engine.world.objects[i]);
+    const copy = await engine.duplicateSelected();
+    for (const b of engine.world.objects) { b.py = b.y; b.vy = 0; }
+    engine.select(null);
+    await new Promise(ok => requestAnimationFrame(() => requestAnimationFrame(ok))); // (置いた位置を形に写す)
+    const p = new THREE.Vector3().setFromMatrixPosition(copy.model.matrixWorld);
+    return [p.x, p.z] as [number, number];
+  }, i);
+  // (複製を画面の真ん中に見る。shoot の点を写す射影は、横には書き出しの絵とずれることがあるので)
+  await setCamera(page, { yaw: Math.PI / 2, pitch: 0.05, dist: 4.5, tx: at[0], ty: 1, tz: at[1] });
+  expect((await shoot(page, 'png', points(...at))).pixels).toEqual([before[0], RED]);
+  expect(errors).toEqual([]);
+});
+
 test('リンクできない .fx はお知らせを 1 回出して止め、モデルは default.fx で描く', async ({ page }) => {
   const errors = await openMme(page);
   await setCamera(page, { yaw: Math.PI / 2, pitch: 0.05, dist: 4.5, ty: 1 });
@@ -290,7 +330,8 @@ test('リンクできない .fx はお知らせを 1 回出して止め、モデ
   expect(toasts.filter(x => x.includes('big.fx'))).toEqual(['fx/big.fx のシェーダーを GPU で使えないので止めました']);
   expect(await page.evaluate(i => {
     const { engine } = window as Win;
-    return engine.mme.renderer.stopped(engine.mme.store.objectEffect(engine.world.objects[i].id));
+    const ref = engine.world.objects[i].mme.Main.object;
+    return engine.mme.renderer.stopped(engine.mme.store.effect(engine.mme.store.folder(ref.folder), ref.path));
   }, i)).toBe(true);
   // (three.js がリンクの失敗をコンソールに出す)
   expect(errors.filter(e => !/WebGLProgram|Shader Error/.test(e))).toEqual([]);

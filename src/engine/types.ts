@@ -2,6 +2,7 @@ import type * as THREE from 'three';
 import type { Animation } from '../core/animation';
 import type { CameraSettings } from '../core/camera';
 import type { LightSettings } from '../core/light';
+import type { ObjectEffects } from '../core/mme/settings.ts';
 import { MODEL_KIND } from '../core/shapes';
 import type { BoneValue } from '../core/types';
 
@@ -47,6 +48,7 @@ export interface Obj {
   parentPose?: { x: number; z: number; r: number }; // 親の、前に見た位置 (動いた分を子に写す)
   collection?: string;                // 入っているコレクション (なしはシーン コレクション)
   colHidden?: boolean;                // コレクションを隠しているので見せない (Engine が合わせる)
+  mme?: ObjectEffects;                // MME のエフェクトの割り当て (タブごとの、物全体と材質ごと。物の値 'mme')
 }
 export type ModelObj = Obj & { model: Any };
 export const isModel = (o: Obj | null | undefined): o is ModelObj => o?.s === MODEL_KIND;

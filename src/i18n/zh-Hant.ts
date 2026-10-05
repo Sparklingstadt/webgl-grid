@@ -1274,6 +1274,8 @@ const dict: Dictionary = {
   "選んだフォルダに .fx がありません": "所選資料夾中沒有 .fx",
   "選んでいる物の .fx": "所選物體的 .fx",
   "GPU で使えないので止めました": "無法在 GPU 上使用，已停用",
+  "MME のエフェクト": "MME 效果",
+  "{path} が見つからないので、代わりに既定のエフェクトで描きます": "找不到 {path}，改用預設效果繪製",
   ".fx を読めませんでした: {error}": "無法讀取 .fx：{error}",
   "DefaultEffect に空の項があるので無視します": "DefaultEffect 中有空項，已忽略",
   "DefaultEffect の項 \"{item}\" に = がないので無視します": "DefaultEffect 的項 \"{item}\" 沒有 =，已忽略",
