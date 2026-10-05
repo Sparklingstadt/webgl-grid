@@ -1,5 +1,5 @@
 # push と pull request のたびに、型チェック・lint・単体テストと、e2e テストを流す。
-# e2e は GitHub の CI ではソフトウェア描画 (SwiftShader) で遅いので、6 つに分けて同時に流す (Playwright の --shard)。
+# e2e は GitHub の CI ではソフトウェア描画 (SwiftShader) で遅いので、3 つに分けて同時に流す (Playwright の --shard)。
 # Chromium はキャッシュし、当たったときは動かすのに要る OS のものだけを入れる
 # 手元では npm run test:all (全部を同時に) を使う。公開 (GitHub Pages) はしない
 name: test
@@ -34,14 +34,14 @@ jobs:
       - run: npm run -s lint
       - run: npx vitest run
 
-  # e2e テスト (6 つに分けて同時に)
+  # e2e テスト (3 つに分けて同時に)
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6]
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -64,7 +64,7 @@ jobs:
       # (キャッシュに当たったときも、動かすのに要る OS のもの (ライブラリ・フォント) は入れる)
       - if: steps.pw-cache.outputs.cache-hit == 'true'
         run: npx playwright install-deps chromium
-      - run: npx playwright test --shard=${{ matrix.shard }}/6
+      - run: npx playwright test --shard=${{ matrix.shard }}/3
       # 失敗したときは、e2e の記録 (スクリーンショット・トレース) を残す
       - uses: actions/upload-artifact@v7
         if: failure()
