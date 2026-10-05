@@ -249,10 +249,10 @@ type Fallback = 'magenta' | 'blank' | 'white';
 interface FileTexture { label: string; tex: THREE.Texture | null; failed: boolean }
 interface Copy { tex: THREE.Texture; version: number }
 
-const MAG_FILTER: Record<string, THREE.MagnificationTextureFilter> = { NONE: THREE.NearestFilter, POINT: THREE.NearestFilter, LINEAR: THREE.LinearFilter, ANISOTROPIC: THREE.LinearFilter };
-const WRAP: Record<string, THREE.Wrapping> = { WRAP: THREE.RepeatWrapping, MIRROR: THREE.MirroredRepeatWrapping, CLAMP: THREE.ClampToEdgeWrapping };
+export const MAG_FILTER: Record<string, THREE.MagnificationTextureFilter> = { NONE: THREE.NearestFilter, POINT: THREE.NearestFilter, LINEAR: THREE.LinearFilter, ANISOTROPIC: THREE.LinearFilter };
+export const WRAP: Record<string, THREE.Wrapping> = { WRAP: THREE.RepeatWrapping, MIRROR: THREE.MirroredRepeatWrapping, CLAMP: THREE.ClampToEdgeWrapping };
 
-function minFilter(min: string, mip: string): THREE.MinificationTextureFilter {
+export function minFilter(min: string, mip: string): THREE.MinificationTextureFilter {
   const linear = min === 'LINEAR' || min === 'ANISOTROPIC';
   if (mip === 'POINT') return linear ? THREE.LinearMipmapNearestFilter : THREE.NearestMipmapNearestFilter;
   if (mip === 'LINEAR' || mip === 'ANISOTROPIC') return linear ? THREE.LinearMipmapLinearFilter : THREE.NearestMipmapLinearFilter;
