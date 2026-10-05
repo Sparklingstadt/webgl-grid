@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Vector3 } from 'three';
-import { ACCESSORY_DEFAULTS, ACCESSORY_ITEMS, accessoryMatrix } from './accessory.ts';
+import { ACCESSORY_DEFAULTS, ACCESSORY_ITEMS, accessoryMatrix, accessoryNameFor } from './accessory.ts';
 
 // D3D の行ベクトル v·M で点を動かす。elements は D3D の行ごとの並び
 function apply(m: { elements: number[] }, v: Vector3): Vector3 {
@@ -63,5 +63,12 @@ describe('accessoryMatrix', () => {
 
   it('Tr は行列に入らない', () => {
     expect(accessoryMatrix({ Tr: 0.3 }).elements).toEqual(accessoryMatrix({}).elements);
+  });
+
+  it('accessoryNameFor: ポストエフェクトの .fx のファイル名の拡張子を .x に (フォルダは除く。大文字の .FX も)', () => {
+    expect(accessoryNameFor('ray.fx')).toBe('ray.x');
+    expect(accessoryNameFor('Main/sub/ray.FX')).toBe('ray.x');
+    expect(accessoryNameFor('a\\b.fx')).toBe('b.x');
+    expect(accessoryNameFor('post')).toBe('post.x');
   });
 });

@@ -1,7 +1,8 @@
 import * as THREE from 'three';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { ControlRef } from '../../core/mme/controllers.ts';
 import { MMD_UNITS } from '../../core/constants';
+import { accessoryMatrix } from '../../core/mme/accessory.ts';
 import { toMmd } from '../../core/mme/coords.ts';
 import { MME_OBJ_KIND } from '../../core/mme/settings.ts';
 import { MODEL_KIND } from '../../core/shapes';
@@ -41,11 +42,13 @@ const shape = (id: number, name: string): Obj => ({ id, s: 0, name, node: new TH
 // コントローラーの物 (値は mmeValues)
 const controller = (id: number, name: string, values?: Record<string, number>): Obj =>
   ({ id, s: MME_OBJ_KIND, name, mmeObj: { kind: 'controller', name }, mmeValues: values, node: new THREE.Group() } as unknown as Obj);
+// アクセサリの物 (値は mmeValues。Rx〜Rz は度)
+const accessory = (id: number, name: string, values?: Record<string, number>): Obj =>
+  ({ id, s: MME_OBJ_KIND, name, mmeObj: { kind: 'accessory', name }, mmeValues: values, node: new THREE.Group() } as unknown as Obj);
 
-function setup(objects: Obj[], stage: THREE.Object3D | null = null) {
-  const warn = vi.fn();
-  const c = new Controllers({ world: { objects } as unknown as World, stage: () => stage, warn });
-  return { c, warn };
+function setup(objects: Obj[], stage: THREE.Object3D | null = null, outputting = () => false) {
+  const c = new Controllers({ world: { objects } as unknown as World, stage: () => stage, outputting });
+  return { c };
 }
 
 describe('Controllers: 仮のコントローラー (コントローラーの物)', () => {
@@ -88,14 +91,13 @@ describe('Controllers: 仮のコントローラー (コントローラーの物)
 describe('Controllers: 場面の物', () => {
   it('(self) のモデルのモーフと骨の位置 (MME の空間 = MMD の単位・左手系)。ないモーフ・骨は null', () => {
     const self = model(1, 'Light.pmx', { morphs: { 'R+': 0.75, 'G+': 0.5 }, bones: { Position: [1, 2, 3] }, at: [10, 0, 0] });
-    const { c, warn } = setup([self]);
+    const { c } = setup([self]);
     expect(c.value(ref('(self)', 'R+'), self, null)).toEqual([0.75]);
     expect(c.value(ref('(SELF)', 'G+'), self, null)).toEqual([0.5]);
     expect(c.value(ref('(self)', 'Position', 'float3'), self, null)).toEqual([110, 20, -30]);
     expect(c.value(ref('(self)', 'Position', 'float4'), self, null)).toEqual([110, 20, -30]);
     expect(c.value(ref('(self)', 'B+'), self, null)).toBeNull();
     expect(c.value(ref('(self)', 'Nothing', 'float3'), self, null)).toBeNull();
-    expect(warn).not.toHaveBeenCalled();
   });
 
   it('(self) は描いている物。物がない (ポストエフェクト) と null', () => {
@@ -143,19 +145,12 @@ describe('Controllers: 場面の物', () => {
     expect(setup([m]).c.value(ref('M.pmx', 'Bone', 'float4x4'), null, null)).toEqual(mme(bone.matrixWorld));
   });
 
-  it('アクセサリの項目 (Si ほか) は警告を 1 回出して null。モデルにその名前のモーフがあればそちら', () => {
+  it('モデルのアクセサリの項目 (Si ほか) は null (警告しない)。モデルにその名前のモーフがあればそちら', () => {
     const self = model(1, 'M.pmx', { morphs: { Tr: 0.5 } });
-    const { c, warn } = setup([self]);
-    expect(c.value(ref('(self)', 'Si'), self, null)).toBeNull();
-    expect(c.value(ref('(self)', 'Si'), self, null)).toBeNull();
-    expect(warn).toHaveBeenCalledTimes(1);
-    expect(warn.mock.calls[0][0]).toContain('Si');
-    for (const item of ['X', 'Y', 'Z', 'XYZ', 'Rx', 'Ry', 'Rz', 'Rxyz', 'Tr']) c.value(ref('(self)', item), self, null);
-    expect(warn).toHaveBeenCalledTimes(9); // (Tr はモーフにあるので警告しない。Si は 1 回)
+    const { c } = setup([self]);
+    for (const item of ['X', 'Y', 'Z', 'Rx', 'Ry', 'Rz', 'Si']) expect(c.value(ref('(self)', item), self, null)).toBeNull();
+    for (const item of ['XYZ', 'Rxyz']) expect(c.value(ref('(self)', item, 'float3'), self, null)).toBeNull();
     expect(c.value(ref('(self)', 'Tr'), self, null)).toEqual([0.5]);
-    c.clearWarnings();
-    c.value(ref('(self)', 'Si'), self, null);
-    expect(warn).toHaveBeenCalledTimes(10);
   });
 
   it('ステージの .pmx は、場面の物に合う名前がないときに名前で引ける', () => {
@@ -176,6 +171,59 @@ describe('Controllers: 場面の物', () => {
   });
 });
 
+describe('Controllers: 仮のアクセサリ (アクセサリの物)', () => {
+  const DEG = Math.PI / 180;
+  const values = { X: 1, Y: 2, Z: -3, Rx: 90, Ry: 45, Rz: -30, Si: 2, Tr: 0.5 };
+
+  it('項目 X〜Tr は名前が合うアクセサリの物の mmeValues (Rx〜Rz は度で持ち、ラジアンで渡す)。XYZ・Rxyz は 3 成分', () => {
+    const { c } = setup([accessory(1, 'ray.x', values)]);
+    for (const [item, v] of Object.entries({ X: 1, Y: 2, Z: -3, Si: 2, Tr: 0.5 })) expect(c.value(ref('RAY.x', item), null, null)).toEqual([v]);
+    expect(c.value(ref('ray.x', 'Rx'), null, null)![0]).toBeCloseTo(90 * DEG, 12);
+    expect(c.value(ref('ray.x', 'Ry'), null, null)![0]).toBeCloseTo(45 * DEG, 12);
+    expect(c.value(ref('ray.x', 'Rz'), null, null)![0]).toBeCloseTo(-30 * DEG, 12);
+    expect(c.value(ref('ray.x', 'XYZ', 'float3'), null, null)).toEqual([1, 2, -3]);
+    expect(c.value(ref('ray.x', 'XYZ', 'float4'), null, null)).toEqual([1, 2, -3]);
+    const r = c.value(ref('ray.x', 'Rxyz', 'float3'), null, null)!;
+    [90, 45, -30].forEach((d, i) => expect(r[i]).toBeCloseTo(d * DEG, 12));
+    // (型が合わない・アクセサリの項目でないものは null)
+    expect(c.value(ref('ray.x', 'XYZ'), null, null)).toBeNull();
+    expect(c.value(ref('ray.x', 'Si', 'float3'), null, null)).toBeNull();
+    expect(c.value(ref('ray.x', 'SSAO+'), null, null)).toBeNull();
+  });
+
+  it('値がなければ MMD の既定 (Si・Tr は 1、ほかは 0)。数でない値も既定', () => {
+    const { c } = setup([accessory(1, 'a.x', { X: Number.NaN, Si: Infinity })]);
+    expect(['X', 'Y', 'Rx', 'Si', 'Tr'].map(item => c.value(ref('a.x', item), null, null))).toEqual([[0], [0], [0], [1], [1]]);
+    expect(c.value(ref('a.x', null, 'float4x4'), null, null)).toEqual(new THREE.Matrix4().elements);
+  });
+
+  it('項目なし: float4x4 は accessoryMatrix (MMD の座標)、float3・float4 は位置、bool は表示 (隠していなければ 1。書き出し中は書き出しで隠すか)', () => {
+    const a = accessory(1, 'a.x', values);
+    let outputting = false;
+    const { c } = setup([a], null, () => outputting);
+    expect(c.value(ref('a.x', null, 'float4x4'), null, null)).toEqual(accessoryMatrix(values).elements);
+    expect(c.value(ref('a.x', null, 'float3'), null, null)).toEqual([1, 2, -3]);
+    expect(c.value(ref('a.x', null, 'float4'), null, null)).toEqual([1, 2, -3]);
+    expect(c.value(ref('a.x', null, 'float'), null, null)).toBeNull();
+    expect(c.value(ref('a.x', null, 'bool'), null, null)).toEqual([1]);
+    a.hidden = true;
+    expect(c.value(ref('a.x', null, 'bool'), null, null)).toEqual([0]);
+    outputting = true;
+    expect(c.value(ref('a.x', null, 'bool'), null, null)).toEqual([1]);
+    a.hideRender = true;
+    expect(c.value(ref('a.x', null, 'bool'), null, null)).toEqual([0]);
+  });
+
+  it('(self) がアクセサリ (アクセサリに当てたポストエフェクト) なら、そのアクセサリの値。名前は場面の並びで最初の物', () => {
+    const first = accessory(1, 'post.x', { Si: 0.5 }), second = accessory(2, 'post.x', { Si: 0.25 });
+    const { c } = setup([first, second]);
+    expect(c.value(ref('(self)', 'Si'), second, null)).toEqual([0.25]);
+    expect(c.value(ref('(self)', 'Si'), first, null)).toEqual([0.5]);
+    expect(c.value(ref('post.x', 'Si'), second, null)).toEqual([0.5]);
+    expect(c.value(ref('(OffscreenOwner)', 'Si'), null, second)).toEqual([0.25]);
+  });
+});
+
 describe('Controllers.catalog', () => {
   const effect = (decl: string): LoadedEffect => {
     const r = compileEffect('a.fx', p => (p === 'a.fx' ? new TextEncoder().encode(`${decl} float4 VS(float4 p : POSITION) : POSITION { return p; } float4 PS() : COLOR0 { return 1; } technique T { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = compile ps_3_0 PS(); } }`) : null));
@@ -189,7 +237,10 @@ describe('Controllers.catalog', () => {
       float b : CONTROLOBJECT<string name = "ray_controller.pmx"; string item = "Bloom+";>;
       float c : CONTROLOBJECT<string name = "present.pmx"; string item = "X";>;
       float d : CONTROLOBJECT<string name = "(self)"; string item = "R+";>;
-      float f : CONTROLOBJECT<string name = "placed.pmx"; string item = "On";>;`);
+      float f : CONTROLOBJECT<string name = "placed.pmx"; string item = "On";>;
+      float g : CONTROLOBJECT<string name = "ray.x"; string item = "Si";>;
+      float h : CONTROLOBJECT<string name = "Other.X"; string item = "Tr";>;`);
+    // (.x はアクセサリの名前なので、仮のコントローラーにしない)
     expect([...c.catalog([e])]).toEqual([['ray_controller.pmx', ['Bloom+', 'SSAO+']], ['placed.pmx', ['On']]]);
     expect(c.catalog([])).toEqual(new Map());
   });

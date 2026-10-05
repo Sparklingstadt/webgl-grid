@@ -1190,7 +1190,6 @@ const dict: Dictionary = {
   "この GPU は DXT (S3TC) の圧縮テクスチャに対応していません": "此 GPU 不支持 DXT (S3TC) 压缩纹理",
   "知らない画像の形式です: .{ext}": "未知的图像格式：.{ext}",
   "セマンティクス {semantic} には値を入れません ({name})": "不为语义 {semantic} 提供值（{name}）",
-  "CONTROLOBJECT の項目 {item} (アクセサリの値) には対応していないので、0 を渡します": "不支持 CONTROLOBJECT 的项 {item}（配件的值），改为提供 0",
   "CONTROLOBJECT の変数 {name} は、型か name の注釈が合わないので、0 を渡します": "CONTROLOBJECT 变量 {name} 的类型或 name 注释不符，改为提供 0",
   "テクスチャ {name} が見つかりません": "找不到纹理 {name}",
   "テクスチャ {name} を読めませんでした: {error}": "无法读取纹理 {name}：{error}",
@@ -1322,5 +1321,8 @@ const dict: Dictionary = {
   "古いプロジェクトのコントローラー {names} の値を移せませんでした (これ以上置けません)": "无法迁移旧项目中控制器 {names} 的值（无法再放置更多物体）",
   "古いプロジェクトのコントローラー {names} は名前が空なので、値を移せませんでした": "旧项目中的控制器 {names} 名称为空，无法迁移其值",
   "古いプロジェクトのコントローラー {names} は名前を直して移したので、.fx が読む名前と合いません": "旧项目中的控制器 {names} 已修正名称后迁移，因此与 .fx 读取的名称不一致",
+  "古いプロジェクトのポストエフェクト {names} をアクセサリに移せませんでした (これ以上置けません)": "无法将旧项目中的后期效果 {names} 迁移为配件（无法再放置更多物体）",
+  "{accessory} に当てた {name}": "应用于 {accessory} 的 {name}",
+  "外す (アクセサリ {accessory} を消す)": "移除（删除配件 {accessory}）",
 };
 export default dict;

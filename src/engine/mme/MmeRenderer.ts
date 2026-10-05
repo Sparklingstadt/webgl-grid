@@ -20,7 +20,7 @@ import { CANVAS, Framebuffers, type DrawTarget } from './Framebuffers';
 import { defaultsOf, Offscreen, offscreenDecls } from './Offscreen';
 import { SHADOW_DISTANCE_MAX, type MmeSettings, type ObjectEffects } from '../../core/mme/settings.ts';
 import { scriptOrder } from '../../core/mme/technique.ts';
-import { PostChain, type FrameState } from './PostChain';
+import { PostChain, type FrameState, type PostEffect } from './PostChain';
 import { ScenePass, toSrgb, type PassTable, type Slot, type SlotFor } from './ScenePass';
 import { Skinner } from './Skinner';
 
@@ -34,7 +34,7 @@ export interface MmeRendererDeps {
   stageEffects: () => ObjectEffects | null; // ステージの割り当て (場面の値)
 }
 
-export type { DrawTarget, FrameState };
+export type { DrawTarget, FrameState, PostEffect };
 
 // セルフシャドウの深度マップの大きさと、影の範囲の既定 (標準のエンジンの太陽の影と同じ範囲になる値)
 const SHADOW_SIZE = 2048;
@@ -146,7 +146,7 @@ export class MmeRenderer {
       this.scenePass.drawSelfShadow(this.main, frame, target);
     }
     // ポストエフェクトがあれば canvas の代わりの絵に描いてから写す (Framebuffers.screenSurface)。背景の空は描かない。いまの消す色で消す
-    const { pre, post } = this.posts(fb, frame.screen);
+    const { pre, post } = this.drawnPosts(fb, frame.screen);
     const surface = pre.length + post.length > 0 ? fb.screenSurface() : CANVAS;
     const bindScreen = () => {
       const target = fb.bindSurface(surface);
@@ -160,8 +160,8 @@ export class MmeRenderer {
       this.clear(renderer);
       this.chain!.runPre(pre, frame);
     }
-    // オフスクリーン: ポストエフェクトと Main の物のエフェクトが宣言するもの (その中の入れ子は Offscreen が先に描く)
-    for (const p of [...pre, ...post]) this.offscreen.ensure(p, null, frame);
+    // オフスクリーン: ポストエフェクト (持ち主はそのアクセサリ) と Main の物のエフェクトが宣言するもの (その中の入れ子は Offscreen が先に描く)
+    for (const p of [...pre, ...post]) this.offscreen.ensure(p.effect, p.obj, frame);
     for (const u of uses) this.offscreen.ensure(u.effect, u.obj, frame);
     const target = bindScreen();
     if (pre.length === 0) this.clear(renderer);
@@ -179,16 +179,37 @@ export class MmeRenderer {
     this.opaque(renderer, clearAlpha);
   }
 
-  // オンで、コンパイルできて、止めていないポストエフェクト (一覧の順。最後がいちばん外側)。レンダーターゲットも用意する。
+  // ポストエフェクト (設計書「仮のアクセサリ」): 場面の並びのアクセサリの物のうち、Main の物の割り当てが .fx のもの (最後がいちばん外側)。
+  // 割り当ては呼ぶたびに引き直す (フォルダを読み直すと、新しい中身でコンパイルしたものになる)。フォルダがなければ飛ばし、ファイルが
+  // なければコンパイルできないものとして入れる (画面にエラーを出す。描かない)。all でなければ、隠している物 (書き出し中は、書き出しで
+  // 隠す物) を飛ばす (オン・オフ = 隠す)
+  posts(all = false): PostEffect[] {
+    const out: PostEffect[] = [];
+    for (const obj of this.d.world.objects) {
+      if (obj.mmeObj?.kind !== 'accessory' || (!all && this.hiddenNow(obj))) continue;
+      const saved = obj.mme?.Main?.object;
+      if (!saved || saved === 'hide') continue;
+      const folder = this.d.store.folder(saved.folder);
+      if (folder) out.push({ obj, effect: this.d.store.effect(folder, saved.path) });
+    }
+    return out;
+  }
+
+  // いま描くときに隠している物 (書き出し中は書き出しで隠す物)
+  private hiddenNow(obj: Obj): boolean {
+    return this.d.viewport.outputting ? !!obj.hideRender : !!(obj.hidden || obj.colHidden);
+  }
+
+  // 描く (隠していない・コンパイルできて・止めていない) ポストエフェクト。レンダーターゲットも用意する。
   // pre: ScriptOrder = preprocess (場面の前に描く)、post: それ以外 (ポストエフェクトの既定は postprocess。standard は物の .fx の値なので警告して postprocess にする)
-  private posts(fb: Framebuffers, screen: [number, number]): { pre: LoadedEffect[]; post: LoadedEffect[] } {
-    const pre: LoadedEffect[] = [], post: LoadedEffect[] = [];
-    for (const p of this.d.store.posts) {
-      if (!p.enabled || !p.effect.result.ok || this.stopped(p.effect)) continue;
+  private drawnPosts(fb: Framebuffers, screen: [number, number]): { pre: PostEffect[]; post: PostEffect[] } {
+    const pre: PostEffect[] = [], post: PostEffect[] = [];
+    for (const p of this.posts()) {
+      if (!p.effect.result.ok || this.stopped(p.effect)) continue;
       this.prepare(fb, p.effect, screen);
       const order = scriptOrder(p.effect.result.effect, 'postprocess');
       if (order === 'standard') this.warnFor(p.effect, t('ScriptOrder = standard はポストエフェクトでは使えないので、postprocess として扱います'));
-      (order === 'preprocess' ? pre : post).push(p.effect);
+      (order === 'preprocess' ? pre : post).push(p);
     }
     return { pre, post };
   }
@@ -213,12 +234,12 @@ export class MmeRenderer {
     for (const e of this.reachable(true)) for (const path of resourcePaths(e)) markUsed(e.folder, path);
   }
 
-  // 割り当てた (全部のタブ)・ポストエフェクトの一覧にある (offPosts ならオフのものも)・前のフレームにオフスクリーンで使った .fx と、
+  // 割り当てた (全部のタブ)・ポストエフェクト (offPosts なら隠したアクセサリのものも)・前のフレームにオフスクリーンで使った .fx と、
   // それらが宣言するオフスクリーンの DefaultEffect が、場面の物かステージを描く .fx (その宣言も、たどる)。見つからない .fx は入れない
   private reachable(offPosts: boolean): Set<LoadedEffect> {
     const found = new Set<LoadedEffect>(this.offscreen.effects());
     for (const e of this.referenced()) found.add(e);
-    for (const p of this.d.store.posts) if (offPosts || p.enabled) found.add(p.effect);
+    for (const p of this.posts(offPosts)) found.add(p.effect);
     const names = this.sceneNames();
     const queue = [...found];
     for (let e = queue.pop(); e; e = queue.pop()) {
@@ -242,11 +263,12 @@ export class MmeRenderer {
     return [...names];
   }
 
-  // どの物にも割り当てていない・ポストエフェクトの一覧にない・オフスクリーンで使っていない .fx の資源と、場面にないモデルのトゥーンの画像を捨てる
+  // どの物にも割り当てていない・ポストエフェクト (隠したアクセサリのものも) でない・オフスクリーンで使っていない .fx の資源と、
+  // 場面にないモデルのトゥーンの画像を捨てる
   prune(): void {
     this.scenePass.prune();
     const used = new Set<LoadedEffect>([
-      this.d.store.defaultEffect, ...this.referenced(), ...this.d.store.posts.map(p => p.effect),
+      this.d.store.defaultEffect, ...this.referenced(), ...this.posts(true).map(p => p.effect),
       ...this.offscreen.effects(),
     ]);
     for (const [e, inst] of this.instances) {
@@ -261,7 +283,6 @@ export class MmeRenderer {
   dispose(): void {
     this.warnings.length = 0;
     this.assignments.clearWarnings();
-    this.d.controllers.clearWarnings();
     for (const inst of this.instances.values()) inst.dispose();
     this.instances.clear();
     this.skinner.dispose();
@@ -300,8 +321,8 @@ export class MmeRenderer {
       fb, instance: e => this.instance(e),
       render: (m, geometry) => renderer.renderBufferDirect(this.d.graph.camera, null as unknown as THREE.Scene, geometry, m, this.proxy, null as unknown as THREE.GeometryGroup),
       checkLink: (m, inst, effect) => this.scenePass.checkLink(m, inst, effect),
-      offscreen: (e, name) => this.offscreen.texture(e, name, null),
-      control: ref => this.d.controllers.value(ref, null, null),
+      offscreen: (e, name, owner) => this.offscreen.texture(e, name, owner),
+      control: (ref, self) => this.d.controllers.value(ref, self, null),
     });
     return fb;
   }
@@ -389,17 +410,19 @@ export class MmeRenderer {
     return this.offscreen.tabDefaults(name);
   }
 
-  // 描いている .fx (仮のコントローラーの欄の元): 物に割り当てたもの・オンのポストエフェクト・オフスクリーンを宣言した・オフスクリーンに描いたもの
+  // 描いている .fx (仮のコントローラーの欄の元): 物に割り当てたもの・隠していないポストエフェクト・オフスクリーンを宣言した・オフスクリーンに描いたもの
   drawnEffects(): LoadedEffect[] {
     const out = new Set<LoadedEffect>(this.referenced());
-    for (const p of this.d.store.posts) if (p.enabled) out.add(p.effect);
+    for (const p of this.posts()) out.add(p.effect);
     for (const e of this.offscreen.effects()) out.add(e);
     return [...out];
   }
 
-  // 置いた物とステージに割り当てた (全部のタブ)、見つかる .fx
+  // 置いた物とステージに割り当てた (全部のタブ)、見つかる .fx。アクセサリの割り当てはポストエフェクトなので入れない (posts で別に数える。
+  // 隠したアクセサリのものを、描いているものに入れない)
   private referenced(): LoadedEffect[] {
-    return [...this.d.world.objects.flatMap(o => this.assignments.referenced(o)), ...this.assignments.referencedStage()];
+    const objects = this.d.world.objects.filter(o => o.mmeObj?.kind !== 'accessory');
+    return [...objects.flatMap(o => this.assignments.referenced(o)), ...this.assignments.referencedStage()];
   }
 
   // 全部の警告 (エフェクトの警告は「名前: 」を付ける。テスト用)

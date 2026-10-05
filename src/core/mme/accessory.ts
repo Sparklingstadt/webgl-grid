@@ -28,3 +28,10 @@ export function accessoryMatrix(v: Record<string, number>): Matrix4 {
     .multiply(rot)
     .multiply(new Matrix4().makeScale(si, si, si));
 }
+
+// ポストエフェクトの .fx を当てるアクセサリの名前: .fx のファイル名の拡張子を .x にしたもの (Main/ray.fx → ray.x。
+// 拡張子が .fx でなければ .x を足す)。MMD で ray.fx を ray.x に当てるのと同じ
+export function accessoryNameFor(fxPath: string): string {
+  const file = fxPath.slice(Math.max(fxPath.lastIndexOf('/'), fxPath.lastIndexOf('\\')) + 1);
+  return `${file.replace(/\.fx$/i, '')}.x`;
+}

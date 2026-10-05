@@ -16,6 +16,8 @@ function fileAt(path: string, text: string, lastModified?: number): File {
 }
 // 読み込んだ .fx を指す割り当て
 const ref = (e: LoadedEffect) => ({ folder: e.folder.id, path: e.entry });
+// ポストエフェクトをオフにする (画面のオン・オフと同じく、アクセサリをビューポートでも書き出しでも隠す)
+const OFF = { hidden: true, hideRender: true };
 
 // 描画先なしで、レンダーエンジンの切り替えと Viewport.drawOverride の差し替えを確かめる
 describe('MmeEngine', () => {
@@ -245,15 +247,163 @@ describe('MmeEngine', () => {
     const fx = await e.mme.loadEffect([new File(['technique T { }'], 'post.fx')], 'post.fx');
     const r = e.mme.renderer as unknown as Internals;
     const ready = vi.spyOn(EffectInstance.prototype, 'ready');
-    e.mme.store.addPost(fx);
+    const acc = e.mme.addPost(fx)!;
     await e.mme.whenReady();
     const inst = r.instance(fx);
     expect(ready.mock.contexts).toContain(inst);
     const dispose = vi.spyOn(inst as unknown as EffectInstance, 'dispose');
-    e.mme.store.setPostEnabled(0, false); // (changed で prune される)
+    e.setVisibility(acc, OFF); // (オフ = アクセサリを隠す)
+    e.mme.renderer.prune();
     expect(dispose).not.toHaveBeenCalled();
-    e.mme.store.removePost(0);
+    e.world.remove(acc); // (外す = アクセサリを消す。removed で prune される)
     expect(dispose).toHaveBeenCalledTimes(1);
+  });
+
+  // --- ポストエフェクト = アクセサリの物に当てた .fx (設計書「仮のアクセサリ」) ---
+  it('ポストエフェクトは、場面の並びのアクセサリの物のうち Main の物の割り当てが .fx のもの (同じ名前でも両方)。隠すと飛ばし (書き出しのときは書き出しで隠すもの)、並べ替えで順が変わる', async () => {
+    const e = new Engine();
+    const a = await e.mme.loadEffect([fileAt('P/a.fx', 'technique A { }'), fileAt('P/b.fx', 'technique B { }')], 'a.fx');
+    const b = e.mme.store.effect(a.folder, 'b.fx');
+    const x = e.mmeObjects.add({ kind: 'accessory', name: 'post.x' });
+    const shape = e.world.addShape(0, 0, 0, 0);
+    const y = e.mmeObjects.add({ kind: 'accessory', name: 'post.x' });
+    const plain = e.mmeObjects.add({ kind: 'accessory', name: 'plain.x' }); // (割り当てなし)
+    const hidden = e.mmeObjects.add({ kind: 'accessory', name: 'hide.x' }); // (hide)
+    const ctl = e.mmeObjects.add({ kind: 'controller', name: 'ctl.pmx' }); // (コントローラーはポストエフェクトにしない)
+    const offscreen = e.mmeObjects.add({ kind: 'accessory', name: 'off.x' }); // (オフスクリーンのタブだけ)
+    for (const o of [x, shape, ctl]) e.mme.assign(o, 'Main', null, ref(a));
+    e.mme.assign(y, 'Main', null, ref(b));
+    e.mme.assign(hidden, 'Main', null, 'hide');
+    e.mme.assign(offscreen, 'OffMap', null, ref(a));
+    expect(plain.mme).toBeUndefined();
+    expect(e.mme.posts()).toEqual([{ obj: x, effect: a }, { obj: y, effect: b }]);
+    e.setVisibility(x, { hidden: true });
+    expect(e.mme.posts()).toEqual([{ obj: y, effect: b }]);
+    expect(e.mme.posts(true)).toEqual([{ obj: x, effect: a }, { obj: y, effect: b }]);
+    // コレクションで隠しても飛ばす
+    e.setVisibility(x, { hidden: false });
+    e.moveToCollection('C', [y]);
+    e.setCollectionHidden('C', true);
+    expect(e.mme.posts()).toEqual([{ obj: x, effect: a }]);
+    e.setCollectionHidden('C', false);
+    // 書き出しのあいだは、書き出しで隠すもの (ビューポートで隠したものは描く)
+    e.setVisibility(x, { hidden: true });
+    e.setVisibility(y, { hideRender: true });
+    const outputting = vi.spyOn(e.viewport, 'outputting', 'get').mockReturnValue(true);
+    expect(e.mme.posts()).toEqual([{ obj: x, effect: a }]);
+    outputting.mockRestore();
+    e.setVisibility(x, { hidden: false });
+    e.setVisibility(y, { hideRender: false });
+    // 並べ替え (アウトライナー・reorder_objects と同じ物の並び)
+    e.moveObject(y, x, 'before');
+    expect(e.mme.posts()).toEqual([{ obj: y, effect: b }, { obj: x, effect: a }]);
+    // 描いている .fx (仮のコントローラーの欄の元) は、隠していないポストエフェクトのもの
+    e.setVisibility(y, { hidden: true });
+    expect(e.mme.renderer.drawnEffects()).not.toContain(b);
+    expect(e.mme.renderer.drawnEffects()).toContain(a);
+  });
+
+  it('addPostEffect は .fx を読んで、アクセサリの物 (名前は .fx のファイル名の拡張子を .x にしたもの) を場面の最後に置いて Main に当てる。選んでいる物は変えない。1 回の取り消しで消え、置けなければ知らせる', async () => {
+    const e = new Engine();
+    const box = e.world.addShape(0, 0, 0, 0);
+    e.selection.select(box);
+    e.history.checkpoint();
+    const acc = await e.mme.addPostEffect([fileAt('Ray/Main/ray.FX', 'technique T { }')], 'Main/ray.FX');
+    expect(e.world.objects).toEqual([box, acc]);
+    expect(acc?.mmeObj).toEqual({ kind: 'accessory', name: 'ray.x' });
+    expect(acc?.mmeValues).toEqual({ X: 0, Y: 0, Z: 0, Rx: 0, Ry: 0, Rz: 0, Si: 1, Tr: 1 });
+    expect(acc?.mme).toEqual({ Main: { object: { folder: e.mme.store.folders()[0].id, path: 'Main/ray.FX' } } });
+    expect(e.mme.posts().map(p => p.obj)).toEqual([acc]);
+    expect(e.selection.current).toBe(box);
+    e.history.checkpoint();
+    await e.history.undo();
+    expect(e.world.objects).toEqual([box]);
+    expect(e.mme.posts()).toEqual([]);
+    await e.history.redo();
+    expect(e.mme.posts().map(p => p.obj.mme)).toEqual([acc?.mme]);
+    // 置ける数を超えるときは、知らせて置かない (当てない)
+    vi.spyOn(e.world, 'full', 'get').mockReturnValue(true);
+    e.ui.hideToast();
+    expect(await e.mme.addPostEffect([fileAt('Ray/Main/ray.FX', 'technique T { }')], 'Main/ray.FX')).toBeNull();
+    expect(e.ui.state.toast?.text).toBe('これ以上置けません');
+    expect(e.world.objects).toHaveLength(2);
+  });
+
+  it('ポストエフェクトの (self) はそのアクセサリ: CONTROLOBJECT の Si はアクセサリの値 (同じ名前のアクセサリが 2 つでも、それぞれのもの)', async () => {
+    const e = new Engine();
+    const fx = await e.mme.loadEffect([fileAt('P/si.fx', 'float s : CONTROLOBJECT < string name = "(self)"; string item = "Si"; >;\ntechnique T { }')], 'si.fx');
+    const first = e.mme.addPost(fx)!, second = e.mme.addPost(fx)!;
+    second.mmeValues!.Si = 0.5;
+    const si = { param: 's', name: '(self)', item: 'Si', type: 'float' as const };
+    expect(e.mme.posts().map(p => p.obj)).toEqual([first, second]);
+    expect(e.mme.posts().map(p => e.mme.controllers.value(si, p.obj, null))).toEqual([[1], [0.5]]);
+    // 名前で引くと、場面の並びで最初のもの
+    expect(e.mme.controllers.value({ ...si, name: 'si.x' }, null, null)).toEqual([1]);
+    // .x の名前は仮のコントローラーにしない (「置く」の一覧に出さない)
+    e.mme.set({ engine: 'mme' });
+    const box = e.world.addShape(0, 0, 0, 0);
+    const reader = await e.mme.loadEffect([fileAt('P/reader.fx', 'float a : CONTROLOBJECT < string name = "missing.x"; string item = "Si"; >;\nfloat b : CONTROLOBJECT < string name = "missing.pmx"; string item = "On"; >;\ntechnique T { }')], 'reader.fx');
+    e.mme.assign(box, 'Main', null, ref(reader));
+    expect(e.mme.missingControllers()).toEqual([{ name: 'missing.pmx', items: ['On'] }]);
+  });
+
+  it('第 4 の計画の形の mme (場面の値 posts) のプロジェクトを開くと、並びとオン・オフのまま、アクセサリの物を作って当てる (開いた状態の一部で、元に戻す手にしない。保存するときは posts を書かない)', async () => {
+    const e = new Engine();
+    e.world.addShape(0, 0, 0, 0);
+    const a = await e.mme.loadEffect([fileAt('Fx/a.fx', 'technique A { }'), fileAt('Fx/sub/b.fx', 'technique B { }')], 'a.fx');
+    e.mme.store.effect(a.folder, 'sub/b.fx'); // (読んだファイルにして、保存させる)
+    const id = a.folder.id;
+    const json = JSON.parse(new TextDecoder().decode(await e.project.save('reference')));
+    expect('posts' in json.mme).toBe(false);
+    json.mme.posts = [
+      { effect: { folder: id, path: 'a.fx' }, enabled: true },
+      { effect: { folder: id, path: 'sub/b.fx' }, enabled: false },
+      { effect: { folder: 'folder99', path: 'gone.fx' }, enabled: true }, // (フォルダがない: 描いていなかったので移さない)
+    ];
+    // (同じページで開く: フォルダのファイルは、このページで読んだもの)
+    const f = e;
+    e.ui.hideToast();
+    await f.project.open(new TextEncoder().encode(JSON.stringify(json)));
+    const accessories = f.world.objects.filter(o => o.mmeObj);
+    // (オフはビューポートでも書き出しでも隠す: 書き出しも同じ絵)
+    expect(accessories.map(o => [o.mmeObj, o.mme, !!o.hidden, !!o.hideRender, o.mmeValues?.Si])).toEqual([
+      [{ kind: 'accessory', name: 'a.x' }, { Main: { object: { folder: id, path: 'a.fx' } } }, false, false, 1],
+      [{ kind: 'accessory', name: 'b.x' }, { Main: { object: { folder: id, path: 'sub/b.fx' } } }, true, true, 1],
+    ]);
+    expect(f.mme.posts().map(p => [p.obj.mmeObj?.name, p.effect.entry, p.effect.result.ok])).toEqual([['a.x', 'a.fx', true]]);
+    expect(f.mme.posts(true).map(p => p.effect.entry)).toEqual(['a.fx', 'sub/b.fx']);
+    expect(f.history.canUndo).toBe(false);
+    expect(f.ui.state.toast).toBeNull();
+    expect('posts' in f.mme.saveScene()).toBe(false);
+  });
+
+  it('古い posts を移せなかった (置ける数を超えた) ことは、開いたお知らせに名前をまとめて添える', async () => {
+    const json = JSON.parse(new TextDecoder().decode(await new Engine().project.save('reference')));
+    json.mme.folders = [{ id: 'folder1', name: 'Fx' }]; // (ファイルのないフォルダ)
+    json.mme.posts = [{ effect: { folder: 'folder1', path: 'a.fx' }, enabled: true }, { effect: { folder: 'folder1', path: 'b.fx' }, enabled: false }];
+    const f = new Engine();
+    const full = vi.spyOn(f.world, 'full', 'get').mockReturnValue(true);
+    await f.project.openFile(new File([JSON.stringify(json)], 'old.wgpj'));
+    full.mockRestore();
+    expect(f.world.objects).toEqual([]);
+    expect(f.ui.state.toast?.text).toBe('old.wgpj を開きました (古いプロジェクトのポストエフェクト a.x・b.x をアクセサリに移せませんでした (これ以上置けません))');
+  });
+
+  it('同じ名前のフォルダを読み直してファイルが変わると、そのフォルダのポストエフェクトは新しい中身でコンパイルしたものになる (並び・オン・オフはそのまま。ほかのフォルダのものは同じ)', async () => {
+    const e = new Engine();
+    const a = await e.mme.loadEffect([fileAt('A/a.fx', 'technique Old { }', 1)], 'a.fx');
+    const b = await e.mme.loadEffect([fileAt('B/b.fx', 'technique B { }')], 'b.fx');
+    e.mme.addPost(b);
+    e.setVisibility(e.mme.addPost(a)!, OFF);
+    await e.mme.loadEffect([fileAt('A/a.fx', 'technique New { }', 2)], 'a.fx');
+    const [first, second] = e.mme.posts(true);
+    expect(first.effect).toBe(b);
+    expect(second.obj.hidden).toBe(true);
+    expect(second.effect).not.toBe(a);
+    expect(second.effect.result.ok && second.effect.result.effect.techniques[0].name).toBe('New');
+    // (変わらなければ、そのまま)
+    await e.mme.loadEffect([fileAt('A/a.fx', 'technique New { }', 2)], 'a.fx');
+    expect(e.mme.posts(true)[1].effect).toBe(second.effect);
   });
 
   it('セルフシャドウを切ると深度マップを捨てる', () => {
@@ -362,7 +512,7 @@ describe('MmeEngine', () => {
   it('MME 互換 → 標準 → MME 互換と行き来しても、標準に戻したときに MME の資源を片付ける', async () => {
     const e = new Engine();
     const fx = await e.mme.loadEffect([new File(['technique T { }'], 'post.fx')], 'post.fx');
-    e.mme.store.addPost(fx);
+    e.mme.addPost(fx);
     const r = e.mme.renderer as unknown as Internals;
     const standard = await e.project.save('reference'); // (標準のエンジンのプロジェクト)
     for (let round = 0; round < 2; round++) {
@@ -394,8 +544,9 @@ describe('MmeEngine', () => {
     expect(e.ui.state.mme.settings.engine).toBe('mme');
     const obj = e.world.addShape(0, 0, 0, 0);
     e.selection.select(obj);
-    const good = await e.mme.loadEffect([fileAt('Fx/good.fx', 'technique T { }')], 'good.fx');
-    const bad = await e.mme.loadEffect([fileAt('Fx/bad.fx', 'float4 x = ;')], 'bad.fx');
+    // (同じフォルダに読み足すとフォルダの .fx はコンパイルし直すので、まとめて読む)
+    const good = await e.mme.loadEffect([fileAt('Fx/good.fx', 'technique T { }'), fileAt('Fx/bad.fx', 'float4 x = ;')], 'good.fx');
+    const bad = e.mme.store.effect(good.folder, 'bad.fx');
     e.mme.assign(obj, 'Main', null, ref(bad));
     const object = e.ui.state.mme.object!;
     expect(object).toMatchObject({ name: 'Fx/bad.fx', ok: false, warnings: [] });
@@ -407,9 +558,10 @@ describe('MmeEngine', () => {
     e.mme.assign(obj, 'Main', null, null);
     expect(e.ui.state.mme.object).toBeNull();
 
-    e.mme.store.addPost(good);
-    e.mme.store.setPostEnabled(0, false);
-    expect(e.ui.state.mme.posts).toEqual([{ id: good.id, name: 'Fx/good.fx', ok: true, errors: [], errorCount: 0, warnings: [], enabled: false }]);
+    const acc = e.mme.addPost(good)!;
+    e.setVisibility(acc, OFF);
+    e.mme.publish();
+    expect(e.ui.state.mme.posts).toEqual([{ id: good.id, name: 'Fx/good.fx', ok: true, errors: [], errorCount: 0, warnings: [], enabled: false, objId: acc.id, accessory: 'good.x' }]);
     // 描いたときの警告: エフェクトの警告はその行に、ほかは全体の警告に
     const r = e.mme.renderer as unknown as Internals;
     vi.spyOn(e.mme.renderer, 'render').mockImplementation(() => {
@@ -552,7 +704,7 @@ describe('MmeEngine', () => {
     const src = `${funcs}\nfloat4 PS() : COLOR0 { return ${Array.from({ length: 30 }, (_, i) => `f${i}()`).join(' + ')}; }\n`
       + 'technique T { pass P { PixelShader = compile ps_3_0 PS(); } }';
     const fx = await e.mme.loadEffect([fileAt('Fx/many.fx', src)], 'many.fx');
-    e.mme.store.addPost(fx);
+    e.mme.addPost(fx);
     expect(e.ui.state.mme.posts[0].ok).toBe(false);
     expect(e.ui.state.mme.posts[0].errors).toHaveLength(20);
     // 数はコンパイラの誤りの全部 (20 個のあとに「多いので止めました」)
@@ -578,7 +730,7 @@ describe('MmeEngine', () => {
     expect(obj.mme).toBeUndefined();
     expect(e.ui.state.mme.object).toBeNull();
     await e.mme.addPostEffect([fileAt('P/post.fx', 'technique T { }')], 'post.fx');
-    expect(e.ui.state.mme.posts.map(p => [p.name, p.enabled])).toEqual([['P/post.fx', true]]);
+    expect(e.ui.state.mme.posts.map(p => [p.name, p.enabled, p.accessory])).toEqual([['P/post.fx', true, 'post.x']]);
   });
 
   it('読めないファイルはお知らせを出す (例外を外に出さない)', async () => {
@@ -591,9 +743,10 @@ describe('MmeEngine', () => {
     expect(e.ui.state.toast?.text).toContain('読めない');
     expect(obj.mme).toBeUndefined();
     e.ui.hideToast();
-    await expect(e.mme.addPostEffect([broken], 'a.fx')).resolves.toBeUndefined();
+    await expect(e.mme.addPostEffect([broken], 'a.fx')).resolves.toBeNull();
     expect(e.ui.state.toast?.text).toContain('読めない');
-    expect(e.mme.store.posts).toEqual([]);
+    expect(e.mme.posts()).toEqual([]);
+    expect(e.world.objects).toHaveLength(1); // (アクセサリは置かない)
   });
 
   it('まだ資源のないエフェクトの警告は、資源を作らずに全体の警告にする', async () => {
@@ -612,22 +765,22 @@ describe('MmeEngine', () => {
     const e = new Engine();
     const obj = e.world.addShape(0, 0, 0, 0);
     const fx = await e.mme.loadEffect([fileAt('Fx/a.fx', 'technique T { }')], 'a.fx');
-    const assign = () => { e.mme.assign(obj, 'Main', null, ref(fx)); e.mme.store.addPost(fx); };
+    const assign = () => { e.mme.assign(obj, 'Main', null, ref(fx)); e.mme.addPost(fx); };
     assign();
-    e.mme.clearEffects(); // (場面にある物の割り当ても外す)
+    e.mme.clearEffects(); // (場面にある物の割り当ても外す。アクセサリの割り当ても外れて、ポストエフェクトでなくなる)
     expect(obj.mme).toBeUndefined();
-    expect(e.mme.store.posts).toEqual([]);
+    expect(e.mme.posts()).toEqual([]);
     assign();
     e.resetAll();
-    expect(e.mme.store.posts).toEqual([]);
+    expect(e.mme.posts()).toEqual([]);
     expect(e.ui.state.mme.posts).toEqual([]);
     // プロジェクトを開いても (開く前に最初の状態に戻す)
     const shape = e.world.addShape(0, 0, 0, 0);
     const bytes = await e.project.save('reference');
     e.mme.assign(shape, 'Main', null, ref(fx));
-    e.mme.store.addPost(fx);
+    e.mme.addPost(fx);
     await e.project.open(bytes);
-    expect(e.mme.store.posts).toEqual([]);
+    expect(e.mme.posts()).toEqual([]);
     expect(e.world.objects.map(o => o.mme)).toEqual([undefined]);
   });
   // --- プロジェクト: MME の場面 (フォルダ・ポストエフェクト・仮のコントローラーの値) と、読んだファイル ---
@@ -654,12 +807,14 @@ technique Post { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = comp
     fileAt('Fx/a.fx', TEX_FX('tex.png')), fileAt('Fx/post.fx', OFF_POST('*=hide;')), fileAt('Fx/unused.fx', 'technique U { }'), bin('Fx/tex.png', [9, 8, 7]),
   ];
   const textOf = async (f: File | undefined) => (f ? new TextDecoder().decode(await f.arrayBuffer()) : null);
+  // ポストエフェクト (隠したアクセサリのものも) のフォルダ・パス・コンパイルできたか・オンか (アクセサリを隠していないか)
+  const postsOf = (e: Engine) => e.mme.posts(true).map(p => [p.effect.folder.id, p.effect.entry, p.effect.result.ok, !p.obj.hidden]);
   async function buildMmeScene(e: Engine) {
     const obj = e.world.addShape(0, 0, 0, 0);
     const a = await e.mme.loadEffect(fxFolder(), 'a.fx');
     e.mme.assign(obj, 'Main', null, ref(a));
-    e.mme.store.addPost(e.mme.store.effect(a.folder, 'post.fx'));
-    e.mme.store.setPostEnabled(0, false);
+    const acc = e.mme.addPost(e.mme.store.effect(a.folder, 'post.fx'))!;
+    e.setVisibility(acc, OFF);
     e.addMmeObject({ kind: 'controller', name: 'Ctrl' });
     e.mme.setControl('Ctrl', 'Si', 0.7);
     e.mme.set({ engine: 'mme', selfShadow: false });
@@ -670,10 +825,11 @@ technique Post { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = comp
     const folder = e.mme.store.folder(id)!;
     expect(await textOf(folder.files.get('a.fx'))).toBe(TEX_FX('tex.png'));
     expect(new Uint8Array(await folder.files.get('tex.png')!.arrayBuffer())).toEqual(new Uint8Array([9, 8, 7]));
-    expect(e.mme.store.posts.map(p => [p.effect.folder.id, p.effect.entry, p.effect.result.ok, p.enabled])).toEqual([[id, 'post.fx', true, false]]);
+    expect(postsOf(e)).toEqual([[id, 'post.fx', true, false]]);
     expect(e.mme.controllers.controller('Ctrl')?.mmeValues?.Si).toBeCloseTo(0.7, 6);
     expect(e.mme.settings).toMatchObject({ engine: 'mme', selfShadow: false });
-    const [obj] = e.world.objects;
+    const [obj, acc] = e.world.objects;
+    expect([acc.mmeObj, acc.hidden, acc.hideRender]).toEqual([{ kind: 'accessory', name: 'post.x' }, true, true]);
     expect(obj.mme).toEqual({ Main: { object: { folder: id, path: 'a.fx' } } });
     expect(e.mme.renderer.assignments.referenced(obj).map(x => x.result.ok)).toEqual([true]);
   }
@@ -685,8 +841,7 @@ technique Post { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = comp
     const { data } = await readEmbedded(bytes);
     expect(data.mme).toEqual({
       settings: { ...MME_DEFAULTS, engine: 'mme', selfShadow: false }, folders: [{ id, name: 'Fx' }],
-      posts: [{ effect: { folder: id, path: 'post.fx' }, enabled: false }],
-    }); // (コントローラーの値は物の値。場面の値 controls は書かない)
+    }); // (ポストエフェクトはアクセサリ、コントローラーの値はコントローラーの物の値。場面の値 posts・controls は書かない)
     // (使わない .fx は入れない。画像は、まだ描いていなくても入る)
     const mmeFiles = data.mmeFiles as { folder: string; path: string; asset: string }[];
     expect(mmeFiles.map(m => [m.folder, m.path])).toEqual([[id, 'a.fx'], [id, 'post.fx'], [id, 'tex.png']]);
@@ -721,11 +876,11 @@ technique Post { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = comp
   const twins = (root = 'Ray') => [
     fileAt(`${root}/Lighting/Default/spot.fx`, 'technique A { }', 5), fileAt(`${root}/Lighting/Default Ambient/spot.fx`, 'technique B { }', 5),
   ].reverse(); // (名前で照らすと、先にある Default Ambient のものを取り違える)
-  const techniques = (e: Engine) => e.mme.store.posts.map(p => (p.effect.result.ok ? p.effect.result.effect.techniques[0].name : null));
+  const techniques = (e: Engine) => e.mme.posts().map(p => (p.effect.result.ok ? p.effect.result.effect.techniques[0].name : null));
   async function twinPosts(e: Engine) {
     const folder = await e.mme.store.addFolder(twins());
-    e.mme.store.addPost(e.mme.store.effect(folder, 'Lighting/Default/spot.fx'));
-    e.mme.store.addPost(e.mme.store.effect(folder, 'Lighting/Default Ambient/spot.fx'));
+    e.mme.addPost(e.mme.store.effect(folder, 'Lighting/Default/spot.fx'));
+    e.mme.addPost(e.mme.store.effect(folder, 'Lighting/Default Ambient/spot.fx'));
     expect(techniques(e)).toEqual(['A', 'B']);
   }
 
@@ -785,20 +940,22 @@ technique Post { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = comp
     await f.project.open(bytes, { pick: async () => answers.shift() ?? 'cancel' });
     expect(f.mme.store.folders().map(x => [x.id, [...x.files.keys()]])).toEqual([[id, ['a.fx']]]);
     expect(f.world.objects[0].mme).toEqual({ Main: { object: { folder: id, path: 'a.fx' } } });
-    expect(f.mme.store.posts.map(p => [p.effect.entry, p.effect.result.ok])).toEqual([['post.fx', false]]);
-    // 保存し直しても、ポストエフェクトの参照は残る
+    expect(f.mme.posts(true).map(p => [p.effect.entry, p.effect.result.ok])).toEqual([['post.fx', false]]);
+    // 保存し直しても、ポストエフェクトの参照 (アクセサリの割り当て) は残る
     const again = JSON.parse(new TextDecoder().decode(await f.project.save('reference')));
-    expect(again.mme.posts).toEqual([{ effect: { folder: id, path: 'post.fx' }, enabled: false }]);
-    // 同じフォルダを読み直す (同じ名前なのでまとめる) と、ポストエフェクトも直る (並びとオン・オフはそのまま)
+    const savedAccessories = again.objects.filter((o: { mmeObj?: { kind: string } }) => o.mmeObj?.kind === 'accessory');
+    expect(savedAccessories.map((o: { mme?: unknown }) => o.mme)).toEqual([{ Main: { object: { folder: id, path: 'post.fx' } } }]);
+    // 同じフォルダを読み直す (同じ名前なのでまとめる) と、ポストエフェクトも直る (並びとオン・オフはそのまま。割り当ては描くたびに引き直す)
     const other = await f.mme.loadEffect([fileAt('Other/o.fx', 'technique O { }')], 'o.fx');
-    f.mme.store.addPost(other);
+    f.mme.addPost(other);
     const changed = vi.fn();
     f.mme.store.events.on('changed', changed);
     await f.mme.loadEffect(fxFolder(), 'a.fx');
     expect(f.mme.store.folders().map(x => x.id)).toEqual([id, other.folder.id]);
-    expect(f.mme.store.posts.map(p => [p.effect.folder.id, p.effect.entry, p.effect.result.ok, p.enabled])).toEqual([[id, 'post.fx', true, false], [other.folder.id, 'o.fx', true, true]]);
-    expect(f.mme.store.posts[1].effect).toBe(other);
+    expect(postsOf(f)).toEqual([[id, 'post.fx', true, false], [other.folder.id, 'o.fx', true, true]]);
+    expect(f.mme.posts()[0].effect).toBe(other);
     expect(changed).toHaveBeenCalled();
+    f.mme.publish();
     expect(f.ui.state.mme.posts.map(p => p.ok)).toEqual([true, true]);
   });
 
@@ -806,7 +963,7 @@ technique Post { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = comp
     const e = new Engine();
     e.world.addShape(0, 0, 0, 0);
     const post = await e.mme.loadEffect([fileAt('P/post.fx', OFF_POST('*=sub/off.fx;')), fileAt('P/sub/off.fx', TEX_FX('off.png')), bin('P/sub/off.png', [1])], 'post.fx');
-    e.mme.store.addPost(post);
+    e.mme.addPost(post);
     const { data } = await readEmbedded(await e.project.save('embedded'));
     expect((data.mmeFiles as { path: string }[]).map(m => m.path)).toEqual(['post.fx', 'sub/off.fx', 'sub/off.png']);
     // (画像は読まず、標準のエンジンのあいだは MME の資源を作らない)
@@ -818,9 +975,8 @@ technique Post { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = comp
     e.world.addShape(0, 0, 0, 0); // (規則 * で描く物)
     const on = await e.mme.loadEffect([fileAt('On/post.fx', OFF_POST('*=off.fx;')), fileAt('On/off.fx', TEX_FX('on.png')), bin('On/on.png', [1])], 'post.fx');
     const off = await e.mme.loadEffect([fileAt('Off/post.fx', OFF_POST('*=off.fx;')), fileAt('Off/off.fx', TEX_FX('off.png')), bin('Off/off.png', [2])], 'post.fx');
-    e.mme.store.addPost(on);
-    e.mme.store.addPost(off);
-    e.mme.store.setPostEnabled(1, false);
+    e.mme.addPost(on);
+    e.setVisibility(e.mme.addPost(off)!, OFF);
     await e.mme.whenReady();
     expect([...on.folder.used].sort()).toEqual(['off.fx', 'on.png', 'post.fx']);
     expect([...off.folder.used].sort()).toEqual(['post.fx']);
@@ -832,12 +988,12 @@ technique Post { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = comp
     const files = ['doll', 'shadowed', 'lamp', 'sky'].map(n => fileAt(`R/${n}.fx`, TEX_FX(`${n}.png`)));
     const pngs = ['doll', 'shadowed', 'lamp', 'sky'].map(n => bin(`R/${n}.png`, [1]));
     const post = await e.mme.loadEffect([fileAt('R/post.fx', OFF_POST(rules)), ...files, ...pngs], 'post.fx');
-    e.mme.store.addPost(post);
+    e.mme.addPost(post);
     const saved = async () => {
       const { data } = await readEmbedded(await e.project.save('embedded'));
       return (data.mmeFiles as { path: string }[]).map(m => m.path);
     };
-    // 物がなければ、規則の .fx は読まない
+    // 物がなければ、規則の .fx は読まない (ポストエフェクトのアクセサリ post.x は、どの .fx の規則にも合わない)
     expect(await saved()).toEqual(['post.fx']);
     // Doll で始まる物 (D* より先に合う) だけ
     const doll = e.world.addShape(0, 0, 0, 0);
@@ -856,7 +1012,7 @@ technique Post { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = comp
   it('used にあってフォルダにないパスは保存しない (例外にならない)', async () => {
     const e = new Engine();
     const fx = await e.mme.loadEffect([fileAt('Fx/a.fx', 'technique T { }')], 'a.fx');
-    e.mme.store.addPost(fx);
+    e.mme.addPost(fx);
     fx.folder.used.add('ghost.png');
     const { data } = await readEmbedded(await e.project.save('embedded'));
     expect((data.mmeFiles as { path: string }[]).map(m => m.path)).toEqual(['a.fx']);
@@ -867,13 +1023,13 @@ technique Post { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = comp
     const post = await e.mme.loadEffect([fileAt('Off/post.fx', OFF_POST('broken;*=hide;'))], 'post.fx');
     const warning = 'OffMap: DefaultEffect の項 "broken" に = がないので無視します';
     const r = e.mme.renderer as unknown as Internals & { offscreen: { declsOf(e: LoadedEffect, screen: [number, number]): unknown } };
-    e.mme.store.addPost(post);
+    const acc = e.mme.addPost(post)!;
     r.instance(post);
     r.offscreen.declsOf(post, [64, 64]); // (描くときに宣言を読む)
     expect(e.mme.renderer.warningsOf(post)).toEqual([warning]);
-    e.mme.store.removePost(0); // (使わなくなったので資源を捨てる)
+    e.world.remove(acc); // (使わなくなったので資源を捨てる)
     expect(r.instances.has(post)).toBe(false);
-    e.mme.store.addPost(post);
+    e.mme.addPost(post);
     r.instance(post);
     r.offscreen.declsOf(post, [64, 64]); // (宣言は覚えているので、読み直さない)
     expect(e.mme.renderer.warningsOf(post)).toEqual([warning]);
@@ -957,8 +1113,8 @@ technique Post { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = comp
     await buildMmeScene(e);
     e.resetAll();
     expect(e.mme.store.folders()).toEqual([]);
-    expect(e.world.objects).toEqual([]); // (コントローラーの物も)
-    expect(e.mme.store.posts).toEqual([]);
+    expect(e.world.objects).toEqual([]); // (コントローラー・アクセサリの物も)
+    expect(e.mme.posts(true)).toEqual([]);
     expect(e.mme.settings).toEqual(MME_DEFAULTS);
     expect(e.ui.state.mme.folders).toEqual([]);
   });

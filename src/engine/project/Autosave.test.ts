@@ -72,8 +72,8 @@ describe('Autosave', () => {
     const a = engineWithCube();
     await a.autosave.start(store);
     const folder = await a.mme.store.addFolder([at('Ray/Default Ambient/spot.fx', 'technique B { }'), at('Ray/Default/spot.fx', 'technique A { }')]);
-    a.mme.store.addPost(a.mme.store.effect(folder, 'Default/spot.fx'));
-    a.mme.store.addPost(a.mme.store.effect(folder, 'Default Ambient/spot.fx'));
+    a.mme.addPost(a.mme.store.effect(folder, 'Default/spot.fx'));
+    a.mme.addPost(a.mme.store.effect(folder, 'Default Ambient/spot.fx'));
     await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY);
     await a.autosave.saveNow();
     expect(await store.fileKeys()).toHaveLength(2);
@@ -81,7 +81,7 @@ describe('Autosave', () => {
     const b = engineWithCube();
     await b.autosave.start(store);
     await b.autosave.recover();
-    expect(b.mme.store.posts.map(p => (p.effect.result.ok ? p.effect.result.effect.techniques[0].name : null))).toEqual(['A', 'B']);
+    expect(b.mme.posts().map(p => (p.effect.result.ok ? p.effect.result.effect.techniques[0].name : null))).toEqual(['A', 'B']);
   });
 
   // (MME の場面の値は元に戻すの対象にしないので、履歴の changed では保存されない)

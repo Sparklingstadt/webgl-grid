@@ -62,7 +62,7 @@ test('ステージの行: Main で .fx を割り当てるとその .fx で描き
   // オフスクリーン: ポストエフェクトの OffMap (DefaultEffect = *=green.fx;) にステージは緑で入る。非表示にすると ClearColor (青)
   const post = await loadFolder(page, 'post', { 'post.fx': showOffMap('*=green.fx;'), 'green.fx': GREEN_FX }, 'post.fx');
   expect(post.ok).toBe(true);
-  await page.evaluate(p => { const { mme } = (window as Win).engine; mme.store.addPost(mme.store.effect(mme.store.folder(p.folder), p.path)); }, post);
+  await page.evaluate(p => { const { mme } = (window as Win).engine; mme.addPost(mme.store.effect(mme.store.folder(p.folder), p.path)); }, post);
   await expect.poll(() => rgb(page)).toEqual([0, 255, 0]);
   await expect(assignTabs(page)).toHaveText(['Main', 'OffMap']);
   await assignTabs(page).nth(1).click();

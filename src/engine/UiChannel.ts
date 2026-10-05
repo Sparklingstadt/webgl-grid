@@ -33,7 +33,7 @@ export const STAGE_ROW_ID = -1;
 // 使っているエフェクトが宣言するもの)。rows: タブごとの行 (描く宣言のないオフスクリーンのタブは載せない。そのタブの割り当ては効かない)。
 // controllers: 置いた仮のコントローラー (コントローラーの物。CONTROLOBJECT の名前) ごとの、スライダーにする項目と値 (0〜1)
 export interface MmeUiState {
-  settings: MmeSettings; object: MmeEffectUi | null /* 選んでいる物の .fx */; posts: (MmeEffectUi & { enabled: boolean })[]; warnings: string[];
+  settings: MmeSettings; object: MmeEffectUi | null /* 選んでいる物の .fx */; posts: (MmeEffectUi & { enabled: boolean; objId: number; accessory: string })[] /* ポストエフェクト (アクセサリの物。enabled はビューポートでも書き出しでも隠していないか) */; warnings: string[];
   folders: { id: string; name: string; fx: string[] }[];
   tabs: { name: string; description: string }[];
   rows: Record<string, MmeRowUi[]>;

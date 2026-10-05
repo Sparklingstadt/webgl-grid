@@ -144,7 +144,8 @@ test('ポストエフェクトを足し、上下に並べ替え、オフにし�
   // 反転をオフに
   await panel(page).getByRole('checkbox', { name: 'Invert/invert.fx を使う' }).click();
   await expect.poll(async () => near(await rgb(page), [26, 51, 77])).toBe(true);
-  expect(await page.evaluate(() => (window as Win).engine.mme.store.posts.map((p: Win) => p.enabled))).toEqual([false, true]);
+  // (オフ = アクセサリをビューポートでも書き出しでも隠す)
+  expect(await page.evaluate(() => (window as Win).engine.mme.posts(true).map((p: Win) => [p.obj.mmeObj.name, !!p.obj.hidden, !!p.obj.hideRender]))).toEqual([['invert.x', true, true], ['half.x', false, false]]);
   // 外す
   await panel(page).getByRole('button', { name: 'Half/half.fx を外す' }).click();
   await expect(rows).toHaveCount(1);
@@ -168,7 +169,8 @@ test('ポストエフェクトを足し、上下に並べ替え、オフにし�
   await expect(rows).toHaveCount(1);
   await expect(rows.nth(0)).toContainText('dropped.fx');
   await expect.poll(async () => near(await rgb(page), [204, 153, 102])).toBe(true);
-  expect(await page.evaluate(() => (window as Win).engine.world.objects.length)).toBe(1);
+  // (モデルとしては読まない: 物は箱と、ポストエフェクトのアクセサリ)
+  expect(await page.evaluate(() => (window as Win).engine.world.objects.map((o: Win) => o.mmeObj?.name ?? null))).toEqual([null, 'dropped.x']);
   expect(errors).toEqual([]);
 });
 

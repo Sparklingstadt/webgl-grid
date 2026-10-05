@@ -269,9 +269,11 @@ test('ポストエフェクトの順番を入れ替えると結果が変わり�
     expect(diff(got, scale(want, 255)), `${got} ≈ ${scale(want, 255)}`).toBeLessThanOrEqual(2);
   };
   await check(c.map(v => (1 - v) * 0.5)); // 反転してから半分
-  await page.evaluate(() => (window as Win).engine.mme.store.movePost(1, -1));
+  // 並びはアクセサリの物の並び (reorder_objects と同じ)
+  await page.evaluate(() => { const { engine } = window as Win; const [invert, half] = engine.mme.posts().map((p: Win) => p.obj); engine.setOrder([half.id, invert.id]); });
   await check(c.map(v => 1 - v * 0.5)); // 半分にしてから反転
-  await page.evaluate(() => (window as Win).engine.mme.store.setPostEnabled(1, false)); // 反転をオフ
+  // オフ = アクセサリを隠す (画面のオン・オフと同じく、ビューポートでも書き出しでも)
+  await page.evaluate(() => { const { engine } = window as Win; engine.setVisibility(engine.mme.posts()[1].obj, { hidden: true, hideRender: true }); }); // 反転をオフ
   await check(c.map(v => v * 0.5));
   expect(await warnings(page)).toEqual([]);
   expect(errors).toEqual([]);
@@ -438,5 +440,66 @@ test('ScriptOrder = standard のポストエフェクトは、警告を出して
   expect(rgb(r.pixels[0])).toEqual([204, 153, 102]);
   expect(rgb(r.pixels[1])).toEqual([204, 204, 204]);
   expect((await warnings(page)).some(w => w.includes('ScriptOrder = standard'))).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+// --- ポストエフェクト = アクセサリの物に当てた .fx。CONTROLOBJECT の (self) はそのアクセサリ ---
+// 場面を写して、アクセサリの Si 倍の色にするポストエフェクト
+const SELF_SI = 'float s : CONTROLOBJECT < string name = "(self)"; string item = "Si"; >;\n';
+const siFx = filterFx('return float4(c.rgb * s, 1.0);').replace('float4 Main(', `${SELF_SI}float4 Main(`);
+const BOX = [51, 102, 153];
+
+test('ポストエフェクトの CONTROLOBJECT (self) はそのアクセサリの値: アクセサリの Si を 0.5 → 1 にすると色が変わる', async ({ page }) => {
+  const errors = await openMme(page);
+  await solidBox(page);
+  expect(await addPost(page, siFx, 'si.fx')).toBe(true);
+  expect(await page.evaluate(() => (window as Win).engine.mme.posts().map((p: Win) => p.obj.mmeObj))).toEqual([{ kind: 'accessory', name: 'si.x' }]);
+  const at = async (si: number) => {
+    await page.evaluate(si => {
+      const { engine } = window as Win;
+      engine.mme.posts()[0].obj.mmeValues.Si = si;
+      engine.viewport.requestDraw();
+    }, si);
+    return rgb((await shoot(page, 'png', [FACE])).pixels[0]);
+  };
+  const half = await at(0.5);
+  expect(diff(half, scale(BOX, 0.5)), `${half}`).toBeLessThanOrEqual(2);
+  expect(await at(1)).toEqual(BOX);
+  expect(await warnings(page)).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test('アクセサリの Si のキーフレームで、書き出した動画の最初のコマと最後のコマの色が違う', async ({ page }) => {
+  const errors = await openMme(page);
+  await solidBox(page);
+  expect(await addPost(page, siFx, 'si.fx')).toBe(true);
+  const frames = await page.evaluate(async () => {
+    const { engine } = window as Win;
+    const acc = engine.mme.posts()[0].obj;
+    engine.clock.setRange(0, 10);
+    engine.clock.seekFrame(0); acc.mmeValues.Si = 0.25; engine.keyframes.insertMme(acc, 0, ['Si']);
+    engine.clock.seekFrame(10); acc.mmeValues.Si = 1; engine.keyframes.insertMme(acc, 10, ['Si']);
+    engine.clock.seekFrame(5);
+    // 書き出す各コマの絵 (動画に入れる前の絵) の真ん中の画素
+    const out = engine.output as Win;
+    const flatten = out.flatten.bind(out);
+    const colors: number[][] = [];
+    out.flatten = (to: HTMLCanvasElement) => {
+      flatten(to);
+      const d = to.getContext('2d')!.getImageData(to.width >> 1, to.height >> 1, 1, 1).data;
+      colors.push([d[0], d[1], d[2]]);
+    };
+    try {
+      await engine.output.renderVideo();
+    } finally {
+      out.flatten = flatten;
+    }
+    return colors;
+  });
+  expect(frames).toHaveLength(11);
+  const first = frames[0], last = frames[frames.length - 1];
+  expect(diff(first, scale(BOX, 0.25)), `${first}`).toBeLessThanOrEqual(2);
+  expect(diff(last, BOX), `${last}`).toBeLessThanOrEqual(2);
+  expect(await warnings(page)).toEqual([]);
   expect(errors).toEqual([]);
 });

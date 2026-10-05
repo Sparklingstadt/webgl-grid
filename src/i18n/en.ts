@@ -1190,7 +1190,6 @@ const dict: Dictionary = {
   "この GPU は DXT (S3TC) の圧縮テクスチャに対応していません": "This GPU does not support DXT (S3TC) compressed textures",
   "知らない画像の形式です: .{ext}": "Unknown image format: .{ext}",
   "セマンティクス {semantic} には値を入れません ({name})": "No value is supplied for semantic {semantic} ({name})",
-  "CONTROLOBJECT の項目 {item} (アクセサリの値) には対応していないので、0 を渡します": "CONTROLOBJECT item {item} (an accessory value) is not supported, so 0 is supplied",
   "CONTROLOBJECT の変数 {name} は、型か name の注釈が合わないので、0 を渡します": "CONTROLOBJECT variable {name} has a mismatched type or name annotation, so 0 is supplied",
   "テクスチャ {name} が見つかりません": "Texture {name} was not found",
   "テクスチャ {name} を読めませんでした: {error}": "Couldn't read texture {name}: {error}",
@@ -1322,5 +1321,8 @@ const dict: Dictionary = {
   "古いプロジェクトのコントローラー {names} の値を移せませんでした (これ以上置けません)": "Could not move the values of controllers {names} from the old project (no more objects can be placed)",
   "古いプロジェクトのコントローラー {names} は名前が空なので、値を移せませんでした": "Could not move the values of controllers {names} from the old project because their names are empty",
   "古いプロジェクトのコントローラー {names} は名前を直して移したので、.fx が読む名前と合いません": "Controllers {names} from the old project were moved under corrected names, so they no longer match the names the .fx reads",
+  "古いプロジェクトのポストエフェクト {names} をアクセサリに移せませんでした (これ以上置けません)": "Could not move post effects {names} from the old project to accessories (no more objects can be placed)",
+  "{accessory} に当てた {name}": "{name} on {accessory}",
+  "外す (アクセサリ {accessory} を消す)": "Remove (deletes accessory {accessory})",
 };
 export default dict;

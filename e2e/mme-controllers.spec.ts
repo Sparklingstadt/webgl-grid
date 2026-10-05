@@ -110,12 +110,20 @@ bool V : CONTROLOBJECT < string name = "(self)"; >;`);
   expect(errors).toEqual([]);
 });
 
-test('アクセサリの項目 (Si) は警告を出して 0 を渡す', async ({ page }) => {
+test('モデルのアクセサリの項目 (Si) は 0 を渡す (警告しない)。名前が合うアクセサリの物があれば、その値', async ({ page }) => {
   const errors = await openMme(page);
   const box = await addPmx(page, { flags: 0 });
   expect(await assignFx(page, box, redFrom('(self)', 'Si'))).toBe(true);
   expect(await colorAt(page)).toEqual(BLACK);
-  expect((await warnings(page)).filter(w => w.includes('Si'))).toHaveLength(1);
+  expect((await warnings(page)).filter(w => w.includes('Si'))).toHaveLength(0);
+  // 名前で引くと、アクセサリの物の Si (0.5)
+  expect(await assignFx(page, box, redFrom('light.x', 'Si'), 'acc.fx')).toBe(true);
+  await page.evaluate(() => {
+    const { engine } = window as Win;
+    engine.addMmeObject({ kind: 'accessory', name: 'light.x' }).mmeValues.Si = 0.5;
+  });
+  const [r, g, b] = await colorAt(page);
+  expect([Math.abs(r - 128) <= 2, g, b]).toEqual([true, 0, 0]);
   expect(errors).toEqual([]);
 });
 

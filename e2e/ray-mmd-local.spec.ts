@@ -254,7 +254,7 @@ test('Ray-MMD 1.5.2 の標準の構成 + ライト (すべての種類) とフ�
   const rayOk = await page.evaluate(async folder => {
     const w = window as Win, { mme } = w.engine;
     const e = await mme.loadEffect(w.__ray, 'ray.fx');
-    mme.store.addPost(e);
+    mme.addPost(e); // (アクセサリ ray.x に ray.fx)
     return e.result.ok && e.folder.name === folder;
   }, FOLDER);
   expect(rayOk).toBe(true);

@@ -70,12 +70,13 @@ export function normalizeMmeObj(raw: unknown): MmeObjData | null {
   return (kind === 'controller' || kind === 'accessory') && n !== '' ? { kind, name: n } : null;
 }
 
-// --- プロジェクトの場面の値 'mme': 設定・読み込んだフォルダ (id と名前。中のファイルはプロジェクトの mmeFiles)・ポストエフェクトの並び・
-// ステージの割り当て (なければ項がない)。物ごとの割り当ては物の値 'mme' ---
+// --- プロジェクトの場面の値 'mme': 設定・読み込んだフォルダ (id と名前。中のファイルはプロジェクトの mmeFiles)・
+// ステージの割り当て (なければ項がない)。物ごとの割り当ては物の値 'mme' (ポストエフェクトはアクセサリの物の割り当て) ---
 export interface MmeScene {
   settings: MmeSettings;
   folders: { id: string; name: string }[];
-  posts: { effect: EffectRef; enabled: boolean }[];
+  // 第 4 の計画の形のポストエフェクトの並び (オフは enabled = false)。読むだけ: 開くときにアクセサリの物に移し、保存するときは書かない
+  posts?: { effect: EffectRef; enabled: boolean }[];
   // 第 4 の計画の形の仮のコントローラーの値 (名前 → 項目 → 0〜1)。読むだけ: 開くときにコントローラーの物に移し、保存するときは書かない
   controls?: Record<string, Record<string, number>>;
   stage?: ObjectEffects;

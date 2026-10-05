@@ -5,6 +5,7 @@ import type { ControlRef } from '../../core/mme/controllers.ts';
 import { runTechnique, type ScriptBackend } from '../../core/mme/script.ts';
 import type { CameraState, LightState, SemanticContext } from '../../core/mme/semantics.ts';
 import { pickPostTechnique } from '../../core/mme/technique.ts';
+import type { Obj } from '../types';
 import type { DrawBuiltins, EffectInstance } from './EffectInstance';
 import type { LoadedEffect } from './EffectStore';
 import type { DrawTarget, Framebuffers } from './Framebuffers';
@@ -17,6 +18,9 @@ export interface FrameState {
   camera: CameraState; light: LightState; eye: THREE.Vector3; time: number; elapsed: number; selfShadow: boolean; screen: [number, number];
   frameNo: number;
 }
+
+// ポストエフェクト: アクセサリの物 (CONTROLOBJECT の (self)・オフスクリーンの持ち主) と、それに当てた .fx
+export interface PostEffect { obj: Obj; effect: LoadedEffect }
 
 // 描画先に合わせた組み込みの値。半ピクセル: DX9 は画素の中心が整数の位置にあるので、GL で同じ値を補間させるには、
 // 形を D3D の画面で右と下へ半画素ずらす (クリップ座標で x は +1 / 幅、y は D3D の下 = GL の −mme_flipY の向きに 1 / 高さ)
@@ -94,8 +98,8 @@ export interface PostChainDeps {
   instance(e: LoadedEffect): EffectInstance;
   render(m: THREE.RawShaderMaterial, geometry: THREE.BufferGeometry): void; // 材質で形を描く (three.js の render の中)
   checkLink(m: THREE.RawShaderMaterial, inst: EffectInstance, effect: LoadedEffect): void; // 初めて描いた材質がリンクできたか
-  offscreen(effect: LoadedEffect, name: string): THREE.Texture | null; // ポストエフェクトが宣言したオフスクリーンのテクスチャ
-  control(ref: ControlRef): number[] | null; // CONTROLOBJECT の値 (場面の物の名前か仮のコントローラー。(self) はない)
+  offscreen(effect: LoadedEffect, name: string, owner: Obj): THREE.Texture | null; // ポストエフェクトが宣言したオフスクリーンのテクスチャ (持ち主はそのアクセサリ)
+  control(ref: ControlRef, self: Obj): number[] | null; // CONTROLOBJECT の値 ((self) はそのアクセサリ)
 }
 
 // 全面の四角: a_POSITION = (±1, ±1, 0, 1)、a_TEXCOORD0 = (u, v, 0, 1) で v = 0 が上。D3D の表 (時計回り) を向ける
@@ -123,13 +127,13 @@ export class PostChain {
   constructor(private d: PostChainDeps) {}
 
   // posts は一覧の順 (最後がいちばん外側)。scene は場面をいまの描画先に描く
-  run(posts: LoadedEffect[], frame: FrameState, scene: (target: DrawTarget) => void): void {
+  run(posts: PostEffect[], frame: FrameState, scene: (target: DrawTarget) => void): void {
     this.level(posts, posts.length - 1, frame, scene);
   }
 
   // ScriptOrder = preprocess のポストエフェクトを、一覧の順にいまの描画先 (fb.defaultSurface) へ描く (場面は描かない。ScriptExternal は何もしない)
-  runPre(posts: LoadedEffect[], frame: FrameState): void {
-    for (const effect of posts) this.exec(effect, frame, null);
+  runPre(posts: PostEffect[], frame: FrameState): void {
+    for (const post of posts) this.exec(post, frame, null);
   }
 
   // canvas の代わりの絵を canvas に写す (canvas を描画先にしてから呼ぶ)
@@ -145,14 +149,15 @@ export class PostChain {
   }
 
   // posts[k] の technique の Script を実行する。ScriptExternal で 1 つ内側 (k − 1。−1 は場面) を、そのとき選んでいる描画先に描く
-  private level(posts: LoadedEffect[], k: number, frame: FrameState, scene: (target: DrawTarget) => void): void {
+  private level(posts: PostEffect[], k: number, frame: FrameState, scene: (target: DrawTarget) => void): void {
     const { fb } = this.d;
     this.exec(posts[k], frame, () => (k > 0 ? this.level(posts, k - 1, frame, scene) : scene(fb.bindSurface(fb.defaultSurface))));
   }
 
   // 1 つのポストエフェクトの technique の Script を実行する。inner: ScriptExternal で描く内側 (null は内側がない preprocess)
-  private exec(effect: LoadedEffect, frame: FrameState, inner: (() => void) | null): void {
+  private exec(post: PostEffect, frame: FrameState, inner: (() => void) | null): void {
     const { fb } = this.d;
+    const { effect } = post;
     const inst = this.d.instance(effect);
     if (inst.stopped) { inner?.(); return; }
     const tech = effect.result.ok ? pickPostTechnique(effect.result.effect) : null;
@@ -169,7 +174,7 @@ export class PostChain {
       ...st.commands(),
       drawPass: (p, mode) => {
         if (mode === 'geometry') warn(t('ポストエフェクトの Draw=Geometry は無視します'));
-        else if (!inst.stopped) this.drawBuffer(inst, effect, p, st.current(), frame);
+        else if (!inst.stopped) this.drawBuffer(inst, post, p, st.current(), frame);
       },
       drawExternal: () => {
         external = true;
@@ -187,15 +192,15 @@ export class PostChain {
   }
 
   // Draw=Buffer: 描画先いっぱいの四角を描く
-  private drawBuffer(inst: EffectInstance, effect: LoadedEffect, p: Pass, target: DrawTarget, frame: FrameState): void {
+  private drawBuffer(inst: EffectInstance, { obj, effect }: PostEffect, p: Pass, target: DrawTarget, frame: FrameState): void {
     const m = inst.material(p, target.flipY, { kind: 'post', doubleSided: false });
     if (!m) return;
     const ctx: SemanticContext = {
       camera: frame.camera, light: frame.light, world: IDENTITY, material: null, pass: null,
       time: frame.time, elapsed: frame.elapsed, screen: frame.screen, selfShadow: frame.selfShadow, owner: null,
-      control: ref => this.d.control(ref),
+      control: ref => this.d.control(ref, obj),
     };
-    inst.bind(m, p, ctx, builtins(target), { role: name => this.d.fb.colorTexture(effect, name), offscreen: name => this.d.offscreen(effect, name) });
+    inst.bind(m, p, ctx, builtins(target), { role: name => this.d.fb.colorTexture(effect, name), offscreen: name => this.d.offscreen(effect, name, obj) });
     this.d.render(m, this.quad);
     this.d.checkLink(m, inst, effect);
     this.d.fb.afterDraw();

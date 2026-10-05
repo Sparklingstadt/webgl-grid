@@ -1,6 +1,7 @@
 import type * as THREE from 'three';
 import { errorText } from '../../core/errors';
 import { getLang, t } from '../../core/i18n';
+import { accessoryNameFor } from '../../core/mme/accessory.ts';
 import { MME_DEFAULTS, normalizeMmeObj, normalizeObjectEffects, type MmeScene, type MmeSettings, type ObjectEffects, type SavedSlot, type TabEffects } from '../../core/mme/settings.ts';
 import { same } from '../addons/registry';
 import type { Clock } from '../anim/Clock';
@@ -16,10 +17,10 @@ import { nameOf } from '../world/Selection';
 import type { Selection } from '../world/Selection';
 import type { MmeObjects } from '../world/MmeObjects';
 import type { World } from '../world/World';
-import { pmxName, STAGE, type DefaultsOf, type Owner } from './Assignments';
+import { objectName, pmxName, STAGE, type DefaultsOf, type Owner } from './Assignments';
 import { Controllers } from './Controllers';
 import { EffectStore, findFile, type EffectFolder, type LoadedEffect } from './EffectStore';
-import { MmeRenderer } from './MmeRenderer';
+import { MmeRenderer, type PostEffect } from './MmeRenderer';
 import type { Slot } from './ScenePass';
 
 // --- レンダーエンジン (標準 / MME 互換) の切り替えと設定。MME 互換のあいだは Viewport.drawOverride に描画を差し込む ---
@@ -53,10 +54,10 @@ function withSlot(all: ObjectEffects, tab: string, materialIndex: number | null,
 export interface MmeDeps {
   viewport: Viewport; graph: SceneGraph; world: World; selection: Selection; clock: Clock; library: MaterialLibrary; ui: UiChannel;
   output: RenderOutput; keyframes: Keyframes;
-  mmeObjects: MmeObjects; // MME の物を置く (古いプロジェクトの仮のコントローラーの値を移すとき)
+  mmeObjects: MmeObjects; // MME の物を置く (ポストエフェクトのアクセサリ・古いプロジェクトの値を移すとき)
   stage: () => THREE.Object3D | null; // ステージ (MMD モデル。割り当ては場面の値 stageEffects)
   edited: () => void; // 画面から物の値 (割り当て・仮のコントローラーの値) を変えた (元に戻すの手にする。自動保存は履歴の手から)
-  // 元に戻すの対象にしない場面の値 (ステージの割り当て・ポストエフェクト・フォルダ・設定) を変えた (自動保存する)。
+  // 元に戻すの対象にしない場面の値 (ステージの割り当て・フォルダ・設定) を変えた (自動保存する)。
   // 毎フレームの publish では呼ばない
   sceneEdited: () => void;
 }
@@ -66,12 +67,12 @@ export class MmeEngine {
   readonly settings: MmeSettings = { ...MME_DEFAULTS };
   readonly renderer: MmeRenderer;
   readonly controllers: Controllers; // CONTROLOBJECT の値 (仮のコントローラーの値はコントローラーの物の値)
-  // ステージの割り当て (場面の値。ポストエフェクトと同じく元に戻すの対象にしない。ステージを差し替えても残る)
+  // ステージの割り当て (場面の値。元に戻すの対象にしない。ステージを差し替えても残る)
   private stageEffects: ObjectEffects | null = null;
   private reported = new Set<string>(); // お知らせに出した例外の文
   private logged: string | null = null; // 続けて出ている例外の文 (コンソールに 1 回だけ書く。描けたら忘れる)
   private shown = ''; // 画面に出した状態 (JSON。同じなら知らせない)
-  private changes = 0; // 割り当て・ポストエフェクトを変えた回数 (changed)
+  private changes = 0; // 割り当て・フォルダを変えた回数 (changed)
   // エフェクト割当のタブ・行と JSON、仮のコントローラーの項目。作ったときの元 (inputs) が変わったときだけ作り直す
   private assignInputs: unknown[] = [];
   private assignUi: AssignUi = { folders: [], tabs: [], rows: {} };
@@ -86,9 +87,7 @@ export class MmeEngine {
 
   constructor(private deps: MmeDeps) {
     this.store = new EffectStore(deps.ui);
-    this.controllers = new Controllers({
-      world: deps.world, stage: deps.stage, warn: m => this.renderer.warn(m), outputting: () => deps.viewport.outputting,
-    });
+    this.controllers = new Controllers({ world: deps.world, stage: deps.stage, outputting: () => deps.viewport.outputting });
     this.renderer = new MmeRenderer({
       ...deps, store: this.store, settings: this.settings, controllers: this.controllers, stageEffects: () => this.stageEffects,
     });
@@ -127,7 +126,7 @@ export class MmeEngine {
     this.deps.viewport.requestDraw();
   }
 
-  // 描いているエフェクトが読む仮のコントローラーのうち、場面に物がない名前と項目 (名前の順。画面の「置く」の元)
+  // 描いているエフェクトが読む仮のコントローラーのうち、場面に物がない名前と項目 (名前の順。画面の「置く」の元。アクセサリの名前 (.x) は除く)
   missingControllers(): { name: string; items: string[] }[] {
     return [...this.catalog].filter(([name]) => !this.controllers.controller(name)).map(([name, items]) => ({ name, items }))
       .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
@@ -138,7 +137,7 @@ export class MmeEngine {
     (obj.mmeValues ??= {})[item] = Number.isNaN(v) ? 0 : Math.min(Math.max(v, 0), 1);
   }
 
-  // 割り当て・ポストエフェクト・フォルダが変わった: 使わなくなった資源を捨てて、画面に知らせて描き直す (自動保存もする)
+  // 割り当て・フォルダが変わった: 使わなくなった資源を捨てて、画面に知らせて描き直す (自動保存もする)
   private changed(): void {
     this.changes++;
     this.deps.sceneEdited();
@@ -147,7 +146,8 @@ export class MmeEngine {
     this.deps.viewport.requestDraw();
   }
 
-  // 画面に設定・選んでいる物の .fx (Main の物の割り当て)・ポストエフェクトの一覧・エフェクト割当のタブと行・仮のコントローラーを知らせる
+  // 画面に設定・選んでいる物の .fx (Main の物の割り当て)・ポストエフェクト (アクセサリの物。隠したものも。オンはビューポートでも
+  // 書き出しでも隠していないもの)・エフェクト割当のタブと行・仮のコントローラーを知らせる
   // (変わったときだけ)。毎フレーム呼ばれるので、割り当ての行と仮のコントローラーの項目は元 (inputs) が変わったときだけ作り、
   // 仮のコントローラーの値は値を変えたときだけ並べ直す。どちらも JSON を使い回す
   publish(): void {
@@ -157,7 +157,9 @@ export class MmeEngine {
     const rest: Omit<MmeUiState, keyof AssignUi | 'controllers'> = {
       settings: { ...this.settings },
       object: fx ? this.effectUi(fx) : null,
-      posts: this.store.posts.map(p => ({ ...this.effectUi(p.effect), enabled: p.enabled })),
+      posts: this.renderer.posts(true).map(({ obj, effect }) => ({
+        ...this.effectUi(effect), enabled: !obj.hidden && !obj.colHidden && !obj.hideRender, objId: obj.id, accessory: objectName(obj),
+      })),
       warnings: [...this.renderer.warnings],
     };
     const tabs = [{ name: 'Main', description: '' }, ...this.renderer.offscreenTabs().filter(x => x.name !== 'Main')];
@@ -192,8 +194,8 @@ export class MmeEngine {
     return this.controlUi.some((c, i) => c.items.some(({ item, value }) => (this.controlObjs[i].mmeValues?.[item] ?? 0) !== value));
   }
 
-  // 割り当ての行と仮のコントローラーの項目の元。物の数によらず、版の数 (言語・フォルダ・割り当てとポストエフェクト・場面の物 (足す・消す・
-  // 名前・ステージ)・マテリアル) と、前のフレームのオフスクリーンのタブ (名前・説明・DefaultEffect の規則 (宣言ごとに同じ配列)・持ち主) と、
+  // 割り当ての行と仮のコントローラーの項目の元。物の数によらず、版の数 (言語・フォルダ・割り当て・場面の物 (足す・消す・名前・隠す・
+  // 並び・ステージ)・マテリアル) と、前のフレームのオフスクリーンのタブ (名前・説明・DefaultEffect の規則 (宣言ごとに同じ配列)・持ち主) と、
   // GPU で止めたエフェクト。中身は参照で比べる
   private inputs(tabs: { name: string; description: string }[]): unknown[] {
     const ui = this.deps.ui.state;
@@ -313,7 +315,7 @@ export class MmeEngine {
   }
 
   // ステージのタブの、物全体 (materialIndex が null) か材質の割り当てを変える (slot が null なら外して既定に戻す)。
-  // 場面の値なので、元に戻すの対象にしない (ポストエフェクトと同じ)
+  // 場面の値なので、元に戻すの対象にしない
   assignStage(tab: string, materialIndex: number | null, slot: SavedSlot | null): void {
     const next = normalizeObjectEffects(withSlot(this.stageEffects ?? {}, tab, materialIndex, slot));
     if (same(this.stageEffects, next)) return;
@@ -321,7 +323,7 @@ export class MmeEngine {
     this.changed();
   }
 
-  // --- 画面の操作 (ポストエフェクトの一覧は場面の値で、元に戻すの対象にしない) ---
+  // --- 画面の操作 ---
   // フォルダの中の .fx (フォルダからの相対パス)
   fxFilesIn(files: File[]): string[] {
     return EffectStore.fxFilesIn(files);
@@ -340,19 +342,37 @@ export class MmeEngine {
     if (obj) this.assign(obj, 'Main', null, null);
   }
 
-  // ポストエフェクトを一覧の最後 (いちばん外側) に足す
-  async addPostEffect(files: File[], entry: string): Promise<void> {
+  // .fx を読んで、ポストエフェクトにする (addPost)。置いたアクセサリを返す (読めない・置けなければ null)
+  async addPostEffect(files: File[], entry: string): Promise<Obj | null> {
     const e = await this.read(files, entry);
-    if (e) this.store.addPost(e);
+    return e ? this.addPost(e) : null;
   }
 
-  // エフェクトの割り当て (場面にある物とステージの割り当てと、ポストエフェクトの一覧) を全部外す (最初の状態に戻すとき・プロジェクトを開くとき)
+  // .fx をポストエフェクトにする: アクセサリの物 (名前は .fx のファイル名の拡張子を .x にしたもの) を場面の最後 (いちばん外側) に置いて、
+  // Main の物に当てる (コンパイルできなくても当てる。描かずに画面にエラーを出す)。置くのと当てるのは 1 回の取り消しで戻る。
+  // 選んでいる物は変えない。画面の並べ替えは物の並べ替え、オン・オフは隠す (ビューポートでも書き出しでも)、外すはアクセサリを消す。
+  // 置けなければ知らせて null
+  addPost(e: LoadedEffect): Obj | null {
+    if (this.deps.world.full) {
+      this.deps.ui.toast(t('これ以上置けません'));
+      return null;
+    }
+    const obj = this.deps.mmeObjects.add({ kind: 'accessory', name: accessoryNameFor(e.entry) });
+    this.assign(obj, 'Main', null, { folder: e.folder.id, path: e.entry });
+    return obj;
+  }
+
+  // ポストエフェクト (場面の並びのアクセサリの物と、それに当てた .fx。最後がいちばん外側)。all でなければ隠しているものを飛ばす
+  posts(all = false): PostEffect[] {
+    return this.renderer.posts(all);
+  }
+
+  // エフェクトの割り当て (場面にある物 (アクセサリのポストエフェクトも) とステージの割り当て) を全部外す (最初の状態に戻すとき・プロジェクトを開くとき)
   clearEffects(): void {
     const assigned = this.deps.world.objects.filter(o => o.mme);
     for (const obj of assigned) obj.mme = undefined;
     const stage = this.stageEffects !== null;
     this.stageEffects = null;
-    this.store.clear();
     if (assigned.length > 0 || stage) this.changed();
   }
 
@@ -371,22 +391,15 @@ export class MmeEngine {
     return {
       settings: { ...this.settings },
       folders: this.store.folders().map(f => ({ id: f.id, name: f.name })),
-      posts: this.store.posts.map(p => ({ effect: { folder: p.effect.folder.id, path: p.effect.entry }, enabled: p.enabled })),
       ...(this.stageEffects ? { stage: structuredClone(this.stageEffects) } : {}),
     };
   }
 
-  // 開いたプロジェクトの設定・ポストエフェクトの並び・ステージの割り当てにする (フォルダと物は戻してある)。
-  // フォルダがないポストエフェクトは捨てる。ファイルがないものは、一覧に残して描かない (コンパイルできない)。
-  // 第 4 の計画の形の仮のコントローラーの値 (controls) は、コントローラーの物に移す
+  // 開いたプロジェクトの設定・ステージの割り当てにする (フォルダと物は戻してある)。
+  // 第 4 の計画の形のポストエフェクトの並び (posts) はアクセサリの物に、仮のコントローラーの値 (controls) はコントローラーの物に移す
   loadScene(scene: MmeScene): void {
-    const posts = scene.posts.flatMap(({ effect: ref, enabled }) => {
-      const folder = this.store.folder(ref.folder);
-      return folder ? [{ effect: this.store.effect(folder, ref.path), enabled }] : [];
-    });
     this.stageEffects = scene.stage ? structuredClone(scene.stage) : null;
-    this.openNotes = this.migrateControls(scene.controls ?? {});
-    this.store.setPosts(posts);
+    this.openNotes = [...this.migrateControls(scene.controls ?? {}), ...this.migratePosts(scene.posts ?? [])];
     this.set(scene.settings);
   }
 
@@ -426,15 +439,31 @@ export class MmeEngine {
     ];
   }
 
-  // 最初の状態に戻す: 割り当て (ステージのものも)・ポストエフェクト・読み込んだフォルダを消し、既定の設定にする
-  // (仮のコントローラーの値は物の値なので、物といっしょに消える)
+  // 古いプロジェクトのポストエフェクトの並びを、その順に場面の最後に置くアクセサリの物にする (名前は .fx のファイル名の拡張子を .x に
+  // したもの。Main の物に当て、オフならビューポートでも書き出しでも隠す (画面のオン・オフと同じ)。同じ絵になる)。
+  // フォルダがないもの (描いていなかった。開いても一覧から捨てていた) は移さない。置けなければ移さず、知らせる文を返す。開いた状態の一部なので、元に戻すの手にしない (ProjectIO がこのあと履歴を始め直す)
+  private migratePosts(posts: NonNullable<MmeScene['posts']>): string[] {
+    const full: string[] = [];
+    for (const { effect: ref, enabled } of posts) {
+      if (!this.store.folder(ref.folder)) continue;
+      const name = accessoryNameFor(ref.path);
+      if (this.deps.world.full) { full.push(name); continue; }
+      const obj = this.deps.mmeObjects.add({ kind: 'accessory', name });
+      obj.mme = { Main: { object: { folder: ref.folder, path: ref.path } } };
+      if (!enabled) obj.hidden = obj.hideRender = true;
+    }
+    return full.length ? [t('古いプロジェクトのポストエフェクト {names} をアクセサリに移せませんでした (これ以上置けません)', { names: full.join('・') })] : [];
+  }
+
+  // 最初の状態に戻す: 割り当て (ステージのものも)・読み込んだフォルダを消し、既定の設定にする
+  // (ポストエフェクトのアクセサリ・仮のコントローラーの値は物なので、物といっしょに消える)
   resetScene(): void {
     this.clearEffects();
     this.store.clearFolders();
     this.set({ ...MME_DEFAULTS });
   }
 
-  // 保存の前に: 割り当てた .fx (全部のタブ)・ポストエフェクト・それらのオフスクリーンの DefaultEffect で描く .fx と、その画像を、
+  // 保存の前に: 割り当てた .fx (全部のタブ)・ポストエフェクト (隠したアクセサリのものも)・それらのオフスクリーンの DefaultEffect で描く .fx と、その画像を、
   // 描いていなくても読んだファイル (EffectStore のフォルダの used) にする (保存するファイル)
   whenFilesRead(): Promise<void> {
     return this.renderer.whenFilesRead();
