@@ -1,7 +1,7 @@
 # MME 互換モード — 第 4 の計画: Ray-MMD で合格 設計書
 
 - 日付: 2026-10-05
-- 状態: 実装済み（合格の基準 1 の警告とリンクの失敗は 0。絵は「実装でわかったこと」の 2 つの決めることが残る）
+- 状態: 実装済み（合格の基準 1 の警告とリンクの失敗は 0。座標の大きさとステージの割り当ては Task 16 で決めて作った。空（Time of day）が黒いことだけが残る（「実装でわかったこと」））
 - 前の計画: `docs/superpowers/specs/2026-10-05-mme-runtime-design.md`（MME ランタイム。完了。ブランチ `claude/ray-mmd-webgl-grid-port-16f15d` の上に作る）
 - 前の計画で次に回したこと: `docs/superpowers/notes/2026-10-05-mme-runtime-followups.md`
 
@@ -188,9 +188,16 @@ Ray-MMD 1.5.2 の標準の構成に、ライトとフォグを加えたものを
 本物の Ray-MMD 1.5.2（`fx/ray-mmd-1.5.2/`）を、標準の構成（`ray.conf` のまま）＋ライト 10 種類＋フォグ 4 種類＋空（Time of day）で読み込んで確かめた（`e2e/ray-mmd-local.spec.ts`）。
 
 - 「未対応」の警告として出たのは、サンプラーの `SRGBTexture = TRUE`（`Shader/LTC.fxsub` の LTC の表。rgba16f の .dds）だけだった。8 ビットの RGBA の画像は sRGB の写しにして GL に線形にさせ、浮動小数の画像は D3D9 と同じく何もしないことにした。残る警告は、`AddressU/V = BORDER` を `CLAMP` にする（GL にない）・同じレンダーターゲットを違う設定のサンプラーで読む（最初のサンプラーの設定にする）・コンパイラの `float4 を float3 に切り詰めます` で、どれも近似の知らせ。リンクの失敗・止めたエフェクトは 0。
-- オフスクリーンのタブは 9 つ（FogMap・LightMap・EnvLightMap・MaterialMap・SSAOMap・PSSM1〜4）。ライトとフォグの .fx は、`LightMap`・`FogMap` の `DefaultEffect` で、すべて `Default` のものが選ばれる。PNG と動画に書き出せる。1280×720 で 1 フレーム 13.5 ms（Apple M3 Max）。
-- **座標の大きさ（決めること）**: MME に渡す世界は、このアプリの世界（MMD の単位の 0.1 倍）のままで、MMD の単位に直していない。MMD モデルの頂点は MMD の単位で、`WORLD` に 0.1 倍と置いた場所が入る。MMD ではモデルの `WORLD` はふつう単位行列なので、Ray-MMD の一部は頂点の位置をそのまま世界の位置として使う（`Shader/PSSM.fxsub` の影の深さ、`Time of day.fx` の空の球）。そのため、太陽の影のマップの深さが受ける側（G バッファから戻した位置）と 10 倍ずれて、場面が影で真っ黒になる（`SUN_SHADOW_QUALITY` を 0 にすると陰影が出る）。空の球（半径 10000）はカメラの描ける範囲（1000）の外になって描かれない。ライトの範囲・PSSM の分割・SSDO の偏りなど、MMD の単位の距離の決め打ちも 10 倍ずれる。直すには、MME の世界を MMD の単位にし（位置・行列・カメラ・ライトの影の行列・`CONTROLOBJECT` を 10 倍）、MMD モデルは置いた場所を頂点に焼き込んで `WORLD` を単位行列にし、投影の遠い面も MMD に合わせる、などが要る。第 2 の計画の単体テストの値と、編集用の表示の深度の重ね方に関わるので、この計画では直していない。
-- **空とステージ（決めること）**: 空の .pmx（Time of day は一辺 20000）は大きいので、読み込むとステージになる。ステージは置いた物ではないので割り当てられず、Main は `default.fx`、オフスクリーンは `DefaultEffect` だけで描く（`Time of day.pmx` は `sky*box*` に合わないので `EnvLightMap` では描かず、`MaterialMap` では `material_2.0.fx`）。置いた物にすると、積み重ねでほかの物が上に乗る（か空が上に乗る）。手元の e2e は、ステージの判定を通さずに置いた物にし、球の中心を原点に動かして代わりにしている。ステージに割り当てられるようにするか、空のような .pmx をステージにも積み重ねにも入れないかを決める必要がある。
-- `Materials/Skin/material_skin.fx`・`Materials/Hair/material_hair.fx` を当てた材質は、`Gbuffer2RT`（MRT の 2 つ目）に 0 を書いているように見える（`material_2.0.fx` の材質は書けている）。原因は調べきれていない（座標の大きさの直しのあとで見直す）。
+- **サンプラーの `BORDER`（決めたこと。Ruling 17）**: わざと `CLAMP` で近似したままにする（警告は出す）。WebGL2 には `CLAMP_TO_BORDER` がなく、まねるにはサンプラーを読む所ごとにシェーダーを書き換える必要があるため。そのぶん、Ray-MMD のブルーム（`BloomSamp*`）で、絵の端の色が少しにじむことがある。
+- オフスクリーンのタブは 9 つ（FogMap・LightMap・EnvLightMap・MaterialMap・SSAOMap・PSSM1〜4）。ライトの .fx は `LightMap` の `DefaultEffect` で種類ごとのフォルダの `Default/`（LED は `Default LED/`）のものが、フォグの .fx は `FogMap` の `DefaultEffect` で種類ごとのフォルダのものが選ばれる。PNG と動画に書き出せる。1280×720 で 1 フレーム 13.7 ms 前後（Apple M3 Max。Task 16 のあとに測り直した。Task 15 では 13.5 ms）。
+- **座標の大きさ（決めたこと。Ruling 15、Task 16）**: Task 15 では、MME に渡す世界がこのアプリの世界（MMD の単位の 0.1 倍）のままで、MMD モデルの `WORLD` に 0.1 倍と置いた場所が入っていた。MMD ではモデルの `WORLD` はふつう単位行列なので、Ray-MMD の一部は頂点の位置をそのまま世界の位置として使い（`Shader/PSSM.fxsub` の影の深さ、`Time of day.fx` の空の球）、場面が影で真っ黒になり、空の球（半径 10000）はカメラの遠い面（1000）の外だった。そこで、MME の空間を MMD の単位にした（k = 1 / `MMD_SCALE` = 10。`MMD_UNITS`）:
+  - MMD モデル（置いた物とステージ）は `WORLD` を単位行列にし、`Skinner` が置き方を頂点に入れる（`p = S · k · matrixWorld · p_local`、S = diag(1, 1, −1)。法線は回すだけ。骨・モーフ・置き方のどれかが変わったときだけ作り直す）。輪郭線は MME の空間のカメラで広げる。
+  - ほかの物（形など）は `WORLD = toMmd(Scale(k) · matrixWorld)`。
+  - カメラは位置と注視点を k 倍（向きはそのまま）、近い面を k 倍、遠い面を `max(遠い面 × k, 100000)`（`mmeCamera`）。MME の深度に重ねる編集用の表示は、three.js のカメラの近い面・遠い面を MME のカメラの 1/k にして描き、戻す（深度の値がそろう）。
+  - ライト・`CONTROLOBJECT` の位置と行列も k 倍。太陽の影のカメラは位置・範囲・近い面・遠い面を k 倍にするので、深度マップの値と「影の距離」（MMD の値。既定 8875）の意味は変わらない。地面の影は MMD の単位で 0.1 持ち上げる（前と同じ高さ）。ライトの `POSITION` は注視点から 10000。
+  - 第 2 の計画までの e2e は変わらずに通る。値の変わった単体テストは、`coords`（地面の影の持ち上げ 0.01 → 0.1）・`semantics`（同じ）・`Controllers`（位置と行列が 10 倍）・`Skinner`（テストのモデルを読み込んだモデルと同じく 0.1 倍で置いた）と、e2e の `mme-controllers`（骨の位置を MMD の単位で色にする）・`mme-offscreen`（`WORLD` の原点ではなく頂点の位置で左右を見る）。
+- **空とステージ（決めたこと。Ruling 16、Task 16）**: 空の .pmx（Time of day は一辺 20000）は大きいので、読み込むとステージになる。置いた物にすると、積み重ねでほかの物が上に乗る（か空が上に乗る）。そこで、ステージも置いた物と同じく割り当てられるようにした: 割り当ては場面の値 `MmeScene.stage`（`ObjectEffects`。保存・開く・最初の状態で消える。ポストエフェクトと同じく元に戻すの対象にしない。ステージを差し替えても残る）、決め方は材質 → 物 → `DefaultEffect`（.pmx のファイル名）→ Main では `default.fx`、ステージを描くときの `(self)` とステージの .fx が宣言したオフスクリーンの持ち主はステージ（`Owner = Obj | STAGE | null`）、エフェクト割当のどのタブにも「ステージ: .pmx のファイル名」の行（材質の行つき）を出す。手元の e2e は空をふつうに読み込んでステージにし、`README.png` のとおりに割り当てる。ステージは 1 つだけなので、会場のステージと空のステージは同時に使えない。
+- **肌・髪の材質（Task 16 で直した）**: `Materials/Skin/material_skin.fx`・`Materials/Hair/material_hair.fx` の材質が黒くなっていたのは、座標の大きさとは関係なく、2 枚目の法線マップ（`NORMAL_SUB_MAP_FROM 1`）の接線を UV の微分から作る所（`ComputeTangentBinormalNormal`）で、テストのモデルに UV がない（全部 0）ため `normalize(0)` になり、GL では NaN になっていたため。D3D9 の `nrm` は 0 のベクトルを 0 にする（rsq の ∞ に 0 を掛けると 0）ので、コンパイラの `normalize` を `mme_normalize`（0 なら 0）にした。同じく、D3D9 の `pow` は |x|^y なので `pow(abs(x), y)` にした（Time of day の太陽の縁 `pow(cos(π/2), …)` が NaN になっていた）。
+- **空（Time of day）が黒い（残っていること）**: 空の球は描かれ（遠い面の中）、地平線と太陽の向きは合っているが、色が黒い。`Time of day.fx` の大気の式では、Mie 散乱の係数を `ComputeWaveLengthMie(mWaveLength, SunColor, mSunTurbidity)` で作り、既定のモーフ（`SunTurbidity` = 100）と光の色（MMD の既定 0.6）では 1 m あたり約 0.45〜1 になる。この値だと、地上 1 km から見た空の光は大気で全部吸われる（倍精度の JavaScript で同じ式を計算しても 0。係数を 1/1000〜1/3000 にすると明るい空になる）。MMD では明るく見えるはずなので、MME が渡す値（光の色・`CONTROLOBJECT`）の違いなどを疑っているが、まだ分かっていない。空が黒いので `EnvLightMap`（空からの環境光）も暗く、太陽の当たらない面は黒くなる。
 - Ray-MMD 1.5.2 の .dds にキューブマップはない。ミップを持つ .dds（`Lighting/SphereLight/Default IBL/texture/skyspec_hdr.dds`、1024×512・7 段）は、GPU で `tex2Dlod` の段ごとに .dds のその段の色が読めることを確かめた。
 - Time of day の割り当ては、同じフォルダの `README.png` のとおり、Main に `Time of day.fx`・`FogMap` に `Time of fog.fx`・`EnvLightMap` に `Time of lighting.fx`・`MaterialMap` に `Materials/material_skybox.fx`。モデルの Main には `Main/main.fx`（不透明度 0 を書き、色は G バッファの陰影を使わせる。`default.fx` のままだと MMD の陰影が上に重なる）。

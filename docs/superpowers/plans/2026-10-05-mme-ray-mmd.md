@@ -443,3 +443,32 @@
 - [ ] **Step 5: README・ARCHITECTURE・`fx/README.md`・設計書を書く** — README には Ray-MMD の置き方と割り当ての手順、できないこと、手元で測った fps（ビューポート 1280×720 の目安）
 - [ ] **Step 6: すべてのテストを流す** — `CI=1 E2E_GL=software npm run test:all`
 - [ ] **Step 7: コミット**。保存した PNG のパスを、最後の報告に書く（ユーザーの目の確認のため）
+
+### Task 16 (追加): MME の空間を MMD の単位にし、ステージにも割り当てる
+
+Task 15 で本物の Ray-MMD を動かすと、警告とリンクの失敗は 0 になったが、絵が違った。MME の世界がこのアプリの世界（MMD の単位の 0.1 倍）のままで、MMD モデルに `WORLD`（0.1 倍と置いた場所）が入っていたため（Ray-MMD は MMD の単位を決め打ちし、MMD と同じくモデルの `WORLD` を単位行列と思っている）。また、空の .pmx はステージになるので割り当てられなかった。コントローラーの決定（Ruling 15・16）で足したタスク。
+
+**Files:**
+- Modify: `src/core/constants.ts`（`MMD_UNITS`）、`src/core/mme/coords.ts`（地面の影の持ち上げを MMD の単位に）、`src/core/mme/semantics.ts`（`mmeCamera`・`MME_FAR_MIN`・`LIGHT_DISTANCE`）、`src/engine/mme/Skinner.ts`（置き方を頂点に入れる）、`ScenePass.ts`（`DrawItem.world`・`Owner`）、`MmeRenderer.ts`（カメラ・太陽の影・編集用の表示の近い面と遠い面・ステージの割り当て）、`Controllers.ts`（位置と行列を k 倍・ステージの `(self)`）、`Assignments.ts`（`STAGE`・`Owner`・ステージの割り当て）、`Offscreen.ts`（持ち主の鍵）、`src/core/mme/settings.ts`（`MmeScene.stage`）、`MmeEngine.ts`（`assignStage`・ステージの行・保存）、`src/engine/UiChannel.ts`（`STAGE_ROW_ID`）、`src/ui/components/MmeAssignTabs.tsx`（ステージの行）、`src/core/fx/emit.ts`・`consteval.ts`（D3D9 の `pow`・`normalize`）、`e2e/ray-mmd-local.spec.ts`（空をステージにする）、README・ARCHITECTURE・設計書
+- Test: `src/core/mme/semantics.test.ts`・`coords.test.ts`・`settings.test.ts`、`src/engine/mme/Skinner.test.ts`・`Controllers.test.ts`・`Assignments.test.ts`・`MmeEngine.test.ts`、`src/core/fx/emit.test.ts`・`check.test.ts`、`e2e/mme-stage.spec.ts`（新）
+
+**Interfaces:**
+- Part A（MME の空間 = MMD の単位。k = 1 / `MMD_SCALE` = 10）:
+  - MMD モデル（置いた物とステージ）は `WORLD` が単位行列。`Skinner.mmd` が `p = S · k · matrixWorld · p_local`（S = diag(1, 1, −1)）の位置と、置き方で回しただけの法線を出す。骨・モーフ・置き方のどれかが変わったときだけ作り直す。輪郭線は MME の空間のカメラで広げる
+  - ほかの物: `WORLD = toMmd(Scale(k) · matrixWorld)`（`DrawItem.world` に `Scale(k) · matrixWorld`）
+  - `mmeCamera(c, k)`: 位置と注視点は k 倍、近い面は k 倍、遠い面は `max(遠い面 × k, MME_FAR_MIN = 100000)`。編集用の表示は three.js のカメラの近い面・遠い面を `mmeDepthRange` の 1/k にして描き、戻す
+  - ライト・`CONTROLOBJECT` の位置と行列を k 倍。太陽の影のカメラの位置・範囲・近い面・遠い面も k 倍（「影の距離」の意味はそのまま）。地面の影は MMD の単位で 0.1 持ち上げる
+- Part B（ステージの割り当て）:
+  - `MmeScene.stage?: ObjectEffects`（`normalizeObjectEffects` で読む。保存・開く・最初の状態で消える。元に戻すの対象にしない）
+  - `Assignments.slotFor` はステージ（`obj === null`）を、ステージの割り当て（材質 → 物）→ `DefaultEffect`（.pmx のファイル名）→ Main では `default.fx` で決める。`STAGE`・`Owner = Obj | STAGE | null`（ステージを描くときの `(self)`・ステージが持ち主のオフスクリーン）
+  - `MmeEngine.assignStage(tab, materialIndex | null, slot | null)`。エフェクト割当のどのタブにも、ステージがあれば先頭に「ステージ: .pmx のファイル名」の行（`STAGE_ROW_ID`）と材質の行
+  - 手元の e2e は空（`Skybox/Time of day/Time of day.pmx`）をふつうに読み込んでステージにし、`README.png` のとおりに割り当てる。会場のステージと空のステージは同時に使えない（README に書く）
+
+- [ ] **Step 1: 失敗するテストを書く** — `Skinner`（動かして回したモデル → MME の空間の位置。法線は回すだけ。置き方だけ変えても置き直す）、`mmeCamera`、`Assignments`（ステージの割り当て・`DefaultEffect` の .pmx のファイル名・`STAGE` の `self`）、`normalizeMmeScene` の `stage`、`MmeEngine`（ステージの行・`assignStage`・保存と開く・最初の状態）、e2e（ステージに Main で .fx を割り当てるとその色・オフスクリーンで非表示にすると入らない・保存して開き直すと同じ絵）
+- [ ] **Step 2: 走らせて失敗を見る** — `npx vitest run src/core/mme src/engine/mme` と `npx playwright test e2e/mme-stage.spec.ts`
+- [ ] **Step 3: 実装**（Part A → Part B）。値の変わる単体テストは新しい空間に直し、報告に書く
+- [ ] **Step 4: 走らせて通るのを見る** — 同じコマンドと `npx playwright test e2e/mme-*.spec.ts`
+- [ ] **Step 5: 手元の e2e** — `npx playwright test e2e/ray-mmd-local.spec.ts`。絞った絵の平均の明るさ > 0.05、人形の面に光が当たり、空が黒くないこと。Task 15 の残り（肌・髪の材質が `Gbuffer2RT` に 0 を書く）も見直し、まだあれば小さなテストで再現してから直す。絵を `test-results/ray-mmd/` に保存し、目で確かめる
+- [ ] **Step 6: README・ARCHITECTURE・設計書を書く**（MME の空間は MMD の単位、ステージの割り当て、会場と空を同時に使えないこと）
+- [ ] **Step 7: すべてのテストを流す** — `fx/ray-mmd-1.5.2` を一時的によけて `CI=1 E2E_GL=software npm run test:all`（終わったら戻す）
+- [ ] **Step 8: コミット**（Part A・Part B・ドキュメントと計画を分ける）
