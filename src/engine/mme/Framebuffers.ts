@@ -87,8 +87,9 @@ export function resolveSurface(
   if (named.colors[0]) lead = colors[0];
   else if (def.kind === 'targets') lead = def.colors[0];
   else {
-    // canvas (や three.js のレンダーターゲット) と自分のターゲットは、1 つのフレームバッファにできない
-    warnings.push('既定の描画先 (canvas) とレンダーターゲットは同時に使えないので、既定の描画先だけに描きます');
+    // canvas (やセルフシャドウの深度マップ) と自分のターゲットは、1 つのフレームバッファにできない
+    const what = def.kind === 'canvas' ? 'canvas' : 'セルフシャドウの深度マップ';
+    warnings.push(`既定の描画先 (${what}) とレンダーターゲットは同時に使えないので、既定の描画先だけに描きます`);
     return { surface: def, warnings };
   }
   if (!lead) return { surface: def, warnings };
@@ -102,8 +103,12 @@ export function resolveSurface(
   }
   while (out.length > 1 && out[out.length - 1] === null) out.pop();
   let d: DepthTarget | null = named.depth ? depth : def.kind === 'targets' ? def.depth : null;
+  // GL では深度と色の大きさをそろえるので、違えば同じ大きさの共有の深度にする。D3D は色より大きい深度を使える
+  // (縮めたターゲットに全面の深度を付けたまま描くのはよくある書き方) ので、警告は小さいときだけ
   if (d && (d.width !== lead.width || d.height !== lead.height)) {
-    if (named.depth) warnings.push(`深度のターゲット ${d.name} の大きさが色のターゲットと違うので、同じ大きさの深度を使います`);
+    if (named.depth && (d.width < lead.width || d.height < lead.height)) {
+      warnings.push(`深度のターゲット ${d.name} が色のターゲットより小さいので、同じ大きさの深度を使います`);
+    }
     d = null;
   }
   return { surface: { kind: 'targets', colors: out, depth: d }, warnings };
@@ -162,16 +167,19 @@ export class Framebuffers {
       const format = this.usable(spec.format, t.name, warnings);
       const sampling = targetSampling(desc, t.name, spec.mipmaps);
       warnings.push(...sampling.warnings);
+      let mipmaps = spec.mipmaps;
+      // 32 ビットの浮動小数は、OES_texture_float_linear がないと LINEAR で読めず、ミップも作れない (generateMipmap が INVALID_OPERATION)
       if (FLOAT32.has(format) && !this.renderer.extensions.has('OES_texture_float_linear')
-        && (sampling.minFilter !== THREE.NearestFilter || sampling.magFilter !== THREE.NearestFilter)) {
-        warnings.push(`浮動小数のレンダーターゲット ${t.name} を LINEAR で読めない環境なので POINT にします`);
+        && (mipmaps || sampling.minFilter !== THREE.NearestFilter || sampling.magFilter !== THREE.NearestFilter)) {
+        warnings.push(`浮動小数のレンダーターゲット ${t.name} を LINEAR で読めない環境なので、POINT にしてミップマップを作りません`);
         sampling.minFilter = THREE.NearestFilter;
         sampling.magFilter = THREE.NearestFilter;
+        mipmaps = false;
       }
-      const key = [spec.width, spec.height, format, spec.mipmaps, sampling.minFilter, sampling.magFilter, sampling.wrapS, sampling.wrapT].join(' ');
+      const key = [spec.width, spec.height, format, mipmaps, sampling.minFilter, sampling.magFilter, sampling.wrapS, sampling.wrapT].join(' ');
       if (old?.kind === 'color' && old.key === key) continue;
       if (old) this.drop(old);
-      targets.set(t.name, this.makeColor(effect, t.name, spec.width, spec.height, format, spec.mipmaps, sampling, key));
+      targets.set(t.name, this.makeColor(effect, t.name, spec.width, spec.height, format, mipmaps, sampling, key));
     }
     return warnings;
   }
@@ -212,7 +220,7 @@ export class Framebuffers {
     const c = [0, 1, 2, 3].map(i => lookup(colors[i] ?? null, 'color'));
     const d = lookup(depth, 'depth');
     const { surface, warnings } = resolveSurface(this.defaultSurface, c, d, { colors: c.map(x => x !== null), depth: d !== null });
-    for (const w of warnings) this.events.warn(w);
+    for (const w of warnings) this.events.warn(effect ? `${effect.name}: ${w}` : w);
     return this.bindSurface(surface);
   }
 
@@ -358,7 +366,8 @@ export class Framebuffers {
     state.bindFramebuffer(gl.FRAMEBUFFER, null);
     if (!ok) {
       const names = colors.filter(c => c).map(c => c!.name).join(', ');
-      const msg = `レンダーターゲット ${names} のフレームバッファを作れません`;
+      const owners = [...new Set([...colors, depth].map(t => t?.effect?.name).filter(Boolean))].join(', ');
+      const msg = `${owners ? `${owners}: ` : ''}レンダーターゲット ${names} のフレームバッファを作れません`;
       if (!this.reported.has(msg)) { this.reported.add(msg); this.events.warn(msg); }
     }
     const rt = new THREE.WebGLRenderTarget(lead.width, lead.height, { depthBuffer: false });
@@ -373,6 +382,7 @@ export class Framebuffers {
   private drop(t: Target): void {
     for (const [key, f] of this.fbos) {
       if (!f.ids.includes(t.id)) continue;
+      // (f.rt は setRenderTargetFramebuffer で付けただけで、GL の資源を持たないので dispose しない。フレームバッファは自分で消す)
       this.gl.deleteFramebuffer(f.fbo);
       this.fbos.delete(key);
     }

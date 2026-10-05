@@ -43,6 +43,8 @@ async function solidBox(page: Page) {
 }
 
 const rgb = (p: number[]) => p.slice(0, 3);
+// 描くときの警告 (MmeRenderer.warnings。Framebuffers の警告もここに出る)
+const warnings = (page: Page) => page.evaluate(() => (window as Win).engine.mme.renderer.warnings as string[]);
 const scale = (c: number[], k: number) => c.map(v => v * k);
 
 test('色の反転: 1 − 元の色', async ({ page }) => {
@@ -52,12 +54,13 @@ test('色の反転: 1 − 元の色', async ({ page }) => {
   const r = await shoot(page, 'png', [FACE, SKY]);
   expect(rgb(r.pixels[0])).toEqual([204, 153, 102]);
   expect(rgb(r.pixels[1])).toEqual([204, 204, 204]); // 1 − ClearColor
+  expect(await warnings(page)).toEqual([]);
   expect(errors).toEqual([]);
 });
 
 test('ViewportRatio = 0.5 の中間のレンダーターゲットを使う 2 pass のぼかし', async ({ page }) => {
   const errors = await openMme(page);
-  // 1. 縦の線 (80・81 列) と横の線 (60・61 行) を ScnMap に描く
+  // 1. 縦の線 (80・81 列) と横の線 (60・61 行) を ScnMap に描く (写した場面の上に描く)
   // 2. 半分の大きさの Half へ、横に 3 タップ (1/4・1/2・1/4) でぼかす (LINEAR。DX9 の画素の位置なら、Half の (i, j) は ScnMap の (2i, 2j) を読む)
   // 3. canvas へ、縦に 3 タップでぼかす (POINT。canvas の (x, y) は Half の (x/2, y/2) を読む)
   const fx = `${HEAD('LINEAR')}
@@ -75,7 +78,7 @@ float4 BlurV(float2 Tex : TEXCOORD0) : COLOR0 {
   float2 d = float2(0, 2.0 / ViewportSize.y);
   return tex2D(HalfSamp, Tex - d) * 0.25 + tex2D(HalfSamp, Tex) * 0.5 + tex2D(HalfSamp, Tex + d) * 0.25;
 }
-${technique('RenderColorTarget0=ScnMap; RenderDepthStencilTarget=DepthBuffer; Pass=Lines; RenderColorTarget0=Half; Pass=BlurH; RenderColorTarget0=; RenderDepthStencilTarget=; Pass=BlurV;',
+${technique(`${CAPTURE}Pass=Lines; RenderColorTarget0=Half; Pass=BlurH; RenderColorTarget0=; RenderDepthStencilTarget=; Pass=BlurV;`,
     pass('Lines', 'Lines()') + pass('BlurH', 'BlurH()') + pass('BlurV', 'BlurV()'))}`;
   expect(await addPost(page, fx)).toBe(true);
   const r = await shoot(page, 'png', [], true);
@@ -93,6 +96,7 @@ ${technique('RenderColorTarget0=ScnMap; RenderDepthStencilTarget=DepthBuffer; Pa
   // 真ん中: 1/4 × 1/2 + 1/2 × 1 + 1/4 × 1/2 = 3/4
   expect(Math.abs(at(80, 60) - 191.5), 'at(80, 60)').toBeLessThanOrEqual(1);
   expect(Math.abs(at(81, 61) - 191.5), 'at(81, 61)').toBeLessThanOrEqual(1);
+  expect(await warnings(page)).toEqual([]);
   expect(errors).toEqual([]);
 });
 
@@ -113,6 +117,7 @@ ${technique(`${CAPTURE}RenderColorTarget0=; RenderDepthStencilTarget=; ClearSetC
   const r = await shoot(page, 'png', [FACE]);
   const want = scale([0.2, 0.1, 0.25], 3 * 255);
   expect(diff(r.pixels[0], want), `${r.pixels[0]} ≈ ${want}`).toBeLessThanOrEqual(2);
+  expect(await warnings(page)).toEqual([]);
   expect(errors).toEqual([]);
 });
 
@@ -135,6 +140,7 @@ ${technique(`${CAPTURE}RenderColorTarget0=A; RenderColorTarget1=B; ClearSetColor
   const r = await shoot(page, 'png', [[0, 1.6, 0.2], [0, 0.4, 0.2]]);
   expect(rgb(r.pixels[0])).toEqual([51, 102, 153]); // A (上)
   expect(rgb(r.pixels[1])).toEqual([153, 102, 51]); // B (下)
+  expect(await warnings(page)).toEqual([]);
   expect(errors).toEqual([]);
 });
 
@@ -159,6 +165,7 @@ ${technique(`${CAPTURE}RenderColorTarget0=; RenderDepthStencilTarget=; Pass=Main
   const at = (x: number, y: number) => r.data.slice((y * W + x) * 4, (y * W + x) * 4 + 3);
   expect(at(10, 10)).toEqual([51, 102, 153]);
   expect(at(W - 10, H - 10)).toEqual([51, 51, 51]); // ClearColor
+  expect(await warnings(page)).toEqual([]);
   expect(errors).toEqual([]);
 });
 
@@ -168,7 +175,7 @@ test('VPOS.y は上の行が 0', async ({ page }) => {
   const fx = `${HEAD()}
 float4 Rows(float2 vpos : VPOS) : COLOR0 { return vpos.y < 1.0 ? float4(1, 0, 0, 1) : vpos.y < 2.0 ? float4(0, 1, 0, 1) : float4(0, 0, 1, 1); }
 float4 Show(float2 Tex : TEXCOORD0, float2 vpos : VPOS) : COLOR0 { return Tex.x < 0.5 ? tex2D(ScnSamp, Tex) : Rows(vpos); }
-${technique('RenderColorTarget0=ScnMap; RenderDepthStencilTarget=DepthBuffer; Pass=Rows; RenderColorTarget0=; RenderDepthStencilTarget=; Pass=Show;',
+${technique(`${CAPTURE}Pass=Rows; RenderColorTarget0=; RenderDepthStencilTarget=; Pass=Show;`,
     pass('Rows', 'Rows()') + pass('Show', 'Show()'))}`;
   expect(await addPost(page, fx)).toBe(true);
   const r = await shoot(page, 'png', [], true);
@@ -176,6 +183,7 @@ ${technique('RenderColorTarget0=ScnMap; RenderDepthStencilTarget=DepthBuffer; Pa
   for (const x of [W / 4, (3 * W) / 4]) {
     expect([at(x, 0), at(x, 1), at(x, 2), at(x, H - 1)], `x = ${x}`).toEqual([[255, 0, 0], [0, 255, 0], [0, 0, 255], [0, 0, 255]]);
   }
+  expect(await warnings(page)).toEqual([]);
   expect(errors).toEqual([]);
 });
 
@@ -186,7 +194,7 @@ test('ViewportOffset を足して 1:1 で写すと、市松模様がにじまな
   const fx = `${HEAD('LINEAR')}
 float4 Checker(float2 vpos : VPOS) : COLOR0 { float2 p = floor(vpos); return float4(fmod(p.x + p.y, 2.0) < 0.5 ? 1 : 0, fmod(p.x, 2.0), fmod(p.y, 2.0), 1); }
 float4 Copy(float2 Tex : TEXCOORD0) : COLOR0 { return tex2D(ScnSamp, Tex); }
-${technique('RenderColorTarget0=ScnMap; RenderDepthStencilTarget=DepthBuffer; Pass=Checker; RenderColorTarget0=; RenderDepthStencilTarget=; Pass=Copy;',
+${technique(`${CAPTURE}Pass=Checker; RenderColorTarget0=; RenderDepthStencilTarget=; Pass=Copy;`,
     pass('Checker', 'Checker()') + pass('Copy', 'Copy()'))}`;
   expect(await addPost(page, fx)).toBe(true);
   const r = await shoot(page, 'png', [], true);
@@ -199,6 +207,7 @@ ${technique('RenderColorTarget0=ScnMap; RenderDepthStencilTarget=DepthBuffer; Pa
     }
   }
   expect(bad).toEqual([]);
+  expect(await warnings(page)).toEqual([]);
   expect(errors).toEqual([]);
 });
 
@@ -219,6 +228,7 @@ ${technique(`${CAPTURE}RenderColorTarget0=B; ClearSetColor=Black; Clear=Color; P
   const r = await shoot(page, 'png', [FACE, SKY]);
   expect(rgb(r.pixels[0])).toEqual([0, 0, 0]); // 箱の前で隠れた
   expect(rgb(r.pixels[1])).toEqual([255, 0, 0]);
+  expect(await warnings(page)).toEqual([]);
   expect(errors).toEqual([]);
 });
 
@@ -230,7 +240,7 @@ texture2D Half : RENDERCOLORTARGET < float2 ViewportRatio = { 0.5, 0.5 }; >;
 sampler2D HalfSamp = sampler_state { texture = <Half>; MinFilter = POINT; MagFilter = POINT; AddressU = CLAMP; AddressV = CLAMP; };
 float4 Mark(float2 vpos : VPOS) : COLOR0 { return float4(floor(vpos) / 255.0, 0, 1); }
 float4 Show(float2 Tex : TEXCOORD0) : COLOR0 { return float4(tex2D(HalfSamp, Tex).rg, ViewportSize.x / 510.0, 1); }
-${technique('RenderColorTarget0=Half; RenderDepthStencilTarget=; Pass=Mark; RenderColorTarget0=; Pass=Show;', pass('Mark', 'Mark()') + pass('Show', 'Show()'))}`;
+${technique(`${CAPTURE}RenderColorTarget0=Half; RenderDepthStencilTarget=; Pass=Mark; RenderColorTarget0=; Pass=Show;`, pass('Mark', 'Mark()') + pass('Show', 'Show()'))}`;
   expect(await addPost(page, fx)).toBe(true);
   for (const [w, h] of [[320, 240], [200, 160]]) {
     await page.evaluate(({ w, h }) => (window as Win).engine.output.set({ width: w, height: h }), { w, h });
@@ -242,6 +252,7 @@ ${technique('RenderColorTarget0=Half; RenderDepthStencilTarget=; Pass=Mark; Rend
     expect(at(w - 1, h - 1)).toEqual([w / 2 - 1, h / 2 - 1, blue]);
     expect(at(w / 2 + 1, 3)).toEqual([w / 4, 1, blue]);
   }
+  expect(await warnings(page)).toEqual([]);
   expect(errors).toEqual([]);
 });
 
@@ -262,6 +273,7 @@ test('ポストエフェクトの順番を入れ替えると結果が変わり�
   await check(c.map(v => 1 - v * 0.5)); // 半分にしてから反転
   await page.evaluate(() => (window as Win).engine.mme.store.setPostEnabled(1, false)); // 反転をオフ
   await check(c.map(v => v * 0.5));
+  expect(await warnings(page)).toEqual([]);
   expect(errors).toEqual([]);
 });
 
@@ -286,6 +298,6 @@ technique T < string MMDPass = "object"; string Script = "RenderColorTarget0=Obj
   expect(await assignFx(page, i, fx)).toBe(true);
   const r = await shoot(page, 'png', [FACE]);
   expect(rgb(r.pixels[0])).toEqual([153, 102, 51]);
-  expect(await page.evaluate(() => (window as Win).engine.mme.renderer.warnings)).toEqual([]);
+  expect(await warnings(page)).toEqual([]);
   expect(errors).toEqual([]);
 });
