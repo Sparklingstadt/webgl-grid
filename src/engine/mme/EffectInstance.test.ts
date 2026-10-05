@@ -290,7 +290,7 @@ describe('EffectInstance', () => {
     expect(m.uniforms[glslOf(prog, 'SampLinear')].value).toBe(linear);
   });
 
-  it('材質のテクスチャは色の空間を変えた写し (元は変えない)、セルフシャドウとレンダーターゲットはそのまま渡す', () => {
+  it('材質のテクスチャは色の空間を変えた写し (元は変えない。上下は元のまま)、セルフシャドウとレンダーターゲットはそのまま渡す', () => {
     const e = loadEffect();
     const inst = new EffectInstance(e, () => {}, async () => pixel([0, 0, 0, 255]));
     const pass = passOf(e, 'P');
@@ -306,7 +306,8 @@ describe('EffectInstance', () => {
     const obj = m.uniforms[glslOf(prog, 'ObjSamp')].value as THREE.Texture;
     expect(obj).not.toBe(matTex);
     expect(obj.source).toBe(matTex.source);
-    expect(obj).toMatchObject({ colorSpace: THREE.NoColorSpace, flipY: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
+    // (形の画像は flipY = true で three.js の UV と組むので、写しも同じ向き)
+    expect(obj).toMatchObject({ colorSpace: THREE.NoColorSpace, flipY: true, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
     expect(matTex).toMatchObject({ colorSpace: THREE.SRGBColorSpace, flipY: true });
     expect(m.uniforms[glslOf(prog, 'ShadowSamp')].value).toBe(shadow);
     expect(m.uniforms[glslOf(prog, 'TargetSamp')].value).toBe(target);
@@ -317,6 +318,11 @@ describe('EffectInstance', () => {
     obj.addEventListener('dispose', disposed);
     matTex.dispose();
     expect(disposed).toHaveBeenCalled();
+    // MMD モデルの画像 (flipY = false) の写しは false のまま
+    const mmdTex = pixel([1, 2, 3, 4]);
+    mmdTex.flipY = false;
+    inst.bind(m, pass, makeCtx(), BUILTINS, { role: name => (name === 'material' ? mmdTex : null) });
+    expect(m.uniforms[glslOf(prog, 'ObjSamp')].value).toMatchObject({ flipY: false });
   });
 
   it('dispose で材質と自分で読んだテクスチャを捨て、あとから読み終えても描き直しを頼まない', async () => {

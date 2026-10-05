@@ -94,6 +94,41 @@ sampler Smp = sampler_state { texture = <Tex>; MINFILTER = POINT; MAGFILTER = PO
   expect(errors).toEqual([]);
 });
 
+test('形 (立方体) に上が赤・下が青の画像を貼ると、標準のエンジンと同じく上が赤', async ({ page }) => {
+  const errors = await openMme(page);
+  await setCamera(page, { yaw: Math.PI / 2, pitch: 0.05, dist: 3, ty: 0.5 });
+  const i = await addShape(page, 0, [0, 0]);
+  // ふつうの画像の読み方 (形に使うので flipY = true) で読み、ベースカラーにつなぐ
+  const png = await redBluePng(page);
+  const why = await page.evaluate(async ({ i, png }) => {
+    const { engine } = window as Win;
+    engine.selection.select(engine.world.objects[i]);
+    const file = new File([Uint8Array.from(atob(png), c => c.charCodeAt(0))], 'tex.png', { type: 'image/png' });
+    const image = await engine.materials.openImage(file);
+    const node = engine.materials.addNode('image', 0, 0);
+    engine.materials.setNodeProp(node, 'image', image);
+    const bsdf = engine.materials.surfaceShader();
+    const why = engine.materials.connect({ node, socket: 'color' }, { node: bsdf.id, socket: 'baseColor' });
+    engine.selection.select(null);
+    return why;
+  }, { i, png });
+  expect(why).toBeNull();
+  const top: [number, number, number] = [0, 0.8, 0.5], bottom: [number, number, number] = [0, 0.2, 0.5];
+  // 標準のエンジン: 上が赤っぽく、下が青っぽい (光で色は変わる)
+  await page.evaluate(() => (window as Win).engine.mme.set({ engine: 'standard' }));
+  const std = await shoot(page, 'png', [top, bottom]);
+  expect(std.pixels[0][0], `${std.pixels[0]}`).toBeGreaterThan(std.pixels[0][2] + 40);
+  expect(std.pixels[1][2], `${std.pixels[1]}`).toBeGreaterThan(std.pixels[1][0] + 40);
+  // MME 互換: 画像の色をそのまま出す .fx で、同じ向き
+  await page.evaluate(() => (window as Win).engine.mme.set({ engine: 'mme' }));
+  const fx = objectFx('return tex2D(Smp, Uv);', `texture Tex : MATERIALTEXTURE;
+sampler Smp = sampler_state { texture = <Tex>; MINFILTER = POINT; MAGFILTER = POINT; };`);
+  expect(await assignFx(page, i, fx)).toBe(true);
+  const r = await shoot(page, 'png', [top, bottom]);
+  expect(r.pixels).toEqual([[255, 0, 0, 255], [0, 0, 255, 255]]);
+  expect(errors).toEqual([]);
+});
+
 test('片面の四角は表からだけ見える (CullMode = CCW)', async ({ page }) => {
   const errors = await openMme(page);
   // MMD の前 (−z) の側面の四角 1 枚 (片面・影なし・輪郭線なし)。外 (MMD の −z = three.js の +z) から見て時計回りが表

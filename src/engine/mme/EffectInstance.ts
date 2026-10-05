@@ -436,11 +436,11 @@ export class EffectInstance {
       this.warn(t('サンプラー {name} の形 ({dim}) とテクスチャの形が合いません', { name: s.name, dim: s.dim }));
       return flat ? this.fallbacks.magenta : null;
     }
-    return r.copy ? this.copyFor(s, r.tex) : r.tex;
+    return r.copy ? this.copyFor(s, r.tex, r.keepFlip === true) : r.tex;
   }
 
-  // copy: サンプラーの設定を移した写しを作るか (レンダーターゲットはそのまま渡す)
-  private sourceOf(s: SamplerDecl, textures: TextureSource): { tex: THREE.Texture; copy: boolean } | Fallback {
+  // copy: サンプラーの設定を移した写しを作るか (レンダーターゲットはそのまま渡す)。keepFlip: 写しの上下を元のままにする (標準の材質の画像)
+  private sourceOf(s: SamplerDecl, textures: TextureSource): { tex: THREE.Texture; copy: boolean; keepFlip?: boolean } | Fallback {
     if (s.texture === null) {
       // MMD 標準のシェーダーはセルフシャドウの深度を register(s0) で受け取る
       if (s.register === 's0') {
@@ -459,7 +459,7 @@ export class EffectInstance {
     switch (role) {
       case 'material': case 'sphere': case 'toon': {
         const tex = textures.role(role);
-        return tex ? { tex, copy: true } : 'white';
+        return tex ? { tex, copy: true, keepFlip: role === 'material' } : 'white';
       }
       case 'colorTarget': {
         const tex = textures.role(decl.name);
@@ -484,8 +484,9 @@ export class EffectInstance {
     }
   }
 
-  // サンプラーごと・元のテクスチャごとの写し (source は共有)。ガンマ空間のまま・上下を返さない
-  private copyFor(s: SamplerDecl, orig: THREE.Texture): THREE.Texture {
+  // サンプラーごと・元のテクスチャごとの写し (source は共有)。ガンマ空間のまま。上下は、.fx のフォルダの画像は返さず、
+  // 標準の材質から写す画像 (MATERIALTEXTURE など) は元のまま (形の画像は flipY = true で three.js の UV と組む。MMD モデルのものは元から false)
+  private copyFor(s: SamplerDecl, orig: THREE.Texture, keepFlip: boolean): THREE.Texture {
     let entry = this.copies.get(orig);
     if (!entry) {
       const bySampler = new Map<string, Copy>();
@@ -506,7 +507,7 @@ export class EffectInstance {
     }
     const tex = cloneTexture(orig);
     tex.colorSpace = THREE.NoColorSpace;
-    tex.flipY = false;
+    tex.flipY = keepFlip ? orig.flipY : false;
     this.applySampler(tex, s, canMip(orig));
     entry.bySampler.set(s.name, { tex, version: orig.version });
     return tex;
