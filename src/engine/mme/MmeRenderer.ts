@@ -211,6 +211,8 @@ export class MmeRenderer {
     const fb = this.fb;
     const outer = fb?.defaultSurface;
     if (fb) fb.defaultSurface = fb.current;
+    // 地面の影のステンシルを 0 から始める (ポストエフェクトの深度のターゲットは Clear=Depth でステンシルを消さないので、ここでも消す)
+    fb?.clear(null, null, 0);
     try {
       this.drawItems(items, frame, target);
     } finally {
@@ -547,7 +549,8 @@ export class MmeRenderer {
 
   private drawGeometry(inst: EffectInstance, effect: LoadedEffect, p: Pass, item: DrawItem, sub: Subset, pass: MmdPass, frame: FrameState, target: DrawTarget): void {
     const renderer = this.d.viewport.renderer!;
-    const base: BaseState = { kind: pass === 'zplot' ? 'zplot' : pass === 'edge' ? 'edge' : 'object', doubleSided: sub.doubleSided };
+    const kind = pass === 'zplot' || pass === 'edge' || pass === 'shadow' ? pass : 'object';
+    const base: BaseState = { kind, doubleSided: sub.doubleSided };
     const m = inst.material(p, target.flipY, base);
     if (!m) return;
     const ctx: SemanticContext = {
@@ -630,8 +633,10 @@ export class MmeRenderer {
     renderer.setClearColor(this.clearColor, clearAlpha);
   }
 
+  // 色・深度・ステンシル (0) を消す
   private clear(renderer: THREE.WebGLRenderer): void {
     renderer.state.buffers.color.setMask(true);
+    renderer.state.buffers.stencil.setClear(0);
     renderer.clear(true, true, true);
   }
 

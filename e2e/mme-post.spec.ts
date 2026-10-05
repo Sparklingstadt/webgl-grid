@@ -1,5 +1,5 @@
 import { expect, test, type Page } from './fixtures/test';
-import { addPmx, addPost, assignFx, diff, objectFx, openMme, setCamera, shoot, type Vec3 } from './mme-helpers';
+import { addPmx, addPost, assignFx, diff, objectFx, openMme, setCamera, setSun, shoot, type Vec3 } from './mme-helpers';
 import type { Win } from './helpers';
 
 // MME 互換のポストエフェクトとレンダーターゲット (Script・入れ子・MRT・深度のターゲット・向き・半ピクセル)。
@@ -298,6 +298,37 @@ technique T < string MMDPass = "object"; string Script = "RenderColorTarget0=Obj
   expect(await assignFx(page, i, fx)).toBe(true);
   const r = await shoot(page, 'png', [FACE]);
   expect(rgb(r.pixels[0])).toEqual([153, 102, 51]);
+  expect(await warnings(page)).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test('地面の影は重なっても 1 回だけ暗くなる (ステンシル)。ポストエフェクトがあってもなくても', async ({ page }) => {
+  const errors = await openMme(page);
+  // 太陽は左手前の上から (影は右奥へ、高さ 2 の箱で長さ 2)。B は A の影の中に立つので、B より先では 2 つの影が重なる。
+  // (両面の材質なので、1 つの箱の影の中でも表と裏の三角形が重なる)。カメラは上から地面を見る
+  await setSun(page, { azimuthDeg: 150, elevationDeg: 45 });
+  await setCamera(page, { yaw: Math.PI / 2, pitch: 1.2, dist: 7, tx: 0.8, tz: -0.5 });
+  await addPmx(page, { name: 'A', flags: 0x03, at: [0, 0] });
+  await addPmx(page, { name: 'B', flags: 0x03, at: [0.43, -0.25] });
+  const both: Vec3 = [0.87, 0, -0.5];    // A と B の影が重なる地面
+  const single: Vec3 = [1.95, 0, -1.13]; // B の影だけの地面
+  const look = async (bg: number, where: 'png' | 'viewport' = 'png') => {
+    const r = await shoot(page, where, [both, single]);
+    const half = [bg * 0.5, bg * 0.5, bg * 0.5];
+    expect(diff(r.pixels[1], half), `${r.pixels[1]}`).toBeLessThanOrEqual(2);
+    expect(diff(r.pixels[0], r.pixels[1]), `${r.pixels[0]} = ${r.pixels[1]}`).toBeLessThanOrEqual(1);
+  };
+  // (ステンシルはフレームごとに消すので、何度描いても同じ。ビューポートは大きさが変わらないので、深度のターゲットを作り直さない)
+  await page.evaluate(() => { (window as Win).engine.graph.grid.visible = false; });
+  await look(0x3d);
+  await look(0x3d, 'viewport');
+  await look(0x3d, 'viewport');
+  // 場面を自分のレンダーターゲットと深度のターゲット (Clear=Depth はステンシルを消さない) に描いて、そのまま写すポストエフェクト
+  // (背景は ClearColor の 51)
+  expect(await addPost(page, filterFx('return c;'))).toBe(true);
+  await look(51);
+  await look(51, 'viewport');
+  await look(51, 'viewport');
   expect(await warnings(page)).toEqual([]);
   expect(errors).toEqual([]);
 });

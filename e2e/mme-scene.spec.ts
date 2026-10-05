@@ -21,7 +21,7 @@ test('default.fx: 材質の色・輪郭線・地面の影', async ({ page }) => 
   // 材質の色: MMD の式 saturate(拡散色 × ライトの色 + 環境色) (トゥーンの明るい側は白・反射は 0)
   const expected = [[0.9, 0.4], [0.7, 0.3], [0.5, 0.2]].map(([d, a]) => Math.round(Math.min(1, d * LIGHT + a) * 255));
   expect(diff(r.pixels[0], expected), `${r.pixels[0]} ≈ ${expected}`).toBeLessThanOrEqual(3);
-  // 地面の影: 半透明の黒 (不透明度 0.5) を背景に 1 回重ねた灰色 (この位置では三角形は重ならない。重なると濃くなる: ステンシルはまだ使わない)
+  // 地面の影: 半透明の黒 (不透明度 0.5) を背景に 1 回重ねた灰色 (三角形が重なってもステンシルで 1 回だけ)
   const g = r.pixels[1];
   expect(diff(g, [BG[0] * 0.5, BG[0] * 0.5, BG[0] * 0.5]), `${g}`).toBeLessThanOrEqual(2);
   // 輪郭線: 面の真ん中から左へたどると、背景の手前に黒い帯がある (法線が水平なので、上下には広がらない)

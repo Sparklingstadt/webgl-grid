@@ -15,8 +15,8 @@ export interface DrawBuiltins { flipY: 1 | -1; halfPixel: [number, number]; view
 export interface TextureSource {
   role(name: string): THREE.Texture | null; // 'material' | 'sphere' | 'toon' | 'selfShadow' と、レンダーターゲットの名前
 }
-// pass を描く場面。MMD がデバイスに残しているステート (pass のステートの前に置く) を決める。shadow は 'object'
-export interface BaseState { kind: 'object' | 'zplot' | 'edge' | 'post'; doubleSided: boolean }
+// pass を描く場面。MMD がデバイスに残しているステート (pass のステートの前に置く) を決める
+export interface BaseState { kind: 'object' | 'shadow' | 'zplot' | 'edge' | 'post'; doubleSided: boolean }
 export type Decode = (bytes: Uint8Array, path: string) => Promise<THREE.Texture>;
 
 // three.js は frontFace を CCW にしているので、FrontSide は「CW を消す」。上下を返すと回る向きが逆になる
@@ -153,12 +153,20 @@ function baseStates(base: BaseState): RenderState[] {
       { name: 'ZWriteEnable', value: false }, { name: 'CullMode', value: 'NONE' },
     ];
   }
-  return [
+  const states: RenderState[] = [
     { name: 'AlphaBlendEnable', value: base.kind !== 'zplot' },
     { name: 'SrcBlend', value: 'SRCALPHA' }, { name: 'DestBlend', value: 'INVSRCALPHA' },
     { name: 'ZEnable', value: true }, { name: 'ZWriteEnable', value: true }, { name: 'ZFunc', value: 'LESSEQUAL' },
     { name: 'CullMode', value: base.kind === 'edge' ? 'CW' : base.doubleSided ? 'NONE' : 'CCW' },
   ];
+  // 地面の影: 書いた画素のステンシルを 1 にし、1 の画素には描かない (影が重なっても 1 回だけ暗くする。ステンシルはフレームの初めに 0 で消す)
+  if (base.kind === 'shadow') {
+    states.push(
+      { name: 'StencilEnable', value: true }, { name: 'StencilFunc', value: 'NOTEQUAL' }, { name: 'StencilRef', value: 1 },
+      { name: 'StencilFail', value: 'KEEP' }, { name: 'StencilZFail', value: 'KEEP' }, { name: 'StencilPass', value: 'REPLACE' },
+    );
+  }
+  return states;
 }
 
 // --- uniform の値 ---

@@ -39,6 +39,7 @@ technique T {
   pass Plain { VertexShader = compile vs_3_0 VS(); PixelShader = compile ps_3_0 PS(); }
   pass Blend { AlphaBlendEnable = TRUE; VertexShader = compile vs_3_0 VS(); PixelShader = compile ps_3_0 PS(); }
   pass Empty { }
+  pass NoStencil { StencilEnable = FALSE; VertexShader = compile vs_3_0 VS(); PixelShader = compile ps_3_0 PS(); }
 }
 `;
 
@@ -176,6 +177,17 @@ describe('EffectInstance', () => {
     expect(inst.material(plain, 1, { kind: 'zplot', doubleSided: false })).toMatchObject({ blending: THREE.NoBlending, depthTest: true, side: THREE.BackSide });
     expect(inst.material(plain, 1, { kind: 'edge', doubleSided: false })).toMatchObject({ blending: THREE.CustomBlending, side: THREE.FrontSide });
     expect(inst.material(plain, 1, { kind: 'post', doubleSided: false })).toMatchObject({ blending: THREE.NoBlending, depthTest: false, depthWrite: false, side: THREE.DoubleSide });
+    // 地面の影: MMD のデバイスのステンシル (1 画素に 1 回だけ重ねる)。ほかの場面はステンシルを使わない
+    const shadow = inst.material(plain, 1, { kind: 'shadow', doubleSided: false })!;
+    expect(shadow).toMatchObject({
+      blending: THREE.CustomBlending, depthTest: true, side: THREE.BackSide,
+      stencilWrite: true, stencilFunc: THREE.NotEqualStencilFunc, stencilRef: 1, stencilFuncMask: 0xff, stencilWriteMask: 0xff,
+      stencilFail: THREE.KeepStencilOp, stencilZFail: THREE.KeepStencilOp, stencilZPass: THREE.ReplaceStencilOp,
+    });
+    expect(shadow).not.toBe(inst.material(plain, 1, OBJECT));
+    expect(inst.material(plain, 1, OBJECT)!.stencilWrite).toBe(false);
+    // .fx が書いたステンシルのステートが勝つ
+    expect(inst.material(passOf(e, 'NoStencil'), 1, { kind: 'shadow', doubleSided: false })!.stencilWrite).toBe(false);
     // pass が書いたステートが勝つ
     expect(inst.material(passOf(e, 'P'), 1, OBJECT)).toMatchObject({ blending: THREE.NoBlending, side: THREE.DoubleSide });
     // ポストエフェクトでも MMD が残した SRCALPHA・INVSRCALPHA を使う (AlphaBlendEnable だけを書いた pass)
