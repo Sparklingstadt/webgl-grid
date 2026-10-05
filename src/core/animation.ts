@@ -3,8 +3,8 @@ import { DEG } from './constants';
 import { msg } from './i18n';
 import { ZERO_BONE, type BoneValue } from './types';
 
-// --- キーフレームのアニメーション (ボーン・表情・物のチャンネルごと) ---
-// チャンネル (ボーン 1 本・表情 1 つ・物の位置 X など 1 つ) ごとに、フレーム → キー を持つ。
+// --- キーフレームのアニメーション (ボーン・表情・物・MME のチャンネルごと) ---
+// チャンネル (ボーン 1 本・表情 1 つ・物の位置 X など 1 つ・MME の値 1 つ) ごとに、フレーム → キー を持つ。
 // キーには、1 つ前のキーからこのキーまでのつなぎ方 (補間曲線) を持たせる (MMD と同じく、行き先のキーに付ける)。
 // 補間曲線は (0,0)-(x1,y1)-(x2,y2)-(1,1) の 3 次ベジェ曲線で、横が時間・縦が進み具合 (0〜1)
 export type Curve = [x1: number, y1: number, x2: number, y2: number];
@@ -22,8 +22,9 @@ export interface Animation {
   bones: Map<number, Map<number, BoneKey>>;  // ボーンの番号 → フレーム → キー
   morphs: Map<number, Map<number, MorphKey>>; // 表情の番号 → フレーム → キー
   props: Map<number, Map<number, MorphKey>>;  // 物の値 (PROPS の番号: 位置 X・位置 Z・回転・大きさ) → フレーム → キー
+  mme: Map<number, Map<number, MorphKey>>;    // MME の値 (物の MME のチャンネルの名前の一覧 (Obj.mmeChannels) の番号) → フレーム → キー
 }
-export type Channel = { kind: 'bone' | 'morph' | 'prop'; index: number };
+export type Channel = { kind: 'bone' | 'morph' | 'prop' | 'mme'; index: number };
 // 物 (形・ライト・カメラ) のキーにする値 (Blender の位置・回転・拡大縮小と、ライトの強さ・色、カメラの視野角)。回転はラジアン。
 // 番号はプロジェクトに保存するので、足すときは後ろに足す
 export const PROPS = [
@@ -40,10 +41,11 @@ export const PROPS = [
 ] as const;
 export type PropKey = typeof PROPS[number]['key'];
 
-export const createAnimation = (): Animation => ({ bones: new Map(), morphs: new Map(), props: new Map() });
-export const isEmpty = (a: Animation | null | undefined) => !a || (!a.bones.size && !a.morphs.size && !a.props.size);
-const mapsOf = (a: Animation) => [a.bones, a.morphs, a.props] as Map<number, Map<number, unknown>>[];
-const mapOf = (a: Animation, kind: Channel['kind']) => (kind === 'bone' ? a.bones : kind === 'morph' ? a.morphs : a.props) as Map<number, Map<number, unknown>>;
+export const createAnimation = (): Animation => ({ bones: new Map(), morphs: new Map(), props: new Map(), mme: new Map() });
+export const isEmpty = (a: Animation | null | undefined) => !a || (!a.bones.size && !a.morphs.size && !a.props.size && !a.mme.size);
+const KINDS = ['bone', 'morph', 'prop', 'mme'] as const;
+const mapsOf = (a: Animation) => [a.bones, a.morphs, a.props, a.mme] as Map<number, Map<number, unknown>>[];
+const mapOf = (a: Animation, kind: Channel['kind']) => (kind === 'bone' ? a.bones : kind === 'morph' ? a.morphs : kind === 'prop' ? a.props : a.mme) as Map<number, Map<number, unknown>>;
 
 // 補間曲線の、時間 x (0〜1) のときの進み具合
 export function curveAt([x1, y1, x2, y2]: Curve, x: number) {
@@ -74,7 +76,20 @@ function around<K>(keys: Map<number, K>, f: number): [number, K, number, K] | nu
 }
 const _qa = new THREE.Quaternion(), _qb = new THREE.Quaternion(), _e = new THREE.Euler();
 
-export function evaluate(anim: Animation, f: number): { pose: Map<number, BoneValue>; morphs: Map<number, number>; props: Map<number, number> } {
+// 数 1 つのチャンネル (表情・物の値・MME の値) は線形補間
+function evaluateScalars(channels: Map<number, Map<number, MorphKey>>, f: number) {
+  const out = new Map<number, number>();
+  for (const [ch, keys] of channels) {
+    const r = around(keys, f);
+    if (!r) continue;
+    const [f0, k0, f1, k1] = r;
+    const s = f1 > f0 ? curveAt(k1.curve, (f - f0) / (f1 - f0)) : 0;
+    out.set(ch, k0.v + (k1.v - k0.v) * s);
+  }
+  return out;
+}
+
+export function evaluate(anim: Animation, f: number): { pose: Map<number, BoneValue>; morphs: Map<number, number>; props: Map<number, number>; mme: Map<number, number> } {
   const pose = new Map<number, BoneValue>();
   for (const [bone, keys] of anim.bones) {
     const r = around(keys, f);
@@ -91,23 +106,7 @@ export function evaluate(anim: Animation, f: number): { pose: Map<number, BoneVa
       px: a.px + (c.px - a.px) * s, py: a.py + (c.py - a.py) * s, pz: a.pz + (c.pz - a.pz) * s,
     });
   }
-  const morphs = new Map<number, number>();
-  for (const [m, keys] of anim.morphs) {
-    const r = around(keys, f);
-    if (!r) continue;
-    const [f0, k0, f1, k1] = r;
-    const s = f1 > f0 ? curveAt(k1.curve, (f - f0) / (f1 - f0)) : 0;
-    morphs.set(m, k0.v + (k1.v - k0.v) * s);
-  }
-  const props = new Map<number, number>();
-  for (const [p, keys] of anim.props) {
-    const r = around(keys, f);
-    if (!r) continue;
-    const [f0, k0, f1, k1] = r;
-    const s = f1 > f0 ? curveAt(k1.curve, (f - f0) / (f1 - f0)) : 0;
-    props.set(p, k0.v + (k1.v - k0.v) * s);
-  }
-  return { pose, morphs, props };
+  return { pose, morphs: evaluateScalars(anim.morphs, f), props: evaluateScalars(anim.props, f), mme: evaluateScalars(anim.mme, f) };
 }
 
 // --- 編集 ---
@@ -137,16 +136,19 @@ export function insertKeys(anim: Animation, frame: number, pose: Map<number, Bon
   }
   return n;
 }
-// 物の値 (values: PROPS の順) を、フレームに打つ。すでにキーがあれば値だけ替える。打ったチャンネルの数を返す
-// values: [PROPS の番号, 値]
-export function insertPropKeys(anim: Animation, frame: number, values: [number, number][]) {
-  values.forEach(([p, v]) => {
-    let keys = anim.props.get(p);
-    if (!keys) anim.props.set(p, keys = new Map());
+// 数 1 つのチャンネルに、フレームのキーを打つ。すでにキーがあれば値だけ替える。打ったチャンネルの数を返す
+function insertScalarKeys(channels: Map<number, Map<number, MorphKey>>, frame: number, values: [number, number][]) {
+  values.forEach(([ch, v]) => {
+    let keys = channels.get(ch);
+    if (!keys) channels.set(ch, keys = new Map());
     keys.set(frame, { v, curve: [...(keys.get(frame)?.curve ?? LINEAR)] as Curve });
   });
   return values.length;
 }
+// 物の値 (values: [PROPS の番号, 値]) を、フレームに打つ
+export const insertPropKeys = (anim: Animation, frame: number, values: [number, number][]) => insertScalarKeys(anim.props, frame, values);
+// MME の値 (values: [MME のチャンネルの番号, 値]) を、フレームに打つ
+export const insertMmeKeys = (anim: Animation, frame: number, values: [number, number][]) => insertScalarKeys(anim.mme, frame, values);
 // キーのあるフレーム (全チャンネルをまとめて)
 export function keyFrames(anim: Animation | null | undefined): number[] {
   if (!anim) return [];
@@ -187,7 +189,7 @@ export interface ClipChannel { kind: Channel['kind']; index: number; keys: [numb
 const cloneKey = <K extends BoneKey | MorphKey>(k: K): K => ({ v: typeof k.v === 'object' ? { ...k.v } : k.v, curve: [...k.curve] as Curve }) as K;
 export function copyKeys(anim: Animation, frames: Iterable<number>): ClipChannel[] {
   const fs = new Set(frames), first = Math.min(...fs), out: ClipChannel[] = [];
-  for (const kind of ['bone', 'morph', 'prop'] as const) {
+  for (const kind of KINDS) {
     for (const [index, keys] of mapOf(anim, kind) as Map<number, Map<number, BoneKey | MorphKey>>) {
       const ks = [...keys].filter(([f]) => fs.has(f)).sort((a, b) => a[0] - b[0]).map(([f, k]) => [f - first, cloneKey(k)] as [number, BoneKey | MorphKey]);
       if (ks.length) out.push({ kind, index, keys: ks });
@@ -212,16 +214,21 @@ export interface AnimationJson {
   bones: [number, [number, BoneValue, Curve][]][];
   morphs: [number, [number, number, Curve][]][];
   props?: [number, [number, number, Curve][]][]; // (物の値。前の版にはない)
+  mme?: [number, [number, number, Curve][]][];   // (MME の値。前の版にはない)
 }
+const scalarsToJson = (m: Map<number, Map<number, MorphKey>>): [number, [number, number, Curve][]][] => [...m].map(([ch, keys]) => [ch, [...keys].map(([f, k]) => [f, k.v, [...k.curve] as Curve])]);
+const scalarsFromJson = (j: [number, [number, number, Curve][]][] | undefined) => new Map((j ?? []).map(([ch, keys]) => [ch, new Map(keys.map(([f, v, curve]) => [f, { v, curve: [...curve] as Curve }]))]));
 export const animationToJson = (a: Animation): AnimationJson => ({
   bones: [...a.bones].map(([b, keys]) => [b, [...keys].map(([f, k]) => [f, { ...k.v }, [...k.curve] as Curve])]),
-  morphs: [...a.morphs].map(([m, keys]) => [m, [...keys].map(([f, k]) => [f, k.v, [...k.curve] as Curve])]),
-  ...(a.props.size ? { props: [...a.props].map(([p, keys]) => [p, [...keys].map(([f, k]) => [f, k.v, [...k.curve] as Curve])]) } : {}),
+  morphs: scalarsToJson(a.morphs),
+  ...(a.props.size ? { props: scalarsToJson(a.props) } : {}),
+  ...(a.mme.size ? { mme: scalarsToJson(a.mme) } : {}),
 });
 export const animationFromJson = (j: AnimationJson): Animation => ({
   bones: new Map(j.bones.map(([b, keys]) => [b, new Map(keys.map(([f, v, curve]) => [f, { v: { ...v }, curve: [...curve] as Curve }]))])),
-  morphs: new Map(j.morphs.map(([m, keys]) => [m, new Map(keys.map(([f, v, curve]) => [f, { v, curve: [...curve] as Curve }]))])),
-  props: new Map((j.props ?? []).map(([p, keys]) => [p, new Map(keys.map(([f, v, curve]) => [f, { v, curve: [...curve] as Curve }]))])),
+  morphs: scalarsFromJson(j.morphs),
+  props: scalarsFromJson(j.props),
+  mme: scalarsFromJson(j.mme),
 });
 // 前の形 (フレームごとにポーズ全体と表情すべて) から変換する。つなぎ方は直線
 export function animationFromPoseKeys(keys: [number, { pose: [number, BoneValue][]; morphs: number[] | null }][]): Animation {

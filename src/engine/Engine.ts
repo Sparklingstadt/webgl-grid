@@ -3,6 +3,7 @@ import { radiusOf } from '../core/stacking';
 import { applyObjectData } from './addons/registry';
 import { cameraAim, type CameraSettings } from '../core/camera';
 import type { LightSettings, LightType } from '../core/light';
+import type { MmeObjData } from '../core/mme/settings.ts';
 import { FPS } from '../core/constants';
 import { SONG_FILE } from '../core/models';
 import { errorText } from '../core/errors';
@@ -45,6 +46,7 @@ import { InputController } from './view/InputController';
 import { TransformTool } from './view/TransformTool';
 import { Lights } from './world/Lights';
 import { Cameras } from './world/Cameras';
+import { MmeObjects } from './world/MmeObjects';
 import { Hierarchy } from './world/Hierarchy';
 import { nameOf } from './world/Selection';
 import { ColorPicker } from './world/ColorPicker';
@@ -76,6 +78,7 @@ export class Engine {
   readonly selection = new Selection(this.world, this.ui);
   readonly lights = new Lights(this.world, this.viewport);
   readonly cameras = new Cameras(this.world, this.viewport);
+  readonly mmeObjects = new MmeObjects(this.world); // MME の物 (仮のコントローラー・仮のアクセサリ)
   readonly hierarchy = new Hierarchy(this.world); // 親子付け
   readonly materials = new MaterialEditor(this.library, this.world, this.selection, this.ui);
   readonly picker = new ColorPicker(this.world, this.viewport, this.ui);
@@ -96,9 +99,11 @@ export class Engine {
   // レンダーエンジン「MME 互換」(.fx で描く)。効果のあとに作り、その描画 (drawOverride) を包む
   readonly mme = new MmeEngine({
     viewport: this.viewport, graph: this.graph, world: this.world, selection: this.selection, clock: this.clock,
-    library: this.library, ui: this.ui, output: this.output, stage: () => this.stage.model,
+    library: this.library, ui: this.ui, output: this.output, keyframes: this.keyframes, mmeObjects: this.mmeObjects,
+    stage: () => this.stage.model,
     edited: () => this.history.soon(),
     sceneEdited: () => this.autosave.schedule(),
+    checkpoint: () => this.history.checkpoint(),
   });
   readonly loader = new MmdLoader(this.ui, this.library, () => this.viewport.requestDraw());
   readonly vpd = new VpdIO(this.posing, this.viewport, this.ui);
@@ -116,8 +121,8 @@ export class Engine {
     registerBuiltins(this);
     // キーのあるライト・カメラの強さ・色・視野角・高さを、再生に合わせて当てる
     this.keyframes.target = { light: (o, p) => this.lights.set(o, p), camera: (o, p) => this.cameras.set(o, p) };
-    // 元に戻した・やり直したら、コレクションの表示と、親の位置を合わせ直す
-    this.history.events.on('restored', () => { this.applyCollections(); this.hierarchy.resetPoses(); });
+    // 元に戻した・やり直したら、コレクションの表示と、親の位置と、MME の値の欄 (物の値 mmeValues は描き直しを待たずに) を合わせ直す
+    this.history.events.on('restored', () => { this.applyCollections(); this.hierarchy.resetPoses(); this.mme.publish(); });
     // ステージ・カメラモーションを付けた・外したことも、元に戻せる (外したものは、しばらく取っておく)
     this.history.addExtra({
       key: 'stage', label: msg('ステージ'),
@@ -285,6 +290,7 @@ export class Engine {
     const list = this.selection.list;
     if (!list.length) return;
     for (const o of list) {
+      if (o.mmeObj) continue; // (MME の物は場面の位置を持たない)
       if (what === 'location') { o.x = 0; o.z = 0; }
       else if (what === 'rotation') o.r = 0;
       else if (canScale(o)) o.scale = undefined;
@@ -352,7 +358,7 @@ export class Engine {
     const r = canvas.getBoundingClientRect(), cam = this.graph.camera, v = new THREE.Vector3();
     const [l, rr, top, bottom] = [Math.min(x0, x1), Math.max(x0, x1), Math.min(y0, y1), Math.max(y0, y1)];
     const hits = this.world.objects.filter(o => {
-      if (o.hidden || o.colHidden) return false;
+      if (o.hidden || o.colHidden || o.mmeObj) return false; // (MME の物は形がないので、ビューポートでは選ばない)
       v.set(o.x, o.py + o.h * (o.scale ?? 1) / 2, o.z).project(cam);
       if (v.z > 1) return false; // (カメラの後ろ)
       const sx = r.left + (v.x + 1) / 2 * r.width, sy = r.top + (1 - v.y) / 2 * r.height;
@@ -361,10 +367,10 @@ export class Engine {
     this.selection.setMany(hits, hits.at(-1) ?? (extend ? this.selection.current : null), extend);
     this.viewport.requestDraw();
   }
-  // プロパティの「オブジェクト」・N パネルから位置・向きを変える
+  // プロパティの「オブジェクト」・N パネルから位置・向きを変える (MME の物は場面の位置を持たない。値は MME のページ)
   setObjProp(key: 'x' | 'z' | 'r', v: number) {
     const o = this.selection.current;
-    if (!o || !Number.isFinite(v)) return;
+    if (!o || o.mmeObj || !Number.isFinite(v)) return;
     if (key === 'r') o.r = v * Math.PI / 180;
     else o[key] = v;
     this.world.settle();
@@ -389,6 +395,15 @@ export class Engine {
     cam.getWorldDirection(dir);
     const { r, tiltDeg } = cameraAim(dir.x, dir.y, dir.z);
     const obj = this.cameras.add({ fov: cam.fov, height: Math.max(cam.position.y, 0.05), tiltDeg, ...settings }, cam.position.x, cam.position.z, r);
+    this.selection.select(obj);
+    this.viewport.requestDraw();
+    return obj;
+  }
+  // --- MME の物 (仮のコントローラー・仮のアクセサリ。形がなく、選ぶのはアウトライナーから) ---
+  // 置いて選ぶ (元に戻せる)。置ける数を超えるときは、知らせて例外にする
+  addMmeObject(data: MmeObjData): Obj {
+    if (this.world.full) { this.ui.toast(t('これ以上置けません')); throw new Error(t('これ以上置けません')); }
+    const obj = this.mmeObjects.add(data);
     this.selection.select(obj);
     this.viewport.requestDraw();
     return obj;
@@ -467,18 +482,23 @@ export class Engine {
         obj = this.lights.add({ ...src.light }, x, z);
       } else if (src.camera) {
         obj = this.cameras.add({ ...src.camera }, x, z, src.r);
+      } else if (src.mmeObj) {
+        obj = this.mmeObjects.add(src.mmeObj);
       } else {
         obj = this.world.addShape(src.s, x, z, src.c);
         src.slots.forEach((id, i) => this.world.setSlot(obj, i, id));
       }
       obj.r = src.r;
-      // 物ごとの値 (表示・アドオンの値。名前は下で番号を付ける)
+      // MME の物は、キーフレーム (MME の値のキー) も写す (モデルは上で写した)
+      if (src.mmeObj) obj.anim = isEmpty(src.anim) ? null : animationFromJson(animationToJson(src.anim!));
+      // 物ごとの値 (表示・MME の値と割り当て・アドオンの値。名前は下で番号を付ける)
       for (const d of this.addons.objectData.list()) {
-        if (d.key === 'name' || d.key === 'light' || d.key === 'camera') continue;
+        if (d.key === 'name' || d.key === 'light' || d.key === 'camera' || d.key === 'mmeObj') continue;
         const v = d.get(src);
         if (v !== undefined && v !== null) applyObjectData(d, obj, structuredClone(v));
       }
       obj.name = this.nextName(nameOf(src));
+      if (obj.mmeObj) obj.mmeObj = { ...obj.mmeObj, name: obj.name }; // (MME の物の名前は、物の名前と同じ)
       if (src.parent !== undefined) this.hierarchy.set(obj, this.hierarchy.parentOf(src)); // (親子付けも写す)
       this.world.settle();
       return obj;
@@ -583,8 +603,9 @@ export class Engine {
   // 名前を付ける (空・null で種類の名前に戻す)
   renameObj(obj: Obj, name: string | null) {
     const n = name?.trim().slice(0, MAX_NAME) || undefined;
-    if (obj.name === n) return;
+    if (obj.name === n || (obj.mmeObj && !n)) return; // (MME の物は名前で照らすので、名前をなしにはしない)
     obj.name = n;
+    if (obj.mmeObj && n) obj.mmeObj = { ...obj.mmeObj, name: n };
     this.objChanged();
   }
   // ビューポートで隠す・レンダリングに写さない (Blender の目とカメラのアイコン)。隠した物は選択を外す
@@ -784,14 +805,16 @@ export class Engine {
 
   // --- キーフレーム ---
   // 選んでいるモデルの、いまのポーズと表情を、いまのフレームに記録する (I)
-  // 形・ライトは、選んでいる物すべての位置・回転・大きさに打つ
+  // 形・ライトは、選んでいる物すべての位置・回転・大きさに打つ。MME の物は MME の値 (MME のページに出す値の全部) に打つ
   insertKey() {
     const obj = this.model;
     if (!obj) {
       const f = this.clock.frame;
       const objs = this.selection.list.filter(o => !isModel(o));
       if (!objs.length) { this.ui.toast(t('キーフレームを打つ物をクリックして選んでください。')); return; }
-      this.keyframes.insertTransform(objs, f);
+      const placed = objs.filter(o => !o.mmeObj);
+      if (placed.length) this.keyframes.insertTransform(placed, f);
+      for (const o of objs) if (o.mmeObj) this.mme.insertKeys(o, f);
       if (f > this.clock.end) this.clock.setRange(this.clock.start, f);
       return;
     }
@@ -861,6 +884,8 @@ export class Engine {
     }
     // 形・ライト (と、モデルの物の値): 位置・回転・大きさ
     for (const p of [...anim.props.keys()].sort((a, b) => a - b)) rows.push(row(t(PROPS[p]?.name ?? String(p)), { kind: 'prop', index: p }));
+    // MME の値 (名前は物の MME のチャンネルの一覧)
+    for (const i of [...anim.mme.keys()].sort((a, b) => a - b)) rows.push(row(t('MME: {name}', { name: obj.mmeChannels?.[i] ?? i }), { kind: 'mme', index: i }));
     return rows;
   }
   // 前後のキーフレーム (選んでいるモデルのキーフレームと、モーションのキーフレーム) へ

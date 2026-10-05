@@ -25,8 +25,9 @@ import type { MmeGeometry, Skinner } from './Skinner';
 // --- 場面を描く: 表 (どの物・材質をどのエフェクトで描くか) のとおりに、ステージと置いた物を、モデルごとに
 // 地面の影・本体・輪郭線の順で描く。セルフシャドウの深度マップ (zplot) も描く。Main の表とオフスクリーンの表で使う ---
 
-// 材質の部分を描くもの: エフェクトか、描かない (hide)
-export type Slot = { kind: 'effect'; effect: LoadedEffect } | { kind: 'hide' };
+// 材質の部分を描くもの: エフェクトか、描かない (hide)。assigned: 物 (ステージ) のそのタブの割り当てで決まったエフェクト
+// (描くときに、その物のパラメータの値で uniform を上書きする。DefaultEffect だけで決まったもの・default.fx は初期値)
+export type Slot = { kind: 'effect'; effect: LoadedEffect; assigned?: true } | { kind: 'hide' };
 export type SlotFor = (obj: Obj | null /* ステージは null */, mesh: THREE.Mesh, materialIndex: number) => Slot;
 export interface PassTable {
   name: string; // 'Main' かオフスクリーンの名前
@@ -52,6 +53,7 @@ export interface ScenePassDeps {
   offscreen(effect: LoadedEffect, name: string, owner: Owner): THREE.Texture | null;
   warn(message: string): void; // どのエフェクトのものでもない警告
   control(ref: ControlRef, self: Owner, owner: Owner): number[] | null; // CONTROLOBJECT の値 (self はいま描いている物。ステージは STAGE)
+  stageParams(): Readonly<Record<string, number>>; // ステージのパラメータの値 (場面の値。物のものは Obj.mmeValues)
 }
 
 // PMX の材質のフラグ
@@ -65,8 +67,8 @@ export interface Subset {
 // 描く物 (メッシュ 1 つ) と、1 フレームの値。obj は置いた物 (ステージは null)。world は物 → MME の空間 (右手系。SemanticContext.world):
 // MMD モデルは置き方を頂点に入れてあるので単位行列 (MMD と同じ)、ほかの物は Scale(MMD_UNITS) · matrixWorld
 export interface DrawItem { obj: Obj | null; mesh: THREE.Mesh; geo: MmeGeometry; subsets: Subset[]; world: THREE.Matrix4 }
-// その表で描く材質の部分と、そのエフェクト
-interface Part { sub: Subset; effect: LoadedEffect }
+// その表で描く材質の部分と、そのエフェクト。assigned: 物 (ステージ) の割り当てで決まった (Slot.assigned)
+interface Part { sub: Subset; effect: LoadedEffect; assigned: boolean }
 interface Toon { tex: THREE.DataTexture; color: Color3; version: number }
 
 const WHITE: Color3 = [1, 1, 1];
@@ -151,7 +153,7 @@ export class ScenePass {
   // セルフシャドウの深度マップ: 影を落とす材質の部分を、いまの描画先に zplot で描く (three.js の render の中で呼ぶ)
   drawSelfShadow(table: PassTable, frame: FrameState, target: DrawTarget): void {
     for (const item of this.collect(frame)) {
-      for (const { sub, effect } of this.parts(table, item)) if (sub.flags & CAST_SELF_SHADOW) this.drawPass(table, effect, item, sub, 'zplot', frame, target);
+      for (const part of this.parts(table, item)) if (part.sub.flags & CAST_SELF_SHADOW) this.drawPass(table, part, item, 'zplot', frame, target);
     }
   }
 
@@ -242,11 +244,11 @@ export class ScenePass {
     const { groundShadow } = this.d.settings;
     for (const item of this.collect(frame)) {
       const parts = this.parts(table, item);
-      if (groundShadow) for (const { sub, effect } of parts) if (sub.flags & GROUND_SHADOW) this.drawPass(table, effect, item, sub, 'shadow', frame, target);
-      for (const { sub, effect } of parts) {
-        this.drawPass(table, effect, item, sub, frame.selfShadow && sub.flags & RECEIVE_SELF_SHADOW ? 'object_ss' : 'object', frame, target);
+      if (groundShadow) for (const part of parts) if (part.sub.flags & GROUND_SHADOW) this.drawPass(table, part, item, 'shadow', frame, target);
+      for (const part of parts) {
+        this.drawPass(table, part, item, frame.selfShadow && part.sub.flags & RECEIVE_SELF_SHADOW ? 'object_ss' : 'object', frame, target);
       }
-      if (item.geo.edge) for (const { sub, effect } of parts) if (sub.flags & EDGE) this.drawPass(table, effect, item, sub, 'edge', frame, target);
+      if (item.geo.edge) for (const part of parts) if (part.sub.flags & EDGE) this.drawPass(table, part, item, 'edge', frame, target);
     }
   }
 
@@ -255,7 +257,7 @@ export class ScenePass {
     const out: Part[] = [];
     for (const sub of item.subsets) {
       const slot = table.slotFor(item.obj, item.mesh, sub.index);
-      if (slot.kind === 'effect') out.push({ sub, effect: slot.effect });
+      if (slot.kind === 'effect') out.push({ sub, effect: slot.effect, assigned: slot.assigned === true });
     }
     return out;
   }
@@ -270,7 +272,7 @@ export class ScenePass {
     if (stage && visibleChain(stage)) this.collectFrom(stage, null, frame, items);
     const outputting = this.d.outputting();
     for (const obj of this.d.world.objects) {
-      if (outputting ? obj.hideRender : obj.hidden || obj.colHidden) continue;
+      if (obj.mmeObj || (outputting ? obj.hideRender : obj.hidden || obj.colHidden)) continue; // (MME の物は形がない。値を読むだけ)
       if (visibleChain(obj.node)) this.collectFrom(obj.node, obj, frame, items);
     }
     this.items = items;
@@ -387,8 +389,10 @@ export class ScenePass {
   }
 
   // --- 描く ---
-  // その MMDPass の technique を選んで (なければ default.fx のもの)、Script のとおりに描く
-  private drawPass(table: PassTable, slotEffect: LoadedEffect, item: DrawItem, sub: Subset, pass: MmdPass, frame: FrameState, target: DrawTarget): void {
+  // その MMDPass の technique を選んで (なければ default.fx のもの)、Script のとおりに描く。
+  // 物 (ステージ) に当てた .fx は、その物のパラメータの値で描く (DefaultEffect だけで決まったもの・代わりの default.fx は初期値)
+  private drawPass(table: PassTable, part: Part, item: DrawItem, pass: MmdPass, frame: FrameState, target: DrawTarget): void {
+    const { sub, effect: slotEffect } = part;
     const s = sub.state;
     const q: TechniqueQuery = { pass, subset: sub.index, useTexture: s.hasTexture, useSphereMap: s.hasSphere, useToon: s.hasToon, selfShadow: frame.selfShadow };
     let effect = slotEffect;
@@ -403,13 +407,15 @@ export class ScenePass {
     // 物の technique の Script: Draw=Geometry でいまの材質の部分を描く。描画先を替えたら、終わったあと既定の描画先に戻す
     const fb = this.d.fb();
     const warn = (m: string) => inst.warn(m); // (そのエフェクトの警告)
-    const st = new ScriptTargets(fb, effect, inst, warn, target);
+    const host = part.assigned && effect === slotEffect ? (item.obj ? item.obj.mmeValues : this.d.stageParams()) : undefined;
+    const overrides = inst.paramValuesOf(host);
+    const st = new ScriptTargets(fb, effect, inst, warn, target, overrides);
     runTechnique(tech, 'object', {
       ...st.commands(),
       drawPass: (p, mode) => {
         if (mode === 'buffer') warn(t('物の .fx の Draw=Buffer にはまだ対応していないので無視します'));
         else if (!inst.stopped) {
-          this.drawGeometry(table, inst, effect, p, item, sub, pass, frame, st.current());
+          this.drawGeometry(table, inst, effect, p, item, sub, pass, frame, st.current(), overrides);
           if (st.changed) fb.afterDraw();
         }
       },
@@ -421,6 +427,7 @@ export class ScenePass {
 
   private drawGeometry(
     table: PassTable, inst: EffectInstance, effect: LoadedEffect, p: Pass, item: DrawItem, sub: Subset, pass: MmdPass, frame: FrameState, target: DrawTarget,
+    overrides: ReadonlyMap<string, number[]> | undefined,
   ): void {
     const renderer = this.d.renderer();
     const kind = pass === 'zplot' || pass === 'edge' || pass === 'shadow' ? pass : 'object';
@@ -441,7 +448,7 @@ export class ScenePass {
         : fb.colorTexture(effect, name)),
       offscreen: name => this.d.offscreen(effect, name, item.obj ?? STAGE),
     };
-    inst.bind(m, p, ctx, builtins(target), textures);
+    inst.bind(m, p, ctx, builtins(target), textures, overrides);
     const geometry = pass === 'edge' && item.geo.edge ? item.geo.edge : item.geo.geometry;
     // (scene と group は null でよい: three.js は空の場面・形全体として扱う)
     renderer.renderBufferDirect(this.d.graph.camera, null as unknown as THREE.Scene, geometry, m, this.proxy, sub.group as THREE.GeometryGroup);

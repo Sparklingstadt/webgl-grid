@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { msg, t } from '../../../core/i18n';
 import type { FxKey, FxLevel } from '../../../engine';
 import type { MmeEffectUi } from '../../../engine/UiChannel';
@@ -37,12 +38,46 @@ function FxResult({ fx }: { fx: MmeEffectUi }) {
   );
 }
 
-// MME 互換 (レンダーエンジンが MME 互換のときだけ): 選んでいる物の .fx・ポストエフェクトの一覧・エフェクト割当・仮のコントローラー
-function MmePanel() {
+// MMD (MME) のエフェクト割当ファイル (.emm) を読む・書き出す
+function EmmButtons() {
+  const engine = useEngine();
+  const input = useRef<HTMLInputElement>(null);
+  return (
+    <div className="row">
+      <button type="button" className="bbtn" title={t('MMD のエフェクト割当ファイルを読んで、名前の合う物に割り当てを戻します')} onClick={() => input.current?.click()}>{t('.emm を読む…')}</button>
+      <button type="button" className="bbtn" title={t('いまの割り当てを MMD のエフェクト割当ファイルにします')} onClick={() => engine.mme.downloadEmm()}>{t('.emm を書き出す')}</button>
+      <input type="file" ref={input} accept=".emm" hidden aria-label={t('.emm を選ぶ')}
+             onChange={e => {
+               const f = e.currentTarget.files?.[0];
+               e.currentTarget.value = '';
+               if (f) void engine.mme.openEmm(f);
+             }} />
+    </div>
+  );
+}
+
+// MME 互換 (レンダーエンジンが MME 互換のときだけ): 選んでいる物の .fx・ポストエフェクトの一覧・エフェクト割当・仮のコントローラー。
+// ポストエフェクトはアクセサリの物に当てた .fx: 上下はアクセサリの並び (アウトライナーと同じ)、オン・オフはアクセサリを隠す
+// (ビューポートでも書き出しでも。オンは両方見せる)、外すはアクセサリを消す
+function MmePanel({ onShowValues }: { onShowValues?: () => void }) {
   const engine = useEngine();
   const selected = useUi(s => s.sel !== null); // (動かしているあいだの位置の変化では描き直さない)
   const mme = useUi(s => s.mme);
-  const { store } = engine.mme;
+  const posts = mme.posts;
+  const objOf = (i: number) => engine.world.find(posts[i]?.objId ?? null);
+  // i 番目のポストエフェクトのアクセサリを、隣 (d = -1 は上、1 は下) のポストエフェクトのアクセサリの前 (後) へ
+  const move = (i: number, d: -1 | 1) => {
+    const obj = objOf(i), next = objOf(i + d);
+    if (obj && next) engine.moveObject(obj, next, d < 0 ? 'before' : 'after');
+  };
+  const setEnabled = (i: number, on: boolean) => {
+    const obj = objOf(i);
+    if (obj) engine.setVisibility(obj, { hidden: !on, hideRender: !on });
+  };
+  const remove = (i: number) => {
+    const obj = objOf(i);
+    if (obj) engine.world.remove(obj);
+  };
   return (
     <Panel title={t('MME 互換')}>
       <div className="mme-head">{t('選んでいる物の .fx')}</div>
@@ -55,26 +90,27 @@ function MmePanel() {
       ) : <div className="note">{t('物を選ぶと、その物に .fx を読み込めます')}</div>}
       <div className="mme-head">{t('ポストエフェクト')}</div>
       <MmeEffectPicker label={t('足す…')} inputLabel={t('ポストエフェクトのフォルダを選ぶ')} onPick={(files, entry) => void engine.mme.addPostEffect(files, entry)}>
-        {mme.posts.length ? (
+        {posts.length ? (
           <ul className="mme-posts" aria-label={t('ポストエフェクトの一覧')}>
-            {mme.posts.map((p, i) => (
-              <li key={p.id}>
+            {posts.map((p, i) => (
+              <li key={p.objId}>
                 <div className="mme-post-row">
-                  <BCheck checked={p.enabled} label={t('{name} を使う', { name: p.name })} onChange={on => store.setPostEnabled(i, on)} />
-                  <span className="mme-name" title={p.name}>{p.name}</span>
-                  <button type="button" className="bbtn" aria-label={t('{name} を上へ', { name: p.name })} title={t('上へ')} disabled={i === 0} onClick={() => store.movePost(i, -1)}>↑</button>
-                  <button type="button" className="bbtn" aria-label={t('{name} を下へ', { name: p.name })} title={t('下へ')} disabled={i === mme.posts.length - 1} onClick={() => store.movePost(i, 1)}>↓</button>
-                  <button type="button" className="bbtn" aria-label={t('{name} を外す', { name: p.name })} title={t('外す')} onClick={() => store.removePost(i)}>✕</button>
+                  <BCheck checked={p.enabled} label={t('{name} を使う', { name: p.name })} onChange={on => setEnabled(i, on)} />
+                  <span className="mme-name" title={t('{accessory} に当てた {name}', { accessory: p.accessory, name: p.name })}>{p.name}</span>
+                  <button type="button" className="bbtn" aria-label={t('{name} を上へ', { name: p.name })} title={t('上へ')} disabled={i === 0} onClick={() => move(i, -1)}>↑</button>
+                  <button type="button" className="bbtn" aria-label={t('{name} を下へ', { name: p.name })} title={t('下へ')} disabled={i === posts.length - 1} onClick={() => move(i, 1)}>↓</button>
+                  <button type="button" className="bbtn" aria-label={t('{name} を外す', { name: p.name })} title={t('外す (アクセサリ {accessory} を消す)', { accessory: p.accessory })} onClick={() => remove(i)}>✕</button>
                 </div>
                 <FxResult fx={p} />
               </li>
             ))}
           </ul>
         ) : <div className="note">{t('ポストエフェクトはありません')}</div>}
-        {mme.posts.length > 1 && <div className="note">{t('上のものほど先に (場面の近くで) かかります')}</div>}
+        {posts.length > 1 && <div className="note">{t('上のものほど先に (場面の近くで) かかります')}</div>}
       </MmeEffectPicker>
       <MmeAssignTabs />
-      <MmeControllers />
+      <EmmButtons />
+      <MmeControllers onShowValues={onShowValues} />
       {mme.warnings.length > 0 && (
         <details className="mme-diag">
           <summary className="note">{t('描くときの警告 {n}', { n: mme.warnings.length })}</summary>
@@ -86,14 +122,15 @@ function MmePanel() {
   );
 }
 
-export function FxPage() {
+// onShowValues: 仮のコントローラーの物を選んだら、その値 (サイドバーの「MME」のページ) を見せる
+export function FxPage({ onShowValues }: { onShowValues?: () => void }) {
   const engine = useEngine();
   const state = useUi(s => s.fxState);
   const level = useUi(s => s.fxLevel);
   const mme = useUi(s => s.mme.settings.engine === 'mme');
   return (
     <>
-      {mme && <MmePanel />}
+      {mme && <MmePanel onShowValues={onShowValues} />}
       {mme && <div className="note" style={{ padding: '2px 2px 0' }}>{t('MME 互換で描いているあいだは、下の効果はかかりません')}</div>}
       <div className="note" style={{ padding: '2px 2px 6px' }}>{t('MME 風の効果。オフの効果のスライダーを動かすとオンになります。設定はブラウザに保存されます')}</div>
       {FX_ROWS.map(row => (

@@ -400,9 +400,25 @@ button.ol-twist[aria-expanded="true"]::before { border-left-color: transparent; 
 .mme-row.mme-mat .mme-name { padding-left: 12px; }
 .mme-row .mme-fallback, .mme-row .mme-stopped { grid-column: 2 / -1; padding: 0 6px; min-width: 0; text-align: right; overflow-wrap: anywhere; }
 .mme-toggle { padding: 0; border: 0; background: transparent; color: var(--dim); cursor: pointer; }
-.mme-ctl > summary { cursor: pointer; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.mme-ctl[open] > summary { margin-bottom: 2px; }
-.mme-ctl > .bslider + .bslider { margin-top: 2px; }
+/* 仮のコントローラー: 場面にある名前は物を選ぶリンク、ない名前は「置く」 */
+.mme-ctls { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.mme-ctl-row { display: flex; align-items: center; gap: 3px; min-width: 0; }
+.mme-ctl-row .mme-name { flex: 1; }
+.mme-ctl-row .bbtn { flex: none; padding: 2px 8px; }
+.mme-link { min-width: 0; max-width: 100%; padding: 2px 0; border: 0; background: none; color: #8fb4ec; cursor: pointer; text-align: left;
+            overflow: hidden; white-space: nowrap; text-overflow: ellipsis; text-decoration: underline; }
+/* MME の値のページ: 値の行 (中身と ◆)、アクセサリの行 (名前・数値の欄・◆、Si・Tr は下にスライダー)、ベクトルのパラメータ (成分ごと) */
+.mme-val { display: grid; grid-template-columns: minmax(0, 1fr) 22px; align-items: center; gap: 3px; min-width: 0; }
+.mme-acc { display: grid; grid-template-columns: 28px minmax(0, 1fr) 22px; align-items: center; gap: 3px 6px; min-width: 0; }
+.mme-acc > label { color: var(--dim); text-align: right; }
+.mme-acc > .bslider { grid-column: 2; }
+.mme-vec { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mme-vec > .color-field { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.mme-vec > .color-field > span { text-align: left; color: var(--text); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.mme-fx-params { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.mme-key { width: 22px; height: 22px; padding: 0; border: 0; border-radius: 4px; background: none; color: var(--dim); cursor: pointer; font-size: 13px; }
+.mme-key:hover { background: var(--widget); }
+.mme-key.keyed { color: #e8c547; }
 
 /* --- アプリ独自の入力部品 (Blender 風) --- */
 /* 選択肢: ボタン + 下に開く一覧 */

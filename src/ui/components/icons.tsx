@@ -25,6 +25,7 @@ const ICONS: Record<string, ReactNode> = {
   // マテリアル (赤い球)
   material: <><circle cx="8" cy="8" r="5.5" fill="#c0505a" stroke="#e07080" /><circle cx="6.3" cy="6.3" r="1.4" fill="#f3b0b8" stroke="none" /></>,
   // アドオンが足したタブ (パズル)
+  mme: <path d="M4 2.5v11M8 2.5v11M12 2.5v11M2.5 10h3M6.5 5h3M10.5 8h3" stroke="#7fcf7f" />,
   addon: <path d="M3 5h2.5a1.5 1.5 0 1 1 3 0H11v2.5a1.5 1.5 0 1 1 0 3V13H8.5a1.5 1.5 0 1 0-3 0H3z" stroke="#b9b9b9" strokeLinejoin="round" />,
   // エディターの種類: アウトライナー・プロパティ・3D ビューポート
   outliner: <path d="M3 4h10M5 8h8M5 12h8M3 4v8" stroke="#c8c8c8" />,

@@ -1,10 +1,11 @@
 import { msg } from '../../core/i18n';
 import { normalizeCamera } from '../../core/camera';
 import { normalizeLight } from '../../core/light';
-import { normalizeMmeScene, normalizeObjectEffects } from '../../core/mme/settings.ts';
+import { normalizeMmeObj, normalizeMmeScene, normalizeObjectEffects } from '../../core/mme/settings.ts';
 import { normalizeOutput } from '../../core/output';
 import { normalizeScene } from '../../core/scene';
 import { normalizeMarkers } from '../anim/Markers';
+import { normalizeMmeChannels, normalizeMmeValues } from '../anim/mmeChannels';
 import type { Engine } from '../Engine';
 import { COMMANDS } from '../remote/commands';
 
@@ -14,6 +15,8 @@ export function registerBuiltins(e: Engine) {
   // 物ごとの値
   // ライトは、ライトの物だけ (なしにはできない)
   objectData.add({ key: 'camera', label: msg('カメラ'), get: o => o.camera, set: (o, v) => { if (v && o.camera) e.cameras.set(o, v); }, normalize: raw => normalizeCamera(raw as never) });
+  // MME の物 (仮のコントローラー・仮のアクセサリ) は、MME の物だけ (なしにはできない)。名前は物の名前と同じにする
+  objectData.add({ key: 'mmeObj', label: msg('MME の物'), get: o => o.mmeObj, set: (o, v) => { if (v && o.mmeObj) { o.mmeObj = { ...v }; o.name = v.name; } }, normalize: normalizeMmeObj });
   objectData.add({ key: 'light', label: msg('ライト'), get: o => o.light, set: (o, v) => { if (v && o.light) e.lights.set(o, v); }, normalize: raw => normalizeLight(raw as never) });
   // 名前・表示 (アウトライナー)
   objectData.add({ key: 'name', label: msg('名前'), get: o => o.name ?? null, set: (o, v) => e.renameObj(o, v), normalize: raw => (typeof raw === 'string' && raw.trim() ? raw.trim().slice(0, 64) : null) });
@@ -24,6 +27,9 @@ export function registerBuiltins(e: Engine) {
   objectData.add({ key: 'collection', label: msg('コレクション'), get: o => o.collection ?? null, set: (o, v) => { o.collection = v ?? undefined; }, normalize: raw => (typeof raw === 'string' && raw ? raw.slice(0, 64) : null) });
   // MME 互換の、物ごと・材質ごとのエフェクトの割り当て
   objectData.add({ key: 'mme', label: msg('MME のエフェクト'), get: o => o.mme ?? null, set: (o, v) => e.mme.setObjectEffects(o, v), normalize: normalizeObjectEffects });
+  // MME のチャンネルの名前 (キーの番号の元) と、MME の値のいま (anim/mmeChannels.ts)
+  objectData.add({ key: 'mmeChannels', label: msg('MME のチャンネル'), get: o => o.mmeChannels ?? null, set: (o, v) => { o.mmeChannels = v ?? undefined; }, normalize: normalizeMmeChannels });
+  objectData.add({ key: 'mmeValues', label: msg('MME の値'), get: o => o.mmeValues ?? null, set: (o, v) => { o.mmeValues = v ?? undefined; }, normalize: normalizeMmeValues });
   // 場面の値
   sceneData.add({
     key: 'collections', label: msg('コレクション'), history: true,

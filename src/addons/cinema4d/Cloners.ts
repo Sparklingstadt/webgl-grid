@@ -37,7 +37,8 @@ export class Cloners {
     const cloner = this.settingsOf(obj);
     const old = obj.node.getObjectByName(GROUP);
     if (old) { obj.node.remove(old); disposeClones(old); }
-    const src: THREE.Mesh = isModel(obj) ? obj.model : obj.mesh!;
+    const src: THREE.Mesh | undefined = isModel(obj) ? obj.model : obj.mesh;
+    if (!src) return; // (形のない物 (ライト・カメラ・MME の物) は並べない)
     const proxy = obj.node.children.find(c => c.userData.pickProxy) as THREE.Mesh | undefined;
     // 元の物は隠し、クリックでも当たらないようにする (クローンのどれかを押すと、この物が選ばれる)
     src.visible = !cloner;

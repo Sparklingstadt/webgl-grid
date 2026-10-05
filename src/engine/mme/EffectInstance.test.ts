@@ -247,6 +247,46 @@ describe('EffectInstance', () => {
     expect(inst.warnings.filter(x => x.includes('MOUSEPOSITION'))).toHaveLength(1);
   });
 
+  it('bind の overrides (その物のパラメータの値) は描くたびに初期値を上書きし、なければ初期値に戻る。Script の setParam の値がいちばん強い', () => {
+    const fx = `
+float Strength < float UIMin = 0; float UIMax = 4; > = 1;
+float3 Col < string UIWidget = "Color"; > = {1, 0, 0};
+float4 VS(float4 p : POSITION) : POSITION { return p * Strength; }
+float4 PS() : COLOR0 { return float4(Col, 1); }
+technique T { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = compile ps_3_0 PS(); } }`;
+    const e = loadEffect(fx, []);
+    const inst = new EffectInstance(e, () => {}, async () => pixel([0, 0, 0, 255]));
+    const pass = passOf(e, 'P');
+    const m = inst.material(pass, -1, OBJECT)!;
+    const u = (name: string) => m.uniforms[glslOf(pass.program!, name)].value as unknown;
+    inst.bind(m, pass, makeCtx(), BUILTINS, noTextures(), new Map([['Strength', [3]], ['Col', [0, 1, 0]]]));
+    expect([u('Strength'), u('Col')]).toEqual([3, [0, 1, 0]]);
+    inst.bind(m, pass, makeCtx(), BUILTINS, noTextures());
+    expect([u('Strength'), u('Col')]).toEqual([1, [1, 0, 0]]);
+    // param も overrides を見る (Script の LoopByCount・ClearSetColor など)
+    expect(inst.param('Strength', new Map([['Strength', [2]]]))).toEqual([2]);
+    expect(inst.param('Strength')).toEqual([1]);
+    inst.setParam('Strength', [0.5]);
+    inst.bind(m, pass, makeCtx(), BUILTINS, noTextures(), new Map([['Strength', [3]]]));
+    expect(u('Strength')).toBe(0.5);
+    expect(inst.param('Strength', new Map([['Strength', [2]]]))).toEqual([0.5]);
+  });
+
+  it('paramValuesOf: 物の MME の値から、この .fx (フォルダの id とパス) のパラメータの値を作る (範囲に収める。値がなければ undefined)', () => {
+    const fx = `
+float Strength < float UIMin = 0; float UIMax = 4; > = 1;
+float Hidden < bool UIHidden = true; > = 1;
+float4x4 WVP : WORLDVIEWPROJECTION;
+float4 VS(float4 p : POSITION) : POSITION { return mul(p, WVP) * Strength * Hidden; }
+float4 PS() : COLOR0 { return 1; }
+technique T { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = compile ps_3_0 PS(); } }`;
+    const e = loadEffect(fx, []);
+    const inst = new EffectInstance(e, () => {}, async () => pixel([0, 0, 0, 255]));
+    expect(inst.paramValuesOf(undefined)).toBeUndefined();
+    expect(inst.paramValuesOf({ Si: 1, 'f1/other.fx:Strength': 2 })).toBeUndefined();
+    expect(inst.paramValuesOf({ 'f1/sub/effect.fx:Strength': 9, 'f1/sub/effect.fx:Hidden': 5, 'f1/sub/effect.fx:WVP': 2 })).toEqual(new Map([['Strength', [4]]]));
+  });
+
   it('bind: CONTROLOBJECT は ctx.control の値 (null は 0)。項目にならない宣言 (型が合わない・name がない) は 0 にして 1 回だけ警告', () => {
     const fx = `
 float mA : CONTROLOBJECT < string name = "ctl.pmx"; string item = "A"; >;

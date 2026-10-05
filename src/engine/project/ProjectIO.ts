@@ -6,7 +6,7 @@ import { errorText } from '../../core/errors';
 import { t } from '../../core/i18n';
 import type { CameraSettings } from '../../core/camera';
 import type { LightSettings } from '../../core/light';
-import { normalizeMmeScene } from '../../core/mme/settings.ts';
+import { normalizeMmeObj, normalizeMmeScene } from '../../core/mme/settings.ts';
 import type { Engine } from '../Engine';
 import { applyObjectData } from '../addons/registry';
 import { download } from '../io/download';
@@ -59,7 +59,7 @@ export class ProjectIO {
     let skipped = 0;
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
-      const { missingAddons } = await this.engine.history.batch(() => this.open(bytes, {
+      const { missingAddons, notes: openNotes } = await this.engine.history.batch(() => this.open(bytes, {
         pick: async missing => {
           ui.hideToast();
           const r = await this.askMissing(file.name, missing);
@@ -72,6 +72,7 @@ export class ProjectIO {
       const notes = [
         ...(skipped ? [t('見つからないファイルが {n} 個あります', { n: skipped })] : []),
         ...(missingAddons.length ? [t('アドオン {names} のデータがあります。有効にしてから開き直すと戻ります', { names: missingAddons.join('・') })] : []),
+        ...openNotes,
       ];
       ui.toast(notes.length ? t('{name} を開きました ({notes})', { name: file.name, notes: notes.join('。') }) : t('{name} を開きました', { name: file.name }), notes.length ? 8000 : 4000);
     } catch (err) {
@@ -142,7 +143,7 @@ export class ProjectIO {
       if (parent >= 0) base.parent = parent; // (開き直すと id が変わるので、何番目か)
       // 物ごとの値 (ライト・アドオンのもの)。アドオンの値は、ある物だけ
       for (const d of e.addons.objectData.list()) { const v = d.get(o) ?? null; if (v !== null || !d.key.includes('.')) base[d.key] = v; }
-      if (!isModel(o)) return isEmpty(o.anim) ? base : { ...base, anim: animationToJson(o.anim!) }; // (形・ライトの位置・回転・大きさのキー)
+      if (!isModel(o)) return isEmpty(o.anim) ? base : { ...base, anim: animationToJson(o.anim!) }; // (形・ライトの位置・回転・大きさのキー、MME の物の値のキー)
       const inf: number[] | undefined = o.model.morphTargetInfluences;
       return {
         ...base,
@@ -282,6 +283,9 @@ export class ProjectIO {
         obj = e.lights.add((so.light ?? {}) as Partial<LightSettings>, so.x, so.z);
       } else if (so.kind === 'camera') {
         obj = e.cameras.add((so.camera ?? {}) as Partial<CameraSettings>, so.x, so.z, so.r);
+      } else if (so.kind === 'mme') {
+        const mmeObj = normalizeMmeObj(so.mmeObj); // (値・キー・割り当ては、ほかの物と同じく下で入れる)
+        if (mmeObj) obj = e.mmeObjects.add(mmeObj);
       } else if (so.kind === 'shape') {
         obj = e.world.addShape(so.s, so.x, so.z, so.c);
       } else {
@@ -380,6 +384,6 @@ export class ProjectIO {
     const objectKeys = new Set(e.addons.objectData.list().flatMap(d => [d.key, ...d.aliases ?? []]));
     look(data, k => e.addons.sceneData.has(k));
     for (const so of data.objects) look(so, k => objectKeys.has(k));
-    return { missingAddons: [...missing] };
+    return { missingAddons: [...missing], notes: e.mme.takeOpenNotes() }; // notes: 開いたときに知らせること (古い MME の値の移し替え)
   }
 }

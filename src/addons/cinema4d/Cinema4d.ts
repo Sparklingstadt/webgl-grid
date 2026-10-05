@@ -2,7 +2,7 @@ import { MAX_BOXES } from '../../core/constants';
 import { msg, t } from '../../core/i18n';
 import type { AddonApi, ObjectData } from '../../engine/addons/Addons';
 import { Registry } from '../../engine/addons/registry';
-import { isModel, type Obj } from '../../engine/types';
+import { isModel, isShape, type Obj } from '../../engine/types';
 import { MAX_CLONES, clonerLayout, normalizeCloner, placeAround, type ClonerSettings, type Effector } from './cloner';
 import { Cloners } from './Cloners';
 import { normalizeDeformers, type Deformer } from './deform';
@@ -90,15 +90,16 @@ export class Cinema4d {
   count(obj: Obj | null | undefined) { return obj ? this.cloners.count(obj) : 0; }
   private get current() { return this.api.engine.selection.current; }
 
-  // クローナーにする・設定を変える (patch は今の設定に重ねる。null でやめる)。obj を省くと選んでいる物
+  // クローナーにする・設定を変える (patch は今の設定に重ねる。null でやめる)。obj を省くと選んでいる物。
+  // 形のない物 (ライト・カメラ・MME の物) には何もしない
   setCloner(patch: Partial<ClonerSettings> | null, obj = this.current) {
-    if (!obj) return;
+    if (!isShape(obj) && !isModel(obj)) return;
     const cur = this.clonerData.get(obj);
     this.clonerData.set(obj, patch === null ? null : normalizeCloner({ ...cur, ...patch, random: { ...cur?.random, ...patch.random } as ClonerSettings['random'] }));
   }
   // デフォーマを入れ替える (空でやめる)
   setDeformers(list: Deformer[], obj = this.current) {
-    if (!obj) return;
+    if (!isShape(obj) && !isModel(obj)) return;
     const l = normalizeDeformers(list);
     this.deformerData.set(obj, l.length ? l : null);
   }

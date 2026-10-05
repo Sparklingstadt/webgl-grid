@@ -5,7 +5,7 @@ import { normalizePath } from '../../core/fx/source.ts';
 import type { UiChannel } from '../UiChannel';
 import DEFAULT_FX from './default.fx?raw';
 
-// --- 読み込んだ .fx のフォルダと、そこからコンパイルした .fx を持つ。ポストエフェクトの一覧も持つ (物ごとの割り当ては Obj.mme) ---
+// --- 読み込んだ .fx のフォルダと、そこからコンパイルした .fx を持つ (物ごとの割り当ては Obj.mme。ポストエフェクトはアクセサリの物の割り当て) ---
 // files・text・used のキーはフォルダからの相対パス ('/' 区切り)。text は文字のファイル (.fx など) を読み込んだときに読んだもの。
 // 画像は使うときに files の File から読む (readBinary)。used はコンパイルで読んだパスと画像として読んだパス (保存するもの)
 export interface EffectFolder { id: string; name: string; files: Map<string, File>; text: Map<string, Uint8Array>; used: Set<string> }
@@ -86,9 +86,8 @@ function compile(folder: EffectFolder, entry: string): EffectResult {
 }
 
 export class EffectStore {
-  readonly events = new Emitter<{ changed: [] }>(); // ポストエフェクトの一覧か、フォルダの中身が変わった
+  readonly events = new Emitter<{ changed: [] }>(); // フォルダの中身が変わった
   readonly defaultEffect: LoadedEffect;
-  readonly posts: { effect: LoadedEffect; enabled: boolean }[] = [];
   private builtin: EffectFolder;
   private list: EffectFolder[] = []; // 読み込んだフォルダ (builtin は入れない)
   private compiled = new Map<string, Map<string, LoadedEffect>>(); // フォルダの id → パス → コンパイルしたもの
@@ -115,7 +114,8 @@ export class EffectStore {
 
   // フォルダを読み込む (文字のファイルだけ読む)。同じ名前のフォルダがあれば、それにまとめる: ないパスは足し、
   // 同じパスで変わったもの (大きさ・更新日時。文字のファイルは中身も比べる) は新しいほうにする。
-  // 中身が変わったら、そのフォルダのコンパイル結果を捨てる。共通のフォルダの名前がない (名前が '') ときは、毎回別のフォルダにする。
+  // 中身が変わったら、そのフォルダのコンパイル結果を捨てる (割り当ては描くたびに引き直すので、次に描くときに新しい中身でコンパイルする)。
+  // 共通のフォルダの名前がない (名前が '') ときは、毎回別のフォルダにする。
   // 読めなければ (File.arrayBuffer の失敗など) 何も変えずに例外を投げる
   async addFolder(files: File[]): Promise<EffectFolder> {
     const { paths, folder: name } = relativePaths(files);
@@ -145,7 +145,6 @@ export class EffectStore {
       dropIndex(folder);
       this.compiled.delete(folder.id);
       this.folderChanges++;
-      this.recompilePosts([folder]);
       this.events.emit('changed');
     }
     return folder;
@@ -173,7 +172,6 @@ export class EffectStore {
       if (n) this.nextFolderId = Math.max(this.nextFolderId, Number(n[1]) + 1);
     }
     this.folderChanges++;
-    this.recompilePosts(made);
     this.events.emit('changed');
   }
 
@@ -216,54 +214,5 @@ export class EffectStore {
     const loaded: LoadedEffect = { id: `fx${this.nextId++}`, name, entry, folder, result };
     byPath.set(entry, loaded);
     return loaded;
-  }
-
-  // ポストエフェクトを全部外す
-  clear(): void {
-    if (this.posts.length === 0) return;
-    this.posts.length = 0;
-    this.events.emit('changed');
-  }
-
-  // 中身を変えたフォルダの .fx のポストエフェクトを、新しい中身でコンパイルし直したものにする (並びとオン・オフはそのまま)。
-  // (割り当ては描くときに引き直すが、ポストエフェクトの一覧は LoadedEffect を持つので。開いたときに見つからなかった .fx も、
-  // 同じフォルダを読み直すと直る。知らせるのは呼ぶ側 (フォルダの中身が変わったら、いつも知らせる))
-  private recompilePosts(folders: EffectFolder[]): void {
-    for (const p of this.posts) {
-      const folder = folders.find(f => f.id === p.effect.folder.id);
-      if (folder) p.effect = this.effect(folder, p.effect.entry);
-    }
-  }
-
-  // 一覧を置き換える (プロジェクトを開くとき)
-  setPosts(posts: { effect: LoadedEffect; enabled: boolean }[]): void {
-    this.posts.splice(0, this.posts.length, ...posts.map(p => ({ ...p })));
-    this.events.emit('changed');
-  }
-
-  addPost(e: LoadedEffect): void {
-    this.posts.push({ effect: e, enabled: true });
-    this.events.emit('changed');
-  }
-
-  // 上 (-1) か下 (1) へ 1 つ動かす。端からは動かない
-  movePost(i: number, d: -1 | 1): void {
-    const j = i + d;
-    if (i < 0 || i >= this.posts.length || j < 0 || j >= this.posts.length) return;
-    [this.posts[i], this.posts[j]] = [this.posts[j], this.posts[i]];
-    this.events.emit('changed');
-  }
-
-  setPostEnabled(i: number, on: boolean): void {
-    const p = this.posts[i];
-    if (!p) return;
-    p.enabled = on;
-    this.events.emit('changed');
-  }
-
-  removePost(i: number): void {
-    if (i < 0 || i >= this.posts.length) return;
-    this.posts.splice(i, 1);
-    this.events.emit('changed');
   }
 }

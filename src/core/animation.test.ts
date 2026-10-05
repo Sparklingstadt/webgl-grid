@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  LINEAR, animationFromJson, animationFromPoseKeys, animationToJson, copyKeys, createAnimation, curveAt, insertPropKeys, pasteKeys, deleteKeys, evaluate, insertKeys, keyFrames, moveKeys,
+  LINEAR, animationFromJson, animationFromPoseKeys, animationToJson, copyKeys, createAnimation, curveAt, insertMmeKeys, insertPropKeys, isEmpty, pasteKeys, deleteKeys, evaluate, insertKeys, keyFrames, moveKeys,
   type Animation, type Curve,
 } from './animation';
 import { ZERO_BONE, type BoneValue } from './types';
@@ -111,5 +111,50 @@ describe('キーのコピー・貼り付け', () => {
     expect(a.props.get(0)!.get(30)!.v).toBe(1); // (上書き)
     a.props.get(0)!.get(30)!.v = 5;
     expect(a.props.get(0)!.get(10)!.v).toBe(1); // (元は変わらない)
+  });
+});
+
+describe('MME のチャンネル (名前の一覧の番号ごと)', () => {
+  // 0 フレームで チャンネル 0 (Si) = 1、30 フレームで 3。チャンネル 1 は 10 フレームだけ
+  function mme(): Animation {
+    const a = createAnimation();
+    insertMmeKeys(a, 0, [[0, 1]]);
+    insertMmeKeys(a, 30, [[0, 3]]);
+    insertMmeKeys(a, 10, [[1, 0.5]]);
+    return a;
+  }
+  it('あいだは補間曲線にそって線形補間し、キーのフレームにも数える', () => {
+    const a = mme();
+    expect(isEmpty(a)).toBe(false);
+    expect(evaluate(a, 15).mme.get(0)).toBeCloseTo(2);
+    expect(evaluate(a, 15).mme.get(1)).toBe(0.5);
+    expect(keyFrames(a)).toEqual([0, 10, 30]);
+  });
+  it('打ち直すと値だけ替わり、補間曲線はそのまま', () => {
+    const a = mme();
+    a.mme.get(0)!.get(30)!.curve = [0.42, 0, 0.58, 1];
+    insertMmeKeys(a, 30, [[0, 5]]);
+    expect(a.mme.get(0)!.get(30)).toEqual({ v: 5, curve: [0.42, 0, 0.58, 1] });
+  });
+  it('消す・ずらす・写す・貼るは、MME のキーも動かす', () => {
+    const a = mme();
+    expect(deleteKeys(a, [10], { kind: 'mme', index: 1 })).toBe(1);
+    expect(a.mme.has(1)).toBe(false);
+    expect(moveKeys(a, [30], 5)).toEqual([35]);
+    expect([...a.mme.get(0)!.keys()]).toEqual([0, 35]);
+    const clip = copyKeys(a, [0, 35]);
+    expect(clip.map(c => [c.kind, c.index, c.keys.map(k => k[0])])).toEqual([['mme', 0, [0, 35]]]);
+    expect(pasteKeys(a, clip, 100)).toEqual([100, 135]);
+    expect(evaluate(a, 135).mme.get(0)).toBe(3);
+    expect(deleteKeys(a, [0, 35, 100, 135])).toBe(4);
+    expect(isEmpty(a)).toBe(true);
+  });
+  it('JSON にして戻すと同じ。MME のキーのない古い JSON も読め、MME のキーがなければ JSON にも入れない', () => {
+    const a = mme();
+    expect(animationFromJson(JSON.parse(JSON.stringify(animationToJson(a))))).toEqual(a);
+    const old = animationFromJson({ bones: [], morphs: [[0, [[0, 1, [...LINEAR] as Curve]]]] });
+    expect(old.mme.size).toBe(0);
+    expect(evaluate(old, 0).mme.size).toBe(0);
+    expect('mme' in animationToJson(old)).toBe(false);
   });
 });

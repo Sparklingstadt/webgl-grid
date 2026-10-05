@@ -9,6 +9,7 @@ import { CameraPage } from './CameraPage';
 import { FxPage } from './FxPage';
 import { LightPage } from './LightPanel';
 import { MaterialPage } from './MaterialPage';
+import { MmeValuesPage } from './MmeValuesPage';
 import { ModifierPage } from './ModifierPage';
 import { MorphPage } from './MorphPage';
 import { ObjectPage } from './ObjectPage';
@@ -22,7 +23,8 @@ import { ScenePage } from './ScenePage';
 // 選んでいる物のタブ (オブジェクト・モディファイアー・物理演算・データ・マテリアル) に分け、物に使えないタブは出さない。
 // アドオンのパネルは、組み込みのタブの最後か、アドオンが名付けたタブ (組み込みのタブのあと) に出す
 export type SideTab = string;
-interface TabDef { key: SideTab; label: string; icon: IconName; group: 'scene' | 'object'; when?: (sel: SelInfo | null) => boolean }
+// when: 出すか (sel: 選んでいる物、mme: レンダーエンジンが MME 互換か)
+interface TabDef { key: SideTab; label: string; icon: IconName; group: 'scene' | 'object'; when?: (sel: SelInfo | null, mme: boolean) => boolean }
 const isModel = (s: SelInfo | null) => s?.kind === 'model';
 const TABS: TabDef[] = [
   { key: 'fx', label: msg('効果'), icon: 'render', group: 'scene' },
@@ -36,6 +38,8 @@ const TABS: TabDef[] = [
   { key: 'light', label: msg('ライト'), icon: 'light', group: 'object', when: s => s?.kind === 'light' },
   { key: 'cameradata', label: msg('カメラ'), icon: 'cameraData', group: 'object', when: s => s?.kind === 'camera' },
   { key: 'material', label: msg('マテリアル'), icon: 'material', group: 'object', when: s => !!s && (s.kind === 'shape' || s.kind === 'model') },
+  // (MME の値: MME の物 (コントローラー・アクセサリ) の値と、当てた .fx のパラメータ。モデルはパラメータだけなので、MME 互換のときだけ)
+  { key: 'mme', label: msg('MME'), icon: 'mme', group: 'object', when: (s, mme) => s?.kind === 'mme' || (mme && s?.kind === 'model') },
 ];
 const SIZE_KEY = 'webgl-grid.sidebar';
 const loadSize = () => { try { return Number(JSON.parse(localStorage.getItem(SIZE_KEY) ?? '{}').outliner) || 0; } catch { return 0; } };
@@ -46,10 +50,11 @@ export function Sidebar({ tab, setTab, onLoadPose, onOpenShaderEditor, onHover }
 }) {
   const engine = useEngine();
   const sel = useUi(s => s.sel);
+  const mme = useUi(s => s.mme.settings.engine === 'mme');
   useUi(s => s.addonsVersion);
   const builtin = new Set(TABS.map(d => d.key));
   const extra = [...new Set(engine.addons.panels.list().map(p => p.tab).filter(x => !builtin.has(x)))];
-  const tabs: TabDef[] = [...TABS.filter(d => d.when?.(sel) ?? true), ...extra.map(x => ({ key: x, label: x, icon: 'addon' as IconName, group: 'object' as const }))];
+  const tabs: TabDef[] = [...TABS.filter(d => d.when?.(sel, mme) ?? true), ...extra.map(x => ({ key: x, label: x, icon: 'addon' as IconName, group: 'object' as const }))];
   // 選んでいる物に使えないタブ (と、切ったアドオンのタブ) のときは、オブジェクトのタブを見せる (選び直すと戻る)
   const shown = tabs.some(d => d.key === tab) ? tab : 'object';
   const current = tabs.find(d => d.key === shown)!;
@@ -97,7 +102,8 @@ export function Sidebar({ tab, setTab, onLoadPose, onOpenShaderEditor, onHover }
             {shown === 'morph' && <MorphPage />}
             {shown === 'bone' && <BonePage onLoadPose={onLoadPose} />}
             {shown === 'scene' && <ScenePage />}
-            {shown === 'fx' && <FxPage />}
+            {shown === 'mme' && <MmeValuesPage />}
+            {shown === 'fx' && <FxPage onShowValues={() => setTab('mme')} />}
             {shown === 'output' && <OutputPage />}
             {!['object', 'modifier', 'physics', 'light', 'cameradata'].includes(shown) && <AddonPanels tab={shown} />}
           </div>

@@ -24,12 +24,15 @@ export function ObjectPage() {
           <input id="obj-name" className="text-field" key={`${sel.id}:${sel.name}`} defaultValue={sel.name} maxLength={64}
                  onBlur={e => { const o = engine.selection.current; if (o) engine.renameObj(o, e.currentTarget.value.trim() === kindName(o) ? null : e.currentTarget.value); }}
                  onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); else if (e.key === 'Escape') { e.currentTarget.value = sel.name; e.currentTarget.blur(); } }} />
-          <label htmlFor="obj-x">{t('位置 X')}</label><NumField id="obj-x" label={t('位置 X')} value={+sel.x.toFixed(2)} digits={2} step={0.1} onCommit={v => engine.setObjProp('x', v)} />
-          <label>{t('位置 Y')}</label><span className="note">{t('{y} (積み重ねで決まる)', { y: sel.y.toFixed(2) })}</span>
-          <label htmlFor="obj-z">{t('位置 Z')}</label><NumField id="obj-z" label={t('位置 Z')} value={+sel.z.toFixed(2)} digits={2} step={0.1} onCommit={v => engine.setObjProp('z', v)} />
-          <label htmlFor="obj-r">{t('回転')}</label><NumField id="obj-r" label={t('縦軸まわりの回転 (度)')} value={Math.round(deg)} onCommit={v => engine.setObjProp('r', v)} />
+          {sel.kind !== 'mme' && <>
+            <label htmlFor="obj-x">{t('位置 X')}</label><NumField id="obj-x" label={t('位置 X')} value={+sel.x.toFixed(2)} digits={2} step={0.1} onCommit={v => engine.setObjProp('x', v)} />
+            <label>{t('位置 Y')}</label><span className="note">{t('{y} (積み重ねで決まる)', { y: sel.y.toFixed(2) })}</span>
+            <label htmlFor="obj-z">{t('位置 Z')}</label><NumField id="obj-z" label={t('位置 Z')} value={+sel.z.toFixed(2)} digits={2} step={0.1} onCommit={v => engine.setObjProp('z', v)} />
+            <label htmlFor="obj-r">{t('回転')}</label><NumField id="obj-r" label={t('縦軸まわりの回転 (度)')} value={Math.round(deg)} onCommit={v => engine.setObjProp('r', v)} />
+          </>}
           {(sel.kind === 'shape' || sel.kind === 'model') && <><label htmlFor="obj-s">{t('大きさ')}</label><NumField id="obj-s" label={t('大きさ (倍)')} value={+sel.scale.toFixed(3)} digits={3} step={0.1} min={0.05} max={20} onCommit={v => { const o = engine.selection.current; if (o) engine.setScale(o, v); }} /></>}
         </div>
+        {sel.kind === 'mme' && <div className="note">{t('MME の物は場面の位置を持ちません。値は「MME」のタブで変えます')}</div>}
       </Panel>
       {obj && (
         <Panel title={t('関係')}>

@@ -3,7 +3,7 @@ import { addPmx, addPost, assignFx, controlItem, objectFx, openMme, redFrom, set
 import type { Win } from './helpers';
 
 // MME 互換の CONTROLOBJECT: 物の .fx が読む値は、(self)・名前が合う場面の物 (モーフ・骨・ワールド行列) か、
-// 場面にない名前 (ray_controller.pmx など) の「仮のコントローラー」(engine.mme.setControl) から来る。
+// 「仮のコントローラー」(ray_controller.pmx など。場面に置いたコントローラーの物の値。engine.mme.setControl) から来る。
 // テスト用の .pmx は 4×20×4 の四角柱 (置くと x, z が ±0.2、高さ 2)。カメラは +z から見て、見る物をカメラの注視点の真下に置いて真ん中の画素を見る。
 
 const BLACK = [0, 0, 0, 255], RED = [255, 0, 0, 255], GREEN = [0, 255, 0, 255];
@@ -25,11 +25,18 @@ async function setMorph(page: Page, i: number, name: string, v: number) {
   }, { i, name, v });
 }
 
-test('仮のコントローラー: 場面にない ray_controller.pmx の Red を setControl で変えると赤くなる (0〜1 に収まる)', async ({ page }) => {
+// 仮のコントローラー name を置く (コントローラーの物)
+const addController = (page: Page, name: string) =>
+  page.evaluate(name => { (window as Win).engine.addMmeObject({ kind: 'controller', name }); }, name);
+
+test('仮のコントローラー: 置いたコントローラーの物 ray_controller.pmx の Red を setControl で変えると赤くなる (0〜1 に収まる。物がなければ何もしない)', async ({ page }) => {
   const errors = await openMme(page);
   const box = await addPmx(page, { flags: 0 });
   expect(await assignFx(page, box, redFrom('ray_controller.pmx', 'Red'))).toBe(true);
   expect(await colorAt(page)).toEqual(BLACK);
+  await page.evaluate(() => (window as Win).engine.mme.setControl('ray_controller.pmx', 'Red', 1));
+  expect(await colorAt(page)).toEqual(BLACK); // (物がない。勝手には置かない)
+  await addController(page, 'ray_controller.pmx');
   await page.evaluate(() => (window as Win).engine.mme.setControl('ray_controller.pmx', 'Red', 1));
   expect(await colorAt(page)).toEqual(RED);
   await page.evaluate(() => (window as Win).engine.mme.setControl('ray_controller.pmx', 'Red', 7));
@@ -79,8 +86,9 @@ test('名前が合う場面の物 (Ctl.pmx) のモーフと骨の位置を読む
   expect(await colorAt(page)).toEqual(BLACK); // (2 つ目は見ない)
   await setMorph(page, first, 'Red', 1);
   expect(await colorAt(page)).toEqual(RED);
-  // 場面にあるので、仮のコントローラーの値は効かない
+  // 先にモデルがあるので、あとに置いた同じ名前のコントローラーの物の値は効かない
   await setMorph(page, first, 'Red', 0);
+  await addController(page, 'ctl.pmx');
   await page.evaluate(() => (window as Win).engine.mme.setControl('ctl.pmx', 'Red', 1));
   expect(await colorAt(page)).toEqual(BLACK);
   expect(await warnings(page)).toEqual([]);
@@ -102,12 +110,20 @@ bool V : CONTROLOBJECT < string name = "(self)"; >;`);
   expect(errors).toEqual([]);
 });
 
-test('アクセサリの項目 (Si) は警告を出して 0 を渡す', async ({ page }) => {
+test('モデルのアクセサリの項目 (Si) は 0 を渡す (警告しない)。名前が合うアクセサリの物があれば、その値', async ({ page }) => {
   const errors = await openMme(page);
   const box = await addPmx(page, { flags: 0 });
   expect(await assignFx(page, box, redFrom('(self)', 'Si'))).toBe(true);
   expect(await colorAt(page)).toEqual(BLACK);
-  expect((await warnings(page)).filter(w => w.includes('Si'))).toHaveLength(1);
+  expect((await warnings(page)).filter(w => w.includes('Si'))).toHaveLength(0);
+  // 名前で引くと、アクセサリの物の Si (0.5)
+  expect(await assignFx(page, box, redFrom('light.x', 'Si'), 'acc.fx')).toBe(true);
+  await page.evaluate(() => {
+    const { engine } = window as Win;
+    engine.addMmeObject({ kind: 'accessory', name: 'light.x' }).mmeValues.Si = 0.5;
+  });
+  const [r, g, b] = await colorAt(page);
+  expect([Math.abs(r - 128) <= 2, g, b]).toEqual([true, 0, 0]);
   expect(errors).toEqual([]);
 });
 
@@ -136,6 +152,7 @@ test('ポストエフェクトも仮のコントローラーの値を読む', as
   await look(page);
   const sky: Vec3 = [0, 2.4, 0];
   expect((await shoot(page, 'png', [sky])).pixels[0]).toEqual(BLACK);
+  await addController(page, 'ray_controller.pmx');
   await page.evaluate(() => (window as Win).engine.mme.setControl('ray_controller.pmx', 'Tint', 1));
   expect((await shoot(page, 'png', [sky])).pixels[0]).toEqual(RED);
   expect(await warnings(page)).toEqual([]);

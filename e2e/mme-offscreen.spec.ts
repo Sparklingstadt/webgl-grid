@@ -35,8 +35,8 @@ async function assign(page: Page, i: number, tab: string, material: number | nul
 
 async function addPostRef(page: Page, ref: Ref) {
   await page.evaluate(ref => {
-    const { store } = (window as Win).engine.mme;
-    store.addPost(store.effect(store.folder(ref.folder), ref.path));
+    const { mme } = (window as Win).engine;
+    mme.addPost(mme.store.effect(mme.store.folder(ref.folder), ref.path));
   }, ref);
 }
 

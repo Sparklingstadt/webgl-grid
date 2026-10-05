@@ -155,6 +155,10 @@ export class History {
       const camera = data.camera as { fov: number; height: number } | undefined;
       if (camera && keyed('fov')) camera.fov = 0;
       if (keyed('height')) { if (light) light.height = 0; if (camera) camera.height = 0; }
+      // (MME の値も、キーのあるチャンネルのものは入れない)
+      const mmeValues = data.mmeValues as Record<string, number> | undefined;
+      if (mmeValues && anim?.mme.size) for (const ch of anim.mme.keys()) { const name = o.mmeChannels?.[ch]; if (name !== undefined) delete mmeValues[name]; }
+      if (mmeValues && !Object.keys(mmeValues).length) delete data.mmeValues;
       const st: ObjState = { id: o.id, parent: o.parent ?? null, s: o.s, x: keyed('x') ? 0 : o.x, y: keyed('x') || keyed('z') || keyed('height') ? 0 : o.y, z: keyed('z') ? 0 : o.z, r: keyed('r') ? 0 : o.r, c: o.c, slots: [...o.slots], data };
       if (!isModel(o)) { st.anim = isEmpty(anim) ? null : animationToJson(anim!); return st; }
       // キーのあるボーン・表情の値も、同じく入れない

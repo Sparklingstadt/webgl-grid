@@ -143,3 +143,63 @@ test('MCP サーバーを待っているあいだはエラーを出さず、あ�
   await page.waitForTimeout(1500);
   expect(messages).toEqual([]);
 });
+
+test('MCP の MME のツールで、アクセサリ・コントローラーを置いて値を書き、キーを打ち、割り当てを .emm にして読み戻す', async ({ page }, info) => {
+  test.setTimeout(90_000);
+  const wsPort = 17657 + info.workerIndex * 2, appPort = wsPort + 1;
+  const dir = await mkdtemp(path.join(tmpdir(), 'webgl-grid-mcp-mme-'));
+  const client = new Client({ name: 'e2e', version: '0' });
+  await client.connect(new StdioClientTransport({
+    command: 'node', args: ['mcp/server.ts'], cwd: process.cwd(), stderr: 'ignore',
+    env: { ...process.env, WEBGL_GRID_MCP_PORT: String(wsPort), WEBGL_GRID_APP_PORT: String(appPort) } as Record<string, string>,
+  }));
+  const raw = (name: string, args: Record<string, unknown> = {}) => client.callTool({ name, arguments: args }) as Promise<ToolResult>;
+  const json = async (name: string, args: Record<string, unknown> = {}) => {
+    const r = await raw(name, args);
+    const t = (r.content.find(c => c.type === 'text') as { text: string }).text;
+    expect(r.isError, `${name}: ${t.slice(0, 300)}`).toBeFalsy();
+    return JSON.parse(t);
+  };
+  try {
+    const errors: string[] = [];
+    page.on('pageerror', e => errors.push(String(e)));
+    await page.goto(`/?debug&nomodels&mcp=${wsPort}`);
+    await expect(page.getByLabel('MCP の接続')).toHaveText('MCP 接続中');
+
+    expect((await json('mme_set', { settings: { engine: 'mme', selfShadow: false } }))).toMatchObject({ engine: 'mme', selfShadow: false });
+    // 読み込んだフォルダ (ページで直接読む。fx/ の一覧は別のテストと共有のフォルダなので使わない)
+    const folder = await page.evaluate(async () => {
+      const f = new File(['technique T { }'], 'glow.fx');
+      Object.defineProperty(f, 'webkitRelativePath', { value: 'MyFx/glow.fx' });
+      return (await (window as Win).engine.mme.loadEffect([f], 'glow.fx')).folder.id;
+    });
+    const ctl = await json('mme_add_controller', { name: 'ray_controller.pmx' });
+    const acc = await json('mme_add_accessory', { name: 'glow.x', fx: { folder: 'MyFx', path: 'GLOW.fx' } });
+    await json('mme_set_values', { values: { X: 3, Si: 2 }, object: acc.id });
+    await json('mme_set_values', { values: { 'SSAO+': 0.5 }, object: ctl.id });
+    expect((await json('insert_keyframe', { id: acc.id, frame: 5, channels: ['X'] })).keyframes).toEqual([5]);
+    const box = await json('add_shape', { shape: 'cube' });
+    await json('mme_assign', { object: box.id, tab: 'Main', fx: { folder, path: 'glow.fx' } });
+    await json('mme_assign', { object: box.id, fx: 'hide' });
+    const state = await json('mme_state');
+    expect(state.accessories).toEqual([expect.objectContaining({ id: acc.id, name: 'glow.x', values: expect.objectContaining({ X: 3, Si: 2 }), fx: { folder, folderName: 'MyFx', path: 'glow.fx' } })]);
+    expect(state.controllers).toEqual([{ name: 'ray_controller.pmx', id: ctl.id, items: { 'SSAO+': 0.5 } }]);
+    expect(state.assignments).toContainEqual({ object: box.id, tab: 'Main', material: null, fx: 'hide' });
+    // 壊れた引数は、ツールのエラーで返る
+    const bad = await raw('mme_assign', { object: box.id, tab: 'Nope', fx: null });
+    expect(bad.isError).toBe(true);
+    expect((bad.content[0] as { text: string }).text).toContain('タブ Nope はありません');
+
+    // .emm に書き出して、割り当てを外してから読み戻す
+    const emm = path.join(dir, '割当.emm');
+    expect((await json('mme_export_emm', { path: emm })).bytes).toBeGreaterThan(20);
+    await json('mme_assign', { object: acc.id, fx: null });
+    expect((await json('mme_state')).assignments.filter((a: { object: unknown }) => a.object === acc.id)).toEqual([]);
+    expect((await json('mme_import_emm', { path: emm })).applied).toBe(1); // (.emm には、モデルとアクセサリだけを書く。箱は入らない)
+    expect((await json('mme_state')).assignments).toContainEqual({ object: acc.id, tab: 'Main', material: null, fx: { folder, folderName: 'MyFx', path: 'glow.fx' } });
+    expect(errors).toEqual([]);
+  } finally {
+    await client.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});

@@ -76,14 +76,15 @@ export async function assignFx(page: Page, i: number, source: string, name = 'te
   }, { i, source, name, material });
 }
 
-// ポストエフェクトの .fx の文字列を読んで (フォルダ post の中の name)、一覧の最後 (いちばん外側) に足す。コンパイルできたかを返す
+// ポストエフェクトの .fx の文字列を読んで (フォルダ post の中の name)、アクセサリの物 (名前は拡張子を .x にしたもの) を場面の最後
+// (いちばん外側) に置いて当てる。コンパイルできたかを返す
 export async function addPost(page: Page, source: string, name = 'post.fx') {
   return page.evaluate(async ({ source, name }) => {
     const { engine } = window as Win;
     const file = new File([source], name);
     Object.defineProperty(file, 'webkitRelativePath', { value: `post/${name}` });
     const e = await engine.mme.loadEffect([file], name);
-    engine.mme.store.addPost(e);
+    engine.mme.addPost(e);
     return e.result.ok as boolean;
   }, { source, name });
 }

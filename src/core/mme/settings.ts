@@ -56,21 +56,52 @@ export function normalizeObjectEffects(raw: unknown): ObjectEffects | null {
   return Object.keys(out).length > 0 ? out : null;
 }
 
-// --- プロジェクトの場面の値 'mme': 設定・読み込んだフォルダ (id と名前。中のファイルはプロジェクトの mmeFiles)・ポストエフェクトの並び・
-// 仮のコントローラーの値 (名前 → 項目 → 0〜1)・ステージの割り当て (なければ項がない)。物ごとの割り当ては物の値 'mme' ---
+// --- MME の物 (物の値 'mmeObj'。Obj.mmeObj): 形のない物。仮のコントローラー (ray_controller.pmx の代わり) と仮のアクセサリ (ray.x の代わり) ---
+// name は物の名前と同じ (CONTROLOBJECT・DefaultEffect はこの名前で照らす。アウトライナーで名前を変えると変わる)
+export interface MmeObjData { kind: 'controller' | 'accessory'; name: string }
+export const MME_OBJ_KIND = 14; // 物の種類の番号 (形・モデル・ライト・カメラと重ならない)
+const MME_NAME_MAX = 64; // (物の名前と同じ長さまで)
+
+// 保存されていた値を、使える値にそろえる (種類が分からない・名前が空なら null。名前は前後の空白を除く)
+export function normalizeMmeObj(raw: unknown): MmeObjData | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const { kind, name } = raw as Record<string, unknown>;
+  const n = typeof name === 'string' ? name.trim().slice(0, MME_NAME_MAX) : '';
+  return (kind === 'controller' || kind === 'accessory') && n !== '' ? { kind, name: n } : null;
+}
+
+// --- プロジェクトの場面の値 'mme': 設定・読み込んだフォルダ (id と名前。中のファイルはプロジェクトの mmeFiles)・
+// ステージの割り当てとパラメータの値 (なければ項がない)。物ごとの割り当ては物の値 'mme' (ポストエフェクトはアクセサリの物の割り当て)、
+// 物のパラメータの値は物の値 'mmeValues' ---
+export interface MmeStage { name: string; effects: ObjectEffects }
+
+// ステージの名前 (.pmx のファイル名) の照らし合わせ: 大文字小文字を区別しない (.emm と同じ)
+export function sameStageName(a: string, b: string): boolean {
+  return a.normalize('NFC').toLowerCase() === b.normalize('NFC').toLowerCase();
+}
+
 export interface MmeScene {
   settings: MmeSettings;
   folders: { id: string; name: string }[];
-  posts: { effect: EffectRef; enabled: boolean }[];
-  controls: Record<string, Record<string, number>>;
-  stage?: ObjectEffects;
+  // 第 4 の計画の形のポストエフェクトの並び (オフは enabled = false)。読むだけ: 開くときにアクセサリの物に移し、保存するときは書かない
+  posts?: { effect: EffectRef; enabled: boolean }[];
+  // 第 4 の計画の形の仮のコントローラーの値 (名前 → 項目 → 0〜1)。読むだけ: 開くときにコントローラーの物に移し、保存するときは書かない
+  controls?: Record<string, Record<string, number>>;
+  // ステージの割り当て。name はステージの .pmx のファイル名: 名前が違うステージ (差し替えたあと) には当てず、名前のまま残す
+  stage?: MmeStage;
+  // 第 4 の計画の形のステージの割り当て (名前がない)。読むだけ: 開くときに、プロジェクトといっしょに読み込んだステージのものとして stage に移し、保存するときは書かない
+  legacyStage?: ObjectEffects;
+  // ステージに当てた .fx のパラメータの値 (MME のチャンネルの名前 `<フォルダの id>/<.fx のパス>:<名前>` → 値。キーフレームはない)
+  stageParams?: Record<string, number>;
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 
 // 保存されていた場面の値を、使える値にそろえる。第 2 の計画の形 (いちばん上に engine がある = 設定だけ) も読む。
 // 壊れた項は捨てる: id のない・builtin (default.fx のフォルダ)・同じ id のフォルダ、参照が壊れたポストエフェクト (enabled がなければオン)、
-// 数でないコントローラーの値 (値は 0〜1 に収める)、ステージの割り当ての壊れた項 (normalizeObjectEffects。何も残らなければ項を作らない)
+// 数でないコントローラーの値 (値は 0〜1 に収める)、ステージの割り当ての壊れた項 (normalizeObjectEffects。何も残らなければ項を作らない。
+// 名前のない第 4 の計画の形は legacyStage)、
+// ステージのパラメータの数でない値・名前が空の値 (何も残らなければ項を作らない。範囲は .fx を読むまで分からないので、描くときに収める)
 export function normalizeMmeScene(raw: unknown): MmeScene {
   const o = isRecord(raw) ? raw : {};
   if ('engine' in o) return { settings: normalizeMme(o), folders: [], posts: [], controls: {} };
@@ -91,6 +122,17 @@ export function normalizeMmeScene(raw: unknown): MmeScene {
     for (const [item, v] of Object.entries(items)) if (typeof v === 'number' && Number.isFinite(v)) values[item] = Math.min(Math.max(v, 0), 1);
     if (Object.keys(values).length > 0) controls[name] = values;
   }
-  const stage = normalizeObjectEffects(o.stage);
-  return { settings: normalizeMme(o.settings), folders, posts, controls, ...(stage ? { stage } : {}) };
+  // ステージ: { name, effects } (第 4 の計画の形は effects だけ = 名前がない。ObjectEffects のキーはタブの名前で値は物なので、name が文字列なら取り違えない)
+  const rawStage = isRecord(o.stage) ? o.stage : null;
+  const named = rawStage !== null && typeof rawStage.name === 'string' && isRecord(rawStage.effects);
+  const stageEffects = normalizeObjectEffects(named ? rawStage.effects : o.stage);
+  const stage: MmeStage | null = stageEffects && named ? { name: rawStage.name as string, effects: stageEffects } : null;
+  const stageParams: Record<string, number> = {};
+  for (const [name, v] of Object.entries(isRecord(o.stageParams) ? o.stageParams : {})) {
+    if (name !== '' && typeof v === 'number' && Number.isFinite(v)) stageParams[name] = v;
+  }
+  return {
+    settings: normalizeMme(o.settings), folders, posts, controls, ...(stage ? { stage } : {}), ...(stageEffects && !named ? { legacyStage: stageEffects } : {}),
+    ...(Object.keys(stageParams).length > 0 ? { stageParams } : {}),
+  };
 }

@@ -9,11 +9,13 @@ import { serveApp } from '../mcp/appServer.ts';
 // ビルドしたアプリ (dist/) を、MCP サーバーと同じ仕組み (appServer.ts) で 127.0.0.1 から配り、窓で開く。
 // ブラウザに覚えておく設定・自動保存はページの場所 (ポート) ごとなので、ポートは決まった番号を使う (ふさがっていれば次の番号)。
 // models フォルダ (自分の PMX モデル・モーション・曲の置き場) は「書類/webgl-grid/models」(環境変数 WEBGL_GRID_MODELS_DIR で変えられる)。メニューの「models フォルダを開く」で開ける。
+// fx フォルダ (自分の MME のエフェクト置き場) も同じく「書類/webgl-grid/fx」(環境変数 WEBGL_GRID_FX_DIR)。メニューの「fx フォルダを開く」で開ける。
 // MCP サーバー (npm run mcp) が動いていれば、「ファイル > 外部から操作 (MCP) を受け付ける」でつながる
 const PORT = 17458, TRIES = 20;
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dist = path.join(here, '..', 'dist');
 const modelsDir = process.env.WEBGL_GRID_MODELS_DIR || path.join(app.getPath('documents'), 'webgl-grid', 'models'); // (環境変数で変えられる)
+const fxDir = process.env.WEBGL_GRID_FX_DIR || path.join(app.getPath('documents'), 'webgl-grid', 'fx'); // (環境変数で変えられる)
 
 let server: Server | null = null, url = '';
 
@@ -22,6 +24,10 @@ async function start() {
   await writeFile(path.join(modelsDir, 'ここにモデルを置く.md'),
     '# models フォルダ\n\nフォルダごとに .pmx とテクスチャを置くと、アプリの「ファイル > models フォルダから読み込む…」から選べます。\n.vmd (モーション)・.vpd (ポーズ)・曲 (.mp3・.wav など) も置けます。\n', { flag: 'wx' }).catch(() => {});
   process.env.WEBGL_GRID_MODELS_DIR = modelsDir;
+  await mkdir(fxDir, { recursive: true });
+  await writeFile(path.join(fxDir, 'ここにエフェクトを置く.md'),
+    '# fx フォルダ\n\nエフェクトの一式ごとのフォルダに .fx とそれが読むファイルを置くと、アプリの MME 互換の欄の「fx/ から選ぶ」から選べます。\nfx/ の直下のファイルは、fx という名前のフォルダ 1 つとして読みます。\n', { flag: 'wx' }).catch(() => {});
+  process.env.WEBGL_GRID_FX_DIR = fxDir;
   for (let i = 0; i < TRIES && !server; i++) {
     server = await serveApp(dist, PORT + i).catch(() => null);
     if (server) url = `http://127.0.0.1:${PORT + i}/`;
@@ -52,6 +58,7 @@ function menu() {
       label: 'ファイル',
       submenu: [
         { label: 'models フォルダを開く', click: () => void shell.openPath(modelsDir) },
+        { label: 'fx フォルダを開く', click: () => void shell.openPath(fxDir) },
         { type: 'separator' },
         mac ? { role: 'close', label: '閉じる' } : { role: 'quit', label: '終了' },
       ],

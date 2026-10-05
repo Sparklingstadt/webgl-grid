@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { hexToRgb } from '../../core/hsv';
+import { hexToRgb, rgbToHex } from '../../core/hsv';
 import { t } from '../../core/i18n';
 import { hexToLinear, linearToHex } from '../../core/materials/color';
 import type { Color3, SocketDef, SocketValue } from '../../core/materials/nodes';
@@ -27,13 +27,13 @@ export function HexColorField({ label, value, onChange }: { label: string; value
   return <ColorField label={label} value={hexToLinear(value)} onChange={c => onChange(linearToHex(c))} />;
 }
 
-// 色の欄。値はリニアな色 (マテリアルと同じ)、欄には画面の色で見せる。押すと色選びの窓が開く
-export function ColorField({ label, value, onChange, compact }: { label: string; value: Color3; onChange: (c: Color3) => void; compact?: boolean }) {
+// 色の欄。値はリニアな色 (マテリアルと同じ。screen なら画面の色 (sRGB の 0〜1。MME のパラメータ))、欄には画面の色で見せる。押すと色選びの窓が開く
+export function ColorField({ label, value, onChange, compact, screen }: { label: string; value: Color3; onChange: (c: Color3) => void; compact?: boolean; screen?: boolean }) {
   const [open, setOpen] = useState(false);
   const btn = useRef<HTMLButtonElement | null>(null);
   const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
   const setBtn = useCallback((el: HTMLButtonElement | null) => { btn.current = el; setAnchor(el); }, []); // 窓を出す位置の元 (描くときに使うので state)
-  const hex = linearToHex(value);
+  const hex = screen ? rgbToHex(value) : linearToHex(value);
   return (
     <div className={compact ? 'color-field compact' : 'color-field'}>
       <span>{label}</span>
@@ -41,7 +41,7 @@ export function ColorField({ label, value, onChange, compact }: { label: string;
               style={{ background: hex }} onClick={() => setOpen(o => !o)} />
       {open && (
         <Popover anchor={anchor} onClose={() => setOpen(false)} className="color-pop" role="dialog" label={t('{label}を選ぶ', { label })}>
-          <ColorPicker label={label} rgb={hexToRgb(hex)!} onDone={() => { setOpen(false); btn.current?.focus(); }} onChange={c => onChange(hexToLinear(`#${c.map(v => Math.round(v * 255).toString(16).padStart(2, '0')).join('')}`))} />
+          <ColorPicker label={label} rgb={hexToRgb(hex)!} onDone={() => { setOpen(false); btn.current?.focus(); }} onChange={c => onChange(screen ? c : hexToLinear(rgbToHex(c)))} />
         </Popover>
       )}
     </div>

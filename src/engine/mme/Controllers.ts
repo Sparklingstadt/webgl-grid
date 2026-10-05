@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { MMD_UNITS } from '../../core/constants';
-import { t } from '../../core/i18n';
+import { ACCESSORY_DEFAULTS, ACCESSORY_ITEMS, accessoryMatrix, isAccessoryItem, type AccessoryItem } from '../../core/mme/accessory.ts';
 import { controlRefs, virtualControls, type ControlRef } from '../../core/mme/controllers.ts';
 import { toMmd, toMmdVec } from '../../core/mme/coords.ts';
 import { isModel, type Obj } from '../types';
@@ -8,21 +8,21 @@ import type { World } from '../world/World';
 import { objectName, pmxName, STAGE, type Owner } from './Assignments';
 import type { LoadedEffect } from './EffectStore';
 
-// --- CONTROLOBJECT の値 (設計書「CONTROLOBJECT」): 場面の物 ((self)・(OffscreenOwner)・名前が合う物) の値と、
-// 場面にない名前 (ray_controller.pmx など。読み込まない) の「仮のコントローラー」の値 ---
+// --- CONTROLOBJECT の値 (設計書「CONTROLOBJECT」): 場面の物 ((self)・(OffscreenOwner)・名前が合う物) の値。
+// ray_controller.pmx などの「仮のコントローラー」は、場面に置いたコントローラーの物 (Obj.mmeObj) で、値はその物の mmeValues。
+// ray.x などの「仮のアクセサリ」(アクセサリの物) は、MMD のアクセサリの値 (X〜Tr・表示) を mmeValues と隠しているかから読む ---
 
 export interface ControllersDeps {
   world: World;
   stage: () => THREE.Object3D | null; // ステージ (MMD モデル。場面の物に合う名前がないときに .pmx のファイル名で引く)
-  warn: (message: string) => void;
   outputting?: () => boolean; // 書き出し中 (書き出しで隠す物は隠れているものとして読む)
 }
 
 // 値を読む相手: 位置と行列を持つ node と、MMD モデルならその SkinnedMesh (モーフと骨)
 interface Target { node: THREE.Object3D; mesh: THREE.SkinnedMesh | null; visible: boolean }
 
-// アクセサリの項目 (MMD のアクセサリの座標・回転・大きさ・透明度)。対応しない
-const ACCESSORY_ITEMS = new Set(['X', 'Y', 'Z', 'XYZ', 'Rx', 'Ry', 'Rz', 'Rxyz', 'Si', 'Tr']);
+const DEG = Math.PI / 180;
+const ROTATIONS: readonly string[] = ['Rx', 'Ry', 'Rz'];
 
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
@@ -44,72 +44,83 @@ function spatial(m: THREE.Matrix4, type: ControlRef['type']): number[] | null {
   return type === 'float3' || type === 'float4' ? positionOf(m) : null;
 }
 
+const isController = (o: Owner): o is Obj => !!o && o !== STAGE && o.mmeObj?.kind === 'controller';
+const isAccessory = (o: Owner): o is Obj => !!o && o !== STAGE && o.mmeObj?.kind === 'accessory';
+// .x はアクセサリの名前 (仮のコントローラーにしない)
+const isAccessoryName = (name: string) => name.toLowerCase().endsWith('.x');
+
+// 仮のコントローラーの項目の値を型に合わせる (float はそのまま、bool は 0 より大きければ 1。項目のないもの・ほかの型は null)
+function itemValue(v: number, ref: ControlRef): number[] | null {
+  if (ref.item === null) return null;
+  if (ref.type === 'float') return [v];
+  return ref.type === 'bool' ? [v > 0 ? 1 : 0] : null;
+}
+
 export class Controllers {
-  // 仮のコントローラー: 名前 → 項目 → 値 (0〜1)
-  readonly values = new Map<string, Map<string, number>>();
-  private warned = new Set<string>();
-  private changes = 0;
   private stageFound: { root: THREE.Object3D; mesh: THREE.SkinnedMesh | null } | null = null;
 
   constructor(private d: ControllersDeps) {}
 
-  // 仮のコントローラーの値を入れた回数 (画面の値を並べ直すため)
-  get version(): number {
-    return this.changes;
-  }
-
-  // 仮のコントローラーの値を入れる (0〜1 に収める)
-  set(name: string, item: string, v: number): void {
-    this.changes++;
-    const key = this.key(name);
-    let items = this.values.get(key);
-    if (!items) this.values.set(key, (items = new Map()));
-    items.set(item, Number.isNaN(v) ? 0 : Math.min(Math.max(v, 0), 1));
-  }
-
-  // 仮のコントローラーの値を全部消す (最初の状態に戻すとき・プロジェクトを開くとき)
-  clear(): void {
-    this.changes++;
-    this.values.clear();
-  }
-
-  // 仮のコントローラーの項目の値 (入れていなければ 0。名前は大文字小文字を問わない)
-  get(name: string, item: string): number {
-    return this.values.get(this.key(name))?.get(item) ?? 0;
-  }
-
   // CONTROLOBJECT の値 (型の形に合わない分は呼ぶ側 (semantics) が合わせる)。null は 0。
-  // self: いま描いている物 (ステージは STAGE、ポストエフェクトは null)、owner: オフスクリーンの持ち主 (同じ。なければ null)
+  // self: いま描いている物 (ステージは STAGE、ポストエフェクトはそのアクセサリ)、owner: オフスクリーンの持ち主 (同じ。なければ null)。
+  // 名前が合う物がなければ、置いていない仮のコントローラーとして 0
   value(ref: ControlRef, self: Owner, owner: Owner): number[] | null {
     const n = ref.name.toLowerCase();
-    if (n === '(self)') return this.read(this.ofOwner(self), ref);
-    if (n === '(offscreenowner)') return this.read(this.ofOwner(owner), ref);
-    const target = this.find(ref.name);
-    return target ? this.read(target, ref) : this.virtual(ref);
+    if (n === '(self)') return this.readOwner(self, ref);
+    if (n === '(offscreenowner)') return this.readOwner(owner, ref);
+    const found = this.find(ref.name);
+    return found ? this.readOwner(found, ref) : itemValue(0, ref);
   }
 
-  // 描いているエフェクトの項目から、場面にない名前ごとの、スライダーにできる項目 (画面のスライダーの元)
+  // 名前 (大文字小文字を問わない) が合う最初の物 (場面の並び) が、コントローラーの物ならそれ (CONTROLOBJECT が読む物)
+  controller(name: string): Obj | null {
+    const found = this.find(name);
+    return isController(found) ? found : null;
+  }
+
+  // 名前が合う物 (場面の物かステージ) がある
+  has(name: string): boolean {
+    return this.find(name) !== null;
+  }
+
+  // 描いているエフェクトの項目から、仮のコントローラーの名前ごとの、スライダーにできる項目 (画面のスライダーの元)。
+  // 場面にない名前と、コントローラーの物がある名前 (ほかの物・ステージに合う名前と、アクセサリの名前 (.x) は載せない)
   catalog(effects: LoadedEffect[]): Map<string, string[]> {
     const refs = effects.flatMap(e => (e.result.ok ? controlRefs(e.result.effect) : []));
-    return virtualControls(refs, name => this.find(name) !== null);
+    return virtualControls(refs, name => {
+      if (isAccessoryName(name)) return true;
+      const found = this.find(name);
+      return found !== null && !isController(found);
+    });
   }
 
-  // 出した警告を忘れる (描くときの警告を捨てたあと、また出す)
-  clearWarnings(): void {
-    this.warned.clear();
+  // コントローラーの物は mmeValues の項目、アクセサリの物はアクセサリの値、ほかの物・ステージはモーフ・骨・行列
+  private readOwner(o: Owner, ref: ControlRef): number[] | null {
+    if (isController(o)) return itemValue(ref.item === null ? 0 : o.mmeValues?.[ref.item] ?? 0, ref);
+    if (isAccessory(o)) return this.readAccessory(o, ref);
+    return this.read(this.ofOwner(o), ref);
   }
 
-  // 同じ名前 (大文字小文字を問わない) で入れた値は 1 つにまとめる
-  private key(name: string): string {
-    for (const k of this.values.keys()) if (same(k, name)) return k;
-    return name;
-  }
-
-  private virtual(ref: ControlRef): number[] | null {
-    if (ref.item === null) return null;
-    const v = this.get(ref.name, ref.item);
-    if (ref.type === 'float') return [v];
-    return ref.type === 'bool' ? [v > 0 ? 1 : 0] : null;
+  // アクセサリの値: 項目 X〜Tr は float (Rx〜Rz は度で持ち、ラジアンで渡す)、XYZ・Rxyz は 3 成分 (float3・float4)。
+  // 項目なしは float4x4 がワールド行列 (accessoryMatrix。MMD の座標)、float3・float4 が位置、bool が表示 (隠していないか)。
+  // 値がない・数でないものは MMD の既定。型の合わないもの・アクセサリの項目でないものは null
+  private readAccessory(obj: Obj, ref: ControlRef): number[] | null {
+    const values: Record<string, number> = {};
+    for (const k of ACCESSORY_ITEMS) {
+      const v = obj.mmeValues?.[k];
+      values[k] = typeof v === 'number' && Number.isFinite(v) ? v : ACCESSORY_DEFAULTS[k];
+    }
+    const get = (k: AccessoryItem) => (ROTATIONS.includes(k) ? values[k] * DEG : values[k]);
+    const { item, type } = ref;
+    const vector = type === 'float3' || type === 'float4';
+    if (item === null) {
+      if (type === 'bool') return [this.ofObj(obj).visible ? 1 : 0];
+      if (type === 'float4x4') return accessoryMatrix(values).elements.slice();
+      return vector ? [get('X'), get('Y'), get('Z')] : null;
+    }
+    if (item === 'XYZ') return vector ? [get('X'), get('Y'), get('Z')] : null;
+    if (item === 'Rxyz') return vector ? [get('Rx'), get('Ry'), get('Rz')] : null;
+    return isAccessoryItem(item) && type === 'float' ? [get(item)] : null;
   }
 
   private ofOwner(o: Owner): Target | null {
@@ -125,12 +136,12 @@ export class Controllers {
     };
   }
 
-  // 名前が合う最初の物 (置いた物が先、なければステージ)
-  private find(name: string): Target | null {
-    for (const obj of this.d.world.objects) if (same(objectName(obj), name)) return this.ofObj(obj);
+  // 名前が合う最初の物 (置いた物が場面の並びで先、なければステージ)
+  private find(name: string): Obj | typeof STAGE | null {
+    for (const obj of this.d.world.objects) if (same(objectName(obj), name)) return obj;
     const target = this.ofStage();
     const file = target && pmxName(target.mesh!);
-    return target && file && same(file, name) ? target : null;
+    return target && file && same(file, name) ? STAGE : null;
   }
 
   // ステージのモデル (なければ・まだ読み込み中なら null)
@@ -159,10 +170,6 @@ export class Controllers {
     if (bone) return spatial(bone.matrixWorld, type);
     const morph = mesh?.morphTargetDictionary?.[item];
     if (morph !== undefined) return type === 'float' ? [mesh!.morphTargetInfluences?.[morph] ?? 0] : null;
-    if (ACCESSORY_ITEMS.has(item) && !this.warned.has(item)) {
-      this.warned.add(item);
-      this.d.warn(t('CONTROLOBJECT の項目 {item} (アクセサリの値) には対応していないので、0 を渡します', { item }));
-    }
     return null;
   }
 }
