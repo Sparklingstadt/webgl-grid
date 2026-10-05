@@ -363,6 +363,22 @@ describe('MmeEngine', () => {
     expect(e.ui.state.mme.posts[0].warnings).toEqual([]);
   });
 
+  it('選んでいる物に割り当てた .fx がフォルダにないときは、画面の物の .fx を空にし、コンパイルできないお知らせを出さない', async () => {
+    const e = new Engine();
+    const obj = e.world.addShape(0, 0, 0, 0);
+    const fx = await e.mme.loadEffect([fileAt('Fx/good.fx', 'technique T { }')], 'good.fx');
+    e.mme.assign(obj, 'Main', null, { folder: fx.folder.id, path: 'missing.fx' });
+    e.ui.hideToast();
+    const toast = vi.spyOn(e.ui, 'toast');
+    e.selection.select(obj);
+    e.mme.publish();
+    expect(e.ui.state.mme.object).toBeNull();
+    expect(toast).not.toHaveBeenCalled();
+    // (大文字小文字が違っても、見つかればそれ)
+    e.mme.assign(obj, 'Main', null, { folder: fx.folder.id, path: 'GOOD.fx' });
+    expect(e.ui.state.mme.object).toMatchObject({ id: fx.id, ok: true });
+  });
+
   it('エフェクト割当の行 (割り当て・既定) とフォルダの .fx・仮のコントローラーを出す。行は元が変わったときだけ作り直す', async () => {
     const e = new Engine();
     const obj = e.world.addShape(0, 0, 0, 0);
@@ -393,11 +409,11 @@ describe('MmeEngine', () => {
     const good = await e.mme.loadEffect([fileAt('Fx/good.fx', 'technique T { }')], 'good.fx');
     e.mme.set({ engine: 'mme' });
     vi.spyOn(e.mme.renderer, 'render').mockReturnValue(true);
-    const materialNames = vi.spyOn(e.mme as unknown as { rows(...a: unknown[]): unknown[] }, 'rows'); // (物ごとの行を作る)
+    const rows = vi.spyOn(e.mme as unknown as { rows(...a: unknown[]): unknown[] }, 'rows'); // (物ごとの行を作る)
     const drawnEffects = vi.spyOn(e.mme.renderer, 'drawnEffects');
     const rebuilt = () => {
-      const n = [materialNames.mock.calls.length, drawnEffects.mock.calls.length];
-      materialNames.mockClear();
+      const n = [rows.mock.calls.length, drawnEffects.mock.calls.length];
+      rows.mockClear();
       drawnEffects.mockClear();
       return n[0] > 0 && n[1] > 0;
     };

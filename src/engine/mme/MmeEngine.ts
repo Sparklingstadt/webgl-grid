@@ -130,9 +130,8 @@ export class MmeEngine {
   // 仮のコントローラーの値は値を変えたときだけ並べ直す。どちらも JSON を使い回す
   publish(): void {
     const saved = this.deps.selection.current?.mme?.Main?.object;
-    const ref = saved && saved !== 'hide' ? saved : null;
-    const folder = ref && this.store.folder(ref.folder);
-    const fx = ref && folder ? this.store.effect(folder, ref.path) : null;
+    // (見つからない .fx はコンパイルしない: コンパイルできないお知らせを出さない。見つからないことは描くときに警告する)
+    const fx = saved && saved !== 'hide' ? this.renderer.assignments.effectOf(saved) : null;
     const rest: Omit<MmeUiState, keyof AssignUi | 'controllers'> = {
       settings: { ...this.settings },
       object: fx ? this.effectUi(fx) : null,
