@@ -148,7 +148,7 @@ function surveyTargets(effects: Compiled[]): string {
     for (const [k, v] of byFormat) out.push(`- ${k}: ${v.reduce((n, s) => n + s.effects.size, 0)} 件の宣言 (例: ${v[0].example})`);
   }
   const offscreen = list.filter(s => s.kind === 'OFFSCREENRENDERTARGET');
-  if (offscreen.length > 0) out.push('', `OFFSCREENRENDERTARGET は ${new Set(offscreen.flatMap(s => [...s.effects])).size} 個の .fx にある (いまの \`semantics.ts\` では unsupported)。`);
+  if (offscreen.length > 0) out.push('', `OFFSCREENRENDERTARGET は ${new Set(offscreen.flatMap(s => [...s.effects])).size} 個の .fx にある (\`src/engine/mme/Offscreen.ts\` が描く)。`);
   return out.join('\n');
 }
 

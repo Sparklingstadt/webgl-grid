@@ -63,7 +63,7 @@
 
 なし。`src/core/mme/targets.ts` (Framebuffers が使う) に、使われている形式がすべてある。
 
-OFFSCREENRENDERTARGET は 168 個の .fx にある (いまの `semantics.ts` では unsupported)。
+OFFSCREENRENDERTARGET は 168 個の .fx にある (`src/engine/mme/Offscreen.ts` が描く)。
 
 ## 3. ResourceName・ScriptOrder
 
