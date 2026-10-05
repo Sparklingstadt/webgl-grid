@@ -64,7 +64,8 @@ export class ScriptTargets {
       setClearStencil: p => { const v = this.value(p, 'ClearSetStencil'); if (v) this.clearStencil = v[0] ?? 0; },
       clear: what => {
         this.current();
-        this.fb.clear(what === 'color' ? this.clearColor : null, what === 'depth' ? this.clearDepth : null, what === 'stencil' ? this.clearStencil : null);
+        // MME の Clear=Depth は、深度のバッファ (深度とステンシルが 1 つ) を ClearSetDepth・ClearSetStencil の値で消す (ステンシルも消える)
+        this.fb.clear(what === 'color' ? this.clearColor : null, what === 'depth' ? this.clearDepth : null, what !== 'color' ? this.clearStencil : null);
         this.fb.afterDraw();
       },
       loopCount: p => this.inst.param(p)?.[0] ?? NaN,

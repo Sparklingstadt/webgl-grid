@@ -3,15 +3,23 @@ import type { Annotation, TextureDecl } from '../fx/desc.ts';
 import { t } from '../i18n.ts';
 import { annotation } from './annotations.ts';
 
-export type TargetFormat = 'rgba8' | 'rgba16f' | 'rgba32f' | 'r16f' | 'r32f' | 'rg16f' | 'rg32f' | 'depth24stencil8';
+export type TargetFormat = 'rgba8' | 'r8' | 'rgba16f' | 'rgba32f' | 'r16f' | 'r32f' | 'rg16f' | 'rg32f' | 'depth24stencil8';
 export interface TargetSpec { width: number; height: number; format: TargetFormat; mipmaps: boolean; warnings: string[] }
 
+// D3D の形式 → GL の形式 (WebGL2 の内部形式: rgba8 = RGBA8、r8 = R8、rgba16f = RGBA16F …)。
+// A8 は alpha だけの形式で .a で読むので、チャンネルを入れ替えられない WebGL2 では rgba8 にする。L8 は輝度だけで .r で読むので r8。
+// A2B10G10R10 (RGB10_A2) は three.js が扱えないので rgba8 (精度は下がる)
 const COLOR_FORMATS: Record<string, TargetFormat> = {
-  A8R8G8B8: 'rgba8', X8R8G8B8: 'rgba8', A8B8G8R8: 'rgba8',
+  A8R8G8B8: 'rgba8', X8R8G8B8: 'rgba8', A8B8G8R8: 'rgba8', A8: 'rgba8', A2B10G10R10: 'rgba8', L8: 'r8',
   A16B16G16R16F: 'rgba16f', A32B32G32R32F: 'rgba32f',
   R16F: 'r16f', R32F: 'r32f', G16R16F: 'rg16f', G32R32F: 'rg32f',
 };
 const DEPTH_FORMATS = new Set(['D24S8', 'D24X8', 'D16']);
+
+// 大きさか形式を書いた宣言か (shared では、書いてある宣言が形を決め、書いていない宣言はそれを使う)
+export function declaresLayout(decl: TextureDecl): boolean {
+  return ['Dimensions', 'ViewportRatio', 'Width', 'Height', 'Format', 'MipLevels'].some(n => annotation(decl.annotations, n) !== undefined);
+}
 
 function numbers(list: Annotation[], name: string): number[] | null {
   const v = annotation(list, name)?.value;

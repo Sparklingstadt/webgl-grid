@@ -323,12 +323,59 @@ test('地面の影は重なっても 1 回だけ暗くなる (ステンシル)�
   await look(0x3d);
   await look(0x3d, 'viewport');
   await look(0x3d, 'viewport');
-  // 場面を自分のレンダーターゲットと深度のターゲット (Clear=Depth はステンシルを消さない) に描いて、そのまま写すポストエフェクト
+  // 場面を自分のレンダーターゲットと深度のターゲット (Clear=Depth はステンシルも消す) に描いて、そのまま写すポストエフェクト
   // (背景は ClearColor の 51)
   expect(await addPost(page, filterFx('return c;'))).toBe(true);
   await look(51);
   await look(51, 'viewport');
   await look(51, 'viewport');
+  expect(await warnings(page)).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test('shared のレンダーターゲットは、物の .fx とポストエフェクトで同じもの (物が書いた赤を、ポストエフェクトが読んで出す)', async ({ page }) => {
+  const errors = await openMme(page);
+  await setCamera(page, { yaw: Math.PI / 2, pitch: 0.05, dist: 4.5, ty: 1 });
+  const i = await addPmx(page, { flags: 0 });
+  // 物の .fx (A) が、形を書いた shared の G に、箱を赤で描く。表には描かない
+  const objectSide = `
+float4x4 WVP : WORLDVIEWPROJECTION;
+float4 Black = { 0, 0, 0, 1 };
+shared texture2D G : RENDERCOLORTARGET < float2 ViewportRatio = { 1.0, 1.0 }; string Format = "A8R8G8B8"; >;
+float4 VS(float4 Pos : POSITION) : POSITION { return mul(Pos, WVP); }
+float4 Red() : COLOR0 { return float4(1, 0, 0, 1); }
+technique T < string MMDPass = "object"; string Script = "RenderColorTarget0=G; ClearSetColor=Black; Clear=Color; Pass=Write; RenderColorTarget0=;"; > {
+  pass Write { VertexShader = compile vs_3_0 VS(); PixelShader = compile ps_3_0 Red(); }
+}`;
+  expect(await assignFx(page, i, objectSide)).toBe(true);
+  // ポストエフェクト (B) は、形を書かない shared の G を宣言して、場面 (A が G に書く) を描いたあと、G を canvas に出す
+  const post = `${HEAD()}
+shared texture2D G : RENDERCOLORTARGET;
+sampler2D GSamp = sampler_state { texture = <G>; MinFilter = POINT; MagFilter = POINT; MipFilter = NONE; AddressU = CLAMP; AddressV = CLAMP; };
+float4 Show(float2 Tex : TEXCOORD0) : COLOR0 { return tex2D(GSamp, Tex); }
+${technique(`${CAPTURE}RenderColorTarget0=; RenderDepthStencilTarget=; Pass=Show;`, pass('Show', 'Show()'))}`;
+  expect(await addPost(page, post)).toBe(true);
+  const r = await shoot(page, 'png', [FACE, SKY]);
+  expect(rgb(r.pixels[0])).toEqual([255, 0, 0]);
+  expect(rgb(r.pixels[1])).toEqual([0, 0, 0]);
+  expect(await warnings(page)).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test('MipLevels = 0 のレンダーターゲットに縦縞を書いて、tex2Dlod の粗い段で読むと平均の色', async ({ page }) => {
+  const errors = await openMme(page);
+  // 1 列おきに白・黒の縦縞を Stripes (全段のミップマップ) に書き、いちばん粗い段 (tex2Dlod の 10。段の数を超えた分は最後の段) を canvas に出す
+  const fx = `${HEAD()}
+texture2D Stripes : RENDERCOLORTARGET < float2 ViewportRatio = { 1.0, 1.0 }; int MipLevels = 0; >;
+sampler2D StripesSamp = sampler_state { texture = <Stripes>; MinFilter = LINEAR; MagFilter = LINEAR; MipFilter = LINEAR; AddressU = CLAMP; AddressV = CLAMP; };
+float4 Write(float2 vpos : VPOS) : COLOR0 { float v = fmod(floor(vpos.x), 2.0) < 1.0 ? 1.0 : 0.0; return float4(v, v, v, 1); }
+float4 Show(float2 Tex : TEXCOORD0) : COLOR0 { return float4(tex2Dlod(StripesSamp, float4(Tex, 0, 10)).rgb, 1); }
+${technique(`${CAPTURE}RenderColorTarget0=Stripes; RenderDepthStencilTarget=; Pass=Write; RenderColorTarget0=; Pass=Show;`, pass('Write', 'Write()') + pass('Show', 'Show()'))}`;
+  expect(await addPost(page, fx)).toBe(true);
+  const r = await shoot(page, 'png', [], true);
+  for (const [x, y] of [[10, 10], [160, 120], [301, 200]]) {
+    expect(Math.abs(r.data[(y * W + x) * 4] - 128), `(${x}, ${y})`).toBeLessThanOrEqual(2);
+  }
   expect(await warnings(page)).toEqual([]);
   expect(errors).toEqual([]);
 });

@@ -201,6 +201,7 @@ export class MmeRenderer {
 
   private prepare(fb: Framebuffers, e: LoadedEffect, screen: [number, number]): void {
     const inst = this.instance(e);
+    if (inst.stopped) return; // (止めたエフェクトのターゲットは作らない)
     for (const w of fb.prepare(e, screen)) if (!inst.warnings.includes(w)) inst.warnings.push(w);
   }
 
@@ -210,7 +211,7 @@ export class MmeRenderer {
     const fb = this.fb;
     const outer = fb?.defaultSurface;
     if (fb) fb.defaultSurface = fb.current;
-    // 地面の影のステンシルを 0 から始める (ポストエフェクトの深度のターゲットは Clear=Depth でステンシルを消さないので、ここでも消す)
+    // 地面の影のステンシルを 0 から始める (Script が Clear=Depth しない深度のターゲットでも、物を描く前に消す)
     fb?.clear(null, null, 0);
     try {
       this.drawItems(items, frame, target);

@@ -177,6 +177,8 @@ describe('parseDds (Node の Buffer)', () => {
   it('Buffer を渡しても、プールの別の位置ではなく、このファイルの画素を返す', () => {
     const payload = bytesOf(new Uint16Array(4 * 4 * 4).map((_, i) => 0x3c00 + i));
     const dds = buildDds({ format: 'A16B16G16R16F', width: 4, height: 4, payload });
+    // (Node の型は src にないので globalThis から。Buffer は Uint8Array だが、slice が写さず元の領域を見る)
+    const { Buffer } = globalThis as unknown as { Buffer: { from(a: Uint8Array): Uint8Array } };
     const img = parseDds(Buffer.from(dds));
     const d = img.faces[0][0].data as Uint16Array;
     expect(d).toHaveLength(64);
