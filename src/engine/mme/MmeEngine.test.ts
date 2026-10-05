@@ -643,6 +643,17 @@ technique Post { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = comp
     // 保存し直しても、ポストエフェクトの参照は残る
     const again = JSON.parse(new TextDecoder().decode(await f.project.save('reference')));
     expect(again.mme.posts).toEqual([{ effect: { folder: id, path: 'post.fx' }, enabled: false }]);
+    // 同じフォルダを読み直す (同じ名前なのでまとめる) と、ポストエフェクトも直る (並びとオン・オフはそのまま)
+    const other = await f.mme.loadEffect([fileAt('Other/o.fx', 'technique O { }')], 'o.fx');
+    f.mme.store.addPost(other);
+    const changed = vi.fn();
+    f.mme.store.events.on('changed', changed);
+    await f.mme.loadEffect(fxFolder(), 'a.fx');
+    expect(f.mme.store.folders().map(x => x.id)).toEqual([id, other.folder.id]);
+    expect(f.mme.store.posts.map(p => [p.effect.folder.id, p.effect.entry, p.effect.result.ok, p.enabled])).toEqual([[id, 'post.fx', true, false], [other.folder.id, 'o.fx', true, true]]);
+    expect(f.mme.store.posts[1].effect).toBe(other);
+    expect(changed).toHaveBeenCalled();
+    expect(f.ui.state.mme.posts.map(p => p.ok)).toEqual([true, true]);
   });
 
   it('保存の前に、ポストエフェクトのオフスクリーンの DefaultEffect で描く .fx とその画像も (まだ描いていなくても) 読んだファイルにする', async () => {

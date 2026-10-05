@@ -88,7 +88,7 @@ export class ProjectIO {
   }
 
   // いまの場面を .wgp (ZIP) か .wgpj (JSON) のバイト列にする。
-  // (組み立てる前に、MME 互換で割り当てた .fx の画像を読み終える。まだ描いていなくても、読んだファイルとして入るように)
+  // (組み立てる前に、MME 互換で割り当てた .fx の画像を、まだ描いていなくても読んだファイル (used) にする。画像そのものは読まず、保存するときにファイルから読む)
   async save(storage: ProjectStorage = 'embedded'): Promise<Uint8Array> {
     await this.engine.mme.whenFilesRead();
     const { data, assets } = this.build(storage);
@@ -202,7 +202,7 @@ export class ProjectIO {
     const sizes = new Map(data.assets.map(a => [a.id, a.size]));
     for (const m of savedMmeFiles(data)) {
       const name = names.get(m.folder);
-      if (name === undefined) continue;
+      if (!name) continue; // (名前のないフォルダ (1 つだけ落としたファイルなど) は、どれのものか分からないので探さない)
       for (const folder of this.engine.mme.store.folders()) {
         const f = folder.name === name ? folder.files.get(m.path) : undefined;
         if (f && f.size === sizes.get(m.asset)) { out.set(m.asset, f); break; }

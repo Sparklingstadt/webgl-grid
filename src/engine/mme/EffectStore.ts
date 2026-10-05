@@ -126,6 +126,7 @@ export class EffectStore {
     if (changed) {
       this.compiled.delete(folder.id);
       this.folderChanges++;
+      this.recompilePosts([folder]);
     }
     return folder;
   }
@@ -151,6 +152,7 @@ export class EffectStore {
       if (n) this.nextFolderId = Math.max(this.nextFolderId, Number(n[1]) + 1);
     }
     this.folderChanges++;
+    this.recompilePosts(made);
   }
 
   // 読み込んだフォルダを全部消す (最初の状態に戻すとき。default.fx は残す。id は使い回さない)
@@ -195,6 +197,20 @@ export class EffectStore {
     if (this.posts.length === 0) return;
     this.posts.length = 0;
     this.events.emit('changed');
+  }
+
+  // 中身を変えたフォルダの .fx のポストエフェクトを、新しい中身でコンパイルし直したものにする (並びとオン・オフはそのまま)。
+  // (割り当ては描くときに引き直すが、ポストエフェクトの一覧は LoadedEffect を持つので。開いたときに見つからなかった .fx も、
+  // 同じフォルダを読み直すと直る)
+  private recompilePosts(folders: EffectFolder[]): void {
+    let replaced = false;
+    for (const p of this.posts) {
+      const folder = folders.find(f => f.id === p.effect.folder.id);
+      if (!folder) continue;
+      p.effect = this.effect(folder, p.effect.entry);
+      replaced = true;
+    }
+    if (replaced) this.events.emit('changed');
   }
 
   // 一覧を置き換える (プロジェクトを開くとき)

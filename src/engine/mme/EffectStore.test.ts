@@ -315,6 +315,28 @@ describe('EffectStore', () => {
     expect((await store.addFolder([fileAt('Fx/a.fx', '')])).id).not.toBe(old.id); // (id は使い回さない)
   });
 
+  it('同じ名前のフォルダを読み直してファイルが変わると、そのフォルダのポストエフェクトは新しい中身でコンパイルし直す (並びとオン・オフはそのまま。ほかのフォルダのものは同じ)', async () => {
+    const store = new EffectStore(fakeUi());
+    const a = store.effect(await store.addFolder([fileAt('A/a.fx', 'technique Old { }', 1)]), 'a.fx');
+    const b = store.effect(await store.addFolder([fileAt('B/b.fx', 'technique B { }')]), 'b.fx');
+    store.addPost(b);
+    store.addPost(a);
+    store.setPostEnabled(1, false);
+    const changed = vi.fn();
+    store.events.on('changed', changed);
+    await store.addFolder([fileAt('A/a.fx', 'technique New { }', 2)]);
+    const [first, second] = store.posts;
+    expect(first).toEqual({ effect: b, enabled: true });
+    expect(second.enabled).toBe(false);
+    expect(second.effect).not.toBe(a);
+    expect(second.effect.result.ok && second.effect.result.effect.techniques[0].name).toBe('New');
+    expect(changed).toHaveBeenCalledTimes(1);
+    // (変わらなければ、そのまま)
+    await store.addFolder([fileAt('A/a.fx', 'technique New { }', 2)]);
+    expect(store.posts[1].effect).toBe(second.effect);
+    expect(changed).toHaveBeenCalledTimes(1);
+  });
+
   it('setPosts はポストエフェクトの一覧を置き換え、1 回だけ知らせる', async () => {
     const store = new EffectStore(fakeUi());
     const changed = vi.fn();
