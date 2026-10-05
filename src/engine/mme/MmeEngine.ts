@@ -85,7 +85,31 @@ export class MmeEngine {
     return this.store.load(files, entry);
   }
 
-  // 書き出しの前に: 使う .fx のテクスチャと、MMD モデルの .pmx を読み終える (失敗しても) まで待つ
+  // --- 画面の操作 (割り当ては保存せず、元に戻すの対象にもしない) ---
+  // フォルダの中の .fx (フォルダからの相対パス)
+  fxFilesIn(files: File[]): string[] {
+    return EffectStore.fxFilesIn(files);
+  }
+
+  // 選んでいる物に .fx を読んで当てる (コンパイルできなくても当てる。描くのは default.fx で、画面にエラーを出す)
+  async loadObjectEffect(files: File[], entry: string): Promise<void> {
+    const obj = this.deps.selection.current;
+    if (!obj) return;
+    const e = await this.store.load(files, entry);
+    if (this.deps.world.objects.includes(obj)) this.store.setObjectEffect(obj.id, e);
+  }
+
+  removeObjectEffect(): void {
+    const obj = this.deps.selection.current;
+    if (obj) this.store.setObjectEffect(obj.id, null);
+  }
+
+  // ポストエフェクトを一覧の最後 (いちばん外側) に足す
+  async addPostEffect(files: File[], entry: string): Promise<void> {
+    this.store.addPost(await this.store.load(files, entry));
+  }
+
+  // 書き出しの前に:使う .fx のテクスチャと、MMD モデルの .pmx を読み終える (失敗しても) まで待つ
   whenReady(): Promise<void> {
     return this.renderer.whenReady();
   }

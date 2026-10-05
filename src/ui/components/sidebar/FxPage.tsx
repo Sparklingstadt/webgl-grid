@@ -1,8 +1,10 @@
 import { msg, t } from '../../../core/i18n';
 import type { FxKey, FxLevel } from '../../../engine';
+import type { MmeEffectUi } from '../../../engine/UiChannel';
 import { useEngine, useUi } from '../../EngineContext';
 import { BSlider } from '../BSlider';
 import { BCheck } from '../controls/BCheck';
+import { MmeEffectPicker } from '../MmeEffectPicker';
 import { Panel } from './Panel';
 
 // --- 効果 (MME 風) ---
@@ -17,12 +19,78 @@ const FX_ROWS: { key: FxKey; title: string; sliders: { k: keyof FxLevel; label: 
     { k: 'bright', label: msg('明度'), min: 0, max: 2, step: 0.02 },
   ] },
 ];
+// コンパイルの結果。エラーや警告があれば、開くと全部の一覧
+function FxResult({ fx }: { fx: MmeEffectUi }) {
+  const status = fx.ok ? t('コンパイルできました') : t('コンパイルできませんでした');
+  if (!fx.errors.length && !fx.warnings.length) return <div className="note">{status}</div>;
+  const counts = fx.errors.length ? t('エラー {errors}・警告 {warnings}', { errors: fx.errors.length, warnings: fx.warnings.length }) : t('警告 {warnings}', { warnings: fx.warnings.length });
+  return (
+    <details className="mme-diag">
+      <summary className={fx.ok ? 'note' : 'note mme-error'}>{status} ({counts})</summary>
+      <ul aria-label={t('{name} のエラーと警告', { name: fx.name })}>
+        {fx.errors.map((e, i) => <li key={`e${i}`} className="mme-error">{e.code} {e.where} {e.message}</li>)}
+        {fx.warnings.map((w, i) => <li key={`w${i}`}>{w}</li>)}
+      </ul>
+    </details>
+  );
+}
+
+// MME 互換 (レンダーエンジンが MME 互換のときだけ): 選んでいる物の .fx とポストエフェクトの一覧
+function MmePanel() {
+  const engine = useEngine();
+  const sel = useUi(s => s.sel);
+  const mme = useUi(s => s.mme);
+  const { store } = engine.mme;
+  return (
+    <Panel title={t('MME 互換')}>
+      <div className="mme-head">{t('選んでいる物の .fx')}</div>
+      {sel ? (
+        <MmeEffectPicker label={t('読み込む…')} inputLabel={t('物の .fx のフォルダを選ぶ')} onPick={(files, entry) => void engine.mme.loadObjectEffect(files, entry)}
+                         buttons={<button type="button" className="bbtn" disabled={!mme.object} onClick={() => engine.mme.removeObjectEffect()}>{t('外す')}</button>}>
+          <div className="mme-name" title={mme.object?.name}>{mme.object ? mme.object.name : t('なし (default.fx で描きます)')}</div>
+          {mme.object && <FxResult fx={mme.object} />}
+        </MmeEffectPicker>
+      ) : <div className="note">{t('物を選ぶと、その物に .fx を読み込めます')}</div>}
+      <div className="mme-head">{t('ポストエフェクト')}</div>
+      <MmeEffectPicker label={t('足す…')} inputLabel={t('ポストエフェクトのフォルダを選ぶ')} onPick={(files, entry) => void engine.mme.addPostEffect(files, entry)}>
+        {mme.posts.length ? (
+          <ul className="mme-posts" aria-label={t('ポストエフェクトの一覧')}>
+            {mme.posts.map((p, i) => (
+              <li key={`${i}:${p.name}`}>
+                <div className="mme-post-row">
+                  <BCheck checked={p.enabled} label={t('{name} を使う', { name: p.name })} onChange={on => store.setPostEnabled(i, on)} />
+                  <span className="mme-name" title={p.name}>{p.name}</span>
+                  <button type="button" className="bbtn" aria-label={t('{name} を上へ', { name: p.name })} title={t('上へ')} disabled={i === 0} onClick={() => store.movePost(i, -1)}>↑</button>
+                  <button type="button" className="bbtn" aria-label={t('{name} を下へ', { name: p.name })} title={t('下へ')} disabled={i === mme.posts.length - 1} onClick={() => store.movePost(i, 1)}>↓</button>
+                  <button type="button" className="bbtn" aria-label={t('{name} を外す', { name: p.name })} title={t('外す')} onClick={() => store.removePost(i)}>✕</button>
+                </div>
+                <FxResult fx={p} />
+              </li>
+            ))}
+          </ul>
+        ) : <div className="note">{t('ポストエフェクトはありません')}</div>}
+        {mme.posts.length > 1 && <div className="note">{t('上のものほど先に (場面の近くで) かかります')}</div>}
+      </MmeEffectPicker>
+      {mme.warnings.length > 0 && (
+        <details className="mme-diag">
+          <summary className="note">{t('描くときの警告 {n}', { n: mme.warnings.length })}</summary>
+          <ul aria-label={t('描くときの警告')}>{mme.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
+        </details>
+      )}
+      <div className="note">{t('.fx が入っているフォルダを選ぶか、ここに落とします。割り当てはページを開き直すと消えます')}</div>
+    </Panel>
+  );
+}
+
 export function FxPage() {
   const engine = useEngine();
   const state = useUi(s => s.fxState);
   const level = useUi(s => s.fxLevel);
+  const mme = useUi(s => s.mme.settings.engine === 'mme');
   return (
     <>
+      {mme && <MmePanel />}
+      {mme && <div className="note" style={{ padding: '2px 2px 0' }}>{t('MME 互換で描いているあいだは、下の効果はかかりません')}</div>}
       <div className="note" style={{ padding: '2px 2px 6px' }}>{t('MME 風の効果。オフの効果のスライダーを動かすとオンになります。設定はブラウザに保存されます')}</div>
       {FX_ROWS.map(row => (
         <Panel key={row.key} title={t(row.title)}

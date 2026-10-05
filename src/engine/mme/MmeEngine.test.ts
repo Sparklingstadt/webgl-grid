@@ -237,4 +237,25 @@ describe('MmeEngine', () => {
     expect(e.ui.state.mme.posts[0].ok).toBe(false);
     expect(e.ui.state.mme.posts[0].errors).toHaveLength(20);
   });
+
+  it('画面の操作: 選んでいる物に .fx を読む・外す、ポストエフェクトを足す、フォルダの .fx の一覧', async () => {
+    const e = new Engine();
+    const obj = e.world.addShape(0, 0, 0, 0);
+    const files = () => [fileAt('Fx/a.fx', 'technique T { }'), fileAt('Fx/tex.png', '')];
+    expect(e.mme.fxFilesIn([fileAt('F/b/c.fx', ''), fileAt('F/a.FX', ''), fileAt('F/t.png', '')])).toEqual(['a.FX', 'b/c.fx']);
+    await e.mme.loadObjectEffect(files(), 'a.fx'); // (選んでいなければ何もしない)
+    expect(e.mme.store.objectEffect(obj.id)).toBeNull();
+    e.selection.select(obj);
+    const loading = e.mme.loadObjectEffect(files(), 'a.fx');
+    e.selection.select(null); // 読んでいるあいだに選び直しても、押したときの物に当てる
+    await loading;
+    expect(e.mme.store.objectEffect(obj.id)?.name).toBe('Fx/a.fx');
+    e.selection.select(obj);
+    expect(e.ui.state.mme.object?.name).toBe('Fx/a.fx');
+    e.mme.removeObjectEffect();
+    expect(e.mme.store.objectEffect(obj.id)).toBeNull();
+    expect(e.ui.state.mme.object).toBeNull();
+    await e.mme.addPostEffect([fileAt('P/post.fx', 'technique T { }')], 'post.fx');
+    expect(e.ui.state.mme.posts.map(p => [p.name, p.enabled])).toEqual([['P/post.fx', true]]);
+  });
 });
