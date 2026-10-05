@@ -31,10 +31,9 @@ test('default.fx: 材質の色・輪郭線・地面の影', async ({ page }) => 
   // 材質の色: MMD の式 saturate(拡散色 × ライトの色 + 環境色) (トゥーンの明るい側は白・反射は 0)
   const expected = [[0.9, 0.4], [0.7, 0.3], [0.5, 0.2]].map(([d, a]) => Math.round(Math.min(1, d * LIGHT + a) * 255));
   expect(diff(r.pixels[0], expected), `${r.pixels[0]} ≈ ${expected}`).toBeLessThanOrEqual(3);
-  // 地面の影: 半透明の黒 (重なると濃くなる) を背景に重ねた灰色
+  // 地面の影: 半透明の黒 (不透明度 0.5) を背景に 1 回重ねた灰色 (この位置では三角形は重ならない。重なると濃くなる: ステンシルはまだ使わない)
   const g = r.pixels[1];
-  expect(diff(g, [g[0], g[0], g[0]])).toBeLessThanOrEqual(2);
-  expect(g[0]).toBeLessThanOrEqual(Math.ceil(BG[0] / 2) + 2);
+  expect(diff(g, [BG[0] * 0.5, BG[0] * 0.5, BG[0] * 0.5]), `${g}`).toBeLessThanOrEqual(2);
   // 輪郭線: 面の真ん中から左へたどると、背景の手前に黒い帯がある (法線が水平なので、上下には広がらない)
   const [cx, cy] = r.pos[2];
   const at = (x: number, y: number) => r.data.slice((y * r.width + x) * 4, (y * r.width + x) * 4 + 3);
@@ -69,6 +68,7 @@ test('default.fx: セルフシャドウで片方の箱にもう片方の影が�
     const a = on.data.slice(i, i + 3), b = off.data.slice(i, i + 3);
     if (diff(a, b) <= 4) continue;
     const ratios = [0, 1, 2].filter(k => b[k] >= 40).map(k => a[k] / b[k]);
+    if (ratios.length === 0) continue; // (暗すぎて割合を比べられない)
     if (ratios.every(q => Math.abs(q - toon) < 0.03)) shadowed++;
     else if (!ratios.every(q => q > toon - 0.03 && q < 1)) bad++;
   }
@@ -206,9 +206,9 @@ test('.pmx を読み終える前の最初のフレームでも止まらず、あ
       g.drawImage(canvas, 0, 0);
       w.__seen = Array.from(g.getImageData(Math.floor((v.x + 1) / 2 * c.width), Math.floor((1 - v.y) / 2 * c.height), 1, 1).data);
     });
-    return { before, drawn: engine.mme.renderer.warnings.length };
+    return { before, warnings: engine.mme.renderer.warnings.length };
   }, i);
-  expect(first).toEqual({ before: null, drawn: 0 });
+  expect(first).toEqual({ before: null, warnings: 0 });
   // 拡散色 (0.9, 0.7, 0.5) の明るい側か暗い側。背景ではない
   await expect.poll(() => page.evaluate(() => (window as Win).__seen)).not.toBeNull();
   const seen = await page.evaluate(() => (window as Win).__seen as number[]);
@@ -241,5 +241,54 @@ test('選んでいる物の輪郭線がビューポートに出る (書き出し
   };
   expect(orange((await shoot(page, 'viewport', [], true)).data)).toBeGreaterThan(50);
   expect(orange((await shoot(page, 'png', [], true)).data)).toBe(0);
+  expect(errors).toEqual([]);
+});
+
+test('リンクできない .fx はお知らせを 1 回出して止め、モデルは default.fx で描く', async ({ page }) => {
+  const errors = await openMme(page);
+  await setCamera(page, { yaw: Math.PI / 2, pitch: 0.05, dist: 4.5, ty: 1 });
+  const i = await addPmx(page, { flags: ALL_FLAGS });
+  const face: [number, number, number] = [0, 1, 0.2];
+  const before = (await shoot(page, 'png', [face])).pixels[0];
+  await page.evaluate(() => {
+    const w = window as Win;
+    w.__toasts = [];
+    const toast = w.engine.ui.toast.bind(w.engine.ui);
+    w.engine.ui.toast = (text: string, ms?: number) => { w.__toasts.push(text); toast(text, ms); };
+  });
+  // コンパイルはできるが、uniform が GPU の上限を超えるのでリンクできない
+  expect(await assignFx(page, i, objectFx('return Big[int(Uv.x * 1000.0)];', 'float4 Big[20000];'), 'big.fx')).toBe(true);
+  const after: number[][] = [];
+  for (let k = 0; k < 3; k++) after.push((await shoot(page, 'png', [face])).pixels[0]);
+  expect(after[2]).toEqual(before);
+  const toasts = await page.evaluate(() => (window as Win).__toasts as string[]);
+  expect(toasts.filter(x => x.includes('big.fx'))).toEqual(['fx/big.fx のシェーダーを GPU で使えないので止めました']);
+  expect(await page.evaluate(i => {
+    const { engine } = window as Win;
+    return engine.mme.renderer.stopped(engine.mme.store.objectEffect(engine.world.objects[i].id));
+  }, i)).toBe(true);
+  // (three.js がリンクの失敗をコンソールに出す)
+  expect(errors.filter(e => !/WebGLProgram|Shader Error/.test(e))).toEqual([]);
+});
+
+test('グリッドと編集用の物 (ライトの目印) はビューポートにだけ出て、書き出しには出ない', async ({ page }) => {
+  const errors = await openMme(page);
+  await setCamera(page, { yaw: Math.PI / 4, pitch: 0.5, dist: 6, ty: 0.5 });
+  // 背景と違う画素の数
+  const count = (d: number[]) => {
+    let n = 0;
+    for (let k = 0; k < d.length; k += 4) if (diff(d.slice(k, k + 3), BG) > 2) n++;
+    return n;
+  };
+  const grid = count((await shoot(page, 'viewport', [], true)).data);
+  await page.evaluate(() => {
+    const { engine } = window as Win;
+    engine.addLight('point');
+    engine.select(null);
+  });
+  const withLight = count((await shoot(page, 'viewport', [], true)).data);
+  expect(grid).toBeGreaterThan(100);
+  expect(withLight).toBeGreaterThan(grid + 20); // ライトの目印が足される
+  expect(count((await shoot(page, 'png', [], true)).data)).toBe(0);
   expect(errors).toEqual([]);
 });

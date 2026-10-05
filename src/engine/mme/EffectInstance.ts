@@ -278,6 +278,7 @@ const EMPTY: EffectDesc = { params: [], textures: [], samplers: [], techniques: 
 
 export class EffectInstance {
   readonly warnings: string[] = [];
+  stopped = false; // GPU で使えない (シェーダーをリンクできない)。物は default.fx で描き、ポストエフェクトは飛ばす
   private desc: EffectDesc;
   private params = new Map<string, Param>();
   private textureDecls = new Map<string, TextureDecl>();

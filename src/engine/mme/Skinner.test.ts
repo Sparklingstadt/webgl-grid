@@ -324,6 +324,18 @@ describe('Skinner.plain', () => {
     expect(sk.plain(mesh)).toBe(g2);
   });
 
+  it('index をその場で書き換える (version が上がる) と、向きを逆にした index も作り直す', () => {
+    const mesh = box();
+    const sk = new Skinner();
+    const g = sk.plain(mesh);
+    const idx = mesh.geometry.index!;
+    idx.setX(0, idx.getX(1));
+    idx.needsUpdate = true;
+    const g2 = sk.plain(mesh);
+    expect(g2).not.toBe(g);
+    expect(Array.from(g2.geometry.index!.array)).toEqual(reversed(mesh.geometry));
+  });
+
   it('同じ形を使う物は写しを共有する。法線や uv がなくても作れる', () => {
     const a = box(), b = new THREE.Mesh(a.geometry);
     const sk = new Skinner();

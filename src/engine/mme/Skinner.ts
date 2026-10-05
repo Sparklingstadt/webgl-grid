@@ -177,7 +177,7 @@ export class Skinner {
     const geo = mesh.geometry;
     const a = geo.attributes;
     const sources = [a.position, a.normal, geo.index, ...UV_NAMES.map(n => a[n])].map(x => x ?? null);
-    const versions = [a.position, a.normal].map(x => (x && ('version' in x ? x.version : x.data.version)) || 0);
+    const versions = [a.position, a.normal, geo.index].map(x => (x && ('version' in x ? x.version : x.data.version)) || 0);
     const old = this.plains.get(geo);
     if (old && !old.copy.released && old.sources.every((s, i) => s === sources[i]) && old.versions.every((v, i) => v === versions[i])) return old.out;
     if (old) this.release(old.copy);

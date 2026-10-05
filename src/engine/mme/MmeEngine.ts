@@ -34,7 +34,7 @@ export class MmeEngine {
     this.renderer = new MmeRenderer({ ...deps, store: this.store, settings: this.settings });
     // 前の描画 (効果の後処理) は、標準のエンジンのときに使う
     const prev = deps.viewport.drawOverride;
-    deps.viewport.drawOverride = () => (this.settings.engine === 'mme' ? this.draw() : prev?.() ?? false);
+    deps.viewport.drawOverride = () => (this.settings.engine === 'mme' ? this.draw() || (prev?.() ?? false) : prev?.() ?? false);
     deps.output.waitReady = () => (this.settings.engine === 'mme' ? this.whenReady() : null);
     this.store.events.on('changed', () => {
       this.renderer.prune();
@@ -66,7 +66,7 @@ export class MmeEngine {
     this.renderer.dispose();
   }
 
-  // MME 互換で描く。例外を出したら、そのフレームは標準のエンジンで描く (同じ例外のお知らせは 1 回)
+  // MME 互換で描く。例外を出したら false (そのフレームは標準のエンジンと効果で描く。同じ例外のお知らせは 1 回)
   private draw(): boolean {
     try {
       return this.renderer.render();

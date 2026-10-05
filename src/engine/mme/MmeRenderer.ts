@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { Pass } from '../../core/fx/index.ts';
+import { t } from '../../core/i18n';
 import type { Color3 } from '../../core/materials/nodes';
 import { inputLink, surfaceShader, upstreamOrder } from '../../core/materials/tree';
 import { orthoD3D, toMmd } from '../../core/mme/coords.ts';
@@ -12,6 +13,7 @@ import type { MaterialData, MaterialLibrary } from '../materials/MaterialLibrary
 import type { SceneGraph } from '../render/SceneGraph';
 import type { Viewport } from '../render/Viewport';
 import type { Obj } from '../types';
+import type { UiChannel } from '../UiChannel';
 import type { Selection } from '../world/Selection';
 import type { World } from '../world/World';
 import { EffectInstance, type BaseState, type TextureSource } from './EffectInstance';
@@ -25,7 +27,7 @@ import { Skinner, type MmeGeometry } from './Skinner';
 
 export interface MmeRendererDeps {
   viewport: Viewport; graph: SceneGraph; world: World; selection: Selection; clock: Clock; library: MaterialLibrary;
-  store: EffectStore; settings: MmeSettings; stage: () => THREE.Object3D | null;
+  store: EffectStore; settings: MmeSettings; stage: () => THREE.Object3D | null; ui: UiChannel;
 }
 
 // 描画先: 上下の向き (canvas は 1、レンダーターゲットは −1) と画素の数
@@ -115,6 +117,7 @@ export class MmeRenderer {
   private hiddenMaterial = new THREE.MeshBasicMaterial({ visible: false });
   private proxy = new THREE.Mesh(); // renderBufferDirect に渡す物 (単位行列。three.js の骨やモーフ・面の反転を効かせない)
   private clearColor = new THREE.Color();
+  private linked = new WeakSet<THREE.Material>(); // リンクできたかを確かめた材質
 
   constructor(private d: MmeRendererDeps) {
     this.host.onAfterRender = () => {
@@ -252,7 +255,7 @@ export class MmeRenderer {
     const target = sun.target.getWorldPosition(new THREE.Vector3());
     const world = new THREE.Matrix4().lookAt(eye, target, new THREE.Vector3(0, 1, 0)).setPosition(eye);
     const c = sun.shadow.camera;
-    const s = this.d.settings.shadowDistance / SHADOW_DISTANCE;
+    const s = Math.max(this.d.settings.shadowDistance, 1) / SHADOW_DISTANCE; // (0 だと範囲が潰れる)
     return {
       direction: this.d.graph.sunDirection().negate(),
       color,
@@ -277,16 +280,17 @@ export class MmeRenderer {
   }
 
   // --- 描く物 ---
-  // 置いた物 (見えているもの) とステージの、見えているメッシュ。編集用の物 (editorOnly) は除く
+  // ステージ (背景として先に描く。モデルの地面の影が床に重なるように) と、置いた物 (見えているもの) の見えているメッシュ。
+  // 編集用の物 (editorOnly) は除く
   private collect(frame: FrameState): DrawItem[] {
     const items: DrawItem[] = [];
+    const stage = this.d.stage();
+    if (stage && visibleChain(stage)) this.collectFrom(stage, this.d.store.defaultEffect, frame, items);
     const outputting = this.d.viewport.outputting;
     for (const obj of this.d.world.objects) {
       if (outputting ? obj.hideRender : obj.hidden || obj.colHidden) continue;
       if (visibleChain(obj.node)) this.collectFrom(obj.node, this.effectOf(obj), frame, items);
     }
-    const stage = this.d.stage();
-    if (stage && visibleChain(stage)) this.collectFrom(stage, this.d.store.defaultEffect, frame, items);
     return items;
   }
 
@@ -302,10 +306,15 @@ export class MmeRenderer {
     visit(root);
   }
 
-  // .fx を割り当てていない・コンパイルできなかった物は default.fx
+  // .fx を割り当てていない・コンパイルできなかった・GPU で止めた物は default.fx
   private effectOf(obj: Obj): LoadedEffect {
     const e = this.d.store.objectEffect(obj.id);
-    return e?.result.ok ? e : this.d.store.defaultEffect;
+    return e?.result.ok && !this.stopped(e) ? e : this.d.store.defaultEffect;
+  }
+
+  // そのエフェクトを GPU で使えないので止めたか (ポストエフェクトは飛ばす)
+  stopped(e: LoadedEffect): boolean {
+    return this.instances.get(e)?.stopped ?? false;
   }
 
   private isMmd(o: THREE.Object3D): boolean {
@@ -429,9 +438,10 @@ export class MmeRenderer {
     }
     if (!tech) return;
     const inst = this.instance(effect);
+    if (inst.stopped) return; // (このフレームの途中で止めた。次のフレームから default.fx)
     runTechnique(tech, 'object', this.objectBackend(inst, (p, mode) => {
       if (mode === 'buffer') this.warn('物の .fx の Draw=Buffer にはまだ対応していないので無視します');
-      else this.drawGeometry(inst, p, item, sub, pass, frame, target);
+      else if (!inst.stopped) this.drawGeometry(inst, effect, p, item, sub, pass, frame, target);
     }));
   }
 
@@ -453,7 +463,7 @@ export class MmeRenderer {
     };
   }
 
-  private drawGeometry(inst: EffectInstance, p: Pass, item: DrawItem, sub: Subset, pass: MmdPass, frame: FrameState, target: DrawTarget): void {
+  private drawGeometry(inst: EffectInstance, effect: LoadedEffect, p: Pass, item: DrawItem, sub: Subset, pass: MmdPass, frame: FrameState, target: DrawTarget): void {
     const renderer = this.d.viewport.renderer!;
     const base: BaseState = { kind: pass === 'zplot' ? 'zplot' : pass === 'edge' ? 'edge' : 'object', doubleSided: sub.doubleSided };
     const m = inst.material(p, target.flipY, base);
@@ -473,6 +483,19 @@ export class MmeRenderer {
     const geometry = pass === 'edge' && item.geo.edge ? item.geo.edge : item.geo.geometry;
     // (scene と group は null でよい: three.js は空の場面・形全体として扱う)
     renderer.renderBufferDirect(this.d.graph.camera, null as unknown as THREE.Scene, geometry, m, this.proxy, sub.group as THREE.GeometryGroup);
+    this.checkLink(renderer, m, inst, effect);
+  }
+
+  // 材質で初めて描いたあとに、シェーダーをリンクできたかを確かめる。できなければ、そのエフェクトを止めてお知らせを 1 回出す
+  private checkLink(renderer: THREE.WebGLRenderer, m: THREE.Material, inst: EffectInstance, effect: LoadedEffect): void {
+    if (this.linked.has(m)) return;
+    this.linked.add(m);
+    const program = (renderer.properties.get(m) as { currentProgram?: { program?: WebGLProgram } }).currentProgram?.program;
+    const gl = renderer.getContext();
+    if (!program || gl.getProgramParameter(program, gl.LINK_STATUS) !== false) return;
+    inst.stopped = true;
+    this.d.ui.toast(t('{name} のシェーダーを GPU で使えないので止めました', { name: effect.name }), 8000);
+    this.d.viewport.requestDraw();
   }
 
   // three.js の render の中 (空の場面の onAfterRender) で fn を呼ぶ。そのとき items の形を GPU に送らせる
