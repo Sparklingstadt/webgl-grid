@@ -44,7 +44,8 @@ export class Assignments {
   // owner: そのオフスクリーンの持ち主 (規則の self に合う物。ステージなら STAGE)。
   // Main: 割り当てた .fx が見つからなければ警告を 1 回出して次の決め方に回し、コンパイルできない .fx は default.fx で描く。
   // オフスクリーンのタブ (defaults がある): 見つからない・コンパイルできない .fx は描かない (hide。警告は 1 回)。
-  // G バッファや影のマップに MMD の陰影を書くと絵が壊れるので、default.fx にはしない
+  // G バッファや影のマップに MMD の陰影を書くと絵が壊れるので、default.fx にはしない。
+  // 物 (ステージ) のそのタブの割り当てで決まった .fx は assigned (描くときに、その物のパラメータの値を使う。DefaultEffect・default.fx は初期値)
   slotFor(tab: string, defaults: DefaultsOf | null, owner: Owner): SlotFor {
     return (obj, mesh, materialIndex) => {
       const effects = obj ? obj.mme?.[tab] : this.stage()?.[tab];
@@ -118,7 +119,7 @@ export class Assignments {
   private resolve(tab: string, defaults: DefaultsOf | null, own: (SavedSlot | undefined)[], name: () => string, isSelf: boolean, quiet: boolean): Slot {
     const offscreen = defaults !== null ? tab : null;
     for (const saved of own) {
-      const slot = this.slot(saved, offscreen, quiet);
+      const slot = this.slot(saved, offscreen, quiet, true);
       if (slot) return slot;
     }
     const fallback: Slot = { kind: 'effect', effect: this.store.defaultEffect };
@@ -126,16 +127,16 @@ export class Assignments {
     const action = resolveDefault(defaults.rules, name(), isSelf);
     if (!action || action.kind === 'hide') return HIDE;
     if (action.kind === 'none') return fallback;
-    return this.slot({ folder: defaults.folder.id, path: joinPath(defaults.base, action.path) }, offscreen, quiet) ?? HIDE;
+    return this.slot({ folder: defaults.folder.id, path: joinPath(defaults.base, action.path) }, offscreen, quiet, false) ?? HIDE;
   }
 
-  // offscreen: オフスクリーンのタブの名前 (Main は null)
-  private slot(saved: SavedSlot | undefined, offscreen: string | null, quiet: boolean): Slot | null {
+  // offscreen: オフスクリーンのタブの名前 (Main は null)。assigned: 物の割り当て (見つかってコンパイルできれば assigned の slot にする)
+  private slot(saved: SavedSlot | undefined, offscreen: string | null, quiet: boolean, assigned: boolean): Slot | null {
     if (saved === undefined) return null;
     if (saved === 'hide') return HIDE;
     const e = this.find(saved, quiet ? false : offscreen);
     if (!e) return offscreen === null ? null : HIDE;
-    if (e.result.ok) return { kind: 'effect', effect: e };
+    if (e.result.ok) return assigned ? { kind: 'effect', effect: e, assigned: true } : { kind: 'effect', effect: e };
     if (offscreen === null) return { kind: 'effect', effect: this.store.defaultEffect };
     if (!quiet) this.warnOnce(`${offscreen}\n${e.id}`, t('{name} をコンパイルできないので、オフスクリーン {tab} では描きません', { name: e.name, tab: offscreen }));
     return HIDE;

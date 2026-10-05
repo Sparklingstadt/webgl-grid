@@ -4,6 +4,7 @@ import { dirname, joinPath } from '../../core/fx/source.ts';
 import { msg, t } from '../../core/i18n.ts';
 import { annotation } from '../../core/mme/annotations.ts';
 import { controlRef } from '../../core/mme/controllers.ts';
+import { effectParams, paramChannels, paramValues, type ParamUi } from '../../core/mme/params.ts';
 import { semanticValue, textureRole, type SemanticContext } from '../../core/mme/semantics.ts';
 import { typeShape } from '../../core/mme/typeShape.ts';
 import { readBinary, type LoadedEffect } from './EffectStore.ts';
@@ -261,7 +262,8 @@ export class EffectInstance {
   private params = new Map<string, Param>();
   private textureDecls = new Map<string, TextureDecl>();
   private samplers = new Map<string, SamplerDecl>();
-  private overrides = new Map<string, number[]>();
+  private setValues = new Map<string, number[]>(); // setParam の値 (Script の LoopGetIndex。物のパラメータの値より強い)
+  private paramList: { param: ParamUi; channels: string[] }[]; // いじれるパラメータと、その MME のチャンネルの名前
   private materials = new Map<Pass, Map<string, THREE.RawShaderMaterial>>();
   private files = new Map<string, FileTexture>();
   private copies = new Map<THREE.Texture, { bySampler: Map<string, Copy>; onDispose: () => void }>();
@@ -274,6 +276,7 @@ export class EffectInstance {
     for (const p of this.desc.params) this.params.set(p.name, p);
     for (const t of this.desc.textures) this.textureDecls.set(t.name, t);
     for (const s of this.desc.samplers) this.samplers.set(s.name, s);
+    this.paramList = effectParams(this.desc).map(param => ({ param, channels: paramChannels(effect.folder.id, effect.entry, param) }));
     this.fallbacks = { magenta: pixelTexture([255, 0, 255, 255]), blank: pixelTexture([0, 0, 0, 255]), white: pixelTexture([255, 255, 255, 255]) };
     // ResourceName の画像は最初に全部読み始める (書き出しまでに読み終えるように)
     for (const t of this.desc.textures) if (textureRole(t) === 'file') this.loadFile(t);
@@ -299,7 +302,8 @@ export class EffectInstance {
     return m;
   }
 
-  bind(m: THREE.RawShaderMaterial, pass: Pass, ctx: SemanticContext, builtins: DrawBuiltins, textures: TextureSource): void {
+  // overrides: いま描く物 (.fx を当てた物) のパラメータの値 (paramValuesOf。なければ初期値)
+  bind(m: THREE.RawShaderMaterial, pass: Pass, ctx: SemanticContext, builtins: DrawBuiltins, textures: TextureSource, overrides?: ReadonlyMap<string, number[]>): void {
     const prog = pass.program;
     if (!prog) return;
     for (const u of prog.uniforms) {
@@ -313,15 +317,23 @@ export class EffectInstance {
         const s = this.samplers.get(u.name);
         slot.value = s ? this.samplerTexture(s, textures) : null;
       } else {
-        slot.value = this.valueOf(u, ctx);
+        slot.value = this.valueOf(u, ctx, overrides);
       }
     }
     m.uniformsNeedUpdate = true;
   }
 
-  // パラメータのいまの値 (setParam で入れた値か初期値)。知らない名前は null
-  param(name: string): number[] | null {
-    const o = this.overrides.get(name);
+  // 物の MME の値 (Obj.mmeValues・ステージのパラメータの値) から、この .fx のパラメータの値 (bind の overrides)。
+  // チャンネルの名前は `<フォルダの id>/<.fx のパス>:<名前>`。範囲に収める。この .fx の値がなければ undefined
+  paramValuesOf(values: Readonly<Record<string, number>> | undefined): ReadonlyMap<string, number[]> | undefined {
+    if (!values || this.paramList.length === 0) return undefined;
+    const out = paramValues(this.paramList, values);
+    return out.size > 0 ? out : undefined;
+  }
+
+  // パラメータのいまの値 (setParam で入れた値 → 物のパラメータの値 (overrides) → 初期値)。知らない名前は null
+  param(name: string, overrides?: ReadonlyMap<string, number[]>): number[] | null {
+    const o = this.setValues.get(name) ?? overrides?.get(name);
     if (o) return o.slice();
     const p = this.params.get(name);
     if (!p) return null;
@@ -334,7 +346,7 @@ export class EffectInstance {
   }
 
   setParam(name: string, values: number[]): void {
-    this.overrides.set(name, values.slice());
+    this.setValues.set(name, values.slice());
   }
 
   dispose(): void {
@@ -356,11 +368,12 @@ export class EffectInstance {
     if (!this.warnings.includes(message)) this.warnings.push(message);
   }
 
-  // 初期値 → セマンティクス → (名前で決まる変数はセマンティクスの中) の順。setParam の値がいちばん強い
-  private valueOf(u: UniformRef, ctx: SemanticContext | null): number | number[] {
+  // 初期値 → セマンティクス → (名前で決まる変数はセマンティクスの中) の順。物のパラメータの値 (overrides。セマンティクスのない
+  // 変数だけ) はそれより強く、setParam の値がいちばん強い
+  private valueOf(u: UniformRef, ctx: SemanticContext | null, overrides?: ReadonlyMap<string, number[]>): number | number[] {
     const p = this.params.get(u.name);
     if (!p) return uniformValue(u, []);
-    let values = this.overrides.get(u.name) ?? null;
+    let values = this.setValues.get(u.name) ?? overrides?.get(u.name) ?? null;
     if (!values) {
       values = Array.isArray(p.init) ? p.init : null;
       if (ctx) {

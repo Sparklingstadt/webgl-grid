@@ -58,4 +58,15 @@ describe('normalizeMmeScene', () => {
     // 第 2 の計画の形にはない
     expect('stage' in normalizeMmeScene({ engine: 'mme', stage })).toBe(false);
   });
+  it('ステージのパラメータの値 (stageParams: チャンネルの名前 → 値) は数の項だけ読む。何も残らなければ項を作らない', () => {
+    const base = { settings: MME_DEFAULTS, folders: [], posts: [], controls: {} };
+    const stageParams = { 'folder1/sky.fx:Strength': 3, 'folder1/sky.fx:Col:x': -0.5 };
+    expect(normalizeMmeScene({ ...base, stageParams: { ...stageParams } })).toEqual({ ...base, stageParams });
+    expect(normalizeMmeScene({ ...base, stageParams: { ...stageParams, a: 'x', b: Number.NaN, c: null, '': 1 } })).toEqual({ ...base, stageParams });
+    for (const bad of [null, 'x', [], {}, { a: Number.POSITIVE_INFINITY }]) {
+      const r = normalizeMmeScene({ ...base, stageParams: bad });
+      expect(r).toEqual(base);
+      expect('stageParams' in r).toBe(false);
+    }
+  });
 });

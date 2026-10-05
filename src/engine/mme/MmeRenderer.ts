@@ -32,6 +32,7 @@ export interface MmeRendererDeps {
   store: EffectStore; settings: MmeSettings; stage: () => THREE.Object3D | null; ui: UiChannel;
   controllers: Controllers; // CONTROLOBJECT の値
   stageEffects: () => ObjectEffects | null; // ステージの割り当て (場面の値)
+  stageParams: () => Readonly<Record<string, number>>; // ステージに当てた .fx のパラメータの値 (場面の値)
 }
 
 export type { DrawTarget, FrameState, PostEffect };
@@ -90,6 +91,7 @@ export class MmeRenderer {
       offscreen: (e, name, owner) => this.offscreen.texture(e, name, owner),
       warn: m => this.warn(m),
       control: (ref, self, owner) => d.controllers.value(ref, self, owner),
+      stageParams: () => d.stageParams(),
     });
     this.offscreen = new Offscreen({
       fb: () => this.fb!,

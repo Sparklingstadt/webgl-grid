@@ -7,6 +7,9 @@ import { EffectInstance } from './EffectInstance';
 import type { LoadedEffect } from './EffectStore';
 import { readEmbedded } from '../project/format';
 import { MME_DEFAULTS, normalizeMme } from './MmeEngine';
+import type { DrawTarget } from './Framebuffers';
+import { PostChain, type FrameState } from './PostChain';
+import type { PassTable } from './ScenePass';
 
 // フォルダから選んだファイル (webkitRelativePath は 'フォルダ/…')
 function fileAt(path: string, text: string, lastModified?: number): File {
@@ -163,7 +166,7 @@ describe('MmeEngine', () => {
     const dispose = vi.spyOn(r.instance(fx) as unknown as EffectInstance, 'dispose');
     expect(() => e.world.remove(a)).not.toThrow();
     expect(dispose).not.toHaveBeenCalled(); // (b が使っている)
-    expect(r.mainSlot(b, b.mesh!, 0)).toEqual({ kind: 'effect', effect: fx });
+    expect(r.mainSlot(b, b.mesh!, 0)).toEqual({ kind: 'effect', effect: fx, assigned: true });
     expect(b.mme).toEqual({ Main: { materials: { 0: ref(fx) } } });
     e.world.remove(b);
     expect(dispose).toHaveBeenCalledTimes(1); // (もうどの物も使っていない)
@@ -233,10 +236,10 @@ describe('MmeEngine', () => {
     const fx = await e.mme.loadEffect([new File(['technique T { }'], 'a.fx')], 'a.fx');
     e.mme.assign(obj, 'Main', null, ref(fx));
     const r = e.mme.renderer as unknown as Internals;
-    expect(r.mainSlot(obj, obj.mesh!, 0)).toEqual({ kind: 'effect', effect: fx });
+    expect(r.mainSlot(obj, obj.mesh!, 0)).toEqual({ kind: 'effect', effect: fx, assigned: true });
     r.instance(fx).stopped = true;
     // (そのフレームのうちは変えない。次のフレームから default.fx)
-    expect(r.mainSlot(obj, obj.mesh!, 0)).toEqual({ kind: 'effect', effect: fx });
+    expect(r.mainSlot(obj, obj.mesh!, 0)).toEqual({ kind: 'effect', effect: fx, assigned: true });
     r.mainSlots.clear();
     expect(r.mainSlot(obj, obj.mesh!, 0)).toEqual({ kind: 'effect', effect: e.mme.store.defaultEffect });
     expect(e.mme.renderer.stopped(fx)).toBe(true);
@@ -1174,5 +1177,196 @@ technique Post { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = comp
     expect(f.mme.renderer.assignments.referencedStage().map(x => [x.entry, x.result.ok])).toEqual([['sky.fx', true]]);
     f.resetAll();
     expect('stage' in f.mme.saveScene()).toBe(false);
+  });
+  // --- .fx のパラメータの値 (設計書「パラメータ」): 「.fx を当てた物」と「.fx」の組ごと。描くたびにその物の値で uniform を上書きする ---
+  const paramFx = (decls = 'float Strength < float UIMin = 0; float UIMax = 4; > = 1;', ps = 'return float4(Strength, 0, 0, 1);') => `
+float4x4 WVP : WORLDVIEWPROJECTION;
+${decls}
+float4 VS(float4 p : POSITION) : POSITION { return mul(p, WVP); }
+float4 PS() : COLOR0 { ${ps} }
+technique T < string MMDPass = "object"; > { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = compile ps_3_0 PS(); } }`;
+  type DrawInternals = {
+    fb: unknown; main: PassTable; frame(renderer: unknown): FrameState; instance(e: LoadedEffect): EffectInstance;
+    scenePass: { draw(table: PassTable, frame: FrameState, target: DrawTarget): void };
+  };
+  const TARGET = { size: [320, 240], flipY: 1 } as DrawTarget;
+  // 描画先の代わり (何も描かない)
+  const fakeFb = () => ({
+    defaultSurface: null, current: null, clear: () => {}, bindSurface: () => TARGET, bind: () => TARGET, afterDraw: () => {}, has: () => true, colorTexture: () => null,
+  });
+  // fn のあいだに bind したパラメータ name の uniform の値を、描いた順に集める
+  function captureParam(name: string, fn: () => void): unknown[] {
+    const seen: unknown[] = [];
+    const bind = EffectInstance.prototype.bind;
+    const spy = vi.spyOn(EffectInstance.prototype, 'bind').mockImplementation(function (this: EffectInstance, ...args: Parameters<EffectInstance['bind']>) {
+      bind.apply(this, args);
+      const [m, pass] = args;
+      const u = pass.program?.uniforms.find(x => x.name === name);
+      if (u) seen.push(m.uniforms[u.glslName].value);
+    });
+    try { fn(); } finally { spy.mockRestore(); }
+    return seen;
+  }
+  // 描画先なしで表 (なければ Main の表) の物を描き、パラメータ name の uniform の値を描いた順に集める
+  function drawnParam(e: Engine, name: string, table?: PassTable): unknown[] {
+    const r = e.mme.renderer as unknown as DrawInternals;
+    const renderer = {
+      renderBufferDirect: () => {}, properties: { get: () => ({}) }, getContext: () => ({}), extensions: { has: () => false },
+      getDrawingBufferSize: (v: THREE.Vector2) => v.set(320, 240),
+    };
+    e.viewport.renderer = renderer as unknown as THREE.WebGLRenderer;
+    r.fb = fakeFb();
+    try {
+      return captureParam(name, () => r.scenePass.draw(table ?? r.main, r.frame(renderer), TARGET));
+    } finally {
+      e.viewport.renderer = null;
+      r.fb = null;
+    }
+  }
+
+  it('パラメータの値は物ごと: 同じ .fx を当てた 2 つの物の片方だけ Strength を 3 にすると、描くたびにそれぞれの値 (もう片方は初期値)。範囲の外は収め、物の値なので元に戻せる', async () => {
+    const e = new Engine();
+    const a = e.world.addShape(0, 0, 0, 0), b = e.world.addShape(0, 3, 0, 1);
+    const fx = await e.mme.loadEffect([fileAt('Fx/param.fx', paramFx())], 'param.fx');
+    e.mme.assign(a, 'Main', null, ref(fx));
+    e.mme.assign(b, 'Main', null, ref(fx));
+    e.history.checkpoint();
+    const ch = `${fx.folder.id}/param.fx:Strength`;
+    const draw = vi.spyOn(e.viewport, 'requestDraw');
+    const edited = vi.spyOn(e.history, 'soon');
+    const sceneEdited = vi.spyOn(e.autosave, 'schedule');
+    e.mme.setParam(a, fx.folder.id, 'PARAM.FX', 'Strength', [3]); // (パスの大文字小文字は問わない)
+    expect(a.mmeValues).toEqual({ [ch]: 3 });
+    expect(a.mmeChannels).toEqual([ch]);
+    expect(b.mmeValues).toBeUndefined();
+    expect(draw).toHaveBeenCalled();
+    expect(edited).toHaveBeenCalled();
+    expect(sceneEdited).not.toHaveBeenCalled(); // (自動保存は履歴の手から)
+    expect(drawnParam(e, 'Strength')).toEqual([3, 1]);
+    // 範囲 (UIMin・UIMax) の外は収める
+    e.mme.setParam(a, fx.folder.id, 'param.fx', 'Strength', [9]);
+    e.mme.setParam(b, fx.folder.id, 'param.fx', 'Strength', [-1]);
+    expect([a.mmeValues, b.mmeValues]).toEqual([{ [ch]: 4 }, { [ch]: 0 }]);
+    expect(drawnParam(e, 'Strength')).toEqual([4, 0]);
+    // 知らないパラメータ・フォルダ・ファイルには何もしない
+    e.mme.setParam(a, fx.folder.id, 'param.fx', 'NoSuch', [1]);
+    e.mme.setParam(a, 'nofolder', 'param.fx', 'Strength', [1]);
+    e.mme.setParam(a, fx.folder.id, 'none.fx', 'Strength', [1]);
+    expect(a.mmeValues).toEqual({ [ch]: 4 });
+    // 画面の値 (いまのパラメータ)
+    expect(e.mme.paramsOf(a)).toEqual([{
+      effect: { folder: fx.folder.id, path: 'param.fx', name: 'Fx/param.fx' },
+      params: [{ name: 'Strength', label: 'Strength', type: 'float', init: [1], min: 0, max: 4, color: false, value: [4] }],
+    }]);
+    e.history.checkpoint();
+    await e.history.undo();
+    expect([a.mmeValues, b.mmeValues]).toEqual([undefined, undefined]);
+    expect(drawnParam(e, 'Strength')).toEqual([1, 1]);
+    await e.history.redo();
+    expect(drawnParam(e, 'Strength')).toEqual([4, 0]);
+  });
+
+  it('ベクトルのパラメータは成分ごとのチャンネル (:x :y :z)。キーフレームで描く値がフレームごとに変わる', async () => {
+    const e = new Engine();
+    const a = e.world.addShape(0, 0, 0, 0);
+    const fx = await e.mme.loadEffect([fileAt('Fx/col.fx', paramFx('float3 Col < string UIWidget = "Color"; > = {1, 0, 0};', 'return float4(Col, 1);'))], 'col.fx');
+    e.mme.assign(a, 'Main', null, ref(fx));
+    const chs = ['x', 'y', 'z'].map(c => `${fx.folder.id}/col.fx:Col:${c}`);
+    e.mme.setParam(a, fx.folder.id, 'col.fx', 'Col', [0, 1, 0]);
+    expect(a.mmeChannels).toEqual(chs);
+    expect(drawnParam(e, 'Col')).toEqual([[0, 1, 0]]);
+    e.keyframes.insertMme(a, 0, chs);
+    e.mme.setParam(a, fx.folder.id, 'col.fx', 'Col', [0, 0, 1]);
+    e.keyframes.insertMme(a, 30, chs);
+    e.keyframes.applyAll(0, true); // (0 フレーム)
+    expect(drawnParam(e, 'Col')).toEqual([[0, 1, 0]]);
+    e.keyframes.applyAll(1, true); // (30 フレーム = 1 秒)
+    expect(drawnParam(e, 'Col')).toEqual([[0, 0, 1]]);
+    expect(e.mme.paramsOf(a)[0].params[0]).toMatchObject({ name: 'Col', color: true, value: [0, 0, 1] });
+  });
+
+  it('DefaultEffect だけで決まった物の .fx は初期値で描く (物の値があっても)。そのタブで当てると物の値で描く', async () => {
+    const e = new Engine();
+    const a = e.world.addShape(0, 0, 0, 0), b = e.world.addShape(0, 3, 0, 1);
+    const fx = await e.mme.loadEffect([fileAt('Fx/param.fx', paramFx())], 'param.fx');
+    e.mme.assign(a, 'Main', null, ref(fx));
+    e.mme.setParam(a, fx.folder.id, 'param.fx', 'Strength', [3]);
+    const defaults = { rules: parseDefaultEffect('*=param.fx').rules, base: '', folder: fx.folder };
+    const table: PassTable = { name: 'Map', owner: null, slotFor: e.mme.renderer.assignments.slotFor('Map', defaults, null) };
+    expect(drawnParam(e, 'Strength', table)).toEqual([1, 1]);
+    expect(drawnParam(e, 'Strength')).toEqual([3]); // (Main は当てた a だけ。b は default.fx)
+    e.mme.assign(a, 'Map', null, ref(fx));
+    expect(drawnParam(e, 'Strength', table)).toEqual([3, 1]);
+    expect(e.mme.paramsOf(a).map(x => x.effect.path)).toEqual(['param.fx']); // (同じ .fx は 1 つ)
+    expect(e.mme.paramsOf(b)).toEqual([]);
+  });
+
+  it('.fx を読み直してパラメータがなくなっても例外にならず、画面に出ない。古いチャンネルとキーは残る', async () => {
+    const e = new Engine();
+    const a = e.world.addShape(0, 0, 0, 0);
+    const both = 'float Strength < float UIMin = 0; float UIMax = 4; > = 1;\nfloat3 Col = {1, 0, 0};';
+    const fx = await e.mme.loadEffect([fileAt('Fx/param.fx', paramFx(both, 'return float4(Col * Strength, 1);'), 1)], 'param.fx');
+    e.mme.assign(a, 'Main', null, ref(fx));
+    e.mme.setParam(a, fx.folder.id, 'param.fx', 'Strength', [3]);
+    const ch = `${fx.folder.id}/param.fx:Strength`;
+    e.keyframes.insertMme(a, 0, [ch]);
+    expect(e.mme.paramsOf(a)[0].params.map(p => p.name)).toEqual(['Strength', 'Col']);
+    const fx2 = await e.mme.loadEffect([fileAt('Fx/param.fx', paramFx('float3 Col = {1, 0, 0};', 'return float4(Col, 1);'), 2)], 'param.fx');
+    expect(fx2).not.toBe(fx);
+    expect(drawnParam(e, 'Strength')).toEqual([]);
+    expect(drawnParam(e, 'Col')).toEqual([[1, 0, 0]]);
+    expect(e.mme.paramsOf(a)[0].params.map(p => p.name)).toEqual(['Col']);
+    e.mme.setParam(a, fx.folder.id, 'param.fx', 'Strength', [1]); // (もうないので何もしない)
+    expect(a.mmeChannels).toEqual([ch]);
+    expect(a.mmeValues).toEqual({ [ch]: 3 });
+    expect(a.anim?.mme.get(0)?.size).toBe(1);
+    expect(() => e.keyframes.applyAll(0, true)).not.toThrow();
+  });
+
+  it('ステージのパラメータは場面の値 (元に戻すの対象にしない)。描くときにステージの .fx を上書きし、保存して開き直すと戻り、最初の状態に戻すと消える', async () => {
+    const e = new Engine();
+    const fx = await e.mme.loadEffect([fileAt('Fx/param.fx', paramFx())], 'param.fx');
+    const stage = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshBasicMaterial());
+    e.stage.model = stage;
+    e.graph.scene.add(stage);
+    const a = e.world.addShape(0, 0, 0, 0);
+    e.mme.assignStage('Main', null, ref(fx));
+    e.mme.assign(a, 'Main', null, ref(fx));
+    const ch = `${fx.folder.id}/param.fx:Strength`;
+    const edited = vi.spyOn(e.history, 'soon');
+    const sceneEdited = vi.spyOn(e.autosave, 'schedule');
+    e.mme.setParam('stage', fx.folder.id, 'param.fx', 'Strength', [9]);
+    expect(edited).not.toHaveBeenCalled();
+    expect(sceneEdited).toHaveBeenCalled();
+    expect(e.mme.saveScene().stageParams).toEqual({ [ch]: 4 });
+    expect(a.mmeValues).toBeUndefined();
+    expect(drawnParam(e, 'Strength')).toEqual([4, 1]); // (ステージ → 置いた物)
+    expect(e.mme.paramsOf('stage')[0].params[0]).toMatchObject({ name: 'Strength', value: [4] });
+    // (手で作ったステージはファイルがなくて保存できないので外す)
+    e.graph.scene.remove(stage);
+    e.stage.model = null;
+    const f = new Engine();
+    await f.project.open(await e.project.save('embedded'));
+    expect(f.mme.saveScene().stageParams).toEqual({ [ch]: 4 });
+    f.resetAll();
+    expect('stageParams' in f.mme.saveScene()).toBe(false);
+  });
+
+  it('ポストエフェクトのパラメータの値はアクセサリの物の値 (同じ .fx のアクセサリが 2 つでも、それぞれのもの)', async () => {
+    const e = new Engine();
+    const fx = await e.mme.loadEffect([fileAt('P/post.fx', `float Strength < float UIMin = 0; float UIMax = 4; > = 1;
+float4 VS(float4 p : POSITION) : POSITION { return p; }
+float4 PS() : COLOR0 { return float4(Strength, 0, 0, 1); }
+technique Post < string Script = "ScriptExternal=Color; Pass=P;"; > { pass P < string Script = "Draw=Buffer;"; > { VertexShader = compile vs_3_0 VS(); PixelShader = compile ps_3_0 PS(); } }`)], 'post.fx');
+    e.mme.addPost(fx);
+    const second = e.mme.addPost(fx)!;
+    e.mme.setParam(second, fx.folder.id, 'post.fx', 'Strength', [2]);
+    expect(e.mme.paramsOf(second)[0].params[0]).toMatchObject({ name: 'Strength', value: [2] });
+    const r = e.mme.renderer as unknown as DrawInternals;
+    const chain = new PostChain({
+      fb: fakeFb() as never, instance: x => r.instance(x), render: () => {}, checkLink: () => {}, offscreen: () => null, control: () => null,
+    });
+    const frame = { camera: {}, light: {}, time: 0, elapsed: 0, selfShadow: false, screen: [320, 240], frameNo: 1 } as unknown as FrameState;
+    expect(captureParam('Strength', () => chain.run(e.mme.posts(), frame, () => {}))).toEqual([1, 2]);
   });
 });

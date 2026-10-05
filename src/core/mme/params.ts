@@ -61,3 +61,31 @@ export function paramChannels(folderId: string, path: string, p: ParamUi): strin
   if (p.type === 'float' || p.type === 'int' || p.type === 'bool') return [base];
   return p.init.map((_, i) => `${base}:${SUFFIXES[i]}`);
 }
+
+// 値を収める範囲 [下, 上]。片方だけ注釈に書いて、もう片方を初期値から決めると入れ替わることがある (UIMax だけ負の値など) ので、そのときは入れ替える
+export function paramRange(p: ParamUi): [number, number] {
+  return p.min <= p.max ? [p.min, p.max] : [p.max, p.min];
+}
+
+// 値を範囲に収める (成分ごと。長さは初期値と同じで、足りない成分・数でない成分は初期値)。int は丸め、bool は 0 か 1 (0.5 から 1)
+export function fitParam(p: ParamUi, values: readonly number[]): number[] {
+  const [lo, hi] = paramRange(p);
+  return p.init.map((init, i) => {
+    const raw = values[i];
+    let v = typeof raw === 'number' && Number.isFinite(raw) ? raw : init;
+    if (p.type === 'int') v = Math.round(v);
+    else if (p.type === 'bool') v = v >= 0.5 ? 1 : 0;
+    return Math.min(Math.max(v, lo), hi);
+  });
+}
+
+// 物の MME の値 (チャンネルの名前 → 値) から、パラメータの値 (パラメータの名前 → 成分)。どのチャンネルにも値のないパラメータは入れない。
+// ベクトルの一部の成分だけに値があれば、ほかの成分は初期値。範囲に収める
+export function paramValues(params: readonly { param: ParamUi; channels: readonly string[] }[], values: Readonly<Record<string, number>>): Map<string, number[]> {
+  const out = new Map<string, number[]>();
+  for (const { param, channels } of params) {
+    if (!channels.some(ch => values[ch] !== undefined)) continue;
+    out.set(param.name, fitParam(param, channels.map((ch, i) => values[ch] ?? param.init[i])));
+  }
+  return out;
+}

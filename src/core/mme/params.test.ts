@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { compileEffect } from '../fx/index.ts';
 import type { EffectDesc } from '../fx/index.ts';
-import { effectParams, paramChannels } from './params.ts';
+import { effectParams, fitParam, paramChannels, paramRange, paramValues } from './params.ts';
 import type { ParamUi } from './params.ts';
 
 const TECH = ' float4 VS(float4 p : POSITION) : POSITION { return p; } float4 PS() : COLOR0 { return 1; } technique T { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = compile ps_3_0 PS(); } }';
@@ -82,5 +82,47 @@ describe('paramChannels', () => {
     expect(paramChannels('f1', 'a.fx', p('float2', [0, 0]))).toEqual(['f1/a.fx:Col:x', 'f1/a.fx:Col:y']);
     expect(paramChannels('f1', 'a.fx', p('float3', [0, 0, 0]))).toEqual(['f1/a.fx:Col:x', 'f1/a.fx:Col:y', 'f1/a.fx:Col:z']);
     expect(paramChannels('f1', 'a.fx', p('float4', [0, 0, 0, 0]))).toEqual(['f1/a.fx:Col:x', 'f1/a.fx:Col:y', 'f1/a.fx:Col:z', 'f1/a.fx:Col:w']);
+  });
+});
+
+describe('paramRange・fitParam', () => {
+  const p = (type: ParamUi['type'], init: number[], min = 0, max = 1): ParamUi => ({ name: 'P', label: 'P', type, init, min, max, color: false });
+
+  it('範囲がそのままなら [min, max]。入れ替わっていたら (UIMax だけ負の値を書いたときなど) 入れ替える', () => {
+    expect(paramRange(p('float', [0], -1, 4))).toEqual([-1, 4]);
+    expect(paramRange(p('float', [0], 0, -1))).toEqual([-1, 0]);
+    const [neg] = effectParams(compile('float A < float UIMax = -1; > = 0;'));
+    expect(paramRange(neg)).toEqual([-1, 0]);
+  });
+
+  it('成分ごとに範囲に収める。数でない成分・足りない成分は初期値、多い成分は捨てる', () => {
+    expect(fitParam(p('float', [0.5], 0, 2), [3])).toEqual([2]);
+    expect(fitParam(p('float', [0.5], 0, 2), [-1])).toEqual([0]);
+    expect(fitParam(p('float3', [1, 0.5, 0], 0, 1), [Number.NaN, 2, Number.POSITIVE_INFINITY])).toEqual([1, 1, 0]);
+    expect(fitParam(p('float2', [0.25, 0.75]), [0.5])).toEqual([0.5, 0.75]);
+    expect(fitParam(p('float', [0.5]), [0.1, 0.2])).toEqual([0.1]);
+    expect(fitParam(p('float', [0], 0, -1), [-0.5])).toEqual([-0.5]); // (入れ替えた範囲)
+  });
+
+  it('int は丸め、bool は 0 か 1 (0.5 から 1)', () => {
+    expect(fitParam(p('int', [3], 0, 6), [2.6])).toEqual([3]);
+    expect(fitParam(p('int', [3], 0, 6), [9])).toEqual([6]);
+    expect(fitParam(p('bool', [1]), [0.4])).toEqual([0]);
+    expect(fitParam(p('bool', [0]), [0.5])).toEqual([1]);
+    expect(fitParam(p('bool', [0]), [7])).toEqual([1]);
+  });
+});
+
+describe('paramValues', () => {
+  const ps = effectParams(compile('float Strength < float UIMin = 0; float UIMax = 4; > = 1; float3 Col = {1, 0, 0}; int N = 2;'));
+  const list = ps.map(param => ({ param, channels: paramChannels('f1', 'a.fx', param) }));
+
+  it('チャンネルの名前で物の値を引き、値のあるパラメータだけを入れる (範囲に収める)', () => {
+    expect(paramValues(list, {})).toEqual(new Map());
+    expect(paramValues(list, { 'f1/a.fx:Strength': 9, 'f1/a.fx:N': 1.2, 'f1/b.fx:Strength': 2, Si: 1 })).toEqual(new Map([['Strength', [4]], ['N', [1]]]));
+  });
+
+  it('ベクトルは一部の成分だけ値があれば、ほかの成分は初期値', () => {
+    expect(paramValues(list, { 'f1/a.fx:Col:y': 0.5 })).toEqual(new Map([['Col', [1, 0.5, 0]]]));
   });
 });

@@ -2,6 +2,7 @@ import type * as THREE from 'three';
 import { errorText } from '../../core/errors';
 import { getLang, t } from '../../core/i18n';
 import { accessoryNameFor } from '../../core/mme/accessory.ts';
+import { effectParams, fitParam, paramChannels, paramRange, type ParamUi } from '../../core/mme/params.ts';
 import { MME_DEFAULTS, normalizeMmeObj, normalizeObjectEffects, type MmeScene, type MmeSettings, type ObjectEffects, type SavedSlot, type TabEffects } from '../../core/mme/settings.ts';
 import { same } from '../addons/registry';
 import type { Clock } from '../anim/Clock';
@@ -36,6 +37,14 @@ const fxIn = (f: EffectFolder) => [...f.text.keys()].filter(p => p.toLowerCase()
 const slotName = (s: Slot) => (s.kind === 'hide' ? 'hide' : s.effect.name);
 const sameList = (a: unknown[], b: unknown[]) => a.length === b.length && a.every((x, i) => x === b[i]);
 
+// 画面の「エフェクトのパラメータ」: 物 (ステージ) に当てた .fx ごとの、いまのパラメータと値 (範囲は入れ替わっていればそろえたもの)
+export interface EffectParamsUi { effect: { folder: string; path: string; name: string }; params: (ParamUi & { value: number[] })[] }
+
+// .fx のいじれるパラメータと、その MME のチャンネルの名前
+function paramChannelsOf(e: LoadedEffect): { param: ParamUi; channels: string[] }[] {
+  return e.result.ok ? effectParams(e.result.effect).map(param => ({ param, channels: paramChannels(e.folder.id, e.entry, param) })) : [];
+}
+
 // 割り当て all (写して変える) のタブの、物全体 (materialIndex が null) か材質を slot にする (null なら外す)
 function withSlot(all: ObjectEffects, tab: string, materialIndex: number | null, slot: SavedSlot | null): ObjectEffects {
   const out: ObjectEffects = structuredClone(all);
@@ -69,6 +78,8 @@ export class MmeEngine {
   readonly controllers: Controllers; // CONTROLOBJECT の値 (仮のコントローラーの値はコントローラーの物の値)
   // ステージの割り当て (場面の値。元に戻すの対象にしない。ステージを差し替えても残る)
   private stageEffects: ObjectEffects | null = null;
+  // ステージに当てた .fx のパラメータの値 (場面の値。チャンネルの名前 → 値。キーフレームなし。元に戻すの対象にしない)
+  private stageParams: Record<string, number> = {};
   private reported = new Set<string>(); // お知らせに出した例外の文
   private logged: string | null = null; // 続けて出ている例外の文 (コンソールに 1 回だけ書く。描けたら忘れる)
   private shown = ''; // 画面に出した状態 (JSON。同じなら知らせない)
@@ -90,6 +101,7 @@ export class MmeEngine {
     this.controllers = new Controllers({ world: deps.world, stage: deps.stage, outputting: () => deps.viewport.outputting });
     this.renderer = new MmeRenderer({
       ...deps, store: this.store, settings: this.settings, controllers: this.controllers, stageEffects: () => this.stageEffects,
+      stageParams: () => this.stageParams,
     });
     // 前の描画 (効果の後処理) は、標準のエンジンのときに使う
     const prev = deps.viewport.drawOverride;
@@ -130,6 +142,57 @@ export class MmeEngine {
   missingControllers(): { name: string; items: string[] }[] {
     return [...this.catalog].filter(([name]) => !this.controllers.controller(name)).map(([name, items]) => ({ name, items }))
       .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  }
+
+  // .fx (フォルダの id とその中のパス) のパラメータ name の値を、物 (その .fx を当てた物。ポストエフェクトはアクセサリ) かステージに
+  // 書いて描き直す。値は範囲に収め、成分ごとの MME のチャンネル (`<フォルダの id>/<.fx のパス>:<名前>`。ベクトルは :x〜:w) にする。
+  // 物の値はチャンネルを足し (キーを打てる)、元に戻すの手になる。ステージの値は場面の値 (キーフレームなし。元に戻すの対象にしない)。
+  // .fx・パラメータが見つからなければ何もしない。values の足りない成分は変えない (数でない成分は初期値)
+  setParam(target: Obj | 'stage', folderId: string, path: string, name: string, values: number[]): void {
+    const e = this.effectAt(folderId, path);
+    const found = e ? paramChannelsOf(e).find(x => x.param.name === name) : undefined;
+    if (!found || values.length === 0) return;
+    const { param, channels } = found;
+    const store = target === 'stage' ? this.stageParams : (target.mmeValues ??= {});
+    const next = fitParam(param, channels.map((ch, i) => (i < values.length ? values[i] : store[ch] ?? param.init[i])));
+    for (let i = 0; i < Math.min(values.length, channels.length); i++) {
+      if (target !== 'stage') mmeChannel(target, channels[i]);
+      store[channels[i]] = next[i];
+    }
+    if (target === 'stage') this.deps.sceneEdited();
+    else this.deps.edited();
+    this.publish();
+    this.deps.viewport.requestDraw();
+  }
+
+  // 物 (ステージ) に当てた .fx ごとの、いまのパラメータと値 (画面の「エフェクトのパラメータ」)。.fx は全部のタブの割り当てで見つかって
+  // コンパイルできたもの (同じものは 1 つ)。アクセサリはポストエフェクト (Main の物の割り当て) だけ、コントローラーは描かないのでなし。
+  // .fx を読み直して消えたパラメータは出さない (物の古いチャンネルとキーは残す)。値は描くときと同じ (範囲に収める。値がなければ初期値)
+  paramsOf(target: Obj | 'stage'): EffectParamsUi[] {
+    const { assignments } = this.renderer;
+    let effects: LoadedEffect[];
+    if (target === 'stage') effects = assignments.referencedStage();
+    else if (!target.mmeObj) effects = assignments.referenced(target);
+    else {
+      const saved = target.mmeObj.kind === 'accessory' ? target.mme?.Main?.object : undefined;
+      const post = saved && saved !== 'hide' ? assignments.effectOf(saved) : null;
+      effects = post ? [post] : [];
+    }
+    const values: Readonly<Record<string, number>> = (target === 'stage' ? this.stageParams : target.mmeValues) ?? {};
+    return effects.filter(e => e.result.ok).map(e => ({
+      effect: { folder: e.folder.id, path: e.entry, name: e.name },
+      params: paramChannelsOf(e).map(({ param, channels }) => {
+        const [min, max] = paramRange(param);
+        return { ...param, min, max, value: fitParam(param, channels.map((ch, i) => values[ch] ?? param.init[i])) };
+      }),
+    }));
+  }
+
+  // フォルダの中の .fx (パスは大文字小文字と '\' を問わない)。フォルダかファイルがなければ null
+  private effectAt(folderId: string, path: string): LoadedEffect | null {
+    const folder = this.store.folder(folderId);
+    const file = folder && findFile(folder, path);
+    return folder && file ? this.store.effect(folder, file) : null;
   }
 
   private writeControl(obj: Obj, item: string, v: number): void {
@@ -393,6 +456,7 @@ export class MmeEngine {
       settings: { ...this.settings },
       folders: this.store.folders().map(f => ({ id: f.id, name: f.name })),
       ...(this.stageEffects ? { stage: structuredClone(this.stageEffects) } : {}),
+      ...(Object.keys(this.stageParams).length > 0 ? { stageParams: { ...this.stageParams } } : {}),
     };
   }
 
@@ -400,6 +464,7 @@ export class MmeEngine {
   // 第 4 の計画の形のポストエフェクトの並び (posts) はアクセサリの物に、仮のコントローラーの値 (controls) はコントローラーの物に移す
   loadScene(scene: MmeScene): void {
     this.stageEffects = scene.stage ? structuredClone(scene.stage) : null;
+    this.stageParams = { ...scene.stageParams };
     this.openNotes = [...this.migrateControls(scene.controls ?? {}), ...this.migratePosts(scene.posts ?? [])];
     this.set(scene.settings);
   }
@@ -456,9 +521,10 @@ export class MmeEngine {
     return full.length ? [t('古いプロジェクトのポストエフェクト {names} をアクセサリに移せませんでした (これ以上置けません)', { names: full.join('・') })] : [];
   }
 
-  // 最初の状態に戻す: 割り当て (ステージのものも)・読み込んだフォルダを消し、既定の設定にする
-  // (ポストエフェクトのアクセサリ・仮のコントローラーの値は物なので、物といっしょに消える)
+  // 最初の状態に戻す: 割り当てとパラメータの値 (ステージのものも)・読み込んだフォルダを消し、既定の設定にする
+  // (ポストエフェクトのアクセサリ・仮のコントローラーの値・物のパラメータの値は物なので、物といっしょに消える)
   resetScene(): void {
+    this.stageParams = {};
     this.clearEffects();
     this.store.clearFolders();
     this.set({ ...MME_DEFAULTS });

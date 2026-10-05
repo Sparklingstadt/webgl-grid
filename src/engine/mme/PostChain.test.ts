@@ -5,14 +5,16 @@ import type { LoadedEffect } from './EffectStore.ts';
 import type { DrawTarget, Framebuffers } from './Framebuffers.ts';
 
 // Script の Clear は、消す値 (ClearSetColor・ClearSetDepth・ClearSetStencil のパラメータ) を Framebuffers.clear に渡す
-function setup(params: Record<string, number[]>) {
+function setup(params: Record<string, number[]>, overrides?: ReadonlyMap<string, number[]>) {
   const calls: unknown[][] = [];
   const fb = {
     has: () => true, bind: () => ({ flipY: -1, size: [4, 4] }) as DrawTarget,
     clear: (...a: unknown[]) => { calls.push(a); }, afterDraw: () => {},
   } as unknown as Framebuffers;
-  const inst = { param: (n: string) => params[n] ?? null, setParam: () => {} } as unknown as EffectInstance;
-  const targets = new ScriptTargets(fb, {} as LoadedEffect, inst, () => {}, null);
+  const inst = {
+    param: (n: string, o?: ReadonlyMap<string, number[]>) => o?.get(n) ?? params[n] ?? null, setParam: () => {},
+  } as unknown as EffectInstance;
+  const targets = new ScriptTargets(fb, {} as LoadedEffect, inst, () => {}, null, overrides);
   const c = targets.commands();
   return { calls, c };
 }
@@ -41,5 +43,16 @@ describe('ScriptTargets の Clear', () => {
     s.c.clear('color');
     s.c.clear('stencil');
     expect(s.calls).toEqual([[[0.1, 0.2, 0.3, 0.4], null, null], [null, null, 7]]);
+  });
+});
+
+describe('ScriptTargets のパラメータ', () => {
+  it('LoopByCount の回数と消す値は、描いている物のパラメータの値 (overrides) から読む', () => {
+    const s = setup({ N: [3], C: [0, 0, 0, 1] }, new Map([['N', [5]], ['C', [1, 0, 0, 1]]]));
+    expect(s.c.loopCount('N')).toBe(5);
+    s.c.setClearColor('C');
+    s.c.clear('color');
+    expect(s.calls).toEqual([[[1, 0, 0, 1], null, null]]);
+    expect(setup({ N: [3] }).c.loopCount('N')).toBe(3);
   });
 });

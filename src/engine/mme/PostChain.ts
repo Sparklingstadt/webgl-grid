@@ -19,7 +19,7 @@ export interface FrameState {
   frameNo: number;
 }
 
-// ポストエフェクト: アクセサリの物 (CONTROLOBJECT の (self)・オフスクリーンの持ち主) と、それに当てた .fx
+// ポストエフェクト: アクセサリの物 (CONTROLOBJECT の (self)・オフスクリーンの持ち主・パラメータの値を持つ物) と、それに当てた .fx
 export interface PostEffect { obj: Obj; effect: LoadedEffect }
 
 // 描画先に合わせた組み込みの値。半ピクセル: DX9 は画素の中心が整数の位置にあるので、GL で同じ値を補間させるには、
@@ -40,8 +40,12 @@ export class ScriptTargets {
   private clearDepth = 1;
   private clearStencil = 0;
 
-  // target: いま選んでいる描画先 (null なら、最初に描くときに既定の描画先を選ぶ)
-  constructor(private fb: Framebuffers, private effect: LoadedEffect, private inst: EffectInstance, private warn: (m: string) => void, private target: DrawTarget | null) {}
+  // target: いま選んでいる描画先 (null なら、最初に描くときに既定の描画先を選ぶ)。
+  // overrides: 描いている物のパラメータの値 (LoopByCount の回数・消す値も、描くときと同じ値を読む)
+  constructor(
+    private fb: Framebuffers, private effect: LoadedEffect, private inst: EffectInstance, private warn: (m: string) => void, private target: DrawTarget | null,
+    private overrides?: ReadonlyMap<string, number[]>,
+  ) {}
 
   // いまの描画先 (選び直す必要があれば選ぶ)
   current(): DrawTarget {
@@ -76,7 +80,7 @@ export class ScriptTargets {
         this.fb.clear(what === 'color' ? this.clearColor : null, what === 'depth' ? this.clearDepth : null, what !== 'color' ? this.clearStencil : null);
         this.fb.afterDraw();
       },
-      loopCount: p => this.inst.param(p)?.[0] ?? NaN,
+      loopCount: p => this.inst.param(p, this.overrides)?.[0] ?? NaN,
       setLoopIndex: (p, i) => this.inst.setParam(p, [i]),
     };
   }
@@ -87,7 +91,7 @@ export class ScriptTargets {
   }
 
   private value(param: string, what: string): number[] | null {
-    const v = this.inst.param(param);
+    const v = this.inst.param(param, this.overrides);
     if (!v) this.warn(t('{what} のパラメータ {param} がありません', { what, param }));
     return v;
   }
@@ -167,14 +171,15 @@ export class PostChain {
       return;
     }
     const warn = (m: string) => inst.warn(m); // (そのエフェクトの警告)
-    const st = new ScriptTargets(fb, effect, inst, warn, null);
+    const overrides = inst.paramValuesOf(post.obj.mmeValues); // (パラメータの値はアクセサリのもの)
+    const st = new ScriptTargets(fb, effect, inst, warn, null, overrides);
     const outer = fb.defaultSurface;
     let external = false;
     const backend: ScriptBackend = {
       ...st.commands(),
       drawPass: (p, mode) => {
         if (mode === 'geometry') warn(t('ポストエフェクトの Draw=Geometry は無視します'));
-        else if (!inst.stopped) this.drawBuffer(inst, post, p, st.current(), frame);
+        else if (!inst.stopped) this.drawBuffer(inst, post, p, st.current(), frame, overrides);
       },
       drawExternal: () => {
         external = true;
@@ -192,7 +197,9 @@ export class PostChain {
   }
 
   // Draw=Buffer: 描画先いっぱいの四角を描く
-  private drawBuffer(inst: EffectInstance, { obj, effect }: PostEffect, p: Pass, target: DrawTarget, frame: FrameState): void {
+  private drawBuffer(
+    inst: EffectInstance, { obj, effect }: PostEffect, p: Pass, target: DrawTarget, frame: FrameState, overrides: ReadonlyMap<string, number[]> | undefined,
+  ): void {
     const m = inst.material(p, target.flipY, { kind: 'post', doubleSided: false });
     if (!m) return;
     const ctx: SemanticContext = {
@@ -200,7 +207,7 @@ export class PostChain {
       time: frame.time, elapsed: frame.elapsed, screen: frame.screen, selfShadow: frame.selfShadow, owner: null,
       control: ref => this.d.control(ref, obj),
     };
-    inst.bind(m, p, ctx, builtins(target), { role: name => this.d.fb.colorTexture(effect, name), offscreen: name => this.d.offscreen(effect, name, obj) });
+    inst.bind(m, p, ctx, builtins(target), { role: name => this.d.fb.colorTexture(effect, name), offscreen: name => this.d.offscreen(effect, name, obj) }, overrides);
     this.d.render(m, this.quad);
     this.d.checkLink(m, inst, effect);
     this.d.fb.afterDraw();
