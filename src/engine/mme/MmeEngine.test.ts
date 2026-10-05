@@ -9,8 +9,8 @@ import { readEmbedded } from '../project/format';
 import { MME_DEFAULTS, normalizeMme } from './MmeEngine';
 
 // フォルダから選んだファイル (webkitRelativePath は 'フォルダ/…')
-function fileAt(path: string, text: string): File {
-  const f = new File([text], path.slice(path.lastIndexOf('/') + 1));
+function fileAt(path: string, text: string, lastModified?: number): File {
+  const f = new File([text], path.slice(path.lastIndexOf('/') + 1), { lastModified });
   Object.defineProperty(f, 'webkitRelativePath', { value: path });
   return f;
 }
@@ -643,6 +643,29 @@ technique Post { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = comp
     await f.project.open(bytes, { pick: picked });
     expect(picked).toHaveBeenCalledTimes(1);
     await expectMmeScene(f, id);
+  });
+
+  // Ray-MMD には、名前も大きさも更新日時も同じで中身の違うファイルが別のフォルダにある (Lighting/SpotLight/Default と Default Ambient など)
+  const twins = (root = 'Ray') => [
+    fileAt(`${root}/Lighting/Default/spot.fx`, 'technique A { }', 5), fileAt(`${root}/Lighting/Default Ambient/spot.fx`, 'technique B { }', 5),
+  ].reverse(); // (名前で照らすと、先にある Default Ambient のものを取り違える)
+  const techniques = (e: Engine) => e.mme.store.posts.map(p => (p.effect.result.ok ? p.effect.result.effect.techniques[0].name : null));
+  async function twinPosts(e: Engine) {
+    const folder = await e.mme.store.addFolder(twins());
+    e.mme.store.addPost(e.mme.store.effect(folder, 'Lighting/Default/spot.fx'));
+    e.mme.store.addPost(e.mme.store.effect(folder, 'Lighting/Default Ambient/spot.fx'));
+    expect(techniques(e)).toEqual(['A', 'B']);
+  }
+
+  it('.wgpj を開いて探してもらったフォルダから、MME のフォルダのファイルは相対パスで探す (名前と大きさが同じ別のファイルと取り違えない)', async () => {
+    const e = new Engine();
+    await twinPosts(e);
+    const bytes = await e.project.save('reference');
+    for (const root of ['Ray', 'Renamed']) { // (選んだフォルダの名前が違っても、フォルダの中のパスで)
+      const f = new Engine();
+      await f.project.open(bytes, { pick: async () => twins(root) });
+      expect(techniques(f), root).toEqual(['A', 'B']);
+    }
   });
 
   it('.wgpj で見つからないファイルは、そのファイルなしでフォルダを作る (割り当てとポストエフェクトは残し、描かない)', async () => {
