@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Engine } from '../Engine';
+import { convertMmdMesh } from '../materials/fromMmd';
 import { EffectInstance } from './EffectInstance';
 import { MME_DEFAULTS, normalizeMme } from './MmeEngine';
 
@@ -87,6 +88,9 @@ describe('MmeEngine', () => {
   // 描画先なしで、描く物の集め方と値を見る (private を呼ぶ)
   type Internals = {
     collect(frame: unknown): { mesh: THREE.Mesh }[];
+    frame(renderer: unknown): { selfShadow: boolean };
+    toonOf(src: THREE.Texture): { tex: THREE.DataTexture } | null;
+    shadow: THREE.WebGLRenderTarget | null;
     effectOf(obj: unknown): unknown;
     instance(e: unknown): { stopped: boolean };
     light(): { shadowProjection: THREE.Matrix4 };
@@ -130,6 +134,50 @@ describe('MmeEngine', () => {
     expect(dispose).not.toHaveBeenCalled();
     e.mme.store.removePost(0);
     expect(dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it('セルフシャドウを切ると深度マップを捨てる', () => {
+    const e = new Engine();
+    const r = e.mme.renderer as unknown as Internals;
+    const target = new THREE.WebGLRenderTarget(4, 4);
+    const dispose = vi.spyOn(target, 'dispose');
+    r.shadow = target;
+    const renderer = { getDrawingBufferSize: (v: THREE.Vector2) => v.set(320, 240), extensions: { has: () => true } };
+    expect(r.frame(renderer).selfShadow).toBe(true); // (あるものを使う)
+    expect(dispose).not.toHaveBeenCalled();
+    e.mme.set({ selfShadow: false });
+    expect(r.frame(renderer).selfShadow).toBe(false);
+    expect(dispose).toHaveBeenCalledTimes(1);
+    expect(r.shadow).toBeNull();
+  });
+
+  it('場面にないモデルのトゥーンの画像は prune と物を消したときに捨てる', () => {
+    const e = new Engine();
+    const r = e.mme.renderer as unknown as Internals;
+    const toonImage = () => {
+      const t = new THREE.DataTexture(new Uint8Array(4 * 4 * 4).fill(200), 4, 4);
+      t.needsUpdate = true;
+      return t;
+    };
+    // 置いた物の材質が使うトゥーン (MMD の材質を変換したもの) と、どこにもないトゥーン
+    const used = toonImage(), orphan = toonImage();
+    const mat = new THREE.MeshPhongMaterial();
+    Object.assign(mat, { gradientMap: used });
+    mat.userData.outlineParameters = { visible: false, thickness: 0, color: [0, 0, 0], alpha: 1 };
+    const fake = { name: 'm', material: mat, userData: {} } as unknown as THREE.Mesh;
+    convertMmdMesh(fake, e.library);
+    const obj = e.world.addShape(0, 0, 0, 0);
+    obj.mesh!.material = fake.material;
+    const kept = r.toonOf(used)!.tex, dropped = r.toonOf(orphan)!.tex;
+    const disposed = { kept: vi.fn(), dropped: vi.fn() };
+    kept.addEventListener('dispose', disposed.kept);
+    dropped.addEventListener('dispose', disposed.dropped);
+    e.mme.renderer.prune();
+    expect(disposed.dropped).toHaveBeenCalledTimes(1);
+    expect(disposed.kept).not.toHaveBeenCalled();
+    expect(r.toonOf(used)!.tex).toBe(kept); // (使っているものは作り直さない)
+    e.world.remove(obj);
+    expect(disposed.kept).toHaveBeenCalledTimes(1);
   });
 
   it('影の距離が 0 でも 9999 でもセルフシャドウの射影は有限', () => {

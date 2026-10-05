@@ -106,8 +106,7 @@ export class MmeRenderer {
   private instances = new Map<LoadedEffect, EffectInstance>();
   private shadow: THREE.WebGLRenderTarget | null = null;
   private noShadow = false; // 浮動小数のテクスチャに描けない
-  private toons = new WeakMap<THREE.Texture, Toon>();
-  private toonTextures = new Set<THREE.DataTexture>();
+  private toons = new Map<THREE.Texture, Toon>(); // 元のトゥーンの画像ごと (場面にないモデルのものは prune で捨てる)
   private prevTime: number | null = null;
   // three.js の描画の中 (Scene.onAfterRender) で描くための空の場面。renderBufferDirect は render の中でしか使えないため
   private host = new THREE.Scene();
@@ -249,8 +248,9 @@ export class MmeRenderer {
     await Promise.all(waits);
   }
 
-  // どの物にも割り当てていない・ポストエフェクトの一覧にない .fx の資源を捨てる
+  // どの物にも割り当てていない・ポストエフェクトの一覧にない .fx の資源と、場面にないモデルのトゥーンの画像を捨てる
   prune(): void {
+    this.pruneToons();
     const used = new Set<LoadedEffect>([
       this.d.store.defaultEffect, ...this.d.world.objects.map(o => this.effectOf(o)), ...this.d.store.posts.map(p => p.effect),
     ]);
@@ -259,6 +259,28 @@ export class MmeRenderer {
       inst.dispose();
       this.fb?.release(e);
       this.instances.delete(e);
+    }
+  }
+
+  // 置いた物とステージの材質が使っていないトゥーンの画像を捨てる
+  private pruneToons(): void {
+    if (this.toons.size === 0) return;
+    const live = new Set<THREE.Texture>();
+    const visit = (root: THREE.Object3D) => root.traverse(o => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+        const toon = m && mmeTexturesOf(m)?.toon;
+        if (toon) live.add(toon);
+      }
+    });
+    for (const obj of this.d.world.objects) visit(obj.node);
+    const stage = this.d.stage();
+    if (stage) visit(stage);
+    for (const [src, toon] of this.toons) {
+      if (live.has(src)) continue;
+      toon.tex.dispose();
+      this.toons.delete(src);
     }
   }
 
@@ -272,9 +294,8 @@ export class MmeRenderer {
     this.shadow?.dispose();
     this.shadow = null;
     this.noShadow = false;
-    for (const t of this.toonTextures) t.dispose();
-    this.toonTextures.clear();
-    this.toons = new WeakMap();
+    for (const toon of this.toons.values()) toon.tex.dispose();
+    this.toons.clear();
     this.uploaders = [];
     this.prevTime = null;
     this.fb?.dispose();
@@ -321,6 +342,11 @@ export class MmeRenderer {
     const time = clock.t;
     const elapsed = this.prevTime === null ? 0 : Math.max(time - this.prevTime, 0);
     this.prevTime = time;
+    // (セルフシャドウを切ったら、深度マップ (2048² の R32F) を捨てる。入れたら作り直す)
+    if (!settings.selfShadow && this.shadow) {
+      this.shadow.dispose();
+      this.shadow = null;
+    }
     const selfShadow = settings.selfShadow && this.shadowTarget(renderer) !== null;
     const size = renderer.getDrawingBufferSize(new THREE.Vector2());
     return { camera, light: this.light(), eye: position, time, elapsed, selfShadow, screen: [size.x, size.y] };
@@ -418,7 +444,7 @@ export class MmeRenderer {
     if (!this.isMmd(mesh)) return { mesh, effect, geo: this.skinner.plain(mesh), subsets: this.subsets(mesh, null) };
     const sm = mesh as THREE.SkinnedMesh;
     // クローンは userData の File を失う。形が差し替わった (デフォーマで変形した) クローンは .pmx を引けない
-    if (!(mmdSourceOf(sm.geometry) ?? sm.userData.sourceFile instanceof Blob)) {
+    if (!(mmdSourceOf(sm.geometry) ?? (sm.userData.sourceFile instanceof Blob))) {
       this.warn(t('{name}: 元の .pmx が分からないので描けません (デフォーマで変形したモデルの複製)', { name: sm.name || t('MMD モデル') }));
       return null;
     }
@@ -500,11 +526,10 @@ export class MmeRenderer {
     if (!img?.data || !img.width || !img.height) return null;
     const old = this.toons.get(src);
     if (old && old.version === src.version) return old;
-    if (old) { old.tex.dispose(); this.toonTextures.delete(old.tex); }
+    old?.tex.dispose();
     const made = unrotateToon({ data: img.data, width: img.width, height: img.height });
     const toon: Toon = { ...made, version: src.version };
     this.toons.set(src, toon);
-    this.toonTextures.add(made.tex);
     return toon;
   }
 

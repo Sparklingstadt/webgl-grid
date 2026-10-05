@@ -43,7 +43,10 @@ export class MmeEngine {
       this.publish();
       deps.viewport.requestDraw();
     });
-    deps.world.events.on('removed', obj => this.store.forgetObject(obj.id));
+    deps.world.events.on('removed', obj => {
+      this.store.forgetObject(obj.id);
+      this.renderer.prune(); // (そのモデルのトゥーンの画像も捨てる)
+    });
     deps.selection.events.on('changed', () => this.publish());
     this.publish();
   }
