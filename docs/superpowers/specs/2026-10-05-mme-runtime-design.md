@@ -56,8 +56,10 @@
 |---|---|---|
 | `MmeEngine` | レンダーエンジンの切り替えと設定（セルフシャドウ・地面の影）。MME 互換のあいだは `Viewport.drawOverride` に描画を差し込む。下の部品を組み立てる | Viewport, UiChannel, World, SceneGraph |
 | `EffectStore` | 選ばれたファイル（.fx が入っているフォルダごと）を `compileEffect` にかけて持つ。失敗したらお知らせを出す。物ごとの .fx とポストエフェクトの一覧を持つ | UiChannel |
-| `EffectInstance` | 1 つのエフェクトの GPU の資源。pass ごとの `RawShaderMaterial`（`Program` と描画ステートから作る）、`ResourceName` のテクスチャ、レンダーターゲット、パラメータの値 | Viewport |
-| `Skinner` | MMD モデルごとに、変形後の頂点（MMD の左手系）を持つ写しの形を作り、骨とモーフの重みから計算し直す（`System`）。輪郭線用に、法線の向きに広げた位置も作る | World, Viewport |
+| `EffectInstance` | 1 つのエフェクトの GPU の資源。pass ごとの `RawShaderMaterial`（`Program` と描画ステートから作る）、`ResourceName` のテクスチャ、パラメータの値 | なし |
+| `Framebuffers` | レンダーターゲット（色・深度）と、その組み合わせのフレームバッファ。ポストエフェクトがあるときの canvas の代わりの絵も持つ | three.js の `WebGLRenderer` |
+| `PostChain` | ポストエフェクトの入れ子（Script の実行と全面の四角の描画）と、canvas への写し。物の .fx の Script の描画先の命令も受け持つ | Framebuffers, EffectInstance |
+| `Skinner` | MMD モデルごとに、変形後の頂点（MMD の左手系）を持つ写しの形を作り、骨とモーフの重みから、描くたびに計算し直す（`System` ではなく、`MmeRenderer` が呼ぶ）。輪郭線用に、法線の向きに広げた位置も作る | なし |
 | `MmeRenderer` | 1 フレームの順番を回す（下の「1 フレームの流れ」） | 上のすべて, SceneGraph |
 
 ### 画面（`ui/`）

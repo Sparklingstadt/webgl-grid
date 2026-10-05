@@ -34,10 +34,16 @@ function makeBones(): Float32Array {
 
 function makeSkin(): SkinData {
   const type = new Uint8Array(VERTS), bones = new Int32Array(VERTS * 4), weights = new Float32Array(VERTS * 4), sdef = new Float32Array(VERTS * 9);
+  // 7 : 2 : 1 の割合のまま、頂点の順をかき混ぜる (種類がかたまっていると、分岐の予測が当たりすぎて速く出る)
+  const kinds = new Uint8Array(VERTS);
+  for (let v = 0; v < VERTS; v++) kinds[v] = v < VERTS * 0.7 ? SKIN.BDEF2 : v < VERTS * 0.9 ? SKIN.BDEF4 : SKIN.SDEF;
+  for (let v = VERTS - 1; v > 0; v--) {
+    const j = Math.floor(rand() * (v + 1));
+    const k = kinds[v]; kinds[v] = kinds[j]; kinds[j] = k;
+  }
   for (let v = 0; v < VERTS; v++) {
-    const r = v / VERTS;
-    const n = r < 0.7 ? 2 : r < 0.9 ? 4 : 2; // BDEF2 · BDEF4 · SDEF
-    type[v] = r < 0.7 ? SKIN.BDEF2 : r < 0.9 ? SKIN.BDEF4 : SKIN.SDEF;
+    type[v] = kinds[v];
+    const n = type[v] === SKIN.BDEF4 ? 4 : 2; // BDEF2・SDEF は骨 2 本
     let sum = 0;
     for (let k = 0; k < n; k++) {
       bones[v * 4 + k] = Math.floor(rand() * BONES);
