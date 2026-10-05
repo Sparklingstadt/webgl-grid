@@ -1,5 +1,5 @@
 import { expect, test, type Page } from './fixtures/test';
-import { addPmx, addPost, assignFx, objectFx, openMme, setCamera, shoot, type Vec3 } from './mme-helpers';
+import { addPmx, addPost, assignFx, controlItem, objectFx, openMme, redFrom, setCamera, shoot, type Vec3 } from './mme-helpers';
 import type { Win } from './helpers';
 
 // MME 互換の CONTROLOBJECT: 物の .fx が読む値は、(self)・名前が合う場面の物 (モーフ・骨・ワールド行列) か、
@@ -12,10 +12,8 @@ const look = (page: Page, x = 0, z = 0) => setCamera(page, { yaw: Math.PI / 2, p
 const warnings = (page: Page) => page.evaluate(() => (window as Win).engine.mme.renderer.allWarnings() as string[]);
 const colorAt = async (page: Page, x = 0) => { await look(page, x); return (await shoot(page, 'png', [face(x)])).pixels[0]; };
 
-// 物の .fx: 赤を name・item の float、緑を (self) の同じく float で決める
-const item = (name: string, it: string, type = 'float') => `${type} m : CONTROLOBJECT < string name = "${name}"; string item = "${it}"; >;`;
-const redFrom = (name: string, it: string) => objectFx('return float4(m, 0.0, 0.0, 1.0);', item(name, it));
-const greenFrom = (name: string, it: string) => objectFx('return float4(0.0, m, 0.0, 1.0);', item(name, it));
+// 物の .fx: 緑を name・item の float で決める (赤は redFrom)
+const greenFrom = (name: string, it: string) => objectFx('return float4(0.0, m, 0.0, 1.0);', controlItem(name, it));
 
 // モーフ name の重みを v にする (物 i)
 async function setMorph(page: Page, i: number, name: string, v: number) {

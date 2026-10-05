@@ -57,6 +57,11 @@ export class Controllers {
     items.set(item, Number.isNaN(v) ? 0 : Math.min(Math.max(v, 0), 1));
   }
 
+  // 仮のコントローラーの項目の値 (入れていなければ 0。名前は大文字小文字を問わない)
+  get(name: string, item: string): number {
+    return this.values.get(this.key(name))?.get(item) ?? 0;
+  }
+
   // CONTROLOBJECT の値 (型の形に合わない分は呼ぶ側 (semantics) が合わせる)。null は 0。
   // self: いま描いている物 (ステージ・ポストエフェクトは null)、owner: オフスクリーンの持ち主 (なければ null)
   value(ref: ControlRef, self: Obj | null, owner: Obj | null): number[] | null {
@@ -86,7 +91,7 @@ export class Controllers {
 
   private virtual(ref: ControlRef): number[] | null {
     if (ref.item === null) return null;
-    const v = this.values.get(this.key(ref.name))?.get(ref.item) ?? 0;
+    const v = this.get(ref.name, ref.item);
     if (ref.type === 'float') return [v];
     return ref.type === 'bool' ? [v > 0 ? 1 : 0] : null;
   }

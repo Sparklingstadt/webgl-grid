@@ -21,8 +21,21 @@ export interface SelInfo {
 // MME 互換のエフェクト 1 つのコンパイルの結果 (errors は最大 20。errorCount は全部の数)。warnings はコンパイラの警告と、描いたときのそのエフェクトの警告。
 // id は読んだエフェクトごとに違う (一覧の行の key)
 export interface MmeEffectUi { id: string; name: string; ok: boolean; errors: { code: string; where: string; message: string }[]; errorCount: number; warnings: string[] }
-// warnings: どのエフェクトのものでもない、描くときの警告 (セルフシャドウを切った・モデルを描けないなど)
-export interface MmeUiState { settings: MmeSettings; object: MmeEffectUi | null /* 選んでいる物の .fx */; posts: (MmeEffectUi & { enabled: boolean })[]; warnings: string[] }
+// エフェクト割当のタブの行 1 つ。物の行 (material が null) のあとに、その物 (MMD モデル) の材質の行が続く (材質の行は、画面で開いたときだけ出す)。
+// assigned: 割り当て ("フォルダ名/パス"・'hide'。なければ null)、fallback: 割り当てがないときに描くもの ("フォルダ名/パス"・'hide'・'default.fx')。
+// 材質の行の fallback は物の割り当て (なければ既定)
+export interface MmeRowUi { objId: number; label: string; material: number | null; assigned: string | null; fallback: string }
+// warnings: どのエフェクトのものでもない、描くときの警告 (セルフシャドウを切った・モデルを描けないなど)。
+// folders: 読み込んだフォルダと、その中の .fx (フォルダからの相対パス)。tabs: エフェクト割当のタブ (先頭は Main。オフスクリーンは
+// 使っているエフェクトが宣言するもの)。rows: タブごとの行 (描く宣言のないオフスクリーンのタブは載せない。そのタブの割り当ては効かない)。
+// controllers: 仮のコントローラー (場面にない CONTROLOBJECT の名前) ごとの、スライダーにする項目と値 (0〜1)
+export interface MmeUiState {
+  settings: MmeSettings; object: MmeEffectUi | null /* 選んでいる物の .fx */; posts: (MmeEffectUi & { enabled: boolean })[]; warnings: string[];
+  folders: { id: string; name: string; fx: string[] }[];
+  tabs: { name: string; description: string }[];
+  rows: Record<string, MmeRowUi[]>;
+  controllers: { name: string; items: { item: string; value: number }[] }[];
+}
 export interface UiState {
   mode: 'orbit' | 'pan';
   sel: SelInfo | null;   // アクティブな物
@@ -79,7 +92,7 @@ export class UiChannel {
     toast: null, palette: null, viewInfo: '', hairHang: null, materialsVersion: 0, projectName: null,
     output: { ...OUTPUT_DEFAULT }, rendering: null, renderResult: null, remote: 'off', missingFiles: null, missingTextures: null, history: { labels: [msg('最初')], index: 0 }, recovery: null, scene: normalizeScene(undefined),
     addons: [], addonsVersion: 0, lang: getLang(), poseMode: false, poseTool: 'rotate', rigShown: false, modelPicker: false, sceneVersion: 0,
-    mme: { settings: { ...MME_DEFAULTS }, object: null, posts: [], warnings: [] },
+    mme: { settings: { ...MME_DEFAULTS }, object: null, posts: [], warnings: [], folders: [], tabs: [{ name: 'Main', description: '' }], rows: {}, controllers: [] },
   });
   constructor() {
     langEvents.on('changed', lang => this.set({ lang }));

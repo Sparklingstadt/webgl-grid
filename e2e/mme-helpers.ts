@@ -98,6 +98,34 @@ float4 PS(float2 Uv : TEXCOORD0) : COLOR0 { ${ps} }
 technique T < string MMDPass = "object"; > { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = compile ps_3_0 PS(); } }
 `;
 
+// 宣言したオフスクリーン OffMap (何もない所は青) を、そのまま画面に出すポストエフェクト
+export const showOffMap = (defaultEffect: string) => `
+float Script : STANDARDSGLOBAL < string ScriptOutput = "color"; string ScriptClass = "scene"; string ScriptOrder = "postprocess"; > = 0.8;
+float2 ViewportSize : VIEWPORTPIXELSIZE;
+static float2 ViewportOffset = float2(0.5, 0.5) / ViewportSize;
+float4 ClearColor = { 0.2, 0.2, 0.2, 1.0 };
+float ClearDepth = 1.0;
+texture2D ScnMap : RENDERCOLORTARGET < float2 ViewportRatio = { 1.0, 1.0 }; >;
+texture2D DepthBuffer : RENDERDEPTHSTENCILTARGET < float2 ViewportRatio = { 1.0, 1.0 }; >;
+texture OffMap : OFFSCREENRENDERTARGET <
+  string Description = "テスト用のマップ";
+  float2 ViewportRatio = { 1.0, 1.0 };
+  float4 ClearColor = { 0, 0, 1, 1 };
+  float ClearDepth = 1.0;
+  string DefaultEffect = "${defaultEffect}";
+>;
+sampler2D OffSamp = sampler_state { texture = <OffMap>; MinFilter = POINT; MagFilter = POINT; MipFilter = NONE; AddressU = CLAMP; AddressV = CLAMP; };
+struct VO { float4 Pos : POSITION; float2 Tex : TEXCOORD0; };
+VO VS(float4 Pos : POSITION, float2 Tex : TEXCOORD0) { VO o; o.Pos = Pos; o.Tex = Tex + ViewportOffset; return o; }
+float4 Show(float2 Tex : TEXCOORD0) : COLOR0 { return tex2D(OffSamp, Tex); }
+technique Post < string Script = "RenderColorTarget0=ScnMap; RenderDepthStencilTarget=DepthBuffer; ClearSetColor=ClearColor; ClearSetDepth=ClearDepth; Clear=Color; Clear=Depth; ScriptExternal=Color; RenderColorTarget0=; RenderDepthStencilTarget=; Pass=Show;"; > {
+  pass Show < string Script = "Draw=Buffer;"; > { VertexShader = compile vs_3_0 VS(); PixelShader = compile ps_3_0 Show(); }
+}`;
+export const GREEN_FX = objectFx('return float4(0.0, 1.0, 0.0, 1.0);');
+// 物の .fx: 赤を CONTROLOBJECT (name・item) の float で決める
+export const controlItem = (name: string, it: string, type = 'float') => `${type} m : CONTROLOBJECT < string name = "${name}"; string item = "${it}"; >;`;
+export const redFrom = (name: string, it: string) => objectFx('return float4(m, 0.0, 0.0, 1.0);', controlItem(name, it));
+
 // 描いた絵と、そのときのカメラで世界の点を写した画素の位置の色。png: 書き出し (engine.output.renderPng)、viewport: ビューポートの canvas。
 // image: 絵の全部の画素 (RGBA の並び) も返す
 export async function shoot(page: Page, where: 'png' | 'viewport', points: Vec3[] = [], image = false) {

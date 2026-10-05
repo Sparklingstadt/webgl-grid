@@ -4,6 +4,8 @@ import type { MmeEffectUi } from '../../../engine/UiChannel';
 import { useEngine, useUi } from '../../EngineContext';
 import { BSlider } from '../BSlider';
 import { BCheck } from '../controls/BCheck';
+import { MmeAssignTabs } from '../MmeAssignTabs';
+import { MmeControllers } from '../MmeControllers';
 import { MmeEffectPicker } from '../MmeEffectPicker';
 import { Panel } from './Panel';
 
@@ -35,7 +37,7 @@ function FxResult({ fx }: { fx: MmeEffectUi }) {
   );
 }
 
-// MME 互換 (レンダーエンジンが MME 互換のときだけ): 選んでいる物の .fx とポストエフェクトの一覧
+// MME 互換 (レンダーエンジンが MME 互換のときだけ): 選んでいる物の .fx・ポストエフェクトの一覧・エフェクト割当・仮のコントローラー
 function MmePanel() {
   const engine = useEngine();
   const selected = useUi(s => s.sel !== null); // (動かしているあいだの位置の変化では描き直さない)
@@ -71,6 +73,8 @@ function MmePanel() {
         ) : <div className="note">{t('ポストエフェクトはありません')}</div>}
         {mme.posts.length > 1 && <div className="note">{t('上のものほど先に (場面の近くで) かかります')}</div>}
       </MmeEffectPicker>
+      <MmeAssignTabs />
+      <MmeControllers />
       {mme.warnings.length > 0 && (
         <details className="mme-diag">
           <summary className="note">{t('描くときの警告 {n}', { n: mme.warnings.length })}</summary>

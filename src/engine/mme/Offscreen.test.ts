@@ -240,4 +240,26 @@ describe('Offscreen', () => {
     expect(h.offscreen.tabs()).toEqual([]);
     expect(h.offscreen.texture(fx('ray.fx'), 'Map', null)).toBeNull();
   });
+  it('tabDefaults: そのフレームにタブを描く最初の宣言の DefaultEffect と持ち主。描く宣言がない (DefaultEffect のない shared だけ) なら null', async () => {
+    const { store, fx } = await load({
+      'mat.fx': offscreenFx(decl('Map', '', true)),
+      'post.fx': offscreenFx(decl('Map', 'string DefaultEffect = "self = hide; * = a.fx;";', true) + decl('Read', '', true)),
+      'nest.fx': offscreenFx(decl('Mine', 'string DefaultEffect = "* = hide;";')),
+    });
+    const h = harness(store);
+    const a = obj(1), b = obj(2);
+    h.offscreen.begin(1);
+    h.offscreen.ensure(fx('mat.fx'), null, frameOf(1));
+    h.offscreen.ensure(fx('post.fx'), null, frameOf(1));
+    h.offscreen.ensure(fx('nest.fx'), a, frameOf(1));
+    h.offscreen.ensure(fx('nest.fx'), b, frameOf(1));
+    const map = h.offscreen.tabDefaults('Map')!;
+    expect(map.defaults.rules.map(r => r.pattern)).toEqual(['self', '*']);
+    expect(map.defaults.folder).toBe(fx('post.fx').folder);
+    expect([...map.owners]).toEqual([null]);
+    expect(h.offscreen.tabDefaults('Read')).toBeNull();
+    expect([...h.offscreen.tabDefaults('Mine')!.owners]).toEqual([a, b]);
+    h.offscreen.begin(2);
+    expect(h.offscreen.tabDefaults('Map')).toBeNull();
+  });
 });

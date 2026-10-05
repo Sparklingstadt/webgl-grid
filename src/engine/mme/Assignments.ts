@@ -37,20 +37,19 @@ export class Assignments {
   // オフスクリーンのタブ (defaults がある): 見つからない・コンパイルできない .fx は描かない (hide。警告は 1 回)。
   // G バッファや影のマップに MMD の陰影を書くと絵が壊れるので、default.fx にはしない
   slotFor(tab: string, defaults: DefaultsOf | null, owner: Obj | null): SlotFor {
-    const fallback: Slot = { kind: 'effect', effect: this.store.defaultEffect };
-    const offscreen = defaults !== null ? tab : null;
     return (obj, mesh, materialIndex) => {
       const effects = obj?.mme?.[tab];
-      const own = this.slot(effects?.materials?.[materialIndex], offscreen) ?? this.slot(effects?.object, offscreen);
-      if (own) return own;
-      if (!defaults) return fallback;
       // (ステージは置いた物ではないので、.pmx のファイル名で照らす)
-      const name = obj ? objectName(obj) : pmxName(mesh) ?? '';
-      const action = resolveDefault(defaults.rules, name, obj !== null && obj === owner);
-      if (!action || action.kind === 'hide') return HIDE;
-      if (action.kind === 'none') return fallback;
-      return this.slot({ folder: defaults.folder.id, path: joinPath(defaults.base, action.path) }, offscreen) ?? HIDE;
+      const name = () => (obj ? objectName(obj) : pmxName(mesh) ?? '');
+      return this.resolve(tab, defaults, [effects?.materials?.[materialIndex], effects?.object], name, obj !== null && obj === owner, false);
     };
+  }
+
+  // 割り当ての画面の行を既定に戻したら描くもの: 材質の行 (materialIndex) は物の割り当て → 既定、物の行 (null) は既定
+  // (DefaultEffect か default.fx)。決め方は slotFor と同じで、警告は出さない。isOwner: 物がそのオフスクリーンの持ち主 (self に合う)
+  fallbackFor(tab: string, defaults: DefaultsOf | null, obj: Obj, materialIndex: number | null, isOwner: boolean): Slot {
+    const own = materialIndex === null ? [] : [obj.mme?.[tab]?.object];
+    return this.resolve(tab, defaults, own, () => objectName(obj), isOwner, true);
   }
 
   // 物の全部のタブで割り当てていて、見つかる .fx (資源を捨てない・読み込みを待つもの)。警告は出さない
@@ -70,15 +69,31 @@ export class Assignments {
     this.warned.clear();
   }
 
+  // own: 先に使う割り当て (材質 → 物の順)。見つかる・描けるものがなければ DefaultEffect の規則 (どれにも合わなければ hide。
+  // none は default.fx)、なければ (Main) default.fx。quiet: 警告を出さない
+  private resolve(tab: string, defaults: DefaultsOf | null, own: (SavedSlot | undefined)[], name: () => string, isSelf: boolean, quiet: boolean): Slot {
+    const offscreen = defaults !== null ? tab : null;
+    for (const saved of own) {
+      const slot = this.slot(saved, offscreen, quiet);
+      if (slot) return slot;
+    }
+    const fallback: Slot = { kind: 'effect', effect: this.store.defaultEffect };
+    if (!defaults) return fallback;
+    const action = resolveDefault(defaults.rules, name(), isSelf);
+    if (!action || action.kind === 'hide') return HIDE;
+    if (action.kind === 'none') return fallback;
+    return this.slot({ folder: defaults.folder.id, path: joinPath(defaults.base, action.path) }, offscreen, quiet) ?? HIDE;
+  }
+
   // offscreen: オフスクリーンのタブの名前 (Main は null)
-  private slot(saved: SavedSlot | undefined, offscreen: string | null): Slot | null {
+  private slot(saved: SavedSlot | undefined, offscreen: string | null, quiet: boolean): Slot | null {
     if (saved === undefined) return null;
     if (saved === 'hide') return HIDE;
-    const e = this.find(saved, offscreen);
+    const e = this.find(saved, quiet ? false : offscreen);
     if (!e) return offscreen === null ? null : HIDE;
     if (e.result.ok) return { kind: 'effect', effect: e };
     if (offscreen === null) return { kind: 'effect', effect: this.store.defaultEffect };
-    this.warnOnce(`${offscreen}\n${e.id}`, t('{name} をコンパイルできないので、オフスクリーン {tab} では描きません', { name: e.name, tab: offscreen }));
+    if (!quiet) this.warnOnce(`${offscreen}\n${e.id}`, t('{name} をコンパイルできないので、オフスクリーン {tab} では描きません', { name: e.name, tab: offscreen }));
     return HIDE;
   }
 

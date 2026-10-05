@@ -61,7 +61,7 @@ export class MmeRenderer {
   private chain: PostChain | null = null;
   private scenePass: ScenePass;
   private offscreen: Offscreen;
-  private assignments: Assignments;
+  readonly assignments: Assignments; // 物・材質の割り当ての決め方 (画面の既定の欄でも使う)
   // Main の表: 材質・物の割り当て (なければ default.fx)。ステージは default.fx
   private main: PassTable = { name: 'Main', owner: null, slotFor: (obj, mesh, i) => this.mainSlot(obj, mesh, i) };
   private mainSlotFor: SlotFor;
@@ -348,6 +348,20 @@ export class MmeRenderer {
   // いま使っているエフェクトが宣言するオフスクリーン (割り当てのタブ。名前ごとに 1 つ)
   offscreenTabs(): { name: string; description: string }[] {
     return this.offscreen.tabs();
+  }
+
+  // 前のフレームにそのタブを描いた DefaultEffect と持ち主 (描く宣言がなければ null。Offscreen.tabDefaults)
+  offscreenDefaults(name: string): ReturnType<Offscreen['tabDefaults']> {
+    return this.offscreen.tabDefaults(name);
+  }
+
+  // 描いている .fx (仮のコントローラーの欄の元): 物に割り当てたもの・オンのポストエフェクト・オフスクリーンを宣言した・オフスクリーンに描いたもの
+  drawnEffects(): LoadedEffect[] {
+    const out = new Set<LoadedEffect>();
+    for (const obj of this.d.world.objects) for (const e of this.assignments.referenced(obj)) out.add(e);
+    for (const p of this.d.store.posts) if (p.enabled) out.add(p.effect);
+    for (const e of this.offscreen.effects()) out.add(e);
+    return [...out];
   }
 
   // 全部の警告 (エフェクトの警告は「名前: 」を付ける。テスト用)

@@ -2,7 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { expect, test, type Page } from './fixtures/test';
 import { choose, open, type Win } from './helpers';
-import { addPmx, objectFx, setCamera, shoot, type Vec3 } from './mme-helpers';
+import { addPmx, assignFx, GREEN_FX, objectFx, redFrom, setCamera, shoot, showOffMap, type Vec3 } from './mme-helpers';
 
 // MME 互換の画面: 出力のタブのレンダーエンジン、効果のタブの「MME 互換」の欄 (フォルダから .fx を読む・ポストエフェクトの一覧)
 
@@ -191,5 +191,104 @@ test('標準に戻すと絵が元どおり (MME 互換にする前の書き出�
   await setEngine(page, '標準');
   expect(await page.evaluate(() => (window as Win).engine.mme.renderer.instances.size)).toBe(0);
   expect(await image()).toEqual(standard);
+  expect(errors).toEqual([]);
+});
+
+// --- エフェクト割当のタブ (Main とオフスクリーン。物の行と、開くと出る材質の行) と、仮のコントローラーの欄 ---
+const assignTabs = (page: Page) => panel(page).getByRole('tablist', { name: 'エフェクト割当' }).getByRole('tab');
+// 行 (選択の名前で探す) の、選んでいないときに出る既定のもの (薄い字)
+const fallback = (page: Page, select: string) =>
+  panel(page).locator('.mme-row').filter({ has: page.getByRole('combobox', { name: select, exact: true }) }).locator('.mme-fallback');
+const BOX = 'テスト人形 の .fx';
+const BOX_MAT0 = 'テスト人形 の材質 0 の .fx';
+
+test('エフェクト割当: ポストエフェクトを読むと Main とオフスクリーンのタブが出て、オフスクリーンのタブで物を非表示にし、既定に戻せる', async ({ page }, info) => {
+  const errors = await boxScene(page);
+  const dir = await folder(info.outputPath('Off'), { 'post.fx': showOffMap('*=green.fx;'), 'green.fx': GREEN_FX });
+  await page.getByLabel('ポストエフェクトのフォルダを選ぶ').setInputFiles(dir);
+  await page.getByRole('dialog', { name: '.fx を選ぶ' }).getByRole('button', { name: 'post.fx', exact: true }).click();
+  await expect(assignTabs(page)).toHaveText(['Main', 'OffMap']);
+  await expect.poll(() => rgb(page)).toEqual([0, 255, 0]); // (オフスクリーンを画面に出す。物は DefaultEffect の green.fx)
+  // Main: 選んでいない行は default.fx
+  await expect(assignTabs(page).nth(0)).toHaveAttribute('aria-selected', 'true');
+  await expect(fallback(page, BOX)).toHaveText('default.fx');
+  // オフスクリーンのタブ: Description と、DefaultEffect で決まるもの
+  await assignTabs(page).nth(1).click();
+  await expect(panel(page)).toContainText('テスト用のマップ');
+  await expect(fallback(page, BOX)).toHaveText('Off/green.fx');
+  await choose(page, BOX, '非表示');
+  await expect.poll(() => rgb(page)).toEqual([0, 0, 255]); // (ClearColor)
+  await expect(fallback(page, BOX)).toHaveCount(0);
+  expect(await page.evaluate(() => (window as Win).engine.world.objects[0].mme)).toEqual({ OffMap: { object: 'hide' } });
+  await choose(page, BOX, '既定に戻す');
+  await expect.poll(() => rgb(page)).toEqual([0, 255, 0]);
+  await expect(fallback(page, BOX)).toHaveText('Off/green.fx');
+  expect(await page.evaluate(() => (window as Win).engine.world.objects[0].mme ?? null)).toBeNull();
+  // フォルダの .fx も選べる (Main の割り当ては変えない)
+  await choose(page, BOX, 'post.fx');
+  expect(await page.evaluate(() => (window as Win).engine.world.objects[0].mme)).toEqual({ OffMap: { object: { folder: 'folder1', path: 'post.fx' } } });
+  await choose(page, BOX, '既定に戻す');
+  // サイドバーの幅でも横にはみ出さない
+  expect(await page.locator('.side-content').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test('エフェクト割当: DefaultEffect のない共有のオフスクリーンのタブは、割り当てが効かないことを書く', async ({ page }, info) => {
+  const errors = await boxScene(page);
+  const source = 'shared texture SharedMap : OFFSCREENRENDERTARGET < string Description = "読むだけのマップ"; >;\n' + filterFx('return c;');
+  await page.getByLabel('ポストエフェクトのフォルダを選ぶ').setInputFiles(await folder(info.outputPath('Shared'), { 'read.fx': source }));
+  await expect(assignTabs(page)).toHaveText(['Main', 'SharedMap']);
+  await assignTabs(page).nth(1).click();
+  await expect(panel(page)).toContainText('読むだけのマップ');
+  await expect(panel(page)).toContainText('このオフスクリーンを描くエフェクトがないので、ここでの割り当ては効きません');
+  await expect(panel(page).getByRole('combobox', { name: BOX, exact: true })).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test('エフェクト割当: モデルの行を開くと材質の行が出て、材質に .fx を割り当てられる (材質の行の既定は物の割り当て)', async ({ page }, info) => {
+  const errors = await boxScene(page);
+  const before = await rgb(page); // (default.fx の色)
+  const dir = await folder(info.outputPath('Two'), { 'solid.fx': SOLID, 'red.fx': objectFx('return float4(1.0, 0.0, 0.0, 1.0);') });
+  await page.getByLabel('物の .fx のフォルダを選ぶ').setInputFiles(dir);
+  await page.getByRole('dialog', { name: '.fx を選ぶ' }).getByRole('button', { name: 'solid.fx', exact: true }).click();
+  await expect.poll(() => rgb(page)).toEqual([51, 102, 153]);
+  await expect(panel(page).getByRole('combobox', { name: BOX, exact: true })).toContainText('solid.fx');
+  // 開くまで材質の行は出ない
+  await expect(panel(page).getByRole('combobox', { name: BOX_MAT0, exact: true })).toHaveCount(0);
+  const toggle = panel(page).getByRole('button', { name: 'テスト人形 の材質を開く' });
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(fallback(page, BOX_MAT0)).toHaveText('Two/solid.fx');
+  await choose(page, BOX_MAT0, 'red.fx');
+  await expect.poll(() => rgb(page)).toEqual([255, 0, 0]);
+  expect(await page.evaluate(() => (window as Win).engine.world.objects[0].mme.Main.materials)).toEqual({ 0: { folder: 'folder1', path: 'red.fx' } });
+  // 物を既定に戻しても、材質の割り当てが先
+  await choose(page, BOX, '既定に戻す');
+  await expect.poll(() => rgb(page)).toEqual([255, 0, 0]);
+  await choose(page, BOX_MAT0, '既定に戻す');
+  await expect.poll(() => rgb(page)).toEqual(before);
+  await expect(fallback(page, BOX_MAT0)).toHaveText('default.fx');
+  // 閉じると材質の行は消える
+  await toggle.click();
+  await expect(panel(page).getByRole('combobox', { name: BOX_MAT0, exact: true })).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test('コントローラーの欄: 場面にない ray_controller.pmx の項目のスライダーが出て、動かすと色が変わる', async ({ page }) => {
+  const errors = await boxScene(page);
+  expect(await assignFx(page, 0, redFrom('ray_controller.pmx', 'Red'))).toBe(true);
+  const controller = panel(page).getByRole('group', { name: 'ray_controller.pmx' });
+  const slider = controller.getByRole('slider', { name: 'Red' });
+  await expect(slider).toBeHidden(); // (見出しを押して開く)
+  await controller.getByText('ray_controller.pmx (1 項目)').click();
+  await expect(slider).toHaveAttribute('aria-valuenow', '0');
+  await expect.poll(() => rgb(page)).toEqual([0, 0, 0]);
+  await slider.click(); // (動かさずに押すと数値を打てる)
+  const input = page.getByRole('textbox', { name: 'Red (数値)' });
+  await input.fill('1');
+  await input.press('Enter');
+  await expect(slider).toHaveAttribute('aria-valuenow', '1');
+  await expect.poll(() => rgb(page)).toEqual([255, 0, 0]);
+  expect(await page.evaluate(() => (window as Win).engine.mme.controllers.values.get('ray_controller.pmx').get('Red'))).toBe(1);
   expect(errors).toEqual([]);
 });

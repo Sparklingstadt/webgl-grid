@@ -320,7 +320,7 @@ describe('MmeEngine', () => {
 
   it('画面に、設定・選んでいる物の .fx・ポストエフェクトの一覧とコンパイルの結果・描くときの警告を出す', async () => {
     const e = new Engine();
-    expect(e.ui.state.mme).toEqual({ settings: MME_DEFAULTS, object: null, posts: [], warnings: [] });
+    expect(e.ui.state.mme).toEqual({ settings: MME_DEFAULTS, object: null, posts: [], warnings: [], folders: [], tabs: [{ name: 'Main', description: '' }], rows: { Main: [] }, controllers: [] });
     e.mme.set({ engine: 'mme' });
     expect(e.ui.state.mme.settings.engine).toBe('mme');
     const obj = e.world.addShape(0, 0, 0, 0);
@@ -359,6 +359,30 @@ describe('MmeEngine', () => {
     e.mme.set({ engine: 'standard' });
     expect(e.ui.state.mme.warnings).toEqual([]);
     expect(e.ui.state.mme.posts[0].warnings).toEqual([]);
+  });
+
+  it('エフェクト割当の行 (割り当て・既定) とフォルダの .fx・仮のコントローラーを出す。行は元が変わったときだけ作り直す', async () => {
+    const e = new Engine();
+    const obj = e.world.addShape(0, 0, 0, 0);
+    e.addLight('point'); // (ライトは載せない)
+    const good = await e.mme.loadEffect([fileAt('Fx/good.fx', 'technique T { }'), fileAt('Fx/sub/ctl.fx', 'float m : CONTROLOBJECT < string name = "ray_controller.pmx"; string item = "Red"; >;\ntechnique T { }')], 'good.fx');
+    expect(e.ui.state.mme.folders).toEqual([{ id: good.folder.id, name: 'Fx', fx: ['good.fx', 'sub/ctl.fx'] }]);
+    expect(e.ui.state.mme.rows.Main).toEqual([{ objId: obj.id, label: '立方体', material: null, assigned: null, fallback: 'default.fx' }]);
+    e.mme.assign(obj, 'Main', null, { folder: good.folder.id, path: 'GOOD.FX' });
+    expect(e.ui.state.mme.rows.Main[0]).toMatchObject({ assigned: 'Fx/good.fx', fallback: 'default.fx' });
+    e.mme.assign(obj, 'Main', null, 'hide');
+    expect(e.ui.state.mme.rows.Main[0]).toMatchObject({ assigned: 'hide' });
+    // 何も変わらなければ作り直さない
+    const fallbackFor = vi.spyOn(e.mme.renderer.assignments, 'fallbackFor');
+    e.mme.publish();
+    e.mme.publish();
+    expect(fallbackFor).not.toHaveBeenCalled();
+    // 仮のコントローラー: 描いているエフェクトの、場面にない名前の float の項目と値
+    e.mme.assign(obj, 'Main', null, { folder: good.folder.id, path: 'sub/ctl.fx' });
+    expect(fallbackFor).toHaveBeenCalled(); // (割り当てが変わったので作り直した)
+    expect(e.ui.state.mme.controllers).toEqual([{ name: 'ray_controller.pmx', items: [{ item: 'Red', value: 0 }] }]);
+    e.mme.setControl('RAY_CONTROLLER.pmx', 'Red', 0.25);
+    expect(e.ui.state.mme.controllers).toEqual([{ name: 'ray_controller.pmx', items: [{ item: 'Red', value: 0.25 }] }]);
   });
 
   it('エラーは 20 個まで', async () => {

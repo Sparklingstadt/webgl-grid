@@ -136,4 +136,26 @@ describe('Assignments', () => {
     expect(new Assignments(s, warn).referenced(obj)).toEqual([s.effect(folder, 'a.fx'), s.effect(folder, 'b.fx')]);
     expect(warn).not.toHaveBeenCalled(); // (描くときに警告する)
   });
+  it('fallbackFor: 行を既定に戻したら描くもの (物の行は既定、材質の行は物の割り当て → 既定)。警告は出さない', async () => {
+    const s = store();
+    const folder = await s.addFolder([fileAt('fx/a.fx', 'technique T { }'), fileAt('fx/b.fx', 'technique T { }')]);
+    const warn = vi.fn();
+    const as = new Assignments(s, warn);
+    const a = s.effect(folder, 'a.fx'), b = s.effect(folder, 'b.fx');
+    const obj = shape(1, { Main: { object: { folder: folder.id, path: 'b.fx' }, materials: { 0: 'hide' } }, Map: { object: 'hide' } }, 'Box');
+    // Main: 物の行は default.fx、材質の行は物の割り当て (材質の割り当ては見ない)
+    expect(effectOf(as.fallbackFor('Main', null, obj, null, false))).toBe(s.defaultEffect);
+    expect(effectOf(as.fallbackFor('Main', null, obj, 0, false))).toBe(b);
+    // オフスクリーン: DefaultEffect の規則 (self は持ち主のとき)。物の割り当て (hide) は物の行では見ない
+    const { rules } = parseDefaultEffect('self = hide; * = a.fx;');
+    const defaults = { rules, base: '', folder };
+    expect(effectOf(as.fallbackFor('Map', defaults, obj, null, false))).toBe(a);
+    expect(effectOf(as.fallbackFor('Map', defaults, obj, null, true))).toBe('hide');
+    expect(effectOf(as.fallbackFor('Map', defaults, obj, 0, false))).toBe('hide');
+    // 見つからない .fx でも警告は出さない (描くときに出す)
+    const lost = shape(2, { Main: { object: { folder: folder.id, path: 'gone.fx' } }, Map: { object: { folder: folder.id, path: 'gone.fx' } } });
+    expect(effectOf(as.fallbackFor('Main', null, lost, 0, false))).toBe(s.defaultEffect);
+    expect(effectOf(as.fallbackFor('Map', defaults, lost, 0, false))).toBe('hide');
+    expect(warn).not.toHaveBeenCalled();
+  });
 });

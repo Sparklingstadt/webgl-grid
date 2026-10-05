@@ -1,5 +1,5 @@
 import { expect, test, type Page } from './fixtures/test';
-import { addPmx, objectFx, openMme, setCamera, shoot, type Vec3 } from './mme-helpers';
+import { addPmx, GREEN_FX, objectFx, openMme, setCamera, shoot, showOffMap, type Vec3 } from './mme-helpers';
 import type { Win } from './helpers';
 
 // MME 互換の OFFSCREENRENDERTARGET: ポストエフェクトや物の .fx が宣言したオフスクリーンに、そのタブの割り当て表 (割り当て →
@@ -43,30 +43,6 @@ async function addPostRef(page: Page, ref: Ref) {
 const warnings = (page: Page) => page.evaluate(() => (window as Win).engine.mme.renderer.allWarnings() as string[]);
 const look = (page: Page, x = 0, z = 0) => setCamera(page, { yaw: Math.PI / 2, pitch: 0.05, dist: 4.5, tx: x, ty: 1, tz: z });
 
-// 宣言したオフスクリーン OffMap (何もない所は青) を、そのまま画面に出すポストエフェクト
-const showOffMap = (defaultEffect: string) => `
-float Script : STANDARDSGLOBAL < string ScriptOutput = "color"; string ScriptClass = "scene"; string ScriptOrder = "postprocess"; > = 0.8;
-float2 ViewportSize : VIEWPORTPIXELSIZE;
-static float2 ViewportOffset = float2(0.5, 0.5) / ViewportSize;
-float4 ClearColor = { 0.2, 0.2, 0.2, 1.0 };
-float ClearDepth = 1.0;
-texture2D ScnMap : RENDERCOLORTARGET < float2 ViewportRatio = { 1.0, 1.0 }; >;
-texture2D DepthBuffer : RENDERDEPTHSTENCILTARGET < float2 ViewportRatio = { 1.0, 1.0 }; >;
-texture OffMap : OFFSCREENRENDERTARGET <
-  string Description = "テスト用のマップ";
-  float2 ViewportRatio = { 1.0, 1.0 };
-  float4 ClearColor = { 0, 0, 1, 1 };
-  float ClearDepth = 1.0;
-  string DefaultEffect = "${defaultEffect}";
->;
-sampler2D OffSamp = sampler_state { texture = <OffMap>; MinFilter = POINT; MagFilter = POINT; MipFilter = NONE; AddressU = CLAMP; AddressV = CLAMP; };
-struct VO { float4 Pos : POSITION; float2 Tex : TEXCOORD0; };
-VO VS(float4 Pos : POSITION, float2 Tex : TEXCOORD0) { VO o; o.Pos = Pos; o.Tex = Tex + ViewportOffset; return o; }
-float4 Show(float2 Tex : TEXCOORD0) : COLOR0 { return tex2D(OffSamp, Tex); }
-technique Post < string Script = "RenderColorTarget0=ScnMap; RenderDepthStencilTarget=DepthBuffer; ClearSetColor=ClearColor; ClearSetDepth=ClearDepth; Clear=Color; Clear=Depth; ScriptExternal=Color; RenderColorTarget0=; RenderDepthStencilTarget=; Pass=Show;"; > {
-  pass Show < string Script = "Draw=Buffer;"; > { VertexShader = compile vs_3_0 VS(); PixelShader = compile ps_3_0 Show(); }
-}`;
-const GREEN_FX = objectFx('return float4(0.0, 1.0, 0.0, 1.0);');
 const WHITE_FX = objectFx('return float4(1.0, 1.0, 1.0, 1.0);');
 
 // 物の .fx: 自分のオフスクリーン Mine (何もない所は ClearColor) の、いま描いている画素の所を出す
