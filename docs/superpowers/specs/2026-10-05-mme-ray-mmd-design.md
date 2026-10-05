@@ -1,7 +1,7 @@
 # MME 互換モード — 第 4 の計画: Ray-MMD で合格 設計書
 
 - 日付: 2026-10-05
-- 状態: 設計
+- 状態: 実装済み（合格の基準 1 の警告とリンクの失敗は 0。絵は「実装でわかったこと」の 2 つの決めることが残る）
 - 前の計画: `docs/superpowers/specs/2026-10-05-mme-runtime-design.md`（MME ランタイム。完了。ブランチ `claude/ray-mmd-webgl-grid-port-16f15d` の上に作る）
 - 前の計画で次に回したこと: `docs/superpowers/notes/2026-10-05-mme-runtime-followups.md`
 
@@ -182,3 +182,15 @@ Ray-MMD 1.5.2 の標準の構成に、ライトとフォグを加えたものを
 - `ANIMATEDTEXTURE`（第 5 の計画）
 - VFACE の向きの直し・D3D のアルファテスト（第 5 の計画）
 - ビューポートの速さの目標
+
+## 実装でわかったこと
+
+本物の Ray-MMD 1.5.2（`fx/ray-mmd-1.5.2/`）を、標準の構成（`ray.conf` のまま）＋ライト 10 種類＋フォグ 4 種類＋空（Time of day）で読み込んで確かめた（`e2e/ray-mmd-local.spec.ts`）。
+
+- 「未対応」の警告として出たのは、サンプラーの `SRGBTexture = TRUE`（`Shader/LTC.fxsub` の LTC の表。rgba16f の .dds）だけだった。8 ビットの RGBA の画像は sRGB の写しにして GL に線形にさせ、浮動小数の画像は D3D9 と同じく何もしないことにした。残る警告は、`AddressU/V = BORDER` を `CLAMP` にする（GL にない）・同じレンダーターゲットを違う設定のサンプラーで読む（最初のサンプラーの設定にする）・コンパイラの `float4 を float3 に切り詰めます` で、どれも近似の知らせ。リンクの失敗・止めたエフェクトは 0。
+- オフスクリーンのタブは 9 つ（FogMap・LightMap・EnvLightMap・MaterialMap・SSAOMap・PSSM1〜4）。ライトとフォグの .fx は、`LightMap`・`FogMap` の `DefaultEffect` で、すべて `Default` のものが選ばれる。PNG と動画に書き出せる。1280×720 で 1 フレーム 13.5 ms（Apple M3 Max）。
+- **座標の大きさ（決めること）**: MME に渡す世界は、このアプリの世界（MMD の単位の 0.1 倍）のままで、MMD の単位に直していない。MMD モデルの頂点は MMD の単位で、`WORLD` に 0.1 倍と置いた場所が入る。MMD ではモデルの `WORLD` はふつう単位行列なので、Ray-MMD の一部は頂点の位置をそのまま世界の位置として使う（`Shader/PSSM.fxsub` の影の深さ、`Time of day.fx` の空の球）。そのため、太陽の影のマップの深さが受ける側（G バッファから戻した位置）と 10 倍ずれて、場面が影で真っ黒になる（`SUN_SHADOW_QUALITY` を 0 にすると陰影が出る）。空の球（半径 10000）はカメラの描ける範囲（1000）の外になって描かれない。ライトの範囲・PSSM の分割・SSDO の偏りなど、MMD の単位の距離の決め打ちも 10 倍ずれる。直すには、MME の世界を MMD の単位にし（位置・行列・カメラ・ライトの影の行列・`CONTROLOBJECT` を 10 倍）、MMD モデルは置いた場所を頂点に焼き込んで `WORLD` を単位行列にし、投影の遠い面も MMD に合わせる、などが要る。第 2 の計画の単体テストの値と、編集用の表示の深度の重ね方に関わるので、この計画では直していない。
+- **空とステージ（決めること）**: 空の .pmx（Time of day は一辺 20000）は大きいので、読み込むとステージになる。ステージは置いた物ではないので割り当てられず、Main は `default.fx`、オフスクリーンは `DefaultEffect` だけで描く（`Time of day.pmx` は `sky*box*` に合わないので `EnvLightMap` では描かず、`MaterialMap` では `material_2.0.fx`）。置いた物にすると、積み重ねでほかの物が上に乗る（か空が上に乗る）。手元の e2e は、ステージの判定を通さずに置いた物にし、球の中心を原点に動かして代わりにしている。ステージに割り当てられるようにするか、空のような .pmx をステージにも積み重ねにも入れないかを決める必要がある。
+- `Materials/Skin/material_skin.fx`・`Materials/Hair/material_hair.fx` を当てた材質は、`Gbuffer2RT`（MRT の 2 つ目）に 0 を書いているように見える（`material_2.0.fx` の材質は書けている）。原因は調べきれていない（座標の大きさの直しのあとで見直す）。
+- Ray-MMD 1.5.2 の .dds にキューブマップはない。ミップを持つ .dds（`Lighting/SphereLight/Default IBL/texture/skyspec_hdr.dds`、1024×512・7 段）は、GPU で `tex2Dlod` の段ごとに .dds のその段の色が読めることを確かめた。
+- Time of day の割り当ては、同じフォルダの `README.png` のとおり、Main に `Time of day.fx`・`FogMap` に `Time of fog.fx`・`EnvLightMap` に `Time of lighting.fx`・`MaterialMap` に `Materials/material_skybox.fx`。モデルの Main には `Main/main.fx`（不透明度 0 を書き、色は G バッファの陰影を使わせる。`default.fx` のままだと MMD の陰影が上に重なる）。
