@@ -13,6 +13,9 @@ const GPU = process.env.E2E_GL ? process.env.E2E_GL === 'gpu' : process.platform
 export default defineConfig({
   testDir: 'e2e',
   fullyParallel: true,
+  // CI のマシン (ubuntu-latest、公開リポジトリは 4 コア) は、決めないとコアの半分の 2 つしか使わない。4 つで並べる
+  // (手元は決めない: コアの半分)。E2E_WORKERS で変えられる
+  workers: process.env.E2E_WORKERS ? Number(process.env.E2E_WORKERS) : process.env.CI ? 4 : undefined,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   // CI はソフトウェア描画で遅く (シェーダーの組み立てに時間がかかる)、待つ時間を長くする
