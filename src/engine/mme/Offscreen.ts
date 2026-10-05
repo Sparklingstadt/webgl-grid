@@ -6,8 +6,7 @@ import { annotation } from '../../core/mme/annotations.ts';
 import { parseDefaultEffect, type DefaultRule } from '../../core/mme/defaultEffect.ts';
 import { textureRole } from '../../core/mme/semantics.ts';
 import { targetSpec, type TargetFormat, type TargetSpec } from '../../core/mme/targets.ts';
-import type { Obj } from '../types';
-import type { DefaultsOf } from './Assignments';
+import { STAGE, type DefaultsOf, type Owner } from './Assignments';
 import type { LoadedEffect } from './EffectStore';
 import type { ColorTarget, DrawTarget, Framebuffers, Surface } from './Framebuffers';
 import type { FrameState } from './PostChain';
@@ -34,7 +33,7 @@ export type OffscreenTargets = Pick<Framebuffers, 'current' | 'defaultSurface' |
 export interface OffscreenDeps {
   fb(): OffscreenTargets;
   scene: OffscreenScene;
-  slotFor(tab: string, defaults: DefaultsOf, owner: Obj | null): SlotFor; // そのタブの割り当て (Assignments.slotFor)
+  slotFor(tab: string, defaults: DefaultsOf, owner: Owner): SlotFor; // そのタブの割り当て (Assignments.slotFor)
   prepare(effect: LoadedEffect, screen: [number, number]): void; // オフスクリーンに描くエフェクトのレンダーターゲットを用意する
   stopped(effect: LoadedEffect): boolean; // GPU で使えないので止めたか
   warn(message: string, effect: LoadedEffect | null): void; // effect: そのエフェクトの警告 (null は全体の警告)
@@ -89,7 +88,7 @@ export class Offscreen {
   private decls = new Map<LoadedEffect, { screen: string; decls: OffscreenDecl[] }>();
   private declared = new Map<string, string>(); // このフレームに使ったエフェクトが宣言するオフスクリーンの名前 → Description
   // このフレームにオフスクリーンの名前ごとの、最初に描く宣言 (DefaultEffect のあるもの) と、それを宣言したエフェクトで描く物 (ポストエフェクトは null)
-  private drawers = new Map<string, { decl: OffscreenDecl; owners: Set<Obj | null> }>();
+  private drawers = new Map<string, { decl: OffscreenDecl; owners: Set<Owner> }>();
   private warned = new Set<string>();
 
   constructor(private d: OffscreenDeps) {}
@@ -111,15 +110,15 @@ export class Offscreen {
 
   // そのエフェクトが宣言するオフスクリーンを、このフレームでまだ描いていなければ、宣言の逆の順に描く。
   // owner はそのエフェクトで描く物 (ポストエフェクトは null)
-  ensure(effect: LoadedEffect, owner: Obj | null, frame: FrameState): void {
+  ensure(effect: LoadedEffect, owner: Owner, frame: FrameState): void {
     this.ensureAt(effect, owner, frame, 1);
   }
 
   // エフェクトが宣言したオフスクリーンのテクスチャ (shared なら名前で、ほかのエフェクトが描いたもの)。描いていなければ null
-  texture(effect: LoadedEffect, name: string, owner: Obj | null): THREE.Texture | null {
+  texture(effect: LoadedEffect, name: string, owner: Owner): THREE.Texture | null {
     const tex = effect.result.ok ? effect.result.effect.textures.find(x => x.name === name) : undefined;
     if (!tex) return null;
-    return this.entries.get(tex.shared ? `shared|${name}` : `${effect.id}|${name}|${owner?.id ?? ''}`)?.target?.tex ?? null;
+    return this.entries.get(tex.shared ? `shared|${name}` : `${effect.id}|${name}|${ownerKey(owner)}`)?.target?.tex ?? null;
   }
 
   // このフレームに使ったエフェクトが宣言するオフスクリーンの名前と Description (名前ごとに 1 つ。割り当てのタブ)
@@ -129,7 +128,7 @@ export class Offscreen {
 
   // このフレームにそのタブ (オフスクリーンの名前) を描いた割り当て表の DefaultEffect (最初に描く宣言のもの) と、持ち主 (self に合う物)。
   // 描く宣言がなければ null (DefaultEffect のない shared の宣言だけ。そのタブの割り当ては効かない)
-  tabDefaults(name: string): { defaults: DefaultsOf; owners: Set<Obj | null> } | null {
+  tabDefaults(name: string): { defaults: DefaultsOf; owners: Set<Owner> } | null {
     const d = this.drawers.get(name);
     return d ? { defaults: defaultsOf(d.decl), owners: d.owners } : null;
   }
@@ -154,7 +153,7 @@ export class Offscreen {
     this.frameNo = 0;
   }
 
-  private ensureAt(effect: LoadedEffect, owner: Obj | null, frame: FrameState, depth: number): void {
+  private ensureAt(effect: LoadedEffect, owner: Owner, frame: FrameState, depth: number): void {
     const decls = this.declsOf(effect, frame.screen);
     if (decls.length === 0 || this.d.stopped(effect)) return;
     for (const decl of decls) {
@@ -167,7 +166,7 @@ export class Offscreen {
     for (let i = decls.length - 1; i >= 0; i--) {
       const decl = decls[i];
       if (!decl.draws || this.d.stopped(effect)) continue;
-      const key = decl.shared ? `shared|${decl.name}` : `${effect.id}|${decl.name}|${owner?.id ?? ''}`;
+      const key = decl.shared ? `shared|${decl.name}` : `${effect.id}|${decl.name}|${ownerKey(owner)}`;
       const entry = this.entries.get(key);
       if (entry?.drawnAt === this.frameNo) {
         entry.usedAt = this.frameNo;
@@ -186,7 +185,7 @@ export class Offscreen {
 
   // 1 つのオフスクリーンを描く: その表で描く物のエフェクトのレンダーターゲットを用意し、それらのオフスクリーン (入れ子) を先に描いてから、
   // ClearColor・ClearDepth (とステンシル 0) で消して、オフスクリーンを既定の描画先にして場面を描く。終わったら元の描画先に戻す
-  private draw(key: string, old: Entry | undefined, decl: OffscreenDecl, owner: Obj | null, frame: FrameState, depth: number): void {
+  private draw(key: string, old: Entry | undefined, decl: OffscreenDecl, owner: Owner, frame: FrameState, depth: number): void {
     const fb = this.d.fb();
     const entry: Entry = old ?? { decl, target: null, surface: null, drawnAt: 0, usedAt: 0, effects: new Set() };
     entry.decl = decl;
@@ -223,7 +222,7 @@ export class Offscreen {
 
   // オフスクリーンのタブの割り当て。このフレームのうちは同じものを返す (描いている途中で止めても、次のフレームまで変えない)。
   // 止めたエフェクトは描かない (default.fx の陰影を G バッファや影のマップに書かない)
-  private slotFor(decl: OffscreenDecl, owner: Obj | null): SlotFor {
+  private slotFor(decl: OffscreenDecl, owner: Owner): SlotFor {
     const resolve = this.d.slotFor(decl.name, defaultsOf(decl), owner);
     const memo = new Map<THREE.Mesh, Map<number, Slot>>();
     return (obj, mesh, materialIndex) => {
@@ -267,4 +266,9 @@ export function defaultsOf(decl: OffscreenDecl): DefaultsOf {
 
 function sameLayout(a: OffscreenDecl, b: OffscreenDecl): boolean {
   return a.width === b.width && a.height === b.height && a.format === b.format && a.mipLevels === b.mipLevels;
+}
+
+// 持ち主ごとのオフスクリーンの鍵 (物は番号、ステージは 'stage'、持ち主なしは '')
+function ownerKey(owner: Owner): string {
+  return owner === STAGE ? STAGE : owner ? String(owner.id) : '';
 }

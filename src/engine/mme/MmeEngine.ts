@@ -1,7 +1,7 @@
 import type * as THREE from 'three';
 import { errorText } from '../../core/errors';
 import { getLang, t } from '../../core/i18n';
-import { MME_DEFAULTS, normalizeObjectEffects, type MmeScene, type MmeSettings, type ObjectEffects, type SavedSlot } from '../../core/mme/settings.ts';
+import { MME_DEFAULTS, normalizeObjectEffects, type MmeScene, type MmeSettings, type ObjectEffects, type SavedSlot, type TabEffects } from '../../core/mme/settings.ts';
 import { same } from '../addons/registry';
 import type { Clock } from '../anim/Clock';
 import type { MaterialLibrary } from '../materials/MaterialLibrary';
@@ -9,11 +9,11 @@ import type { RenderOutput } from '../output/RenderOutput';
 import type { SceneGraph } from '../render/SceneGraph';
 import type { Viewport } from '../render/Viewport';
 import { isModel, type Obj } from '../types';
-import type { MmeEffectUi, MmeRowUi, MmeUiState, UiChannel } from '../UiChannel';
+import { STAGE_ROW_ID, type MmeEffectUi, type MmeRowUi, type MmeUiState, type UiChannel } from '../UiChannel';
 import { nameOf } from '../world/Selection';
 import type { Selection } from '../world/Selection';
 import type { World } from '../world/World';
-import type { DefaultsOf } from './Assignments';
+import { pmxName, STAGE, type DefaultsOf, type Owner } from './Assignments';
 import { Controllers } from './Controllers';
 import { EffectStore, findFile, type EffectFolder, type LoadedEffect } from './EffectStore';
 import { MmeRenderer } from './MmeRenderer';
@@ -32,10 +32,25 @@ const fxIn = (f: EffectFolder) => [...f.text.keys()].filter(p => p.toLowerCase()
 const slotName = (s: Slot) => (s.kind === 'hide' ? 'hide' : s.effect.name);
 const sameList = (a: unknown[], b: unknown[]) => a.length === b.length && a.every((x, i) => x === b[i]);
 
+// 割り当て all (写して変える) のタブの、物全体 (materialIndex が null) か材質を slot にする (null なら外す)
+function withSlot(all: ObjectEffects, tab: string, materialIndex: number | null, slot: SavedSlot | null): ObjectEffects {
+  const out: ObjectEffects = structuredClone(all);
+  const effects = (out[tab] ??= {});
+  if (materialIndex === null) {
+    if (slot) effects.object = slot;
+    else delete effects.object;
+  } else {
+    const materials = (effects.materials ??= {});
+    if (slot) materials[materialIndex] = slot;
+    else delete materials[materialIndex];
+  }
+  return out;
+}
+
 export interface MmeDeps {
   viewport: Viewport; graph: SceneGraph; world: World; selection: Selection; clock: Clock; library: MaterialLibrary; ui: UiChannel;
   output: RenderOutput;
-  stage: () => THREE.Object3D | null; // ステージ (MMD モデル。default.fx で描く)
+  stage: () => THREE.Object3D | null; // ステージ (MMD モデル。割り当ては場面の値 stageEffects)
   edited: () => void; // 画面から割り当てを変えた (元に戻すの手にする)
 }
 
@@ -44,6 +59,8 @@ export class MmeEngine {
   readonly settings: MmeSettings = { ...MME_DEFAULTS };
   readonly renderer: MmeRenderer;
   readonly controllers: Controllers; // CONTROLOBJECT の値 (仮のコントローラーの値は場面の値)
+  // ステージの割り当て (場面の値。ポストエフェクトと同じく元に戻すの対象にしない。ステージを差し替えても残る)
+  private stageEffects: ObjectEffects | null = null;
   private reported = new Set<string>(); // お知らせに出した例外の文
   private logged: string | null = null; // 続けて出ている例外の文 (コンソールに 1 回だけ書く。描けたら忘れる)
   private shown = ''; // 画面に出した状態 (JSON。同じなら知らせない)
@@ -63,7 +80,9 @@ export class MmeEngine {
     this.controllers = new Controllers({
       world: deps.world, stage: deps.stage, warn: m => this.renderer.warn(m), outputting: () => deps.viewport.outputting,
     });
-    this.renderer = new MmeRenderer({ ...deps, store: this.store, settings: this.settings, controllers: this.controllers });
+    this.renderer = new MmeRenderer({
+      ...deps, store: this.store, settings: this.settings, controllers: this.controllers, stageEffects: () => this.stageEffects,
+    });
     // 前の描画 (効果の後処理) は、標準のエンジンのときに使う
     const prev = deps.viewport.drawOverride;
     deps.viewport.drawOverride = () => (this.settings.engine === 'mme' ? this.draw() || (prev?.() ?? false) : prev?.() ?? false);
@@ -145,42 +164,69 @@ export class MmeEngine {
     return out;
   }
 
-  // エフェクト割当 (タブ・タブごとの物と材質の行・フォルダの .fx) と、仮のコントローラーの項目 (描いているエフェクトの、場面にない名前のもの) を作る
+  // エフェクト割当 (タブ・タブごとのステージと物と材質の行・フォルダの .fx) と、仮のコントローラーの項目 (描いているエフェクトの、場面にない名前のもの) を作る
   private rebuild(tabs: { name: string; description: string }[]): void {
     const objects = this.deps.world.objects.filter(assignable);
+    const stage = this.stageMesh();
     const rows: Record<string, MmeRowUi[]> = {};
     for (const tab of tabs) {
-      const d = tab.name === 'Main' ? { defaults: null, owners: new Set<Obj | null>() } : this.renderer.offscreenDefaults(tab.name);
-      if (d) rows[tab.name] = objects.flatMap(o => this.rowsOf(o, tab.name, d.defaults, d.owners.has(o)));
+      const d = tab.name === 'Main' ? { defaults: null, owners: new Set<Owner>() } : this.renderer.offscreenDefaults(tab.name);
+      if (!d) continue;
+      rows[tab.name] = [
+        ...(stage ? this.stageRows(stage, tab.name, d.defaults, d.owners.has(STAGE)) : []),
+        ...objects.flatMap(o => this.rowsOf(o, tab.name, d.defaults, d.owners.has(o))),
+      ];
     }
     this.assignUi = { folders: this.store.folders().map(f => ({ id: f.id, name: f.name, fx: fxIn(f) })), tabs, rows };
     this.assignJson = JSON.stringify(this.assignUi);
     this.catalog = this.controllers.catalog(this.renderer.drawnEffects());
   }
 
-  // 物の行と、MMD モデルなら材質の行。既定の欄は Assignments の決め方 (割り当てがないときに描くもの)。
-  // GPU で止めたエフェクトは、描くときと同じく Main では default.fx、オフスクリーンでは描かない (hide) にして、止めたことを行に書く
+  // 物の行と、MMD モデルなら材質の行
   private rowsOf(obj: Obj, tab: string, defaults: DefaultsOf | null, isOwner: boolean): MmeRowUi[] {
-    const effects = obj.mme?.[tab];
+    const { assignments } = this.renderer;
+    const fallback = (material: number | null) => assignments.fallbackFor(tab, defaults, obj, material, isOwner);
+    return this.rows(obj.id, nameOf(obj), isModel(obj) ? this.materialNames(obj.model) : [], obj.mme?.[tab], defaults, fallback);
+  }
+
+  // ステージの行と材質の行 (名前は「ステージ: .pmx のファイル名」)
+  private stageRows(mesh: THREE.SkinnedMesh, tab: string, defaults: DefaultsOf | null, isOwner: boolean): MmeRowUi[] {
+    const name = pmxName(mesh) ?? '';
+    const fallback = (material: number | null) => this.renderer.assignments.stageFallbackFor(tab, defaults, name, material, isOwner);
+    const label = t('ステージ: {name}', { name: name || t('ステージ') });
+    return this.rows(STAGE_ROW_ID, label, this.materialNames(mesh), this.stageEffects?.[tab], defaults, fallback);
+  }
+
+  // 1 つの物の行と材質の行。既定の欄は Assignments の決め方 (割り当てがないときに描くもの)。
+  // GPU で止めたエフェクトは、描くときと同じく Main では default.fx、オフスクリーンでは描かない (hide) にして、止めたことを行に書く
+  private rows(
+    objId: number, label: string, materials: string[], effects: TabEffects | undefined, defaults: DefaultsOf | null, fallbackFor: (material: number | null) => Slot,
+  ): MmeRowUi[] {
     const { assignments } = this.renderer;
     const stoppedIn = (e: LoadedEffect | null) => (e && e.result.ok && this.renderer.stopped(e) ? e.name : null);
     const row = (label: string, material: number | null, saved: SavedSlot | undefined): MmeRowUi => {
-      const slot = assignments.fallbackFor(tab, defaults, obj, material, isOwner);
+      const slot = fallbackFor(material);
       const fallbackStopped = slot.kind === 'effect' ? stoppedIn(slot.effect) : null;
       const fallback = fallbackStopped ? (defaults ? 'hide' : this.store.defaultEffect.name) : slotName(slot);
       const stopped = saved === undefined ? fallbackStopped : saved === 'hide' ? null : stoppedIn(assignments.effectOf(saved));
-      return { objId: obj.id, label, material, assigned: this.savedName(saved), fallback, stopped };
+      return { objId, label, material, assigned: this.savedName(saved), fallback, stopped };
     };
     return [
-      row(nameOf(obj), null, effects?.object),
-      ...this.materialNames(obj).map((name, i) => row(name || t('材質 {n}', { n: i }), i, effects?.materials?.[i])),
+      row(label, null, effects?.object),
+      ...materials.map((name, i) => row(name || t('材質 {n}', { n: i }), i, effects?.materials?.[i])),
     ];
   }
 
-  // MMD モデルの材質の名前 (材質の番号の順。マテリアルの名前、なければ three.js の材質の名前)。ほかの物は材質の行を出さないので空
-  private materialNames(o: Obj): string[] {
-    if (!isModel(o)) return [];
-    const m = o.model.material as THREE.Material | THREE.Material[] | undefined;
+  // ステージのモデル (最初の SkinnedMesh。ステージがない・読み込み中なら null)
+  private stageMesh(): THREE.SkinnedMesh | null {
+    let mesh: THREE.SkinnedMesh | null = null;
+    this.deps.stage()?.traverse(o => { if (!mesh && (o as THREE.SkinnedMesh).isSkinnedMesh) mesh = o as THREE.SkinnedMesh; });
+    return mesh;
+  }
+
+  // MMD モデルの材質の名前 (材質の番号の順。マテリアルの名前、なければ three.js の材質の名前)
+  private materialNames(mesh: THREE.Mesh): string[] {
+    const m = mesh.material as THREE.Material | THREE.Material[] | undefined;
     return (Array.isArray(m) ? m : m ? [m] : []).map(x => this.deps.library.materials.get(x.userData.materialId)?.name || x.name);
   }
 
@@ -218,20 +264,19 @@ export class MmeEngine {
 
   // 物のタブの、物全体 (materialIndex が null) か材質の割り当てを変える (slot が null なら外して既定に戻す)。元に戻すの手になる
   assign(obj: Obj, tab: string, materialIndex: number | null, slot: SavedSlot | null): void {
-    const all: ObjectEffects = structuredClone(obj.mme ?? {});
-    const effects = (all[tab] ??= {});
-    if (materialIndex === null) {
-      if (slot) effects.object = slot;
-      else delete effects.object;
-    } else {
-      const materials = (effects.materials ??= {});
-      if (slot) materials[materialIndex] = slot;
-      else delete materials[materialIndex];
-    }
-    const next = normalizeObjectEffects(all);
+    const next = normalizeObjectEffects(withSlot(obj.mme ?? {}, tab, materialIndex, slot));
     if (same(obj.mme ?? null, next)) return;
     this.setObjectEffects(obj, next);
     this.deps.edited();
+  }
+
+  // ステージのタブの、物全体 (materialIndex が null) か材質の割り当てを変える (slot が null なら外して既定に戻す)。
+  // 場面の値なので、元に戻すの対象にしない (ポストエフェクトと同じ)
+  assignStage(tab: string, materialIndex: number | null, slot: SavedSlot | null): void {
+    const next = normalizeObjectEffects(withSlot(this.stageEffects ?? {}, tab, materialIndex, slot));
+    if (same(this.stageEffects, next)) return;
+    this.stageEffects = next;
+    this.changed();
   }
 
   // --- 画面の操作 (ポストエフェクトの一覧は場面の値で、元に戻すの対象にしない) ---
@@ -259,12 +304,14 @@ export class MmeEngine {
     if (e) this.store.addPost(e);
   }
 
-  // エフェクトの割り当て (場面にある物の割り当てとポストエフェクトの一覧) を全部外す (最初の状態に戻すとき・プロジェクトを開くとき)
+  // エフェクトの割り当て (場面にある物とステージの割り当てと、ポストエフェクトの一覧) を全部外す (最初の状態に戻すとき・プロジェクトを開くとき)
   clearEffects(): void {
     const assigned = this.deps.world.objects.filter(o => o.mme);
     for (const obj of assigned) obj.mme = undefined;
+    const stage = this.stageEffects !== null;
+    this.stageEffects = null;
     this.store.clear();
-    if (assigned.length > 0) this.changed();
+    if (assigned.length > 0 || stage) this.changed();
   }
 
   // ファイルを読めなければ (File.arrayBuffer の失敗など) お知らせを出して null
@@ -284,23 +331,25 @@ export class MmeEngine {
       folders: this.store.folders().map(f => ({ id: f.id, name: f.name })),
       posts: this.store.posts.map(p => ({ effect: { folder: p.effect.folder.id, path: p.effect.entry }, enabled: p.enabled })),
       controls: Object.fromEntries([...this.controllers.values].map(([name, items]) => [name, Object.fromEntries(items)])),
+      ...(this.stageEffects ? { stage: structuredClone(this.stageEffects) } : {}),
     };
   }
 
-  // 開いたプロジェクトの設定・ポストエフェクトの並び・仮のコントローラーの値にする (フォルダは戻してある)。
+  // 開いたプロジェクトの設定・ポストエフェクトの並び・仮のコントローラーの値・ステージの割り当てにする (フォルダは戻してある)。
   // フォルダがないポストエフェクトは捨てる。ファイルがないものは、一覧に残して描かない (コンパイルできない)
   loadScene(scene: MmeScene): void {
     const posts = scene.posts.flatMap(({ effect: ref, enabled }) => {
       const folder = this.store.folder(ref.folder);
       return folder ? [{ effect: this.store.effect(folder, ref.path), enabled }] : [];
     });
+    this.stageEffects = scene.stage ? structuredClone(scene.stage) : null;
     this.controllers.clear();
     for (const [name, items] of Object.entries(scene.controls)) for (const [item, v] of Object.entries(items)) this.controllers.set(name, item, v);
     this.store.setPosts(posts);
     this.set(scene.settings);
   }
 
-  // 最初の状態に戻す: 割り当て・ポストエフェクト・読み込んだフォルダ・仮のコントローラーの値を消し、既定の設定にする
+  // 最初の状態に戻す: 割り当て (ステージのものも)・ポストエフェクト・読み込んだフォルダ・仮のコントローラーの値を消し、既定の設定にする
   resetScene(): void {
     this.clearEffects();
     this.store.clearFolders();

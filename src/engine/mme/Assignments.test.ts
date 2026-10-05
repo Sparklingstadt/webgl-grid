@@ -5,7 +5,7 @@ import { normalizeObjectEffects, type ObjectEffects } from '../../core/mme/setti
 import { MODEL_KIND } from '../../core/shapes';
 import type { Obj } from '../types';
 import type { UiChannel } from '../UiChannel';
-import { Assignments, objectName } from './Assignments';
+import { Assignments, objectName, STAGE } from './Assignments';
 import { EffectStore, type LoadedEffect } from './EffectStore';
 import { registerMmdSource } from './mmdData';
 import type { Slot } from './ScenePass';
@@ -157,5 +157,34 @@ describe('Assignments', () => {
     expect(effectOf(as.fallbackFor('Main', null, lost, 0, false))).toBe(s.defaultEffect);
     expect(effectOf(as.fallbackFor('Map', defaults, lost, 0, false))).toBe('hide');
     expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('ステージ (obj が null): ステージの割り当て (材質 → 物) → DefaultEffect の規則 (.pmx のファイル名。self は持ち主が STAGE のとき) → default.fx', async () => {
+    const s = store();
+    const folder = await s.addFolder([fileAt('Ray/sky.fx', 'technique T { }'), fileAt('Ray/m.fx', 'technique T { }'), fileAt('Ray/env.fx', 'technique T { }')]);
+    const sky = s.effect(folder, 'sky.fx'), m = s.effect(folder, 'm.fx'), env = s.effect(folder, 'env.fx');
+    const stageMesh = Object.assign(new THREE.Mesh(), { userData: { sourceFile: new File([], 'Time of day.pmx') } });
+    let stage: ObjectEffects | null = null;
+    const as = new Assignments(s, vi.fn(), () => stage);
+    const main = as.slotFor('Main', null, null);
+    expect(effectOf(main(null, stageMesh, 0))).toBe(s.defaultEffect);
+    // 割り当ては呼ぶたびに読む。材質の割り当てが先
+    stage = { Main: { object: { folder: folder.id, path: 'sky.fx' }, materials: { 1: 'hide' } } };
+    expect([0, 1].map(i => effectOf(main(null, stageMesh, i)))).toEqual([sky, 'hide']);
+    // 置いた物には効かない
+    expect(effectOf(main(shape(1), mesh, 0))).toBe(s.defaultEffect);
+    // オフスクリーン: 規則は .pmx のファイル名で照らし、ステージの割り当てが規則より先
+    const { rules } = parseDefaultEffect('self = hide; *sky*.pmx = env.fx; time of day.pmx = m.fx; * = hide;');
+    const defaults = { rules, base: '', folder };
+    expect(effectOf(as.slotFor('Env', defaults, null)(null, stageMesh, 0))).toBe(m);
+    expect(effectOf(as.slotFor('Env', defaults, STAGE)(null, stageMesh, 0))).toBe('hide'); // (持ち主はステージ: self)
+    expect(effectOf(as.slotFor('Env', defaults, STAGE)(shape(2, undefined, 'mysky.pmx'), mesh, 0))).toBe(env); // (置いた物は self ではない)
+    stage = { Env: { object: { folder: folder.id, path: 'env.fx' } } };
+    expect(effectOf(as.slotFor('Env', defaults, STAGE)(null, stageMesh, 0))).toBe(env);
+    // 既定の欄 (ステージの行) と、ステージに割り当てた .fx
+    expect(effectOf(as.stageFallbackFor('Env', defaults, 'Time of day.pmx', null, false))).toBe(m);
+    expect(effectOf(as.stageFallbackFor('Env', defaults, 'Time of day.pmx', 0, false))).toBe(env);
+    expect(effectOf(as.stageFallbackFor('Env', defaults, 'Time of day.pmx', null, true))).toBe('hide');
+    expect(as.referencedStage()).toEqual([env]);
   });
 });

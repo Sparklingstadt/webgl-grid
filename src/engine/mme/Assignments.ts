@@ -1,14 +1,19 @@
 import { joinPath } from '../../core/fx/source.ts';
 import { t } from '../../core/i18n';
 import { resolveDefault, type DefaultRule } from '../../core/mme/defaultEffect.ts';
-import type { EffectRef, SavedSlot } from '../../core/mme/settings.ts';
+import type { EffectRef, ObjectEffects, SavedSlot } from '../../core/mme/settings.ts';
 import { isModel, type Obj } from '../types';
 import { nameOf } from '../world/Selection';
 import { findFile, type EffectFolder, type EffectStore, type LoadedEffect } from './EffectStore';
 import { mmdSourceOf } from './mmdData';
 import type { Slot, SlotFor } from './ScenePass';
 
-// --- 物ごと・材質ごとのエフェクトの割り当て (Obj.mme) から、タブ ('Main' かオフスクリーン) で物の材質を何で描くかを決める ---
+// --- 物ごと・材質ごとのエフェクトの割り当て (Obj.mme。ステージは場面の値 MmeScene.stage) から、タブ ('Main' かオフスクリーン) で
+// 物の材質を何で描くかを決める ---
+
+// 描いている物・オフスクリーンの持ち主: 置いた物か、ステージ (STAGE)。null は物がない (Main・ポストエフェクト)
+export const STAGE = 'stage';
+export type Owner = Obj | typeof STAGE | null;
 
 // オフスクリーンの DefaultEffect: 規則と、規則のパスの基 (宣言しているエフェクトのエントリーの .fx があるフォルダ。フォルダからの相対)
 export interface DefaultsOf { rules: DefaultRule[]; base: string; folder: EffectFolder }
@@ -29,19 +34,21 @@ export function objectName(obj: Obj): string {
 export class Assignments {
   private warned = new Set<string>(); // 警告を出した、見つからない・コンパイルできない割り当て
 
-  constructor(private store: EffectStore, private warn: (message: string) => void) {}
+  // stage: ステージの割り当て (場面の値。なければ null)
+  constructor(private store: EffectStore, private warn: (message: string) => void, private stage: () => ObjectEffects | null = () => null) {}
 
   // そのタブで物の材質を描くもの: 材質の割り当て → 物の割り当て → DefaultEffect があればその規則 (どれにも合わなければ hide。
-  // none は default.fx) → なければ (Main) default.fx。割り当ては呼ぶたびに Obj.mme から読む。
+  // none は default.fx) → なければ (Main) default.fx。割り当ては呼ぶたびに Obj.mme (ステージは stage()) から読む。
+  // owner: そのオフスクリーンの持ち主 (規則の self に合う物。ステージなら STAGE)。
   // Main: 割り当てた .fx が見つからなければ警告を 1 回出して次の決め方に回し、コンパイルできない .fx は default.fx で描く。
   // オフスクリーンのタブ (defaults がある): 見つからない・コンパイルできない .fx は描かない (hide。警告は 1 回)。
   // G バッファや影のマップに MMD の陰影を書くと絵が壊れるので、default.fx にはしない
-  slotFor(tab: string, defaults: DefaultsOf | null, owner: Obj | null): SlotFor {
+  slotFor(tab: string, defaults: DefaultsOf | null, owner: Owner): SlotFor {
     return (obj, mesh, materialIndex) => {
-      const effects = obj?.mme?.[tab];
+      const effects = obj ? obj.mme?.[tab] : this.stage()?.[tab];
       // (ステージは置いた物ではないので、.pmx のファイル名で照らす)
       const name = () => (obj ? objectName(obj) : pmxName(mesh) ?? '');
-      return this.resolve(tab, defaults, [effects?.materials?.[materialIndex], effects?.object], name, obj !== null && obj === owner, false);
+      return this.resolve(tab, defaults, [effects?.materials?.[materialIndex], effects?.object], name, (obj ?? STAGE) === owner, false);
     };
   }
 
@@ -52,10 +59,25 @@ export class Assignments {
     return this.resolve(tab, defaults, own, () => objectName(obj), isOwner, true);
   }
 
+  // ステージの行の fallbackFor (name はステージの .pmx のファイル名)
+  stageFallbackFor(tab: string, defaults: DefaultsOf | null, name: string, materialIndex: number | null, isOwner: boolean): Slot {
+    const own = materialIndex === null ? [] : [this.stage()?.[tab]?.object];
+    return this.resolve(tab, defaults, own, () => name, isOwner, true);
+  }
+
   // 物の全部のタブで割り当てていて、見つかる .fx (資源を捨てない・読み込みを待つもの)。警告は出さない
   referenced(obj: Obj): LoadedEffect[] {
+    return this.referencedIn(obj.mme);
+  }
+
+  // ステージの全部のタブで割り当てていて、見つかる .fx (referenced と同じ)
+  referencedStage(): LoadedEffect[] {
+    return this.referencedIn(this.stage() ?? undefined);
+  }
+
+  private referencedIn(all: ObjectEffects | undefined): LoadedEffect[] {
     const out = new Set<LoadedEffect>();
-    for (const effects of Object.values(obj.mme ?? {})) {
+    for (const effects of Object.values(all ?? {})) {
       for (const saved of [effects.object, ...Object.values(effects.materials ?? {})]) {
         const e = saved && saved !== 'hide' ? this.find(saved, false) : null;
         if (e) out.add(e);

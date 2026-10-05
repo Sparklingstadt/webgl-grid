@@ -393,7 +393,7 @@ describe('MmeEngine', () => {
     const good = await e.mme.loadEffect([fileAt('Fx/good.fx', 'technique T { }')], 'good.fx');
     e.mme.set({ engine: 'mme' });
     vi.spyOn(e.mme.renderer, 'render').mockReturnValue(true);
-    const materialNames = vi.spyOn(e.mme as unknown as { materialNames(o: unknown): string[] }, 'materialNames');
+    const materialNames = vi.spyOn(e.mme as unknown as { rows(...a: unknown[]): unknown[] }, 'rows'); // (物ごとの行を作る)
     const drawnEffects = vi.spyOn(e.mme.renderer, 'drawnEffects');
     const rebuilt = () => {
       const n = [materialNames.mock.calls.length, drawnEffects.mock.calls.length];
@@ -709,5 +709,46 @@ technique Post { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = comp
     expect(e.mme.store.posts).toEqual([]);
     expect(e.mme.settings).toEqual(MME_DEFAULTS);
     expect(e.ui.state.mme.folders).toEqual([]);
+  });
+
+  it('ステージの割り当て: 画面のどのタブにもステージの行 (先頭・材質の行つき) が出て、assignStage で変わる (元に戻すの手にしない)。保存して開き直すと戻り、最初の状態に戻すと消える', async () => {
+    const e = new Engine();
+    const fx = await e.mme.loadEffect([fileAt('Fx/sky.fx', 'technique T { }')], 'sky.fx');
+    const mats = [new THREE.MeshBasicMaterial({ name: '空' }), new THREE.MeshBasicMaterial({ name: '雲' })];
+    const mesh = new THREE.SkinnedMesh(new THREE.BoxGeometry(), mats);
+    mesh.userData.sourceFile = new File([], 'Time of day.pmx');
+    const stage = new THREE.Group();
+    stage.add(mesh);
+    e.stage.model = stage;
+    e.graph.scene.add(stage);
+    e.world.addShape(0, 0, 0, 0);
+    e.ui.set({ sceneVersion: e.ui.state.sceneVersion + 1 }); // (ステージを替えたときと同じ)
+    e.mme.publish();
+    const edited = vi.spyOn(e.history, 'soon');
+    const stageRows = () => e.ui.state.mme.rows.Main.filter(r => r.objId === -1).map(r => [r.label, r.material, r.assigned, r.fallback]);
+    expect(stageRows()).toEqual([['ステージ: Time of day.pmx', null, null, 'default.fx'], ['空', 0, null, 'default.fx'], ['雲', 1, null, 'default.fx']]);
+    expect(e.ui.state.mme.rows.Main[0].objId).toBe(-1); // (先頭)
+
+    e.mme.assignStage('Main', null, ref(fx));
+    e.mme.assignStage('Main', 1, 'hide');
+    expect(edited).not.toHaveBeenCalled();
+    expect(stageRows()).toEqual([['ステージ: Time of day.pmx', null, 'Fx/sky.fx', 'default.fx'], ['空', 0, null, 'Fx/sky.fx'], ['雲', 1, 'hide', 'Fx/sky.fx']]);
+    const slotFor = e.mme.renderer.assignments.slotFor('Main', null, null);
+    expect([0, 1].map(i => { const sl = slotFor(null, mesh, i); return sl.kind === 'hide' ? 'hide' : sl.effect; })).toEqual([fx, 'hide']);
+    expect(e.mme.renderer.drawnEffects()).toContain(fx);
+    e.mme.assignStage('Main', 1, null);
+    expect(stageRows()[2]).toEqual(['雲', 1, null, 'Fx/sky.fx']);
+    expect(e.mme.saveScene().stage).toEqual({ Main: { object: ref(fx) } });
+
+    // (割り当ては場面の値なので、ステージを外しても残る。手で作ったステージはファイルがなくて保存できないので外す)
+    e.graph.scene.remove(stage);
+    e.stage.model = null;
+    expect(e.mme.saveScene().stage).toEqual({ Main: { object: ref(fx) } });
+    const f = new Engine();
+    await f.project.open(await e.project.save('embedded'));
+    expect(f.mme.saveScene().stage).toEqual({ Main: { object: ref(fx) } });
+    expect(f.mme.renderer.assignments.referencedStage().map(x => [x.entry, x.result.ok])).toEqual([['sky.fx', true]]);
+    f.resetAll();
+    expect('stage' in f.mme.saveScene()).toBe(false);
   });
 });

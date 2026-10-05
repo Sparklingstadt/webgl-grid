@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { t } from '../../core/i18n';
 import type { SavedSlot } from '../../core/mme/settings.ts';
-import type { MmeRowUi, MmeUiState } from '../../engine/UiChannel';
+import { STAGE_ROW_ID, type MmeRowUi, type MmeUiState } from '../../engine/UiChannel';
 import { useEngine, useUi } from '../EngineContext';
 import { BSelect, type SelectGroup, type SelectOption } from './controls/BSelect';
 
-// --- MME 互換の「エフェクト割当」(MME のエフェクト割当の窓): Main とオフスクリーンのタブ。タブごとに場面の物が並び、
+// --- MME 互換の「エフェクト割当」(MME のエフェクト割当の窓): Main とオフスクリーンのタブ。タブごとにステージ (あれば先頭) と場面の物が並び、
 // MMD モデルは開くと材質が並ぶ。行ごとに、読み込んだフォルダの .fx・非表示・既定に戻すを選ぶ。選んでいない行は、既定で描くものを薄い字で出す。
 // 行で描くはずの .fx を GPU で止めていれば、そのことも書く ---
 
@@ -53,6 +53,7 @@ export function MmeAssignTabs() {
     return next;
   });
   const assign = (row: MmeRowUi, value: string) => {
+    if (row.objId === STAGE_ROW_ID) { engine.mme.assignStage(tab.name, row.material, slotOf(value)); return; }
     const obj = engine.world.find(row.objId);
     if (obj) engine.mme.assign(obj, tab.name, row.material, slotOf(value));
   };

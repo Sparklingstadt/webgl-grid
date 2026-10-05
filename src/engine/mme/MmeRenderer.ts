@@ -18,7 +18,7 @@ import { EffectInstance, resourcePaths } from './EffectInstance';
 import { markUsed, type EffectStore, type LoadedEffect } from './EffectStore';
 import { CANVAS, Framebuffers, type DrawTarget } from './Framebuffers';
 import { defaultsOf, Offscreen, offscreenDecls } from './Offscreen';
-import { SHADOW_DISTANCE_MAX, type MmeSettings } from '../../core/mme/settings.ts';
+import { SHADOW_DISTANCE_MAX, type MmeSettings, type ObjectEffects } from '../../core/mme/settings.ts';
 import { scriptOrder } from '../../core/mme/technique.ts';
 import { PostChain, type FrameState } from './PostChain';
 import { ScenePass, toSrgb, type PassTable, type Slot, type SlotFor } from './ScenePass';
@@ -31,6 +31,7 @@ export interface MmeRendererDeps {
   viewport: Viewport; graph: SceneGraph; world: World; selection: Selection; clock: Clock; library: MaterialLibrary;
   store: EffectStore; settings: MmeSettings; stage: () => THREE.Object3D | null; ui: UiChannel;
   controllers: Controllers; // CONTROLOBJECT の値
+  stageEffects: () => ObjectEffects | null; // ステージの割り当て (場面の値)
 }
 
 export type { DrawTarget, FrameState };
@@ -63,14 +64,14 @@ export class MmeRenderer {
   private scenePass: ScenePass;
   private offscreen: Offscreen;
   readonly assignments: Assignments; // 物・材質の割り当ての決め方 (画面の既定の欄でも使う)
-  // Main の表: 材質・物の割り当て (なければ default.fx)。ステージは default.fx
+  // Main の表: 材質・物 (ステージも) の割り当て (なければ default.fx)
   private main: PassTable = { name: 'Main', owner: null, slotFor: (obj, mesh, i) => this.mainSlot(obj, mesh, i) };
   private mainSlotFor: SlotFor;
   // このフレームの Main のメッシュ・材質ごとの割り当て (フレームの途中でエフェクトを止めても、次のフレームまで変えない)
   private mainSlots = new Map<THREE.Mesh, Map<number, Slot>>();
 
   constructor(private d: MmeRendererDeps) {
-    this.assignments = new Assignments(d.store, m => this.warn(m));
+    this.assignments = new Assignments(d.store, m => this.warn(m), d.stageEffects);
     this.mainSlotFor = this.assignments.slotFor('Main', null, null);
     this.scenePass = new ScenePass({
       graph: d.graph, world: d.world, library: d.library, settings: d.settings, stage: d.stage,
@@ -216,7 +217,7 @@ export class MmeRenderer {
   // それらが宣言するオフスクリーンの DefaultEffect が描く .fx (その宣言も、たどる)。見つからない .fx は入れない
   private reachable(offPosts: boolean): Set<LoadedEffect> {
     const found = new Set<LoadedEffect>(this.offscreen.effects());
-    for (const obj of this.d.world.objects) for (const e of this.assignments.referenced(obj)) found.add(e);
+    for (const e of this.referenced()) found.add(e);
     for (const p of this.d.store.posts) if (offPosts || p.enabled) found.add(p.effect);
     const queue = [...found];
     for (let e = queue.pop(); e; e = queue.pop()) {
@@ -237,7 +238,7 @@ export class MmeRenderer {
   prune(): void {
     this.scenePass.prune();
     const used = new Set<LoadedEffect>([
-      this.d.store.defaultEffect, ...this.d.world.objects.flatMap(o => this.assignments.referenced(o)), ...this.d.store.posts.map(p => p.effect),
+      this.d.store.defaultEffect, ...this.referenced(), ...this.d.store.posts.map(p => p.effect),
       ...this.offscreen.effects(),
     ]);
     for (const [e, inst] of this.instances) {
@@ -382,11 +383,15 @@ export class MmeRenderer {
 
   // 描いている .fx (仮のコントローラーの欄の元): 物に割り当てたもの・オンのポストエフェクト・オフスクリーンを宣言した・オフスクリーンに描いたもの
   drawnEffects(): LoadedEffect[] {
-    const out = new Set<LoadedEffect>();
-    for (const obj of this.d.world.objects) for (const e of this.assignments.referenced(obj)) out.add(e);
+    const out = new Set<LoadedEffect>(this.referenced());
     for (const p of this.d.store.posts) if (p.enabled) out.add(p.effect);
     for (const e of this.offscreen.effects()) out.add(e);
     return [...out];
+  }
+
+  // 置いた物とステージに割り当てた (全部のタブ)、見つかる .fx
+  private referenced(): LoadedEffect[] {
+    return [...this.d.world.objects.flatMap(o => this.assignments.referenced(o)), ...this.assignments.referencedStage()];
   }
 
   // 全部の警告 (エフェクトの警告は「名前: 」を付ける。テスト用)

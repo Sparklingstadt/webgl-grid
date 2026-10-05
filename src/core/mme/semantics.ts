@@ -25,7 +25,7 @@ export interface SemanticContext {
   pass: MmdPass | null /* null はポストエフェクト */; time: number; elapsed: number; screen: [number, number]; selfShadow: boolean;
   control?: (ref: ControlRef) => number[] | null; // CONTROLOBJECT の値 (null と、この関数がないときは 0)
   // いま描いているオフスクリーンの持ち主 ((OffscreenOwner)。engine の Obj。Main とポストエフェクト・持ち主のないオフスクリーンは null)
-  owner?: object | null;
+  owner?: unknown;
 }
 export type SemanticValue = { kind: 'numbers'; values: number[] } | { kind: 'unsupported'; what: string } | { kind: 'none' };
 export type TextureRole = 'material' | 'sphere' | 'toon' | 'colorTarget' | 'depthTarget' | 'offscreen' | 'file' | 'unsupported' | 'none';

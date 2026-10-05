@@ -43,4 +43,19 @@ describe('normalizeMmeScene', () => {
       controls: { A: { x: 1, y: 0, v: 0.25 } },
     });
   });
+
+  it('ステージの割り当て (stage) は物の割り当てと同じく読み、壊れた項を捨てる。何も残らなければ項を作らない', () => {
+    const base = { settings: MME_DEFAULTS, folders: [], posts: [], controls: {} };
+    const stage = { Main: { object: { folder: 'f', path: 'sky.fx' } }, MaterialMap: { object: 'hide', materials: { 0: { folder: 'f', path: 'm.fx' } } } };
+    expect(normalizeMmeScene({ ...base, stage: structuredClone(stage) })).toEqual({ ...base, stage });
+    expect(normalizeMmeScene({ ...base, stage: { Main: { object: { folder: 'f', path: 'sky.fx' }, materials: { x: 'hide' } }, '': { object: 'hide' } } }))
+      .toEqual({ ...base, stage: { Main: { object: { folder: 'f', path: 'sky.fx' } } } });
+    for (const bad of [null, 'x', [], {}, { Main: { object: { folder: '', path: 'a.fx' } } }]) {
+      const r = normalizeMmeScene({ ...base, stage: bad });
+      expect(r).toEqual(base);
+      expect('stage' in r).toBe(false);
+    }
+    // 第 2 の計画の形にはない
+    expect('stage' in normalizeMmeScene({ engine: 'mme', stage })).toBe(false);
+  });
 });

@@ -57,19 +57,20 @@ export function normalizeObjectEffects(raw: unknown): ObjectEffects | null {
 }
 
 // --- プロジェクトの場面の値 'mme': 設定・読み込んだフォルダ (id と名前。中のファイルはプロジェクトの mmeFiles)・ポストエフェクトの並び・
-// 仮のコントローラーの値 (名前 → 項目 → 0〜1)。物ごとの割り当ては物の値 'mme' ---
+// 仮のコントローラーの値 (名前 → 項目 → 0〜1)・ステージの割り当て (なければ項がない)。物ごとの割り当ては物の値 'mme' ---
 export interface MmeScene {
   settings: MmeSettings;
   folders: { id: string; name: string }[];
   posts: { effect: EffectRef; enabled: boolean }[];
   controls: Record<string, Record<string, number>>;
+  stage?: ObjectEffects;
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 
 // 保存されていた場面の値を、使える値にそろえる。第 2 の計画の形 (いちばん上に engine がある = 設定だけ) も読む。
 // 壊れた項は捨てる: id のない・builtin (default.fx のフォルダ)・同じ id のフォルダ、参照が壊れたポストエフェクト (enabled がなければオン)、
-// 数でないコントローラーの値 (値は 0〜1 に収める)
+// 数でないコントローラーの値 (値は 0〜1 に収める)、ステージの割り当ての壊れた項 (normalizeObjectEffects。何も残らなければ項を作らない)
 export function normalizeMmeScene(raw: unknown): MmeScene {
   const o = isRecord(raw) ? raw : {};
   if ('engine' in o) return { settings: normalizeMme(o), folders: [], posts: [], controls: {} };
@@ -90,5 +91,6 @@ export function normalizeMmeScene(raw: unknown): MmeScene {
     for (const [item, v] of Object.entries(items)) if (typeof v === 'number' && Number.isFinite(v)) values[item] = Math.min(Math.max(v, 0), 1);
     if (Object.keys(values).length > 0) controls[name] = values;
   }
-  return { settings: normalizeMme(o.settings), folders, posts, controls };
+  const stage = normalizeObjectEffects(o.stage);
+  return { settings: normalizeMme(o.settings), folders, posts, controls, ...(stage ? { stage } : {}) };
 }

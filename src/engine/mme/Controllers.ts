@@ -5,7 +5,7 @@ import { controlRefs, virtualControls, type ControlRef } from '../../core/mme/co
 import { toMmd, toMmdVec } from '../../core/mme/coords.ts';
 import { isModel, type Obj } from '../types';
 import type { World } from '../world/World';
-import { objectName, pmxName } from './Assignments';
+import { objectName, pmxName, STAGE, type Owner } from './Assignments';
 import type { LoadedEffect } from './EffectStore';
 
 // --- CONTROLOBJECT の値 (設計書「CONTROLOBJECT」): 場面の物 ((self)・(OffscreenOwner)・名前が合う物) の値と、
@@ -79,11 +79,11 @@ export class Controllers {
   }
 
   // CONTROLOBJECT の値 (型の形に合わない分は呼ぶ側 (semantics) が合わせる)。null は 0。
-  // self: いま描いている物 (ステージ・ポストエフェクトは null)、owner: オフスクリーンの持ち主 (なければ null)
-  value(ref: ControlRef, self: Obj | null, owner: Obj | null): number[] | null {
+  // self: いま描いている物 (ステージは STAGE、ポストエフェクトは null)、owner: オフスクリーンの持ち主 (同じ。なければ null)
+  value(ref: ControlRef, self: Owner, owner: Owner): number[] | null {
     const n = ref.name.toLowerCase();
-    if (n === '(self)') return this.read(self && this.ofObj(self), ref);
-    if (n === '(offscreenowner)') return this.read(owner && this.ofObj(owner), ref);
+    if (n === '(self)') return this.read(this.ofOwner(self), ref);
+    if (n === '(offscreenowner)') return this.read(this.ofOwner(owner), ref);
     const target = this.find(ref.name);
     return target ? this.read(target, ref) : this.virtual(ref);
   }
@@ -112,6 +112,10 @@ export class Controllers {
     return ref.type === 'bool' ? [v > 0 ? 1 : 0] : null;
   }
 
+  private ofOwner(o: Owner): Target | null {
+    return o === STAGE ? this.ofStage() : o && this.ofObj(o);
+  }
+
   private ofObj(obj: Obj): Target {
     const hidden = this.d.outputting?.() ? obj.hideRender : obj.hidden || obj.colHidden;
     return {
@@ -124,10 +128,16 @@ export class Controllers {
   // 名前が合う最初の物 (置いた物が先、なければステージ)
   private find(name: string): Target | null {
     for (const obj of this.d.world.objects) if (same(objectName(obj), name)) return this.ofObj(obj);
+    const target = this.ofStage();
+    const file = target && pmxName(target.mesh!);
+    return target && file && same(file, name) ? target : null;
+  }
+
+  // ステージのモデル (なければ・まだ読み込み中なら null)
+  private ofStage(): Target | null {
     const stage = this.d.stage();
     const found = stage && this.stageMesh(stage);
-    const file = found && pmxName(found);
-    return stage && found && file && same(file, name) ? { node: found, mesh: found, visible: visibleChain(stage) } : null;
+    return stage && found ? { node: found, mesh: found, visible: visibleChain(stage) } : null;
   }
 
   // ステージの中のモデル (最初の SkinnedMesh)。見つかったら、ステージが替わるまで探し直さない (uniform ごとに引くので)

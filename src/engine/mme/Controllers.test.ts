@@ -6,6 +6,7 @@ import { toMmd } from '../../core/mme/coords.ts';
 import { MODEL_KIND } from '../../core/shapes';
 import type { Obj } from '../types';
 import type { World } from '../world/World';
+import { STAGE } from './Assignments';
 import { Controllers } from './Controllers';
 import type { LoadedEffect } from './EffectStore';
 import { compileEffect } from '../../core/fx/index.ts';
@@ -87,7 +88,7 @@ describe('Controllers: 場面の物', () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
-  it('(self) は描いている物。物がない (ステージ・ポストエフェクト) と null', () => {
+  it('(self) は描いている物。物がない (ポストエフェクト) と null', () => {
     const a = model(1, 'A.pmx', { morphs: { M: 1 } }), b = model(2, 'B.pmx', { morphs: { M: 0.5 } });
     const { c } = setup([a, b]);
     expect(c.value(ref('(self)', 'M'), b, null)).toEqual([0.5]);
@@ -158,6 +159,10 @@ describe('Controllers: 場面の物', () => {
     expect(c.value(ref('stage.pmx', 'M'), null, null)).toEqual([0.5]);
     c.set('stage.pmx', 'M', 1);
     expect(c.value(ref('stage.pmx', 'M'), null, null)).toEqual([0.5]);
+    // ステージを描いているとき・ステージが持ち主のときは、(self)・(OffscreenOwner) がステージ
+    expect(c.value(ref('(self)', 'M'), STAGE, null)).toEqual([0.5]);
+    expect(c.value(ref('(OffscreenOwner)', 'M'), null, STAGE)).toEqual([0.5]);
+    expect(setup([]).c.value(ref('(self)', 'M'), STAGE, null)).toBeNull(); // (ステージがない)
   });
 });
 

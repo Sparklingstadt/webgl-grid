@@ -14,6 +14,7 @@ import type { MaterialData, MaterialLibrary } from '../materials/MaterialLibrary
 import type { SceneGraph } from '../render/SceneGraph';
 import type { Obj } from '../types';
 import type { World } from '../world/World';
+import { STAGE, type Owner } from './Assignments';
 import type { BaseState, EffectInstance, TextureSource } from './EffectInstance';
 import type { LoadedEffect } from './EffectStore';
 import type { DrawTarget, Framebuffers } from './Framebuffers';
@@ -30,10 +31,10 @@ export type SlotFor = (obj: Obj | null /* ステージは null */, mesh: THREE.M
 export interface PassTable {
   name: string; // 'Main' かオフスクリーンの名前
   slotFor: SlotFor;
-  owner: Obj | null; // 入れ子のオフスクリーンの持ち主 ((OffscreenOwner)。SemanticContext.owner に渡す)
+  owner: Owner; // 入れ子のオフスクリーンの持ち主 ((OffscreenOwner)。SemanticContext.owner に渡す)
 }
-// その表で描く物と、そのエフェクト (オフスクリーンを先に描くため)
-export interface TableUse { obj: Obj | null; effect: LoadedEffect }
+// その表で描く物 (ステージは STAGE) と、そのエフェクト (オフスクリーンを先に描くため)
+export interface TableUse { obj: Owner; effect: LoadedEffect }
 
 export interface ScenePassDeps {
   graph: SceneGraph; world: World; library: MaterialLibrary; settings: MmeSettings;
@@ -48,9 +49,9 @@ export interface ScenePassDeps {
   skinner(): Skinner;
   shadowMap(): THREE.Texture | null; // セルフシャドウの深度マップ
   // エフェクトが宣言したオフスクリーンのテクスチャ (owner はそのエフェクトで描く物。描いていなければ null)
-  offscreen(effect: LoadedEffect, name: string, owner: Obj | null): THREE.Texture | null;
+  offscreen(effect: LoadedEffect, name: string, owner: Owner): THREE.Texture | null;
   warn(message: string): void; // どのエフェクトのものでもない警告
-  control(ref: ControlRef, self: Obj | null, owner: Obj | null): number[] | null; // CONTROLOBJECT の値 (self はいま描いている物)
+  control(ref: ControlRef, self: Owner, owner: Owner): number[] | null; // CONTROLOBJECT の値 (self はいま描いている物。ステージは STAGE)
 }
 
 // PMX の材質のフラグ
@@ -174,7 +175,7 @@ export class ScenePass {
       for (const { effect } of this.parts(table, item)) {
         if (effects.has(effect)) continue;
         effects.add(effect);
-        out.push({ obj: item.obj, effect });
+        out.push({ obj: item.obj ?? STAGE, effect });
       }
     }
     return out;
@@ -429,7 +430,7 @@ export class ScenePass {
     const ctx: SemanticContext = {
       camera: frame.camera, light: frame.light, world: item.world, material: sub.state, pass,
       time: frame.time, elapsed: frame.elapsed, screen: frame.screen, selfShadow: frame.selfShadow, owner: table.owner,
-      control: ref => this.d.control(ref, item.obj, table.owner),
+      control: ref => this.d.control(ref, item.obj ?? STAGE, table.owner),
     };
     const { textures: t } = sub;
     const fb = this.d.fb();
@@ -438,7 +439,7 @@ export class ScenePass {
     const textures: TextureSource = {
       role: name => (name === 'material' ? t.material : name === 'sphere' ? t.sphere : name === 'toon' ? t.toon : name === 'selfShadow' ? shadow
         : fb.colorTexture(effect, name)),
-      offscreen: name => this.d.offscreen(effect, name, item.obj),
+      offscreen: name => this.d.offscreen(effect, name, item.obj ?? STAGE),
     };
     inst.bind(m, p, ctx, builtins(target), textures);
     const geometry = pass === 'edge' && item.geo.edge ? item.geo.edge : item.geo.geometry;

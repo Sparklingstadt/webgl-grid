@@ -25,7 +25,9 @@ export interface MmeEffectUi { id: string; name: string; ok: boolean; errors: { 
 // assigned: 割り当て ("フォルダ名/パス"・'hide'。なければ null)、fallback: 割り当てがないときに描くもの ("フォルダ名/パス"・'hide'・'default.fx')。
 // 材質の行の fallback は物の割り当て (なければ既定)。stopped: 行で描くはずの .fx (割り当てか、なければ既定のもの) を GPU で使えないので
 // 止めていれば、その名前 (描くときと同じく、Main では default.fx、オフスクリーンでは描かない。fallback もそうしたもの)
+// objId: 物の番号 (ステージの行は STAGE_ROW_ID)
 export interface MmeRowUi { objId: number; label: string; material: number | null; assigned: string | null; fallback: string; stopped: string | null }
+export const STAGE_ROW_ID = -1;
 // warnings: どのエフェクトのものでもない、描くときの警告 (セルフシャドウを切った・モデルを描けないなど)。
 // folders: 読み込んだフォルダと、その中の .fx (フォルダからの相対パス)。tabs: エフェクト割当のタブ (先頭は Main。オフスクリーンは
 // 使っているエフェクトが宣言するもの)。rows: タブごとの行 (描く宣言のないオフスクリーンのタブは載せない。そのタブの割り当ては効かない)。
