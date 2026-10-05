@@ -11,8 +11,8 @@ const SKY: Vec3 = [1.5, 2.2, 0]; // 何もない所
 const SOLID = objectFx('return float4(0.2, 0.4, 0.6, 1.0);'); // 箱の色 (51, 102, 153)
 
 // ポストエフェクトの共通の部分: 場面を写すレンダーターゲット (ScnMap)・深度 (DepthBuffer)・全面の四角の VS
-const HEAD = (filter = 'POINT') => `
-float Script : STANDARDSGLOBAL < string ScriptOutput = "color"; string ScriptClass = "scene"; string ScriptOrder = "postprocess"; > = 0.8;
+const HEAD = (filter = 'POINT', order = 'postprocess') => `
+float Script : STANDARDSGLOBAL < string ScriptOutput = "color"; string ScriptClass = "scene"; string ScriptOrder = "${order}"; > = 0.8;
 float2 ViewportSize : VIEWPORTPIXELSIZE;
 static float2 ViewportOffset = float2(0.5, 0.5) / ViewportSize;
 float4 ClearColor = { 0.2, 0.2, 0.2, 1.0 };
@@ -377,5 +377,66 @@ ${technique(`${CAPTURE}RenderColorTarget0=Stripes; RenderDepthStencilTarget=; Pa
     expect(Math.abs(r.data[(y * W + x) * 4] - 128), `(${x}, ${y})`).toBeLessThanOrEqual(2);
   }
   expect(await warnings(page)).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+// 全面を 1 色で塗るだけのポストエフェクト (ScriptExternal なし。ScriptOrder は order)
+const fillFx = (order: string, color: string, extra = '') => `${HEAD('POINT', order)}
+float4 Fill() : COLOR0 { return ${color}; }
+${extra}${technique('Pass=Fill;', pass('Fill', 'Fill()'))}`;
+
+test('ScriptOrder = preprocess は場面より先に画面に塗るので、塗った色が Main の物の後ろに残る', async ({ page }) => {
+  const errors = await openMme(page);
+  await solidBox(page);
+  expect(await addPost(page, fillFx('preprocess', 'float4(0.8, 0.2, 0.2, 1.0)'))).toBe(true);
+  const r = await shoot(page, 'png', [FACE, SKY]);
+  expect(rgb(r.pixels[0])).toEqual([51, 102, 153]); // 箱は上に描かれる
+  expect(rgb(r.pixels[1])).toEqual([204, 51, 51]); // 背景は preprocess の色
+  expect(await warnings(page)).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test('preprocess と postprocess: 場面をそのまま通す postprocess なら塗った背景が残り、場面を別のターゲットに写す postprocess なら残らない', async ({ page }) => {
+  const errors = await openMme(page);
+  await solidBox(page);
+  // 一覧の順 (postprocess が先) にかかわらず、preprocess は場面の前に画面へ描く
+  const passThrough = `${HEAD()}\n${technique('ScriptExternal=Color;', '')}`;
+  expect(await addPost(page, passThrough, 'through.fx')).toBe(true);
+  expect(await addPost(page, fillFx('preprocess', 'float4(0.8, 0.2, 0.2, 1.0)'), 'fill.fx')).toBe(true);
+  let r = await shoot(page, 'png', [FACE, SKY]);
+  expect(rgb(r.pixels[0])).toEqual([51, 102, 153]);
+  expect(rgb(r.pixels[1])).toEqual([204, 51, 51]);
+  // 場面を ScnMap に写して反転する postprocess を足すと、画面の preprocess の色は読まれず、ScnMap を消す ClearColor が背景
+  expect(await addPost(page, filterFx('return float4(1.0 - c.rgb, 1.0);'), 'invert.fx')).toBe(true);
+  r = await shoot(page, 'png', [FACE, SKY]);
+  expect(rgb(r.pixels[0])).toEqual([204, 153, 102]);
+  expect(rgb(r.pixels[1])).toEqual([204, 204, 204]);
+  expect(await warnings(page)).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test('ポストエフェクトの technique は MMDPass のないもの (先頭に MMDPass = object の technique があっても選ばない)', async ({ page }) => {
+  const errors = await openMme(page);
+  await solidBox(page);
+  const objectTech = 'technique Obj < string MMDPass = "object"; string Script = "Pass=Fill;"; > { pass Fill < string Script = "Draw=Buffer;"; > { VertexShader = compile vs_3_0 VS(); PixelShader = compile ps_3_0 Bad(); } }\n';
+  const fx = `${HEAD('POINT', 'preprocess')}
+float4 Fill() : COLOR0 { return float4(0.8, 0.2, 0.2, 1.0); }
+float4 Bad() : COLOR0 { return float4(0.0, 1.0, 0.0, 1.0); }
+${objectTech}${technique('Pass=Fill;', pass('Fill', 'Fill()'))}`;
+  expect(await addPost(page, fx)).toBe(true);
+  const r = await shoot(page, 'png', [SKY]);
+  expect(rgb(r.pixels[0])).toEqual([204, 51, 51]);
+  expect(await warnings(page)).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test('ScriptOrder = standard のポストエフェクトは、警告を出して postprocess として扱う', async ({ page }) => {
+  const errors = await openMme(page);
+  await solidBox(page);
+  expect(await addPost(page, filterFx('return float4(1.0 - c.rgb, 1.0);').replace('"postprocess"', '"standard"'))).toBe(true);
+  const r = await shoot(page, 'png', [FACE, SKY]);
+  expect(rgb(r.pixels[0])).toEqual([204, 153, 102]);
+  expect(rgb(r.pixels[1])).toEqual([204, 204, 204]);
+  expect((await warnings(page)).some(w => w.includes('ScriptOrder = standard'))).toBe(true);
   expect(errors).toEqual([]);
 });

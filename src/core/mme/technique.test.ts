@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { compileEffect } from '../fx/index.ts';
 import type { EffectDesc } from '../fx/index.ts';
-import { pickTechnique, subsetMatcher, type TechniqueQuery } from './technique.ts';
+import { pickPostTechnique, pickTechnique, scriptOrder, subsetMatcher, type TechniqueQuery } from './technique.ts';
 
 const FUNCS = 'float4 VS(float4 p : POSITION) : POSITION { return p; } float4 PS() : COLOR0 { return 1; }';
 const PASS = 'pass P { VertexShader = compile vs_3_0 VS(); PixelShader = compile ps_3_0 PS(); }';
@@ -89,5 +89,48 @@ describe('subsetMatcher', () => {
     const m = subsetMatcher(' 1 - 2 , x, 7 ');
     expect([0, 1, 2, 3, 7].map(m)).toEqual([false, true, true, false, true]);
     expect(subsetMatcher('')(0)).toBe(false);
+  });
+});
+
+describe('scriptOrder', () => {
+  const order = (annos: string) => compile(`float Script : STANDARDSGLOBAL < ${annos} > = 0.8; technique T { ${PASS} }`);
+
+  it('STANDARDSGLOBAL の param の注釈 ScriptOrder を読む (大文字小文字・空白を問わない)', () => {
+    expect(scriptOrder(order('string ScriptOrder = "postprocess";'))).toBe('postprocess');
+    expect(scriptOrder(order('string ScriptOrder = " PreProcess ";'))).toBe('preprocess');
+    expect(scriptOrder(order('string scriptorder = "standard";'))).toBe('standard');
+  });
+
+  it('注釈がない・知らない値なら、既定の値 (指定がなければ standard)', () => {
+    expect(scriptOrder(order('string ScriptClass = "scene";'))).toBe('standard');
+    expect(scriptOrder(order('string ScriptOrder = "later";'))).toBe('standard');
+    expect(scriptOrder(compile(`technique T { ${PASS} }`))).toBe('standard');
+    expect(scriptOrder(compile(`technique T { ${PASS} }`), 'postprocess')).toBe('postprocess');
+    expect(scriptOrder(order('string ScriptClass = "scene";'), 'postprocess')).toBe('postprocess');
+  });
+
+  it('STANDARDSGLOBAL でない param の ScriptOrder は読まない', () => {
+    const e = compile(`float Other < string ScriptOrder = "preprocess"; > = 0.8; technique T { ${PASS} }`);
+    expect(scriptOrder(e)).toBe('standard');
+  });
+});
+
+describe('pickPostTechnique', () => {
+  it('MMDPass のない technique のうち最初のものを選ぶ (MMDPass="object" が先にあっても選ばない)', () => {
+    const e = compile(`
+      technique Obj < string MMDPass = "object"; > { ${PASS} }
+      technique Edge < string MMDPass = "edge"; > { ${PASS} }
+      technique Post { ${PASS} }
+      technique Post2 { ${PASS} }`);
+    expect(pickPostTechnique(e)?.name).toBe('Post');
+  });
+
+  it('MMDPass のない technique がなければ null', () => {
+    const e = compile(`technique Obj < string MMDPass = "object"; > { ${PASS} }`);
+    expect(pickPostTechnique(e)).toBeNull();
+  });
+
+  it('technique が 1 つで MMDPass がなければそれ (ふつうのポストエフェクト)', () => {
+    expect(pickPostTechnique(compile(`technique Only { ${PASS} }`))?.name).toBe('Only');
   });
 });

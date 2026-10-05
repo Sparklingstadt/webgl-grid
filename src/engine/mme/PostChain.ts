@@ -4,6 +4,7 @@ import { t } from '../../core/i18n.ts';
 import type { ControlRef } from '../../core/mme/controllers.ts';
 import { runTechnique, type ScriptBackend } from '../../core/mme/script.ts';
 import type { CameraState, LightState, SemanticContext } from '../../core/mme/semantics.ts';
+import { pickPostTechnique } from '../../core/mme/technique.ts';
 import type { DrawBuiltins, EffectInstance } from './EffectInstance';
 import type { LoadedEffect } from './EffectStore';
 import type { DrawTarget, Framebuffers } from './Framebuffers';
@@ -126,6 +127,11 @@ export class PostChain {
     this.level(posts, posts.length - 1, frame, scene);
   }
 
+  // ScriptOrder = preprocess のポストエフェクトを、一覧の順にいまの描画先 (fb.defaultSurface) へ描く (場面は描かない。ScriptExternal は何もしない)
+  runPre(posts: LoadedEffect[], frame: FrameState): void {
+    for (const effect of posts) this.exec(effect, frame, null);
+  }
+
   // canvas の代わりの絵を canvas に写す (canvas を描画先にしてから呼ぶ)
   present(tex: THREE.Texture): void {
     this.copy.uniforms.map.value = tex;
@@ -141,11 +147,20 @@ export class PostChain {
   // posts[k] の technique の Script を実行する。ScriptExternal で 1 つ内側 (k − 1。−1 は場面) を、そのとき選んでいる描画先に描く
   private level(posts: LoadedEffect[], k: number, frame: FrameState, scene: (target: DrawTarget) => void): void {
     const { fb } = this.d;
-    const inner = () => (k > 0 ? this.level(posts, k - 1, frame, scene) : scene(fb.bindSurface(fb.defaultSurface)));
-    const effect = posts[k];
+    this.exec(posts[k], frame, () => (k > 0 ? this.level(posts, k - 1, frame, scene) : scene(fb.bindSurface(fb.defaultSurface))));
+  }
+
+  // 1 つのポストエフェクトの technique の Script を実行する。inner: ScriptExternal で描く内側 (null は内側がない preprocess)
+  private exec(effect: LoadedEffect, frame: FrameState, inner: (() => void) | null): void {
+    const { fb } = this.d;
     const inst = this.d.instance(effect);
-    const tech = effect.result.ok ? effect.result.effect.techniques[0] : undefined;
-    if (!tech || inst.stopped) { inner(); return; }
+    if (inst.stopped) { inner?.(); return; }
+    const tech = effect.result.ok ? pickPostTechnique(effect.result.effect) : null;
+    if (!tech) {
+      if (effect.result.ok) inst.warn(t('ポストエフェクトに使える technique (MMDPass のないもの) がないので、何もしません'));
+      inner?.();
+      return;
+    }
     const warn = (m: string) => inst.warn(m); // (そのエフェクトの警告)
     const st = new ScriptTargets(fb, effect, inst, warn, null);
     const outer = fb.defaultSurface;
@@ -160,7 +175,7 @@ export class PostChain {
         external = true;
         st.current();
         fb.defaultSurface = fb.current; // (内側にとっての既定の描画先)
-        try { inner(); } finally { fb.defaultSurface = outer; }
+        try { inner?.(); } finally { fb.defaultSurface = outer; }
         st.invalidate();
         st.current();
         fb.afterDraw();
@@ -168,7 +183,7 @@ export class PostChain {
       warn,
     };
     runTechnique(tech, 'post', backend);
-    if (!external) warn(t('ScriptExternal=Color がないので、内側 (場面) を描きません'));
+    if (!external && inner) warn(t('ScriptExternal=Color がないので、内側 (場面) を描きません'));
   }
 
   // Draw=Buffer: 描画先いっぱいの四角を描く

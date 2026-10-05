@@ -18,6 +18,7 @@ import type { EffectStore, LoadedEffect } from './EffectStore';
 import { CANVAS, Framebuffers, type DrawTarget } from './Framebuffers';
 import { Offscreen } from './Offscreen';
 import { SHADOW_DISTANCE_MAX, type MmeSettings } from '../../core/mme/settings.ts';
+import { scriptOrder } from '../../core/mme/technique.ts';
 import { PostChain, type FrameState } from './PostChain';
 import { ScenePass, toSrgb, type PassTable, type Slot, type SlotFor } from './ScenePass';
 import { Skinner } from './Skinner';
@@ -142,20 +143,32 @@ export class MmeRenderer {
       this.clear(renderer);
       this.scenePass.drawSelfShadow(this.main, frame, target);
     }
-    // オフスクリーン: ポストエフェクトと Main の物のエフェクトが宣言するもの (その中の入れ子は Offscreen が先に描く)
-    const posts = this.posts(fb, frame.screen);
-    for (const p of posts) this.offscreen.ensure(p, null, frame);
-    for (const u of uses) this.offscreen.ensure(u.effect, u.obj, frame);
     // ポストエフェクトがあれば canvas の代わりの絵に描いてから写す (Framebuffers.screenSurface)。背景の空は描かない。いまの消す色で消す
-    const surface = posts.length > 0 ? fb.screenSurface() : CANVAS;
-    const target = fb.bindSurface(surface);
-    fb.defaultSurface = surface;
-    renderer.setClearColor(this.clearColor, clearAlpha);
-    this.clear(renderer);
-    if (posts.length === 0) {
-      this.scenePass.draw(this.main, frame, target);
+    const { pre, post } = this.posts(fb, frame.screen);
+    const surface = pre.length + post.length > 0 ? fb.screenSurface() : CANVAS;
+    const bindScreen = () => {
+      const target = fb.bindSurface(surface);
+      fb.defaultSurface = surface;
+      renderer.setClearColor(this.clearColor, clearAlpha);
+      return target;
+    };
+    // ScriptOrder = preprocess は、オフスクリーンと Main より先に、画面に描く
+    if (pre.length > 0) {
+      bindScreen();
+      this.clear(renderer);
+      this.chain!.runPre(pre, frame);
+    }
+    // オフスクリーン: ポストエフェクトと Main の物のエフェクトが宣言するもの (その中の入れ子は Offscreen が先に描く)
+    for (const p of [...pre, ...post]) this.offscreen.ensure(p, null, frame);
+    for (const u of uses) this.offscreen.ensure(u.effect, u.obj, frame);
+    const target = bindScreen();
+    if (pre.length === 0) this.clear(renderer);
+    if (post.length > 0) {
+      this.chain!.run(post, frame, t => this.scenePass.draw(this.main, frame, t));
     } else {
-      this.chain!.run(posts, frame, t => this.scenePass.draw(this.main, frame, t));
+      this.scenePass.draw(this.main, frame, target);
+    }
+    if (surface !== CANVAS) {
       fb.bindSurface(CANVAS);
       this.clear(renderer);
       const tex = fb.screenTexture;
@@ -164,15 +177,18 @@ export class MmeRenderer {
     this.opaque(renderer, clearAlpha);
   }
 
-  // オンで、コンパイルできて、止めていないポストエフェクト (一覧の順。最後がいちばん外側)。レンダーターゲットも用意する
-  private posts(fb: Framebuffers, screen: [number, number]): LoadedEffect[] {
-    const out: LoadedEffect[] = [];
+  // オンで、コンパイルできて、止めていないポストエフェクト (一覧の順。最後がいちばん外側)。レンダーターゲットも用意する。
+  // pre: ScriptOrder = preprocess (場面の前に描く)、post: それ以外 (ポストエフェクトの既定は postprocess。standard は物の .fx の値なので警告して postprocess にする)
+  private posts(fb: Framebuffers, screen: [number, number]): { pre: LoadedEffect[]; post: LoadedEffect[] } {
+    const pre: LoadedEffect[] = [], post: LoadedEffect[] = [];
     for (const p of this.d.store.posts) {
       if (!p.enabled || !p.effect.result.ok || this.stopped(p.effect)) continue;
       this.prepare(fb, p.effect, screen);
-      out.push(p.effect);
+      const order = scriptOrder(p.effect.result.effect, 'postprocess');
+      if (order === 'standard') this.warnFor(p.effect, t('ScriptOrder = standard はポストエフェクトでは使えないので、postprocess として扱います'));
+      (order === 'preprocess' ? pre : post).push(p.effect);
     }
-    return out;
+    return { pre, post };
   }
 
   private prepare(fb: Framebuffers, e: LoadedEffect, screen: [number, number]): void {

@@ -38,3 +38,17 @@ export function pickTechnique(effect: EffectDesc, q: TechniqueQuery): Technique 
   const t = find(q.pass);
   return t ?? (q.pass === 'object_ss' ? find('object') : null);
 }
+
+// STANDARDSGLOBAL の param の注釈 ScriptOrder (なければ・知らない値なら fallback)。ポストエフェクトは postprocess、物の .fx は standard を既定にする
+export type ScriptOrder = 'standard' | 'preprocess' | 'postprocess';
+export function scriptOrder(effect: EffectDesc, fallback: ScriptOrder = 'standard'): ScriptOrder {
+  const param = effect.params.find(p => p.semantic?.toUpperCase() === 'STANDARDSGLOBAL');
+  const v = param ? annotation(param.annotations, 'ScriptOrder')?.value : undefined;
+  const s = typeof v === 'string' ? v.trim().toLowerCase() : '';
+  return s === 'standard' || s === 'preprocess' || s === 'postprocess' ? s : fallback;
+}
+
+// ポストエフェクトの technique: MMDPass のあるもの (物を描く technique) を除いた最初のもの。なければ null
+export function pickPostTechnique(effect: EffectDesc): Technique | null {
+  return effect.techniques.find(t => annotation(t.annotations, 'MMDPass') === undefined) ?? null;
+}

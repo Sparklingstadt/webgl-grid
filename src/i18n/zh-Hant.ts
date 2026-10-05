@@ -1219,6 +1219,8 @@ const dict: Dictionary = {
   "{what} のパラメータ {param} がありません": "{what} 的參數 {param} 不存在",
   "ポストエフェクトの Draw=Geometry は無視します": "忽略後製效果中的 Draw=Geometry",
   "ScriptExternal=Color がないので、内側 (場面) を描きません": "沒有 ScriptExternal=Color，不繪製內部（場景）",
+  "ポストエフェクトに使える technique (MMDPass のないもの) がないので、何もしません": "沒有可用於後製效果的 technique（沒有 MMDPass 的），因此不做任何事",
+  "ScriptOrder = standard はポストエフェクトでは使えないので、postprocess として扱います": "ScriptOrder = standard 不能用於後製效果，按 postprocess 處理",
   "浮動小数のテクスチャに描けない環境なので、セルフシャドウを切ります": "此環境無法繪製到浮點紋理，已關閉自陰影",
   "{name}: 元の .pmx が分からないので描けません (デフォーマで変形したモデルの複製)": "{name}：原始 .pmx 未知，無法繪製（被變形器變形的模型副本）",
   "{name}: .pmx を読めないので描けません": "{name}：無法讀取 .pmx，無法繪製",

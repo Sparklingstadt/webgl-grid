@@ -1219,6 +1219,8 @@ const dict: Dictionary = {
   "{what} のパラメータ {param} がありません": "Parameter {param} for {what} doesn't exist",
   "ポストエフェクトの Draw=Geometry は無視します": "Draw=Geometry in a post effect is ignored",
   "ScriptExternal=Color がないので、内側 (場面) を描きません": "There is no ScriptExternal=Color, so the inner content (the scene) is not drawn",
+  "ポストエフェクトに使える technique (MMDPass のないもの) がないので、何もしません": "There is no technique usable for a post effect (one without MMDPass), so this does nothing",
+  "ScriptOrder = standard はポストエフェクトでは使えないので、postprocess として扱います": "ScriptOrder = standard cannot be used in a post effect, so it is treated as postprocess",
   "浮動小数のテクスチャに描けない環境なので、セルフシャドウを切ります": "This environment can't draw to float textures, so self shadows are turned off",
   "{name}: 元の .pmx が分からないので描けません (デフォーマで変形したモデルの複製)": "{name}: can't be drawn because the original .pmx is unknown (a copy of a model changed by a deformer)",
   "{name}: .pmx を読めないので描けません": "{name}: can't be drawn because the .pmx can't be read",
