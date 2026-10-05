@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { describe, expect, it, vi } from 'vitest';
 import type { ControlRef } from '../../core/mme/controllers.ts';
+import { MMD_UNITS } from '../../core/constants';
 import { toMmd } from '../../core/mme/coords.ts';
 import { MODEL_KIND } from '../../core/shapes';
 import type { Obj } from '../types';
@@ -9,6 +10,8 @@ import { Controllers } from './Controllers';
 import type { LoadedEffect } from './EffectStore';
 import { compileEffect } from '../../core/fx/index.ts';
 
+// MME の空間 (MMD の単位) の行列: toMmd(Scale(MMD_UNITS) · m)
+const mme = (m: THREE.Matrix4) => toMmd(new THREE.Matrix4().makeScale(MMD_UNITS, MMD_UNITS, MMD_UNITS).multiply(m)).elements;
 const ref = (name: string, item: string | null, type: ControlRef['type'] = 'float'): ControlRef => ({ param: 'p', name, item, type });
 
 interface ModelOptions { morphs?: Record<string, number>; bones?: Record<string, [number, number, number]>; at?: [number, number, number]; hidden?: boolean }
@@ -72,13 +75,13 @@ describe('Controllers: 仮のコントローラー', () => {
 });
 
 describe('Controllers: 場面の物', () => {
-  it('(self) のモデルのモーフと骨の位置 (MMD の座標)。ないモーフ・骨は null', () => {
+  it('(self) のモデルのモーフと骨の位置 (MME の空間 = MMD の単位・左手系)。ないモーフ・骨は null', () => {
     const self = model(1, 'Light.pmx', { morphs: { 'R+': 0.75, 'G+': 0.5 }, bones: { Position: [1, 2, 3] }, at: [10, 0, 0] });
     const { c, warn } = setup([self]);
     expect(c.value(ref('(self)', 'R+'), self, null)).toEqual([0.75]);
     expect(c.value(ref('(SELF)', 'G+'), self, null)).toEqual([0.5]);
-    expect(c.value(ref('(self)', 'Position', 'float3'), self, null)).toEqual([11, 2, -3]);
-    expect(c.value(ref('(self)', 'Position', 'float4'), self, null)).toEqual([11, 2, -3]);
+    expect(c.value(ref('(self)', 'Position', 'float3'), self, null)).toEqual([110, 20, -30]);
+    expect(c.value(ref('(self)', 'Position', 'float4'), self, null)).toEqual([110, 20, -30]);
     expect(c.value(ref('(self)', 'B+'), self, null)).toBeNull();
     expect(c.value(ref('(self)', 'Nothing', 'float3'), self, null)).toBeNull();
     expect(warn).not.toHaveBeenCalled();
@@ -104,16 +107,16 @@ describe('Controllers: 場面の物', () => {
     const s = shape(3, 'Floor');
     s.node.position.set(1, 2, 3);
     s.node.updateMatrixWorld(true);
-    expect(setup([s]).c.value(ref('floor', null, 'float3'), null, null)).toEqual([1, 2, -3]);
+    expect(setup([s]).c.value(ref('floor', null, 'float3'), null, null)).toEqual([10, 20, -30]);
   });
 
-  it('項目なし: float4x4 は MMD の座標のワールド行列、float3 は位置、bool は隠していなければ 1', () => {
+  it('項目なし: float4x4 は MME の空間のワールド行列、float3 は位置 (場面の MMD_UNITS 倍)、bool は隠していなければ 1', () => {
     const m = model(1, 'M.pmx', { at: [1, 2, 3] });
     m.model.rotation.y = 0.5;
     m.node.updateMatrixWorld(true);
     const { c } = setup([m]);
-    expect(c.value(ref('M.pmx', null, 'float4x4'), null, null)).toEqual(toMmd(m.model.matrixWorld).elements);
-    expect(c.value(ref('M.pmx', null, 'float3'), null, null)).toEqual([1, 2, -3]);
+    expect(c.value(ref('M.pmx', null, 'float4x4'), null, null)).toEqual(mme(m.model.matrixWorld));
+    expect(c.value(ref('M.pmx', null, 'float3'), null, null)).toEqual([10, 20, -30]);
     expect(c.value(ref('M.pmx', null, 'bool'), null, null)).toEqual([1]);
     expect(c.value(ref('M.pmx', null, 'float'), null, null)).toBeNull();
     m.hidden = true;
@@ -123,10 +126,10 @@ describe('Controllers: 場面の物', () => {
     expect(c.value(ref('M.pmx', null, 'bool'), null, null)).toEqual([0]);
   });
 
-  it('骨の項目: float4x4 は骨のワールド行列 (MMD の座標)', () => {
+  it('骨の項目: float4x4 は骨のワールド行列 (MME の空間)', () => {
     const m = model(1, 'M.pmx', { bones: { Bone: [1, 2, 3] }, at: [0, 5, 0] });
     const bone = m.model.skeleton.bones[0] as THREE.Bone;
-    expect(setup([m]).c.value(ref('M.pmx', 'Bone', 'float4x4'), null, null)).toEqual(toMmd(bone.matrixWorld).elements);
+    expect(setup([m]).c.value(ref('M.pmx', 'Bone', 'float4x4'), null, null)).toEqual(mme(bone.matrixWorld));
   });
 
   it('アクセサリの項目 (Si ほか) は警告を 1 回出して null。モデルにその名前のモーフがあればそちら', () => {

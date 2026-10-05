@@ -7,11 +7,12 @@ import { groundShadowMatrix, perspectiveD3D, toMmd, toMmdVec, viewLH } from './c
 import { typeShape } from './typeShape.ts';
 
 export type MmdPass = 'object' | 'object_ss' | 'zplot' | 'shadow' | 'edge';
-export interface CameraState { position: Vector3; target: Vector3; up: Vector3; fovY: number; aspect: number; near: number; far: number } // three.js の空間 (fovY はラジアン)
+// MME の空間 (MMD の単位。向きは three.js の右手系のままで、値を作るときに z を反転する)。fovY はラジアン
+export interface CameraState { position: Vector3; target: Vector3; up: Vector3; fovY: number; aspect: number; near: number; far: number }
 export interface LightState {
   direction: Vector3;                 // 光が進む向き (three.js の空間)
   color: [number, number, number];
-  shadowView: Matrix4; shadowProjection: Matrix4; // セルフシャドウのライトのカメラ (左手系・D3D に直したもの)
+  shadowView: Matrix4; shadowProjection: Matrix4; // セルフシャドウのライトのカメラ (MME の空間。左手系・D3D に直したもの)
 }
 export interface MaterialState {
   diffuse: [number, number, number, number]; ambient: [number, number, number]; specular: [number, number, number]; power: number;
@@ -19,7 +20,8 @@ export interface MaterialState {
   hasTexture: boolean; hasSphere: boolean; hasToon: boolean; sphereAdd: boolean; transparent: boolean;
 }
 export interface SemanticContext {
-  camera: CameraState; light: LightState; world: Matrix4 /* three.js の物 → 世界 */; material: MaterialState | null;
+  // world: 物 → MME の空間 (右手系。MMD モデルは置き方を頂点に入れてあるので単位行列、ほかの物は Scale(k)·matrixWorld)
+  camera: CameraState; light: LightState; world: Matrix4; material: MaterialState | null;
   pass: MmdPass | null /* null はポストエフェクト */; time: number; elapsed: number; screen: [number, number]; selfShadow: boolean;
   control?: (ref: ControlRef) => number[] | null; // CONTROLOBJECT の値 (null と、この関数がないときは 0)
   // いま描いているオフスクリーンの持ち主 ((OffscreenOwner)。engine の Obj。Main とポストエフェクト・持ち主のないオフスクリーンは null)
@@ -31,8 +33,25 @@ export type TextureRole = 'material' | 'sphere' | 'toon' | 'colorTarget' | 'dept
 // 地面の影の既定の色 (MMD と同じ半透明の黒)
 export const SHADOW_COLOR: [number, number, number, number] = [0, 0, 0, 0.5];
 
-// ライトの位置は MME のエフェクトがほぼ使わないので、カメラの注視点から光の来る側へこの距離だけ離した点にする
-export const LIGHT_DISTANCE = 1000;
+// ライトの位置は MME のエフェクトがほぼ使わないので、カメラの注視点から光の来る側へこの距離 (MMD の単位) だけ離した点にする
+export const LIGHT_DISTANCE = 10000;
+
+// MME の空間の遠い面の最小 (MMD の単位)。MMD と同じく遠くまで描く (Ray-MMD の空は半径 10000)
+export const MME_FAR_MIN = 100000;
+
+// three.js の場面のカメラを MME の空間 (k 倍。k = MMD の単位 ÷ 場面の単位) にする: 位置と注視点は k 倍、向きと画角はそのまま、
+// 近い面は k 倍、遠い面は k 倍と MME_FAR_MIN の大きい方
+export function mmeCamera(c: CameraState, k: number): CameraState {
+  return {
+    position: c.position.clone().multiplyScalar(k), target: c.target.clone().multiplyScalar(k), up: c.up.clone(),
+    fovY: c.fovY, aspect: c.aspect, ...mmeDepthRange(c.near, c.far, k),
+  };
+}
+
+// MME のカメラの近い面と遠い面 (mmeCamera と同じ)
+export function mmeDepthRange(near: number, far: number, k: number): { near: number; far: number } {
+  return { near: near * k, far: Math.max(far * k, MME_FAR_MIN) };
+}
 
 const MATRIX_RE = /^(WORLD|VIEW|PROJECTION|WORLDVIEW|VIEWPROJECTION|WORLDVIEWPROJECTION)(INVERSE|TRANSPOSE|INVERSETRANSPOSE)?$/;
 const UNSUPPORTED = new Set(['MOUSEPOSITION', 'LEFTMOUSEDOWN', 'MIDDLEMOUSEDOWN', 'RIGHTMOUSEDOWN', 'TEXTUREVALUE']);

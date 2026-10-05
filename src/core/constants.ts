@@ -15,6 +15,8 @@ export const DEFAULT_FOV = 2 * Math.atan(0.5 / 1.6) * 180 / Math.PI;
 // どのモデルも同じ倍率なので、人物とステージの大きさの関係や、カメラモーションの位置が MMD と同じになる
 const MODEL_HEIGHT = 2;
 export const MMD_SCALE = MODEL_HEIGHT / 20;
+// MME 互換の空間 (MMD の単位) は、この場面の 1 単位をこの倍にしたもの (= 10)
+export const MMD_UNITS = 1 / MMD_SCALE;
 
 // --- 色 (リニア値) ---
 export const PALETTE: [number, number, number][] = [

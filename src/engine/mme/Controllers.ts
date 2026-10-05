@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { MMD_UNITS } from '../../core/constants';
 import { t } from '../../core/i18n';
 import { controlRefs, virtualControls, type ControlRef } from '../../core/mme/controllers.ts';
 import { toMmd, toMmdVec } from '../../core/mme/coords.ts';
@@ -30,14 +31,16 @@ function visibleChain(o: THREE.Object3D | null): boolean {
   return true;
 }
 
-// ワールド行列の位置を MMD の座標で (float3 は先の 3 つ、float4 は w = 1 を足す)
+const UNITS = new THREE.Matrix4().makeScale(MMD_UNITS, MMD_UNITS, MMD_UNITS);
+
+// ワールド行列の位置を MME の空間 (MMD の単位・左手系) で (float3 は先の 3 つ、float4 は呼ぶ側 (semantics) が足りない成分を 1 にする)
 function positionOf(m: THREE.Matrix4): number[] {
-  return toMmdVec(new THREE.Vector3().setFromMatrixPosition(m)).toArray();
+  return toMmdVec(new THREE.Vector3().setFromMatrixPosition(m).multiplyScalar(MMD_UNITS)).toArray();
 }
 
-// 型に合わせた、行列か位置の値 (float・bool は行列も位置もないので null)
+// 型に合わせた、行列か位置の値 (float・bool は行列も位置もないので null)。行列は MME の空間: toMmd(Scale(MMD_UNITS) · m)
 function spatial(m: THREE.Matrix4, type: ControlRef['type']): number[] | null {
-  if (type === 'float4x4') return toMmd(m).elements.slice();
+  if (type === 'float4x4') return toMmd(new THREE.Matrix4().multiplyMatrices(UNITS, m)).elements.slice();
   return type === 'float3' || type === 'float4' ? positionOf(m) : null;
 }
 

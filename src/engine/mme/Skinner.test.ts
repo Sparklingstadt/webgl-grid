@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { describe, expect, it, vi } from 'vitest';
+import { MMD_SCALE, MMD_UNITS } from '../../core/constants';
 import { toMmdVec } from '../../core/mme/coords.ts';
 import { makePmx } from '../../core/testing/pmx';
 import { readMmdData, registerMmdSource } from './mmdData.ts';
@@ -11,7 +12,8 @@ vi.mock('./mmdData.ts', async (orig) => {
   return { ...actual, readMmdData: vi.fn(actual.readMmdData) };
 });
 
-// makePmx と同じ 8 頂点の SkinnedMesh を three.js (右手系) で手で組む。
+// makePmx と同じ 8 頂点の SkinnedMesh を three.js (右手系) で手で組む。読み込んだモデルと同じく MMD_SCALE 倍で原点に置く
+// (MME の空間は場面の MMD_UNITS 倍なので、Skinner の出す位置は .pmx の値のまま)。
 // 下の 4 頂点は骨 0 (センター)、上の 4 頂点は骨 1 (右腕、センターの子)。morph: まばたき (上の頂点を y に −2)
 function makeMesh(opts: { relative?: boolean; pmx?: Uint8Array; register?: boolean } = {}) {
   const xs = [-2, 2, 2, -2], zs = [-2, -2, 2, 2];
@@ -45,6 +47,7 @@ function makeMesh(opts: { relative?: boolean; pmx?: Uint8Array; register?: boole
   arm.position.set(0, 7, 0);
   center.add(arm);
   const mesh = new THREE.SkinnedMesh(geometry, new THREE.MeshBasicMaterial());
+  mesh.scale.setScalar(MMD_SCALE);
   mesh.add(center);
   mesh.bind(new THREE.Skeleton([center, arm]));
   mesh.updateMorphTargets();
@@ -115,6 +118,45 @@ describe('Skinner.mmd', () => {
     expect(Array.from(g.geometry.index!.array)).toEqual(reversed(mesh.geometry));
     expect(g.geometry.groups).toEqual(mesh.geometry.groups);
     expect(sk.data(mesh)?.skin.count).toBe(8);
+  });
+
+  it('置き方 (移動・回転・拡縮) を頂点に入れる: MME の空間 = toMmd(MMD_UNITS · matrixWorld · 変形した位置)。法線は回すだけ', async () => {
+    const { mesh, arm } = makeMesh();
+    arm.rotation.z = 0.5;
+    mesh.position.set(1.5, 0.25, -2);
+    mesh.rotation.set(0.2, 0.9, -0.1);
+    mesh.scale.setScalar(MMD_SCALE * 1.5);
+    mesh.updateMatrixWorld(true);
+    const g = await ready(new Skinner(), mesh);
+    const p = g.geometry.getAttribute('a_POSITION') as THREE.BufferAttribute;
+    const n = g.geometry.getAttribute('a_NORMAL') as THREE.BufferAttribute;
+    mesh.skeleton.update();
+    const rot = new THREE.Quaternion().setFromEuler(mesh.rotation);
+    for (let i = 0; i < 8; i++) {
+      const local = mesh.applyBoneTransform(i, new THREE.Vector3().fromBufferAttribute(mesh.geometry.attributes.position as THREE.BufferAttribute, i));
+      const e = toMmdVec(mesh.localToWorld(local).multiplyScalar(MMD_UNITS));
+      expect([p.getX(i), p.getY(i), p.getZ(i)]).toEqual(e.toArray().map(v => expect.closeTo(v, 4)));
+    }
+    // 頂点 0 (骨 0、骨は回していない) の法線は、物の回転だけを受けて長さ 1
+    const e0 = toMmdVec(new THREE.Vector3(-1, 0, 1).normalize().applyQuaternion(rot));
+    expect([n.getX(0), n.getY(0), n.getZ(0)]).toEqual(e0.toArray().map(v => expect.closeTo(v, 4)));
+  });
+
+  it('物を動かしただけでも置き直す (骨とモーフが同じでも)。同じ置き方なら作り直さない', async () => {
+    const { mesh } = makeMesh();
+    const sk = new Skinner();
+    const g = await ready(sk, mesh);
+    const p = g.geometry.getAttribute('a_POSITION') as THREE.BufferAttribute;
+    const v = p.version;
+    expect(p.getX(0)).toBeCloseTo(-2, 4);
+    sk.mmd(mesh, eye, 0.5, () => {});
+    expect(p.version).toBe(v);
+    mesh.position.x = 0.5;
+    mesh.updateMatrixWorld(true);
+    sk.mmd(mesh, eye, 0.5, () => {});
+    expect(p.version).toBe(v + 1);
+    expect(p.getX(0)).toBeCloseTo(-2 + 0.5 * MMD_UNITS, 4);
+    expect(p.getZ(0)).toBeCloseTo(-2, 4); // (左手系: 右手系の z = 2 の頂点)
   });
 
   it('頂点モーフ (相対でも、MMDLoader のような位置を足した値でも) を骨の前に足す', async () => {
@@ -209,7 +251,7 @@ describe('Skinner.mmd', () => {
 
   it('輪郭線の形は法線の向きに広がっている。ほかの属性・index・groups は共有', async () => {
     const { mesh } = makeMesh();
-    mesh.position.set(5, 0, 0); // 物の空間のカメラは、世界のカメラを物の逆行列で直した位置
+    mesh.position.set(5, 0, 0); // 置き方を入れた位置と、MME の空間 (MMD_UNITS 倍・左手系) のカメラで広げる
     mesh.updateMatrixWorld(true);
     const sk = new Skinner();
     const g = await ready(sk, mesh, 0.5); // 世界のカメラ (0, 10, 50)
@@ -224,7 +266,8 @@ describe('Skinner.mmd', () => {
     expect(edge.index).toBe(g.geometry.index);
     expect(edge.groups).toEqual(g.geometry.groups);
 
-    const eyeLocal = toMmdVec(new THREE.Vector3(-5, 10, 50)); // 左手系
+    const eyeLocal = toMmdVec(new THREE.Vector3(0, 10, 50).multiplyScalar(MMD_UNITS)); // 左手系
+    expect(p.getX(0)).toBeCloseTo(-2 + 5 * MMD_UNITS, 4); // (置き方が入っている)
     const edgeSize = sk.data(mesh)!.vertexEdgeSize[2]; // 1
     for (let i = 0; i < 8; i++) {
       const pos = new THREE.Vector3(p.getX(i), p.getY(i), p.getZ(i));

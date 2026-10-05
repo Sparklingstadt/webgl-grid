@@ -1,8 +1,9 @@
 import * as THREE from 'three';
+import { MMD_UNITS } from '../../core/constants';
 import { t } from '../../core/i18n';
 import type { Color3 } from '../../core/materials/nodes';
 import { orthoD3D, toMmd } from '../../core/mme/coords.ts';
-import type { CameraState, LightState } from '../../core/mme/semantics.ts';
+import { mmeCamera, mmeDepthRange, type CameraState, type LightState } from '../../core/mme/semantics.ts';
 import type { Clock } from '../anim/Clock';
 import type { MaterialLibrary } from '../materials/MaterialLibrary';
 import type { SceneGraph } from '../render/SceneGraph';
@@ -296,17 +297,17 @@ export class MmeRenderer {
     return fb;
   }
 
-  // --- フレームの値 ---
+  // --- フレームの値 (MME の空間 = MMD の単位: 場面の MMD_UNITS 倍。設計書「座標の大きさ」) ---
   private frame(renderer: THREE.WebGLRenderer): FrameState {
     const { graph, clock, settings } = this.d;
     const cam = graph.camera;
     const position = new THREE.Vector3().setFromMatrixPosition(cam.matrixWorld);
-    const camera: CameraState = {
+    const camera: CameraState = mmeCamera({
       position,
       target: position.clone().add(cam.getWorldDirection(new THREE.Vector3())),
       up: new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 1).normalize(), // (真下を見るときも決まるように、カメラの上)
       fovY: cam.fov * DEG, aspect: cam.aspect, near: cam.near, far: cam.far,
-    };
+    }, MMD_UNITS);
     const time = clock.t;
     const elapsed = this.prevTime === null ? 0 : Math.max(time - this.prevTime, 0);
     this.prevTime = time;
@@ -320,23 +321,24 @@ export class MmeRenderer {
     return { camera, light: this.light(), eye: position, time, elapsed, selfShadow, screen: [size.x, size.y], frameNo: ++this.frameNo };
   }
 
-  // 太陽: 色 = 色 × min(明るさ ÷ π, 1)、向き = 来る向きの逆。影のカメラは標準のエンジンの太陽の影のカメラ。範囲は MMD の影の距離と
-  // 同じく、値が大きいほど狭い ((10000 − 値) に比例。既定の 8875 で標準のエンジンと同じ範囲)
+  // 太陽: 色 = 色 × min(明るさ ÷ π, 1)、向き = 来る向きの逆。影のカメラは標準のエンジンの太陽の影のカメラを MME の空間にしたもの
+  // (位置・範囲・近い面と遠い面を MMD_UNITS 倍。深度マップの値は同じ)。範囲は MMD の影の距離と同じく、値が大きいほど狭い
+  // ((10000 − 値) に比例。既定の 8875 で標準のエンジンと同じ範囲)
   private light(): LightState {
     const { sun } = this.d.graph;
     const k = Math.min(sun.intensity / Math.PI, 1);
     const color = toSrgb(sun.color).map(v => v * k) as Color3;
-    const eye = sun.getWorldPosition(new THREE.Vector3());
-    const target = sun.target.getWorldPosition(new THREE.Vector3());
+    const eye = sun.getWorldPosition(new THREE.Vector3()).multiplyScalar(MMD_UNITS);
+    const target = sun.target.getWorldPosition(new THREE.Vector3()).multiplyScalar(MMD_UNITS);
     const world = new THREE.Matrix4().lookAt(eye, target, new THREE.Vector3(0, 1, 0)).setPosition(eye);
     const c = sun.shadow.camera;
     const v = Math.min(Math.max(this.d.settings.shadowDistance, 0), SHADOW_DISTANCE_MAX); // (10000 だと範囲が潰れる)
-    const s = (10000 - v) / (10000 - SHADOW_DISTANCE); // (1 より大きいと既定より広い)
+    const s = (10000 - v) / (10000 - SHADOW_DISTANCE) * MMD_UNITS; // (1 より大きいと既定より広い。MME の空間の大きさにする)
     return {
       direction: this.d.graph.sunDirection().negate(),
       color,
       shadowView: toMmd(world.invert()),
-      shadowProjection: orthoD3D(c.left * s, c.right * s, c.bottom * s, c.top * s, c.near, c.far),
+      shadowProjection: orthoD3D(c.left * s, c.right * s, c.bottom * s, c.top * s, c.near * MMD_UNITS, c.far * MMD_UNITS),
     };
   }
 
@@ -470,9 +472,15 @@ export class MmeRenderer {
     renderer.clear(true, true, true);
   }
 
-  // グリッド・編集用の物 (ライトやカメラの目印など) を、MME の深度を使って上に重ね、選んでいる物の輪郭線を描く
+  // グリッド・編集用の物 (ライトやカメラの目印など) を、MME の深度を使って上に重ね、選んでいる物の輪郭線を描く。
+  // カメラの近い面と遠い面は MME のカメラ (mmeCamera) を場面の大きさに戻したものにする (深度の値をそろえる)。描いたら戻す
   private overlay(renderer: THREE.WebGLRenderer): void {
     const { scene, camera, grid } = this.d.graph;
+    const near = camera.near, far = camera.far;
+    const mme = mmeDepthRange(near, far, MMD_UNITS);
+    camera.near = mme.near / MMD_UNITS;
+    camera.far = mme.far / MMD_UNITS;
+    camera.updateProjectionMatrix();
     const tagged: THREE.Object3D[] = [];
     const tag = (o: THREE.Object3D) => {
       if (o.layers.isEnabled(OVERLAY_LAYER)) return;
@@ -504,6 +512,9 @@ export class MmeRenderer {
       }
     } finally {
       untag();
+      camera.near = near;
+      camera.far = far;
+      camera.updateProjectionMatrix();
       camera.layers.mask = mask;
       renderer.autoClear = autoClear;
       renderer.shadowMap.autoUpdate = shadowAuto;

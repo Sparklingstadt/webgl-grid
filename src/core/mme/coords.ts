@@ -53,10 +53,10 @@ export function orthoD3D(left: number, right: number, bottom: number, top: numbe
 
 // lightDir.y がこれより 0 に近い (または上向き) と影が無限に伸びるので、−MIN_LIGHT_Y に丸める
 const MIN_LIGHT_Y = 1e-3;
-// 地面の影が地面と重ならないよう持ち上げる高さ
-const SHADOW_LIFT = 0.01;
+// 地面の影が地面と重ならないよう持ち上げる高さ (MMD の単位)
+const SHADOW_LIFT = 0.1;
 
-// lightDir (光が進む向き、左手系) に沿って y の高さの面へ潰し、さらに 0.01 持ち上げる行列。
+// lightDir (光が進む向き、左手系) に沿って y の高さの面へ潰し、さらに 0.1 持ち上げる行列。
 // 向きは正規化されていなくてよい
 export function groundShadowMatrix(lightDir: Vector3, y = 0): Matrix4 {
   const ly = Math.min(lightDir.y, -MIN_LIGHT_Y);

@@ -89,9 +89,10 @@ test('名前が合う場面の物 (Ctl.pmx) のモーフと骨の位置を読む
 
 test('(self) の骨 Position の位置 (MMD の座標) と、項目なしの bool (隠していなければ 1)', async ({ page }) => {
   const errors = await openMme(page);
-  // センターの骨 (置いた x、高さ 0.8) を Position と呼ぶ。x ÷ 2 を赤、高さ ÷ 2 を緑、(self) が見えていれば青
+  // センターの骨 (置いた x、高さ 0.8。MME の空間は MMD の単位なので 10 倍の 5 と 8) を Position と呼ぶ。x ÷ 20 を赤、高さ ÷ 20 を緑、
+  // (self) が見えていれば青
   const box = await addPmx(page, { flags: 0, boneNames: ['Position'], at: [0.5, 0] });
-  const fx = objectFx('return float4(P.x * 0.5, P.y * 0.5, V ? 1.0 : 0.0, 1.0);', `
+  const fx = objectFx('return float4(P.x * 0.05, P.y * 0.05, V ? 1.0 : 0.0, 1.0);', `
 float3 P : CONTROLOBJECT < string name = "(self)"; string item = "Position"; >;
 bool V : CONTROLOBJECT < string name = "(self)"; >;`);
   expect(await assignFx(page, box, fx)).toBe(true);

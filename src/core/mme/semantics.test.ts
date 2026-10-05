@@ -3,7 +3,7 @@ import { Matrix4, PerspectiveCamera, Vector3, Vector4 } from 'three';
 import { compileEffect } from '../fx/index.ts';
 import type { EffectDesc } from '../fx/index.ts';
 import { perspectiveD3D, toMmd, toMmdVec, viewLH } from './coords.ts';
-import { LIGHT_DISTANCE, semanticValue, SHADOW_COLOR, textureRole, type MaterialState, type SemanticContext } from './semantics.ts';
+import { LIGHT_DISTANCE, MME_FAR_MIN, mmeCamera, semanticValue, SHADOW_COLOR, textureRole, type MaterialState, type SemanticContext } from './semantics.ts';
 
 const FUNCS = 'float4 VS(float4 p : POSITION) : POSITION { return p; } float4 PS() : COLOR0 { return 1; }';
 const TECH = ` ${FUNCS} technique T { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = compile ps_3_0 PS(); } }`;
@@ -154,17 +154,17 @@ describe('MME のセマンティクスの値', () => {
 
   it('shadow の pass では WORLD に地面の影の行列が掛かる', () => {
     const world = new Matrix4().makeTranslation(1, 3, 2);
-    // 光 (1, −1, 0.5) → 左手系で (1, −1, −0.5)。物の原点 (1, 3, −2) を y = 0 に潰すと t = 3 で (4, 0, −3.5)、持ち上げて y = 0.01
+    // 光 (1, −1, 0.5) → 左手系で (1, −1, −0.5)。物の原点 (1, 3, −2) を y = 0 に潰すと t = 3 で (4, 0, −3.5)、持ち上げて y = 0.1
     const ctx = { world, light: { ...makeCtx().light, direction: new Vector3(1, -1, 0.5) } };
     const shadow = val('float4x4 M : WORLD;', { ...ctx, pass: 'shadow' });
     const c = mulRow([0, 0, 0, 1], shadow);
-    expect(c.map(x => x / c[3])).toEqual(close([4, 0.01, -3.5, 1]));
+    expect(c.map(x => x / c[3])).toEqual(close([4, 0.1, -3.5, 1]));
     // 別の pass では普通の WORLD
     expect(mulRow([0, 0, 0, 1], val('float4x4 M : WORLD;', { ...ctx, pass: 'object' }))).toEqual(close([1, 3, -2, 1]));
     // 合成の行列にも影の行列が入る
     const wv = mulRow([0, 0, 0, 1], val('float4x4 M : WORLDVIEW;', { ...ctx, pass: 'shadow' }));
     const v = viewLH(new Vector3(0, 10, 30), new Vector3(0, 0, 0), new Vector3(0, 1, 0));
-    expect(wv).toEqual(close(new Vector4(4, 0.01, -3.5, 1).applyMatrix4(v).toArray()));
+    expect(wv).toEqual(close(new Vector4(4, 0.1, -3.5, 1).applyMatrix4(v).toArray()));
   });
 
   it('名前で決まる変数・TIME・VIEWPORTPIXELSIZE', () => {
@@ -234,5 +234,30 @@ describe('MME のセマンティクスの値', () => {
     expect(role('texture2D T : ANIMATEDTEXTURE < string ResourceName = "a.gif"; >;')).toBe('unsupported');
     expect(role('texture2D T < string ResourceName = "a.png"; >;')).toBe('file');
     expect(role('texture2D T;')).toBe('none');
+  });
+});
+
+describe('mmeCamera (MME の空間のカメラ)', () => {
+  const cam = {
+    position: new Vector3(1, 2, -3), target: new Vector3(0, 1, 0), up: new Vector3(0, 1, 0), fovY: 0.5, aspect: 1.5, near: 0.05, far: 1000,
+  };
+  it('位置と注視点と近い面は k 倍、向き・画角・縦横比はそのまま、遠い面は k 倍と MME_FAR_MIN の大きい方', () => {
+    const c = mmeCamera(cam, 10);
+    expect(c.position.toArray()).toEqual([10, 20, -30]);
+    expect(c.target.toArray()).toEqual([0, 10, 0]);
+    expect(c.up.toArray()).toEqual([0, 1, 0]);
+    expect([c.fovY, c.aspect, c.near, c.far]).toEqual([0.5, 1.5, 0.5, MME_FAR_MIN]);
+    expect(MME_FAR_MIN).toBe(100000);
+    expect(mmeCamera({ ...cam, far: 20000 }, 10).far).toBe(200000);
+    // 元のカメラは変えない
+    expect(cam.position.toArray()).toEqual([1, 2, -3]);
+  });
+
+  it('VIEW は k 倍した世界の点を同じ向きに写す (k 倍の点の視野の座標は k 倍)', () => {
+    const p = new Vector3(0.5, 1.5, 2);
+    const view = (c: typeof cam) => viewLH(toMmdVec(c.position), toMmdVec(c.target), toMmdVec(c.up));
+    const a = toMmdVec(p).applyMatrix4(view(cam));
+    const b = toMmdVec(p.clone().multiplyScalar(10)).applyMatrix4(view(mmeCamera(cam, 10)));
+    expect(b.toArray()).toEqual(close(a.multiplyScalar(10).toArray()));
   });
 });

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { MMD_UNITS } from '../../core/constants';
 import type { Pass } from '../../core/fx/index.ts';
 import { t } from '../../core/i18n';
 import type { Color3 } from '../../core/materials/nodes';
@@ -60,13 +61,16 @@ interface SubsetTextures { material: THREE.Texture | null; sphere: THREE.Texture
 export interface Subset {
   index: number; group: THREE.GeometryGroup | null; state: MaterialState; flags: number; doubleSided: boolean; textures: SubsetTextures;
 }
-// 描く物 (メッシュ 1 つ) と、1 フレームの値。obj は置いた物 (ステージは null)
-export interface DrawItem { obj: Obj | null; mesh: THREE.Mesh; geo: MmeGeometry; subsets: Subset[] }
+// 描く物 (メッシュ 1 つ) と、1 フレームの値。obj は置いた物 (ステージは null)。world は物 → MME の空間 (右手系。SemanticContext.world):
+// MMD モデルは置き方を頂点に入れてあるので単位行列 (MMD と同じ)、ほかの物は Scale(MMD_UNITS) · matrixWorld
+export interface DrawItem { obj: Obj | null; mesh: THREE.Mesh; geo: MmeGeometry; subsets: Subset[]; world: THREE.Matrix4 }
 // その表で描く材質の部分と、そのエフェクト
 interface Part { sub: Subset; effect: LoadedEffect }
 interface Toon { tex: THREE.DataTexture; color: Color3; version: number }
 
 const WHITE: Color3 = [1, 1, 1];
+const IDENTITY = new THREE.Matrix4();
+const UNITS = new THREE.Matrix4().makeScale(MMD_UNITS, MMD_UNITS, MMD_UNITS);
 
 // 祖先まで見えているか
 function visibleChain(o: THREE.Object3D | null): boolean {
@@ -287,7 +291,9 @@ export class ScenePass {
 
   private item(mesh: THREE.Mesh, obj: Obj | null, frame: FrameState): DrawItem | null {
     const skinner = this.d.skinner();
-    if (!isMmd(mesh)) return { obj, mesh, geo: skinner.plain(mesh), subsets: this.subsets(mesh, null) };
+    if (!isMmd(mesh)) {
+      return { obj, mesh, geo: skinner.plain(mesh), subsets: this.subsets(mesh, null), world: new THREE.Matrix4().multiplyMatrices(UNITS, mesh.matrixWorld) };
+    }
     const sm = mesh as THREE.SkinnedMesh;
     // クローンは userData の File を失う。形が差し替わった (デフォーマで変形した) クローンは .pmx を引けない
     if (!(mmdSourceOf(sm.geometry) ?? (sm.userData.sourceFile instanceof Blob))) {
@@ -301,7 +307,7 @@ export class ScenePass {
       if (skinner.failed(sm)) this.d.warn(t('{name}: .pmx を読めないので描けません', { name: sm.name || t('MMD モデル') }));
       return null;
     }
-    return { obj, mesh, geo, subsets: this.subsets(mesh, data) };
+    return { obj, mesh, geo, subsets: this.subsets(mesh, data), world: IDENTITY };
   }
 
   // 材質の部分。材質が 1 つなら形全体
@@ -421,7 +427,7 @@ export class ScenePass {
     const m = inst.material(p, target.flipY, base);
     if (!m) return;
     const ctx: SemanticContext = {
-      camera: frame.camera, light: frame.light, world: item.mesh.matrixWorld, material: sub.state, pass,
+      camera: frame.camera, light: frame.light, world: item.world, material: sub.state, pass,
       time: frame.time, elapsed: frame.elapsed, screen: frame.screen, selfShadow: frame.selfShadow, owner: table.owner,
       control: ref => this.d.control(ref, item.obj, table.owner),
     };

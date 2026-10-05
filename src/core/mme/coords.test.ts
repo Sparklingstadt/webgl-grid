@@ -79,19 +79,19 @@ describe('MME の座標', () => {
     expect(new Vector3(1, 0, 0).applyMatrix4(vp).x).toBeGreaterThan(0);
   });
 
-  it('groundShadowMatrix: 光の向きに沿って y = 0.01 に潰れる', () => {
+  it('groundShadowMatrix: 光の向きに沿って y = 0.1 に潰れる (持ち上げる高さは MMD の単位)', () => {
     const p = new Vector3(1, 2, 3).applyMatrix4(groundShadowMatrix(new Vector3(-1, -1, 0).normalize()));
-    expect(p.toArray()).toEqual(close([-1, 0.01, 3]));
+    expect(p.toArray()).toEqual(close([-1, 0.1, 3]));
   });
 
   it('groundShadowMatrix: z 成分も追い、向きの長さによらない', () => {
     const p = new Vector3(0, 2, 0).applyMatrix4(groundShadowMatrix(new Vector3(1, -2, -3)));
-    expect(p.toArray()).toEqual(close([1, 0.01, -3]));
+    expect(p.toArray()).toEqual(close([1, 0.1, -3]));
   });
 
-  it('groundShadowMatrix: y を渡すとその高さの面に潰し、さらに 0.01 持ち上げる', () => {
+  it('groundShadowMatrix: y を渡すとその高さの面に潰し、さらに 0.1 持ち上げる', () => {
     const p = new Vector3(1, 3, 0).applyMatrix4(groundShadowMatrix(new Vector3(-1, -1, 0), 1));
-    expect(p.toArray()).toEqual(close([-1, 1.01, 0]));
+    expect(p.toArray()).toEqual(close([-1, 1.1, 0]));
   });
 
   it('groundShadowMatrix: 光がほぼ水平 (または上向き) でも有限', () => {

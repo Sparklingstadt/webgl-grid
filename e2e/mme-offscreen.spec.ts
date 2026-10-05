@@ -56,11 +56,12 @@ float4 PS(float2 vpos : VPOS) : COLOR0 { return tex2D(MineSamp, (vpos + 0.5) / V
 technique T < string MMDPass = "object"; > { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = compile ps_3_0 PS(); } }`;
 
 // 物の世界の位置 (MMD の x) が負なら赤、正なら緑で描く .fx
+// 頂点の世界の x の符号で赤か緑 (MMD モデルの WORLD は MMD と同じく単位行列なので、物の原点ではなく頂点の位置で見る)
 const SIDE_FX = `
 float4x4 WVP : WORLDVIEWPROJECTION;
 float4x4 W : WORLD;
 struct VO { float4 Pos : POSITION; float X : TEXCOORD0; };
-VO VS(float4 Pos : POSITION) { VO o; o.Pos = mul(Pos, WVP); o.X = mul(float4(0, 0, 0, 1), W).x; return o; }
+VO VS(float4 Pos : POSITION) { VO o; o.Pos = mul(Pos, WVP); o.X = mul(Pos, W).x; return o; }
 float4 PS(float X : TEXCOORD0) : COLOR0 { return X < 0 ? float4(1, 0, 0, 1) : float4(0, 1, 0, 1); }
 technique T < string MMDPass = "object"; > { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = compile ps_3_0 PS(); } }`;
 

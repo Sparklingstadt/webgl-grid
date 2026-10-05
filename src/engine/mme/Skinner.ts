@@ -1,8 +1,10 @@
 import * as THREE from 'three';
+import { MMD_UNITS } from '../../core/constants';
 import { applyMorphs, expandEdges, skin } from '../../core/mme/skinning.ts';
 import { mmdSourceOf, readMmdData, type MmdData } from './mmdData.ts';
 
-// MME に渡す形。座標はすべて MMD の左手系
+// MME に渡す形。座標はすべて MMD の左手系。MMD モデルは置き方 (matrixWorld) を入れた MME の空間 (MMD の単位) の位置で、
+// WORLD は単位行列 (MMD と同じ)。ほかの物は物の空間の位置で、WORLD で置く
 export interface MmeGeometry {
   geometry: THREE.BufferGeometry; // a_POSITION・a_NORMAL・a_TEXCOORD0.. (position は a_POSITION と同じ属性)。groups は元の形のもの。
                                   // index は元の形の三角形の向きを逆にしたもの (D3D の表は時計回り)
@@ -23,9 +25,12 @@ interface Pose {
   copy: Copy;
   rest: Rest;
   out: MmeGeometry & { edge: THREE.BufferGeometry };
-  pos: Float32Array;
+  pos: Float32Array; // MME の空間の位置と法線 (posAttr・nrmAttr の配列)
   nrm: Float32Array;
   edgePos: Float32Array;
+  skinPos: Float32Array; // 骨とモーフで変形した、物の空間の位置と法線 (置き方を入れる前)
+  skinNrm: Float32Array;
+  placement: Float32Array; // 置き方の行列 (MME の空間・左手系)。前に入れたもの
   posAttr: THREE.BufferAttribute;
   nrmAttr: THREE.BufferAttribute;
   edgeAttr: THREE.BufferAttribute;
@@ -33,7 +38,7 @@ interface Pose {
   bones: Float32Array; // 骨ごとの行列 (左手系、16 個ずつ)
   prevBones: Float32Array;
   prevInfluences: number[];
-  prevEye: number[]; // 物の空間 (左手系) のカメラの位置と tanHalfFovY
+  prevEye: number[]; // MME の空間 (左手系) のカメラの位置と tanHalfFovY
   done: boolean; // 1 回は計算した
   frameNo: number; // 骨とモーフを見たフレームの番号 (番号なしで呼ばれたら NaN)
   activeDeltas: Float32Array[]; // 作業用 (applyMorphs に渡す重みが 0 でないモーフ)
@@ -68,9 +73,9 @@ interface PlainEntry {
 const UV_NAMES = ['uv', 'uv1', 'uv2', 'uv3'];
 
 // 作業用 (毎フレームの確保を避ける)
-const _inv = new THREE.Matrix4();
 const _bone = new THREE.Matrix4();
-const _eye = new THREE.Vector3();
+const _place = new THREE.Matrix4();
+const _units = new THREE.Matrix4().makeScale(MMD_UNITS, MMD_UNITS, MMD_UNITS);
 
 type Attr = THREE.BufferAttribute | THREE.InterleavedBufferAttribute;
 
@@ -84,6 +89,14 @@ function d3dIndex(src: THREE.BufferGeometry): THREE.BufferAttribute {
   for (let i = 0; i < n; i++) out[i] = at(i);
   for (let i = 0; i + 2 < n; i += 3) { out[i + 1] = at(i + 2); out[i + 2] = at(i + 1); }
   return new THREE.BufferAttribute(out, 1);
+}
+
+// 右手系の行列 m の elements を、左手系 (S·m·S) にして out[o..o+15] に置く。S·m·S は、行と列のどちらか一方だけが z の要素
+// (2・6・14・8・9・11) の符号を反転する (coords.ts の toMmd と同じ)
+function leftHanded(e: ArrayLike<number>, out: Float32Array, o: number): void {
+  for (let i = 0; i < 16; i++) out[o + i] = e[i];
+  out[o + 2] = -e[2]; out[o + 6] = -e[6]; out[o + 14] = -e[14];
+  out[o + 8] = -e[8]; out[o + 9] = -e[9]; out[o + 11] = -e[11];
 }
 
 // 右手系の 3 成分の属性を、z を反転した左手系の配列にする
@@ -111,8 +124,9 @@ export class Skinner {
   private disposed = false;
 
   // MMD モデル: 初めて呼ばれたら .pmx を読み始めて null を返し、読み終えたら onReady を呼ぶ (1 つの物につき 1 回)。
-  // 読み終えていれば、変形して返す。呼ぶ前に、骨の世界の行列 (updateMatrixWorld) を最新にしておく。
-  // frameNo を渡すと、同じ番号の 2 回目からは骨とモーフを見直さない (1 フレームに場面を何度も描くので。輪郭線はカメラに合わせる)
+  // 読み終えていれば、変形して、置き方 (メッシュの matrixWorld) を入れた MME の空間 (MMD の単位: 場面の MMD_UNITS 倍) の形を返す。
+  // 呼ぶ前に、骨とメッシュの世界の行列 (updateMatrixWorld) を最新にしておく。eyeWorld は場面 (three.js) の空間のカメラの位置。
+  // frameNo を渡すと、同じ番号の 2 回目からは骨とモーフと置き方を見直さない (1 フレームに場面を何度も描くので。輪郭線はカメラに合わせる)
   mmd(mesh: THREE.SkinnedMesh, eyeWorld: THREE.Vector3, tanHalfFovY: number, onReady: () => void, frameNo?: number): MmeGeometry | null {
     const file = this.fileOf(mesh);
     if (!file || this.disposed) return null;
@@ -141,17 +155,16 @@ export class Skinner {
       this.poses.set(mesh, pose);
     }
 
-    // 骨の行列 (左手系) と、モーフの重みを、前と比べる (このフレームでもう見たなら見ない)
+    // 骨の行列 (左手系) とモーフの重み、置き方を、前と比べる (このフレームでもう見たなら見ない)
     let changed = false;
     if (!pose.done || frameNo === undefined || pose.frameNo !== frameNo) {
       pose.frameNo = frameNo ?? NaN;
-      changed = this.updatePose(mesh, pose, data);
+      const skinned = this.updatePose(mesh, pose, data);
+      changed = this.place(mesh, pose, skinned);
     }
 
-    // 物の空間 (左手系) のカメラ
-    _inv.copy(mesh.matrixWorld).invert();
-    _eye.copy(eyeWorld).applyMatrix4(_inv);
-    const ex = _eye.x, ey = _eye.y, ez = -_eye.z;
+    // MME の空間 (左手系) のカメラ
+    const ex = eyeWorld.x * MMD_UNITS, ey = eyeWorld.y * MMD_UNITS, ez = -eyeWorld.z * MMD_UNITS;
     const pe = pose.prevEye;
     if (changed || pe[0] !== ex || pe[1] !== ey || pe[2] !== ez || pe[3] !== tanHalfFovY) {
       pe[0] = ex; pe[1] = ey; pe[2] = ez; pe[3] = tanHalfFovY;
@@ -315,6 +328,9 @@ export class Skinner {
       nrm: nrmAttr.array as Float32Array,
       edgePos: edgeAttr.array as Float32Array,
       posAttr, nrmAttr, edgeAttr,
+      skinPos: new Float32Array(count * 3),
+      skinNrm: new Float32Array(count * 3),
+      placement: new Float32Array(16).fill(NaN),
       morphed: new Float32Array(count * 3),
       bones: new Float32Array(0),
       prevBones: new Float32Array(0),
@@ -343,10 +359,38 @@ export class Skinner {
       pose.prevBones.set(pose.bones);
       pose.prevInfluences = [...inf];
       this.skinMesh(pose, data, inf);
-      pose.posAttr.needsUpdate = true;
-      pose.nrmAttr.needsUpdate = true;
     }
     return changed;
+  }
+
+  // 置き方 toMmd(Scale(MMD_UNITS) · matrixWorld) を、変形した形 (skinPos・skinNrm) に入れて MME の空間の形 (pos・nrm) にする。
+  // 変形し直したか、置き方が前と違うときだけ入れ直す。法線は 3×3 で回して長さを 1 にする (拡縮は除く)。入れ直したら true
+  private place(mesh: THREE.SkinnedMesh, pose: Pose, skinned: boolean): boolean {
+    _place.multiplyMatrices(_units, mesh.matrixWorld);
+    const e = _place.elements, m = pose.placement;
+    let moved = false;
+    for (let i = 0; i < 16; i++) {
+      const v = i === 2 || i === 6 || i === 14 || i === 8 || i === 9 || i === 11 ? -e[i] : e[i];
+      if (m[i] !== v) { moved = true; break; }
+    }
+    if (!moved && !skinned) return false;
+    leftHanded(e, m, 0);
+    const { skinPos: sp, skinNrm: sn, pos, nrm } = pose;
+    for (let i = 0; i < sp.length; i += 3) {
+      const x = sp[i], y = sp[i + 1], z = sp[i + 2];
+      pos[i] = m[0] * x + m[4] * y + m[8] * z + m[12];
+      pos[i + 1] = m[1] * x + m[5] * y + m[9] * z + m[13];
+      pos[i + 2] = m[2] * x + m[6] * y + m[10] * z + m[14];
+      const nx = sn[i], ny = sn[i + 1], nz = sn[i + 2];
+      const gx = m[0] * nx + m[4] * ny + m[8] * nz;
+      const gy = m[1] * nx + m[5] * ny + m[9] * nz;
+      const gz = m[2] * nx + m[6] * ny + m[10] * nz;
+      const l = Math.hypot(gx, gy, gz) || 1;
+      nrm[i] = gx / l; nrm[i + 1] = gy / l; nrm[i + 2] = gz / l;
+    }
+    pose.posAttr.needsUpdate = true;
+    pose.nrmAttr.needsUpdate = true;
+    return true;
   }
 
   // bindMatrixInverse · boneMatrix · bindMatrix を左手系 (S·m·S) にして、骨ごとに 16 個ずつ pose.bones に置く
@@ -364,11 +408,7 @@ export class Skinner {
     for (let b = 0; b < n; b++) {
       _bone.fromArray(bm, b * 16);
       _bone.premultiply(mesh.bindMatrixInverse).multiply(mesh.bindMatrix);
-      const e = _bone.elements, o = b * 16, out = pose.bones;
-      // S·m·S は、行と列のどちらか一方だけが z の要素 (2・6・14・8・9・11) の符号を反転する (coords.ts の toMmd と同じ)
-      for (let i = 0; i < 16; i++) out[o + i] = e[i];
-      out[o + 2] = -e[2]; out[o + 6] = -e[6]; out[o + 14] = -e[14];
-      out[o + 8] = -e[8]; out[o + 9] = -e[9]; out[o + 11] = -e[11];
+      leftHanded(_bone.elements, pose.bones, b * 16);
     }
   }
 
@@ -388,7 +428,7 @@ export class Skinner {
       applyMorphs(rest.pos, pose.activeDeltas, pose.activeWeights, pose.morphed);
       base = pose.morphed;
     }
-    skin(data.skin, base, rest.nrm, pose.bones, pose.pos, pose.nrm);
+    skin(data.skin, base, rest.nrm, pose.bones, pose.skinPos, pose.skinNrm);
   }
 
   // モーフの差分 (左手系)。MMDLoader のモーフは位置に差分を足した値 (morphTargetsRelative = false) なので、位置を引く
