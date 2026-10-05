@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { encodeShiftJis } from '../../core/sjis';
 import { Engine } from '../Engine';
+import { kindOf } from '../types';
 import { convertMmdMesh } from '../materials/fromMmd';
 import { parseDefaultEffect } from '../../core/mme/defaultEffect.ts';
 import { EffectInstance } from './EffectInstance';
@@ -1492,5 +1494,147 @@ technique Post < string Script = "ScriptExternal=Color; Pass=P;"; > { pass P < s
     e.mme.publish();
     expect(paramsOf).toHaveBeenCalledTimes(1);
     expect(e.ui.state.mme.values?.items[0]).toEqual({ name: 'X', value: 2 });
+  });
+});
+
+// .emm (MME のエフェクト割当ファイル) の読み書き。書式は docs/superpowers/notes/2026-10-05-emm-format.md
+describe('MmeEngine の .emm', () => {
+  const crlf = (lines: string[]) => `${lines.join('\r\n')}\r\n`;
+  const sjis = (lines: string[]) => encodeShiftJis(crlf(lines));
+  // .pmx を読んだ MMD モデル (材質 n 個。骨はなくてよい)
+  function model(e: Engine, file: string, n = 4) {
+    const mats = Array.from({ length: n }, () => new THREE.MeshBasicMaterial());
+    const mesh = Object.assign(new THREE.Mesh(new THREE.BoxGeometry(), mats), { skeleton: new THREE.Skeleton([]) }); // (取り消しでポーズを解く)
+    mesh.userData.sourceFile = new File([], file);
+    return e.world.addModel(mesh, 0, 0, []);
+  }
+  // フォルダ ray-mmd-1.5.2 (MaterialMap のオフスクリーンを宣言する ray.fx と、物・材質の .fx)
+  const RAY_FX = 'texture MaterialMap : OFFSCREENRENDERTARGET < string DefaultEffect = "* = hide"; >;\ntechnique T { }';
+  async function rayFolder(e: Engine) {
+    const files = ['Main/main.fx', 'Materials/material_2.0.fx', 'Materials/Skin/material_skin.fx'].map(p => fileAt(`ray-mmd-1.5.2/${p}`, 'technique T { }'));
+    const fx = await e.mme.loadEffect([fileAt('ray-mmd-1.5.2/ray.fx', RAY_FX), ...files], 'ray.fx');
+    const at = (path: string) => ({ folder: fx.folder.id, path });
+    return { fx, at };
+  }
+
+  it('importEmm: 名前で照らして割り当てを置き換え、場面にない .x はアクセサリを置く。場面にない物・読み込んでいない .fx は警告にまとめ、残りは当たる。1 回の取り消しで全部戻る', async () => {
+    const e = new Engine();
+    const { at } = await rayFolder(e);
+    const miku = model(e, '初音ミク.pmx');
+    const ray = e.addMmeObject({ kind: 'accessory', name: 'ray.x' });
+    e.mme.assign(miku, 'Main', 2, 'hide'); // (.emm にないので外れる)
+    e.history.checkpoint();
+    const before = { objects: [...e.world.objects], miku: structuredClone(miku.mme), ray: ray.mme };
+    const toast = vi.spyOn(e.ui, 'toast');
+    const R = 'C:\\MMD\\ray-mmd-1.5.2';
+    const result = e.mme.importEmm(sjis([
+      '[Info]', 'Version = 3', '',
+      '[Object]', 'Pmd1 = C:\\MMD\\UserFile\\Model\\初音ミク.pmx', `Acs2 = ${R}\\ray.x`, 'Pmd3 = D:\\Models\\Absent.pmx', 'Acs4 = C:\\MMD\\Extra\\glow.x', '',
+      '[Effect]', 'Default = none', `Pmd1 = ${R}\\Main\\main.fx`, 'Pmd1[3].show = false', `Acs2 = ${R}\\ray.fx`, 'Pmd3 = none', 'Acs4 = C:\\MMD\\Extra\\glow.fx', '',
+      '[Effect@MaterialMap]', 'Owner = Acs2', 'Acs2.show = false', `Pmd1 = ${R}\\materials\\material_2.0.fx`, `Pmd1[0] = ${R}\\Materials\\Skin\\material_skin.fx`,
+      `Pmd1[1] = ${R}\\Materials\\missing.fx`, `Pmd3 = ${R}\\Materials\\material_2.0.fx`, '',
+    ]));
+    expect(miku.mme).toEqual({
+      Main: { object: at('Main/main.fx'), materials: { 3: 'hide' } },
+      MaterialMap: { object: at('Materials/material_2.0.fx'), materials: { 0: at('Materials/Skin/material_skin.fx') } },
+    });
+    expect(ray.mme).toEqual({ Main: { object: at('ray.fx') }, MaterialMap: { object: 'hide' } });
+    const glow = e.world.objects[2];
+    expect(e.world.objects).toEqual([miku, ray, glow]);
+    expect([kindOf(glow), glow.mmeObj, glow.mme]).toEqual(['mme', { kind: 'accessory', name: 'glow.x' }, undefined]);
+    expect(result).toEqual({
+      applied: 6,
+      warnings: [
+        '.emm の物 Absent.pmx は場面にないので、その割り当てを飛ばしました',
+        `.emm の .fx C:\\MMD\\Extra\\glow.fx・${R}\\Materials\\missing.fx は読み込んだフォルダにないので、その割り当てを飛ばしました`,
+      ],
+    });
+    expect(toast).toHaveBeenCalledWith(`.emm を読みました (割り当て 6 件。${result.warnings.join('。')})`, 8000);
+    // (1 回の取り消しで、置いたアクセサリも割り当ても戻る。やり直すとまた当たる)
+    e.history.checkpoint();
+    await e.history.undo();
+    expect({ objects: e.world.objects, miku: miku.mme, ray: ray.mme }).toEqual(before);
+    await e.history.redo();
+    expect(e.world.objects).toEqual([miku, ray, glow]);
+    expect(miku.mme?.Main?.object).toEqual(at('Main/main.fx'));
+  });
+
+  it('importEmm: 同じ名前の物は .emm の番号の順に場面の並びの順で当てる (大文字小文字は無視)。アクセサリの Main の行がなければ .x と同じ名前の .fx', async () => {
+    const e = new Engine();
+    const { at } = await rayFolder(e);
+    const a = model(e, 'a.pmx'), b = model(e, 'A.pmx');
+    const result = e.mme.importEmm(sjis([
+      '[Object]', 'Pmd1 = x\\a.pmx', 'Pmd2 = y\\a.PMX', 'Acs3 = UserFile\\Effect\\ray-mmd-1.5.2\\ray.x', 'Acs4 = props\\plain.x', 'Acs5 = z\\ray.x',
+      '[Effect]', 'Pmd1 = ray-mmd-1.5.2\\Main\\main.fx', 'Pmd2 = none', 'Pmd2[1] = ray-mmd-1.5.2\\Main\\main.fx', 'Acs5 = none',
+    ]));
+    expect(result.warnings).toEqual([]);
+    expect(a.mme).toEqual({ Main: { object: at('Main/main.fx') } });
+    expect(b.mme).toEqual({ Main: { materials: { 1: at('Main/main.fx') } } });
+    const [, , ray, plain, ray2] = e.world.objects;
+    expect([ray.mmeObj?.name, ray.mme]).toEqual(['ray.x', { Main: { object: at('ray.fx') } }]); // (MME が自動で読む .fx)
+    expect([plain.mmeObj?.name, plain.mme]).toEqual(['plain.x', undefined]); // (.fx がなくても警告しない)
+    expect([ray2.mmeObj?.name, ray2.mme]).toEqual(['ray.x', undefined]); // (none と書いてあれば当てない)
+    expect(result.applied).toBe(3);
+  });
+
+  it('importEmm: ステージは .pmx のファイル名で照らし、割り当てを置き換える (場面の値なので取り消しの対象にしない)', async () => {
+    const e = new Engine();
+    const { at } = await rayFolder(e);
+    const mesh = new THREE.SkinnedMesh(new THREE.BoxGeometry(), [new THREE.MeshBasicMaterial(), new THREE.MeshBasicMaterial()]);
+    mesh.userData.sourceFile = new File([], 'Stage.pmx');
+    const stage = new THREE.Group();
+    stage.add(mesh);
+    e.stage.model = stage;
+    e.mme.assignStage('Other', null, 'hide'); // (.emm にないので外れる)
+    e.history.checkpoint();
+    const result = e.mme.importEmm(sjis(['[Object]', 'Pmd1 = UserFile\\Stage\\stage.pmx', '[Effect]', 'Pmd1 = ray-mmd-1.5.2\\Main\\main.fx', 'Pmd1[1].show = false']));
+    expect(result).toEqual({ applied: 2, warnings: [] });
+    const expected = { Main: { object: at('Main/main.fx'), materials: { 1: 'hide' } } };
+    expect(e.mme.saveScene().stage).toEqual(expected);
+    e.history.checkpoint();
+    await e.history.undo();
+    expect(e.mme.saveScene().stage).toEqual(expected);
+  });
+
+  it('importEmm: 置ける数を超えるアクセサリは置かずに警告 (同じ名前は 1 つ、多ければ数)。読めないファイルでも例外にならない', async () => {
+    const e = new Engine();
+    vi.spyOn(e.world, 'full', 'get').mockReturnValue(true);
+    const accessories = ['a', 'a', 'b', 'c', 'd', 'e', 'f', 'g'].map((n, i) => `Acs${i + 1} = ${n}.x`);
+    expect(e.mme.importEmm(sjis(['[Object]', ...accessories])).warnings).toEqual(['.emm のアクセサリ a.x・b.x・c.x・d.x・e.x ほか 2 件 を置けなかったので、その割り当てを飛ばしました (これ以上置けません)']);
+    expect(e.world.objects).toEqual([]);
+    expect(e.mme.importEmm(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a]))).toEqual({ applied: 0, warnings: ['.emm の 1 行目は読めないので飛ばしました'] });
+  });
+
+  it('exportEmm: いまの割り当てを MME の書式 (Shift_JIS・CRLF・フォルダの名前\\パス・Owner) にし、読み直すと同じ割り当てになる', async () => {
+    const e = new Engine();
+    const { fx, at } = await rayFolder(e);
+    const miku = model(e, '初音ミク.pmx');
+    e.world.addShape(0, 3, 0, 0); // (形は MMD にないので書かない)
+    const ray = e.mme.addPost(fx)!;
+    const ctl = e.addMmeObject({ kind: 'controller', name: 'ray_controller.pmx' });
+    e.mme.assign(miku, 'Main', null, at('Main/main.fx'));
+    e.mme.assign(miku, 'Main', 3, 'hide');
+    e.mme.assign(miku, 'MaterialMap', 0, at('Materials/Skin/material_skin.fx'));
+    e.mme.assign(ray, 'MaterialMap', null, 'hide');
+    const mesh = new THREE.SkinnedMesh(new THREE.BoxGeometry(), new THREE.MeshBasicMaterial());
+    mesh.userData.sourceFile = new File([], 'Stage.pmx');
+    e.stage.model = new THREE.Group().add(mesh);
+    e.mme.assignStage('MaterialMap', null, at('Materials/material_2.0.fx'));
+    const bytes = e.mme.exportEmm();
+    expect(bytes).toEqual(encodeShiftJis(new TextDecoder('shift_jis').decode(bytes))); // (Shift_JIS)
+    expect(new TextDecoder('shift_jis').decode(bytes)).toBe(crlf([
+      '[Info]', 'Version = 3', '',
+      '[Object]', 'Pmd1 = 初音ミク.pmx', 'Acs2 = ray.x', 'Pmd3 = ray_controller.pmx', 'Pmd4 = Stage.pmx', '',
+      '[Effect]', 'Default = none',
+      'Pmd1 = ray-mmd-1.5.2\\Main\\main.fx', 'Pmd1[3] = none', 'Pmd1[3].show = false', 'Acs2 = ray-mmd-1.5.2\\ray.fx', 'Pmd3 = none', 'Pmd4 = none', '',
+      '[Effect@MaterialMap]', 'Owner = Acs2',
+      'Pmd1[0] = ray-mmd-1.5.2\\Materials\\Skin\\material_skin.fx', 'Acs2 = none', 'Acs2.show = false', 'Pmd4 = ray-mmd-1.5.2\\Materials\\material_2.0.fx', '',
+    ]));
+    // (外してから読み直すと同じ)
+    const saved = { miku: structuredClone(miku.mme), ray: structuredClone(ray.mme), stage: e.mme.saveScene().stage };
+    e.mme.clearEffects();
+    expect(e.mme.importEmm(bytes)).toEqual({ applied: 6, warnings: [] });
+    expect({ miku: miku.mme, ray: ray.mme, stage: e.mme.saveScene().stage }).toEqual(saved);
+    expect([ctl.mme, e.world.objects.length]).toEqual([undefined, 4]);
   });
 });

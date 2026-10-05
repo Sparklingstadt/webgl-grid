@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { msg, t } from '../../../core/i18n';
 import type { FxKey, FxLevel } from '../../../engine';
 import type { MmeEffectUi } from '../../../engine/UiChannel';
@@ -34,6 +35,24 @@ function FxResult({ fx }: { fx: MmeEffectUi }) {
         {fx.warnings.map((w, i) => <li key={`w${i}`}>{w}</li>)}
       </ul>
     </details>
+  );
+}
+
+// MMD (MME) のエフェクト割当ファイル (.emm) を読む・書き出す
+function EmmButtons() {
+  const engine = useEngine();
+  const input = useRef<HTMLInputElement>(null);
+  return (
+    <div className="row">
+      <button type="button" className="bbtn" title={t('MMD のエフェクト割当ファイルを読んで、名前の合う物に割り当てを戻します')} onClick={() => input.current?.click()}>{t('.emm を読む…')}</button>
+      <button type="button" className="bbtn" title={t('いまの割り当てを MMD のエフェクト割当ファイルにします')} onClick={() => engine.mme.downloadEmm()}>{t('.emm を書き出す')}</button>
+      <input type="file" ref={input} accept=".emm" hidden aria-label={t('.emm を選ぶ')}
+             onChange={e => {
+               const f = e.currentTarget.files?.[0];
+               e.currentTarget.value = '';
+               if (f) void engine.mme.openEmm(f);
+             }} />
+    </div>
   );
 }
 
@@ -90,6 +109,7 @@ function MmePanel({ onShowValues }: { onShowValues?: () => void }) {
         {posts.length > 1 && <div className="note">{t('上のものほど先に (場面の近くで) かかります')}</div>}
       </MmeEffectPicker>
       <MmeAssignTabs />
+      <EmmButtons />
       <MmeControllers onShowValues={onShowValues} />
       {mme.warnings.length > 0 && (
         <details className="mme-diag">

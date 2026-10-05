@@ -103,6 +103,7 @@ export class Engine {
     stage: () => this.stage.model,
     edited: () => this.history.soon(),
     sceneEdited: () => this.autosave.schedule(),
+    checkpoint: () => this.history.checkpoint(),
   });
   readonly loader = new MmdLoader(this.ui, this.library, () => this.viewport.requestDraw());
   readonly vpd = new VpdIO(this.posing, this.viewport, this.ui);

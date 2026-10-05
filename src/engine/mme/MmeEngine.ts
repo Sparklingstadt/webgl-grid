@@ -2,12 +2,15 @@ import type * as THREE from 'three';
 import { errorText } from '../../core/errors';
 import { getLang, t } from '../../core/i18n';
 import { ACCESSORY_DEFAULTS, ACCESSORY_ITEMS, accessoryNameFor, isAccessoryItem } from '../../core/mme/accessory.ts';
+import { decodeEmm, encodeEmm, matchFxPath, parseEmm, writeEmm, type EmmDoc, type EmmEntry } from '../../core/mme/emm.ts';
 import { effectParams, fitParam, paramChannels, paramRange, type ParamUi } from '../../core/mme/params.ts';
-import { MME_DEFAULTS, normalizeMmeObj, normalizeObjectEffects, type MmeScene, type MmeSettings, type ObjectEffects, type SavedSlot, type TabEffects } from '../../core/mme/settings.ts';
+import { textureRole } from '../../core/mme/semantics.ts';
+import { MME_DEFAULTS, normalizeMmeObj, normalizeObjectEffects, type EffectRef, type MmeScene, type MmeSettings, type ObjectEffects, type SavedSlot, type TabEffects } from '../../core/mme/settings.ts';
 import { same } from '../addons/registry';
 import type { Clock } from '../anim/Clock';
 import type { Keyframes } from '../anim/Keyframes';
 import { mmeChannel } from '../anim/mmeChannels';
+import { download } from '../io/download';
 import type { MaterialLibrary } from '../materials/MaterialLibrary';
 import type { RenderOutput } from '../output/RenderOutput';
 import type { SceneGraph } from '../render/SceneGraph';
@@ -37,6 +40,10 @@ const fxIn = (f: EffectFolder) => [...f.text.keys()].filter(p => p.toLowerCase()
 const slotName = (s: Slot) => (s.kind === 'hide' ? 'hide' : s.effect.name);
 const sameList = (a: unknown[], b: unknown[]) => a.length === b.length && a.every((x, i) => x === b[i]);
 const byName = (a: { name: string }, b: { name: string }) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+// パスのファイル名 (最後の \ か / のあと)
+const fileName = (path: string) => path.slice(Math.max(path.lastIndexOf('\\'), path.lastIndexOf('/')) + 1).trim();
+// 一覧の文 (多ければ先の 5 つと残りの数)
+const listOf = (items: string[]) => (items.length > 5 ? t('{list} ほか {n} 件', { list: items.slice(0, 5).join('・'), n: items.length - 5 }) : items.join('・'));
 
 // 画面の「エフェクトのパラメータ」: 物 (ステージ) に当てた .fx ごとの、いまのパラメータと値 (範囲は入れ替わっていればそろえたもの)
 export interface EffectParamsUi { effect: { folder: string; path: string; name: string }; params: (ParamUi & { value: number[] })[] }
@@ -70,6 +77,7 @@ export interface MmeDeps {
   // 元に戻すの対象にしない場面の値 (ステージの割り当て・フォルダ・設定) を変えた (自動保存する)。
   // 毎フレームの publish では呼ばない
   sceneEdited: () => void;
+  checkpoint: () => void; // まだ手にしていない変化を先に 1 手にする (.emm の読み込みを、ほかの変化と混ぜずに 1 手にする)
 }
 
 export class MmeEngine {
@@ -530,6 +538,164 @@ export class MmeEngine {
     const stage = this.stageEffects !== null;
     this.stageEffects = null;
     if (assigned.length > 0 || stage) this.changed();
+  }
+
+  // --- .emm (MME のエフェクト割当ファイル。書式は core/mme/emm.ts と docs/superpowers/notes/2026-10-05-emm-format.md) ---
+  // .emm を読んで割り当てを戻す。[Object] のファイル名を、大文字小文字を無視して場面の物の名前 (objectName) とステージの .pmx の
+  // ファイル名に照らす (同じ名前は .emm の番号の順に、場面の並びの順。ステージは最後)。場面にない .x はその名前の仮のアクセサリを置き、
+  // ほかの合わない物は飛ばす。合った物の割り当ては .emm のものに置き換える (.show = false・hide は描かない、none は外す。
+  // .fx は読み込んだフォルダで後ろの部分がいちばん長く合うもの)。アクセサリの Main に物全体の行がなければ、MME が自動で読む
+  // .x と同じ名前の .fx を当てる (見つからなくても警告しない)。物の割り当てと置いたアクセサリは 1 回の取り消しで戻る
+  // (ステージの割り当ては場面の値なので戻らない)。合わない物・見つからない .fx・置けないアクセサリは警告にまとめ、お知らせにも出す
+  importEmm(bytes: Uint8Array): { applied: number; warnings: string[] } {
+    this.deps.checkpoint();
+    const { doc, warnings } = parseEmm(decodeEmm(bytes));
+    const { world, mmeObjects } = this.deps;
+    type Target = Obj | typeof STAGE;
+    const stageMesh = this.stageMesh();
+    const stageName = stageMesh && pmxName(stageMesh);
+    const pool: { name: string; target: Target }[] = [
+      ...world.objects.filter(assignable).map(o => ({ name: objectName(o).toLowerCase(), target: o as Target })),
+      ...(stageName ? [{ name: stageName.toLowerCase(), target: STAGE as Target }] : []),
+    ];
+    const targets = new Map<number, Target>();
+    const missing = new Set<string>(), full = new Set<string>(); // (同じ名前は 1 つ)
+    let created = false;
+    for (const { index, file } of doc.objects) {
+      const name = fileName(file);
+      const i = pool.findIndex(c => c.name === name.toLowerCase());
+      if (i >= 0) {
+        targets.set(index, pool[i].target);
+        pool.splice(i, 1);
+        continue;
+      }
+      if (!/\.x$/i.test(name)) missing.add(name || file);
+      else if (world.full) full.add(name);
+      else {
+        targets.set(index, mmeObjects.add({ kind: 'accessory', name }));
+        created = true;
+      }
+    }
+
+    const folders = this.store.folders().map(f => ({ id: f.id, name: f.name, files: [...f.text.keys()].filter(p => /\.fx(sub)?$/i.test(p)).sort() }));
+    const next = new Map<Target, ObjectEffects>([...targets.values()].map(target => [target, {}]));
+    const lost = new Set<string>();
+    let applied = 0;
+    const put = (target: Target, tab: string, material: number | null, slot: SavedSlot) => {
+      const effects = (next.get(target)![tab] ??= {});
+      if (material === null) effects.object = slot;
+      else (effects.materials ??= {})[material] = slot;
+      applied++;
+    };
+    for (const [tab, entries] of Object.entries(doc.tabs)) {
+      for (const { object, material, value, show } of entries) {
+        const target = targets.get(object);
+        if (target === undefined || (value === 'none' && show !== false)) continue;
+        const slot = show === false || value === 'hide' ? 'hide' : matchFxPath(value, folders);
+        if (slot) put(target, tab, material, slot);
+        else lost.add(value);
+      }
+    }
+    for (const { index, file } of doc.objects) {
+      const target = targets.get(index);
+      if (target === undefined || target === STAGE || target.mmeObj?.kind !== 'accessory' || !/\.x$/i.test(file)) continue;
+      if (doc.tabs.Main?.some(e => e.object === index && e.material === null)) continue;
+      const own = matchFxPath(file.replace(/\.x$/i, '.fx'), folders);
+      if (own) put(target, 'Main', null, own);
+    }
+
+    let edited = false;
+    for (const [target, effects] of next) {
+      if (target === STAGE) { this.replaceStageEffects(effects); continue; }
+      const v = normalizeObjectEffects(effects);
+      if (same(target.mme ?? null, v)) continue;
+      target.mme = v ?? undefined;
+      edited = true;
+    }
+    if (edited || created) this.changed();
+    if (edited) this.deps.edited();
+
+    if (missing.size) warnings.push(t('.emm の物 {names} は場面にないので、その割り当てを飛ばしました', { names: listOf([...missing]) }));
+    if (full.size) warnings.push(t('.emm のアクセサリ {names} を置けなかったので、その割り当てを飛ばしました (これ以上置けません)', { names: listOf([...full]) }));
+    if (lost.size) warnings.push(t('.emm の .fx {paths} は読み込んだフォルダにないので、その割り当てを飛ばしました', { paths: listOf([...lost]) }));
+    this.deps.ui.toast(
+      warnings.length ? t('.emm を読みました (割り当て {n} 件。{notes})', { n: applied, notes: warnings.join('。') }) : t('.emm を読みました (割り当て {n} 件)', { n: applied }),
+      warnings.length ? 8000 : 4000,
+    );
+    return { applied, warnings };
+  }
+
+  // ステージの割り当てを effects に置き換える (assignStage で 1 つずつ。場面の値なので取り消しの対象にしない)
+  private replaceStageEffects(effects: ObjectEffects): void {
+    const want = normalizeObjectEffects(effects) ?? {};
+    for (const [tab, old] of Object.entries(this.stageEffects ?? {})) {
+      if (old.object && !want[tab]?.object) this.assignStage(tab, null, null);
+      for (const m of Object.keys(old.materials ?? {})) if (!want[tab]?.materials?.[m]) this.assignStage(tab, Number(m), null);
+    }
+    for (const [tab, effects] of Object.entries(want)) {
+      if (effects.object) this.assignStage(tab, null, effects.object);
+      for (const [m, slot] of Object.entries(effects.materials ?? {})) this.assignStage(tab, Number(m), slot);
+    }
+  }
+
+  // いまの割り当てを .emm (Shift_JIS・CRLF) にする。物は場面の並びのモデルと MME の物 (ファイル名は objectName)、最後にステージ。
+  // [Effect] には全部の物の物全体の行を書く (割り当てがなければ none)。.fx は「フォルダの名前\フォルダの中のパス」。
+  // オフスクリーンの Owner は、そのオフスクリーンを宣言する .fx を当てた最初の物 (Main を先に見る)
+  exportEmm(): Uint8Array {
+    const list: { file: string; effects: ObjectEffects | null }[] = this.deps.world.objects
+      .filter(o => o.mmeObj || isModel(o))
+      .map(o => ({ file: objectName(o), effects: o.mme ?? null }));
+    const stageMesh = this.stageMesh();
+    const stageName = stageMesh && pmxName(stageMesh);
+    if (stageName) list.push({ file: stageName, effects: this.stageEffects });
+    const doc: EmmDoc = { objects: list.map((x, i) => ({ index: i + 1, file: x.file })), tabs: { Main: [] } };
+    const entry = (object: number, material: number | null, slot: SavedSlot): EmmEntry =>
+      slot === 'hide' ? { object, material, value: 'none', show: false } : { object, material, value: this.emmPath(slot) };
+    list.forEach(({ effects }, i) => {
+      for (const [tab, { object, materials }] of Object.entries(effects ?? {})) {
+        const entries = (doc.tabs[tab] ??= []);
+        if (object) entries.push(entry(i + 1, null, object));
+        for (const [m, slot] of Object.entries(materials ?? {})) entries.push(entry(i + 1, Number(m), slot));
+      }
+      if (!effects?.Main?.object) doc.tabs.Main.push({ object: i + 1, material: null, value: 'none' });
+    });
+    const owners: NonNullable<EmmDoc['owners']> = {};
+    const declares = (slot: SavedSlot | undefined, name: string) => {
+      const e = slot && slot !== 'hide' ? this.renderer.assignments.effectOf(slot) : null;
+      return !!e?.result.ok && e.result.effect.textures.some(x => x.name === name && textureRole(x) === 'offscreen');
+    };
+    for (const name of Object.keys(doc.tabs).filter(x => x !== 'Main')) {
+      const where = ['Main', ...Object.keys(doc.tabs).filter(x => x !== 'Main' && x !== name)];
+      for (const tab of where) {
+        const i = list.findIndex(({ effects }) => [effects?.[tab]?.object, ...Object.values(effects?.[tab]?.materials ?? {})].some(s => declares(s, name)));
+        if (i < 0) continue;
+        owners[name] = tab === 'Main' ? { object: i + 1 } : { object: i + 1, tab };
+        break;
+      }
+    }
+    if (Object.keys(owners).length) doc.owners = owners;
+    return encodeEmm(writeEmm(doc));
+  }
+
+  // .emm に書く .fx のパス (フォルダの名前\フォルダの中のパス。フォルダの中で見つかればその書き方)
+  private emmPath(ref: EffectRef): string {
+    const folder = this.store.folder(ref.folder);
+    const path = ((folder && findFile(folder, ref.path)) ?? ref.path).replace(/\//g, '\\');
+    return folder?.name ? `${folder.name}\\${path}` : path;
+  }
+
+  // .emm のファイルを読んで割り当てを戻す (importEmm。読めなければお知らせ)
+  async openEmm(file: File): Promise<void> {
+    try {
+      this.importEmm(new Uint8Array(await file.arrayBuffer()));
+    } catch (err) {
+      this.deps.ui.toast(t('.emm を読めませんでした: {error}', { error: errorText(err) }), 8000);
+    }
+  }
+
+  // いまの割り当てを .emm にしてダウンロードさせる (名前はプロジェクトの名前)
+  downloadEmm(): void {
+    download(this.exportEmm(), `${this.deps.ui.state.projectName ?? t('エフェクト割当')}.emm`);
   }
 
   // ファイルを読めなければ (File.arrayBuffer の失敗など) お知らせを出して null
