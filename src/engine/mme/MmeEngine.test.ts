@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Engine } from '../Engine';
+import { EffectInstance } from './EffectInstance';
 import { MME_DEFAULTS } from './MmeEngine';
 
 // 描画先なしで、レンダーエンジンの切り替えと Viewport.drawOverride の差し替えを確かめる
@@ -94,6 +95,22 @@ describe('MmeEngine', () => {
     r.instance(fx).stopped = true;
     expect(r.effectOf(obj)).toBe(e.mme.store.defaultEffect);
     expect(e.mme.renderer.stopped(fx)).toBe(true);
+  });
+
+  it('ポストエフェクトの資源は、一覧にあるあいだ捨てず (オフでも)、外すと捨てる。whenReady はオンのポストエフェクトのテクスチャも待つ', async () => {
+    const e = new Engine();
+    const fx = await e.mme.loadEffect([new File(['technique T { }'], 'post.fx')], 'post.fx');
+    const r = e.mme.renderer as unknown as Internals;
+    const ready = vi.spyOn(EffectInstance.prototype, 'ready');
+    e.mme.store.addPost(fx);
+    await e.mme.whenReady();
+    const inst = r.instance(fx);
+    expect(ready.mock.contexts).toContain(inst);
+    const dispose = vi.spyOn(inst as unknown as EffectInstance, 'dispose');
+    e.mme.store.setPostEnabled(0, false); // (changed で prune される)
+    expect(dispose).not.toHaveBeenCalled();
+    e.mme.store.removePost(0);
+    expect(dispose).toHaveBeenCalledTimes(1);
   });
 
   it('影の距離が 0 でもセルフシャドウの射影は有限', () => {

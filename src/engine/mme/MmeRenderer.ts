@@ -4,7 +4,7 @@ import { t } from '../../core/i18n';
 import type { Color3 } from '../../core/materials/nodes';
 import { inputLink, surfaceShader, upstreamOrder } from '../../core/materials/tree';
 import { orthoD3D, toMmd } from '../../core/mme/coords.ts';
-import { runTechnique, type ScriptBackend } from '../../core/mme/script.ts';
+import { runTechnique } from '../../core/mme/script.ts';
 import { SHADOW_COLOR, type CameraState, type LightState, type MaterialState, type MmdPass, type SemanticContext } from '../../core/mme/semantics.ts';
 import { pickTechnique, type TechniqueQuery } from '../../core/mme/technique.ts';
 import type { Clock } from '../anim/Clock';
@@ -18,20 +18,21 @@ import type { Selection } from '../world/Selection';
 import type { World } from '../world/World';
 import { EffectInstance, type BaseState, type TextureSource } from './EffectInstance';
 import type { EffectStore, LoadedEffect } from './EffectStore';
+import { CANVAS, Framebuffers, type DrawTarget } from './Framebuffers';
 import { mmdSourceOf, type MmdData } from './mmdData';
 import type { MmeSettings } from './MmeEngine';
+import { builtins, PostChain, ScriptTargets, type FrameState } from './PostChain';
 import { Skinner, type MmeGeometry } from './Skinner';
 
-// --- MME 互換の 1 フレーム (設計書「1 フレームの流れ」の 2 と 3): セルフシャドウの深度 → モデルごとに地面の影・本体・輪郭線 → 編集用の表示 ---
-// ポストエフェクト (1) は Task 12 で drawScene の外側に足す
+// --- MME 互換の 1 フレーム (設計書「1 フレームの流れ」): セルフシャドウの深度 → ポストエフェクトの入れ子 (PostChain) の
+// いちばん内側で、モデルごとに地面の影・本体・輪郭線 → 編集用の表示 ---
 
 export interface MmeRendererDeps {
   viewport: Viewport; graph: SceneGraph; world: World; selection: Selection; clock: Clock; library: MaterialLibrary;
   store: EffectStore; settings: MmeSettings; stage: () => THREE.Object3D | null; ui: UiChannel;
 }
 
-// 描画先: 上下の向き (canvas は 1、レンダーターゲットは −1) と画素の数
-export interface DrawTarget { flipY: 1 | -1; size: [number, number] }
+export type { DrawTarget, FrameState };
 
 // PMX の材質のフラグ
 const DOUBLE_SIDED = 0x01, GROUND_SHADOW = 0x02, CAST_SELF_SHADOW = 0x04, RECEIVE_SELF_SHADOW = 0x08, EDGE = 0x10;
@@ -49,7 +50,6 @@ export interface Subset {
 }
 // 描く物 (メッシュ 1 つ) と、1 フレームの値
 export interface DrawItem { mesh: THREE.Mesh; effect: LoadedEffect; geo: MmeGeometry; subsets: Subset[] }
-export interface FrameState { camera: CameraState; light: LightState; eye: THREE.Vector3; time: number; elapsed: number; selfShadow: boolean }
 interface Toon { tex: THREE.DataTexture; color: Color3; version: number }
 
 const WHITE: Color3 = [1, 1, 1];
@@ -118,6 +118,8 @@ export class MmeRenderer {
   private proxy = new THREE.Mesh(); // renderBufferDirect に渡す物 (単位行列。three.js の骨やモーフ・面の反転を効かせない)
   private clearColor = new THREE.Color();
   private linked = new WeakSet<THREE.Material>(); // リンクできたかを確かめた材質
+  private fb: Framebuffers | null = null; // レンダーターゲット (描画先を作り直したら作り直す)
+  private chain: PostChain | null = null;
 
   constructor(private d: MmeRendererDeps) {
     this.host.onAfterRender = () => {
@@ -134,15 +136,17 @@ export class MmeRenderer {
     const { scene, camera } = this.d.graph;
     scene.updateMatrixWorld();
     camera.updateMatrixWorld();
+    const fb = this.framebuffers(renderer);
     const frame = this.frame(renderer);
+    fb.begin(frame.screen);
     const items = this.collect(frame);
     renderer.getClearColor(this.clearColor);
     const clearAlpha = renderer.getClearAlpha();
     try {
-      this.inThree(renderer, items, () => this.drawFrame(renderer, items, frame, clearAlpha));
+      this.inThree(renderer, items, () => this.drawFrame(renderer, fb, items, frame, clearAlpha));
     } finally {
       // (途中で例外が出ても、標準のエンジンが canvas に描けるように戻す)
-      renderer.setRenderTarget(null);
+      fb.bindSurface(CANVAS);
       renderer.setClearColor(this.clearColor, clearAlpha);
       renderer.state.buffers.color.setMask(true);
     }
@@ -151,30 +155,70 @@ export class MmeRenderer {
     return true;
   }
 
-  // 1. セルフシャドウの深度マップ → 2. 場面 (three.js の render の中で呼ぶ)
-  private drawFrame(renderer: THREE.WebGLRenderer, items: DrawItem[], frame: FrameState, clearAlpha: number): void {
-    const size = renderer.getDrawingBufferSize(new THREE.Vector2());
-    const screen: [number, number] = [size.x, size.y];
-    // 1. セルフシャドウの深度マップ (R = z / w。何もない所は 1)
+  // セルフシャドウの深度マップ → ポストエフェクトの入れ子と場面 (three.js の render の中で呼ぶ)
+  private drawFrame(renderer: THREE.WebGLRenderer, fb: Framebuffers, items: DrawItem[], frame: FrameState, clearAlpha: number): void {
+    // 物の .fx のレンダーターゲット
+    for (const e of new Set([this.d.store.defaultEffect, ...items.map(it => it.effect)])) this.prepare(fb, e, frame.screen);
+    // セルフシャドウの深度マップ (R = z / w。何もない所は 1)
     if (frame.selfShadow && this.shadow) {
-      renderer.setRenderTarget(this.shadow);
+      const surface = { kind: 'three', target: this.shadow } as const;
+      const target = fb.bindSurface(surface);
+      fb.defaultSurface = surface;
       renderer.setClearColor(0xffffff, 1);
       this.clear(renderer);
-      const target: DrawTarget = { flipY: -1, size: [SHADOW_SIZE, SHADOW_SIZE] };
       for (const item of items) {
         for (const sub of item.subsets) if (sub.flags & CAST_SELF_SHADOW) this.drawPass(item, sub, 'zplot', frame, target);
       }
     }
-    // 2. 場面 (背景の空は描かない。いまの消す色で消す)
-    renderer.setRenderTarget(null);
+    // ポストエフェクトがあれば canvas の代わりの絵に描いてから写す (Framebuffers.screenSurface)。背景の空は描かない。いまの消す色で消す
+    const posts = this.posts(fb, frame.screen);
+    const surface = posts.length > 0 ? fb.screenSurface() : CANVAS;
+    const target = fb.bindSurface(surface);
+    fb.defaultSurface = surface;
     renderer.setClearColor(this.clearColor, clearAlpha);
     this.clear(renderer);
-    this.drawScene(items, frame, { flipY: 1, size: screen });
+    if (posts.length === 0) {
+      this.drawScene(items, frame, target);
+    } else {
+      this.chain!.run(posts, frame, t => this.drawScene(items, frame, t));
+      fb.bindSurface(CANVAS);
+      this.clear(renderer);
+      const tex = fb.screenTexture;
+      if (tex) this.chain!.present(tex);
+    }
     this.opaque(renderer, clearAlpha);
   }
 
-  // モデルを置いた順に: 地面の影 → 本体 → 輪郭線。描画先はいまのもの (Task 12 のポストエフェクトは ScriptExternal からここを呼ぶ)
+  // オンで、コンパイルできて、止めていないポストエフェクト (一覧の順。最後がいちばん外側)。レンダーターゲットも用意する
+  private posts(fb: Framebuffers, screen: [number, number]): LoadedEffect[] {
+    const out: LoadedEffect[] = [];
+    for (const p of this.d.store.posts) {
+      if (!p.enabled || !p.effect.result.ok || this.stopped(p.effect)) continue;
+      this.prepare(fb, p.effect, screen);
+      out.push(p.effect);
+    }
+    return out;
+  }
+
+  private prepare(fb: Framebuffers, e: LoadedEffect, screen: [number, number]): void {
+    const inst = this.instance(e);
+    for (const w of fb.prepare(e, screen)) if (!inst.warnings.includes(w)) inst.warnings.push(w);
+  }
+
+  // モデルを置いた順に: 地面の影 → 本体 → 輪郭線。描画先はいまのもの (ポストエフェクトは ScriptExternal からここを呼ぶ)。
+  // 物の .fx の Script が「既定の描画先」と言ったら、いまの描画先
   drawScene(items: DrawItem[], frame: FrameState, target: DrawTarget): void {
+    const fb = this.fb;
+    const outer = fb?.defaultSurface;
+    if (fb) fb.defaultSurface = fb.current;
+    try {
+      this.drawItems(items, frame, target);
+    } finally {
+      if (fb && outer) fb.defaultSurface = outer;
+    }
+  }
+
+  private drawItems(items: DrawItem[], frame: FrameState, target: DrawTarget): void {
     const { groundShadow } = this.d.settings;
     for (const item of items) {
       if (groundShadow) for (const sub of item.subsets) if (sub.flags & GROUND_SHADOW) this.drawPass(item, sub, 'shadow', frame, target);
@@ -196,18 +240,22 @@ export class MmeRenderer {
       effects.add(this.effectOf(obj));
       visit(obj.node);
     }
+    for (const p of this.d.store.posts) if (p.enabled && p.effect.result.ok) effects.add(p.effect);
     const stage = this.d.stage();
     if (stage) visit(stage);
     for (const e of effects) waits.push(this.instance(e).ready());
     await Promise.all(waits);
   }
 
-  // どの物にも割り当てていない .fx の資源を捨てる
+  // どの物にも割り当てていない・ポストエフェクトの一覧にない .fx の資源を捨てる
   prune(): void {
-    const used = new Set<LoadedEffect>([this.d.store.defaultEffect, ...this.d.world.objects.map(o => this.effectOf(o))]);
+    const used = new Set<LoadedEffect>([
+      this.d.store.defaultEffect, ...this.d.world.objects.map(o => this.effectOf(o)), ...this.d.store.posts.map(p => p.effect),
+    ]);
     for (const [e, inst] of this.instances) {
       if (used.has(e)) continue;
       inst.dispose();
+      this.fb?.release(e);
       this.instances.delete(e);
     }
   }
@@ -226,6 +274,34 @@ export class MmeRenderer {
     this.toons = new WeakMap();
     this.uploaders = [];
     this.prevTime = null;
+    this.fb?.dispose();
+    this.fb = null;
+    this.chain?.dispose();
+    this.chain = null;
+  }
+
+  // レンダーターゲットとポストエフェクトの入れ子 (最初に描くときに作る)
+  private framebuffers(renderer: THREE.WebGLRenderer): Framebuffers {
+    if (this.fb) return this.fb;
+    const fb = new Framebuffers(renderer, {
+      warn: m => this.warn(m),
+      broken: effects => {
+        for (const e of effects) {
+          const inst = this.instances.get(e);
+          if (!inst || inst.stopped) continue;
+          inst.stopped = true;
+          this.d.ui.toast(t('{name} のレンダーターゲットを GPU で使えないので止めました', { name: e.name }), 8000);
+          this.d.viewport.requestDraw();
+        }
+      },
+    });
+    this.fb = fb;
+    this.chain = new PostChain({
+      fb, instance: e => this.instance(e), warn: m => this.warn(m),
+      render: (m, geometry) => renderer.renderBufferDirect(this.d.graph.camera, null as unknown as THREE.Scene, geometry, m, this.proxy, null as unknown as THREE.GeometryGroup),
+      checkLink: (m, inst, effect) => this.checkLink(renderer, m, inst, effect),
+    });
+    return fb;
   }
 
   // --- フレームの値 ---
@@ -243,7 +319,8 @@ export class MmeRenderer {
     const elapsed = this.prevTime === null ? 0 : Math.max(time - this.prevTime, 0);
     this.prevTime = time;
     const selfShadow = settings.selfShadow && this.shadowTarget(renderer) !== null;
-    return { camera, light: this.light(), eye: position, time, elapsed, selfShadow };
+    const size = renderer.getDrawingBufferSize(new THREE.Vector2());
+    return { camera, light: this.light(), eye: position, time, elapsed, selfShadow, screen: [size.x, size.y] };
   }
 
   // 太陽: 色 = 色 × min(明るさ ÷ π, 1)、向き = 来る向きの逆。影のカメラは標準のエンジンの太陽の影のカメラ (範囲を shadowDistance で広げる)
@@ -439,28 +516,21 @@ export class MmeRenderer {
     if (!tech) return;
     const inst = this.instance(effect);
     if (inst.stopped) return; // (このフレームの途中で止めた。次のフレームから default.fx)
-    runTechnique(tech, 'object', this.objectBackend(inst, (p, mode) => {
-      if (mode === 'buffer') this.warn('物の .fx の Draw=Buffer にはまだ対応していないので無視します');
-      else if (!inst.stopped) this.drawGeometry(inst, effect, p, item, sub, pass, frame, target);
-    }));
-  }
-
-  // 物の technique の Script: Draw=Geometry でいまの材質の部分を描く。描画先を替える命令はまだ使えない (Task 12)
-  private objectBackend(inst: EffectInstance, draw: (p: Pass, mode: 'geometry' | 'buffer') => void): ScriptBackend {
-    const ignore = (what: string) => () => this.warn(`物の .fx の ${what} にはまだ対応していないので無視します`);
-    return {
-      setColorTarget: ignore('RenderColorTarget'),
-      setDepthTarget: ignore('RenderDepthStencilTarget'),
-      setClearColor: ignore('ClearSetColor'),
-      setClearDepth: ignore('ClearSetDepth'),
-      setClearStencil: ignore('ClearSetStencil'),
-      clear: ignore('Clear'),
-      drawPass: draw,
+    // 物の technique の Script: Draw=Geometry でいまの材質の部分を描く。描画先を替えたら、終わったあと既定の描画先に戻す
+    const st = new ScriptTargets(this.fb!, effect, inst, m => this.warn(m), target);
+    runTechnique(tech, 'object', {
+      ...st.commands(),
+      drawPass: (p, mode) => {
+        if (mode === 'buffer') this.warn('物の .fx の Draw=Buffer にはまだ対応していないので無視します');
+        else if (!inst.stopped) {
+          this.drawGeometry(inst, effect, p, item, sub, pass, frame, st.current());
+          if (st.changed) this.fb!.afterDraw();
+        }
+      },
       drawExternal: () => {},
-      loopCount: p => inst.param(p)?.[0] ?? NaN,
-      setLoopIndex: (p, i) => inst.setParam(p, [i]),
       warn: m => this.warn(m),
-    };
+    });
+    if (st.changed) this.fb!.bindSurface(this.fb!.defaultSurface);
   }
 
   private drawGeometry(inst: EffectInstance, effect: LoadedEffect, p: Pass, item: DrawItem, sub: Subset, pass: MmdPass, frame: FrameState, target: DrawTarget): void {
@@ -470,16 +540,16 @@ export class MmeRenderer {
     if (!m) return;
     const ctx: SemanticContext = {
       camera: frame.camera, light: frame.light, world: item.mesh.matrixWorld, material: sub.state, pass,
-      time: frame.time, elapsed: frame.elapsed, screen: target.size, selfShadow: frame.selfShadow,
+      time: frame.time, elapsed: frame.elapsed, screen: frame.screen, selfShadow: frame.selfShadow,
     };
     const { textures: t } = sub;
     // (深度マップに描いているあいだは、その深度マップを読ませない)
     const shadow = pass === 'zplot' ? null : this.shadow?.texture ?? null;
     const textures: TextureSource = {
-      role: name => (name === 'material' ? t.material : name === 'sphere' ? t.sphere : name === 'toon' ? t.toon : name === 'selfShadow' ? shadow : null),
+      role: name => (name === 'material' ? t.material : name === 'sphere' ? t.sphere : name === 'toon' ? t.toon : name === 'selfShadow' ? shadow
+        : this.fb?.colorTexture(effect, name) ?? null),
     };
-    const [w, h] = target.size;
-    inst.bind(m, p, ctx, { flipY: target.flipY, halfPixel: [-1 / w, target.flipY / h], viewport: [w, h] }, textures);
+    inst.bind(m, p, ctx, builtins(target), textures);
     const geometry = pass === 'edge' && item.geo.edge ? item.geo.edge : item.geo.geometry;
     // (scene と group は null でよい: three.js は空の場面・形全体として扱う)
     renderer.renderBufferDirect(this.d.graph.camera, null as unknown as THREE.Scene, geometry, m, this.proxy, sub.group as THREE.GeometryGroup);
@@ -501,6 +571,7 @@ export class MmeRenderer {
   // three.js の render の中 (空の場面の onAfterRender) で fn を呼ぶ。そのとき items の形を GPU に送らせる
   private inThree(renderer: THREE.WebGLRenderer, items: DrawItem[], fn: () => void): void {
     const geos = new Set<THREE.BufferGeometry>();
+    if (this.chain) geos.add(this.chain.quad);
     for (const it of items) {
       geos.add(it.geo.geometry);
       if (it.geo.edge) geos.add(it.geo.edge);

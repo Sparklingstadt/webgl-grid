@@ -1175,5 +1175,6 @@ const dict: Dictionary = {
   "{name} をコンパイルできませんでした: {error}": "無法編譯 {name}: {error}",
   "MME 互換で描けなかったので、標準のエンジンで描きました: {error}": "無法以 MME 相容方式繪製，已改用標準引擎繪製: {error}",
   "{name} のシェーダーを GPU で使えないので止めました": "{name} 的著色器無法在 GPU 上使用，已停用",
+  "{name} のレンダーターゲットを GPU で使えないので止めました": "{name} 的渲染目標無法在 GPU 上使用，已停用",
 };
 export default dict;
