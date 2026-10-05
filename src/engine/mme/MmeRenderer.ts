@@ -133,31 +133,41 @@ export class MmeRenderer {
     camera.updateMatrixWorld();
     const frame = this.frame(renderer);
     const items = this.collect(frame);
-    this.inThree(renderer, items, () => {
-      const size = renderer.getDrawingBufferSize(new THREE.Vector2());
-      const screen: [number, number] = [size.x, size.y];
-      renderer.getClearColor(this.clearColor);
-      const clearAlpha = renderer.getClearAlpha();
-      // 1. セルフシャドウの深度マップ (R = z / w。何もない所は 1)
-      if (frame.selfShadow && this.shadow) {
-        renderer.setRenderTarget(this.shadow);
-        renderer.setClearColor(0xffffff, 1);
-        this.clear(renderer);
-        const target: DrawTarget = { flipY: -1, size: [SHADOW_SIZE, SHADOW_SIZE] };
-        for (const item of items) {
-          for (const sub of item.subsets) if (sub.flags & CAST_SELF_SHADOW) this.drawPass(item, sub, 'zplot', frame, target);
-        }
-      }
-      // 2. 場面 (背景の空は描かない。いまの消す色で消す)
+    renderer.getClearColor(this.clearColor);
+    const clearAlpha = renderer.getClearAlpha();
+    try {
+      this.inThree(renderer, items, () => this.drawFrame(renderer, items, frame, clearAlpha));
+    } finally {
+      // (途中で例外が出ても、標準のエンジンが canvas に描けるように戻す)
       renderer.setRenderTarget(null);
       renderer.setClearColor(this.clearColor, clearAlpha);
-      this.clear(renderer);
-      this.drawScene(items, frame, { flipY: 1, size: screen });
-      this.opaque(renderer, clearAlpha);
-    });
+      renderer.state.buffers.color.setMask(true);
+    }
     // 3. 編集用の表示 (書き出しには写さない)
     if (!this.d.viewport.outputting) this.overlay(renderer);
     return true;
+  }
+
+  // 1. セルフシャドウの深度マップ → 2. 場面 (three.js の render の中で呼ぶ)
+  private drawFrame(renderer: THREE.WebGLRenderer, items: DrawItem[], frame: FrameState, clearAlpha: number): void {
+    const size = renderer.getDrawingBufferSize(new THREE.Vector2());
+    const screen: [number, number] = [size.x, size.y];
+    // 1. セルフシャドウの深度マップ (R = z / w。何もない所は 1)
+    if (frame.selfShadow && this.shadow) {
+      renderer.setRenderTarget(this.shadow);
+      renderer.setClearColor(0xffffff, 1);
+      this.clear(renderer);
+      const target: DrawTarget = { flipY: -1, size: [SHADOW_SIZE, SHADOW_SIZE] };
+      for (const item of items) {
+        for (const sub of item.subsets) if (sub.flags & CAST_SELF_SHADOW) this.drawPass(item, sub, 'zplot', frame, target);
+      }
+    }
+    // 2. 場面 (背景の空は描かない。いまの消す色で消す)
+    renderer.setRenderTarget(null);
+    renderer.setClearColor(this.clearColor, clearAlpha);
+    this.clear(renderer);
+    this.drawScene(items, frame, { flipY: 1, size: screen });
+    this.opaque(renderer, clearAlpha);
   }
 
   // モデルを置いた順に: 地面の影 → 本体 → 輪郭線。描画先はいまのもの (Task 12 のポストエフェクトは ScriptExternal からここを呼ぶ)
@@ -211,7 +221,7 @@ export class MmeRenderer {
     for (const t of this.toonTextures) t.dispose();
     this.toonTextures.clear();
     this.toons = new WeakMap();
-    for (const u of this.uploaders) u.geometry = new THREE.BufferGeometry();
+    this.uploaders = [];
     this.prevTime = null;
   }
 
