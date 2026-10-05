@@ -14,6 +14,7 @@
     "test:e2e": "playwright test",
     "test:all": "node scripts/test-all.mjs",
     "fx:check": "node scripts/fx-check.ts",
+    "mme:bench": "node scripts/mme-skin-bench.ts",
     "mcp": "node mcp/server.ts",
     "lint": "oxlint --deny-warnings src mcp e2e scripts electron vite.config.ts playwright.config.ts",
     "electron:main": "vite build --ssr electron/main.ts --outDir dist-electron --emptyOutDir",

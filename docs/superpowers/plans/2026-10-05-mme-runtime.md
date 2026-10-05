@@ -18,7 +18,7 @@
 - **色の空間**: MME の描画は DX9 と同じくガンマ空間のまま行う。.fx が読むテクスチャはすべて `colorSpace = THREE.NoColorSpace`・`flipY = false` にする（`MaterialLibrary` の画像は、MME 用にその設定の写しを作る。元は変えない）。シェーダーの出力は canvas にそのまま書く。
 - **`RawShaderMaterial` の作り方**: `Program.vertex`/`fragment` の 1 行目（`#version 300 es`）を取り除き、`glslVersion: THREE.GLSL3` を付ける（three.js は生の GLSL の先頭に `#define` を足すので、`#version` を二重にしない）。`defines` は空。値を変えたら描く前に `material.uniformsNeedUpdate = true`。
 - **行列の値**: `core/mme/coords.ts` の `toMmd(m)`（列ベクトルの書き方で `S·m·S`、`S = diag(1, 1, −1)`）の `elements`（列ごとの並び）をそのまま D3D の行ごとの 16 個の数として渡す。
-- **上下と面の向き**: canvas に描くとき `mme_flipY = 1`、レンダーターゲット（深度マップを含む）に描くとき `mme_flipY = −1`。`mme_halfPixel = [−1 / 幅, mme_flipY / 高さ]`（幅・高さはいまの描画先の画素数）。面を消す向きは下の表（Task 10 の `cullSide`）。
+- **上下と面の向き**: canvas に描くとき `mme_flipY = 1`、レンダーターゲット（深度マップを含む）に描くとき `mme_flipY = −1`。`mme_halfPixel = [+1 / 幅, −mme_flipY / 高さ]`（幅・高さはいまの描画先の画素数。実装で符号を確かめて直した。はじめは `[−1 / 幅, mme_flipY / 高さ]` と書いていた）。面を消す向きは下の表（Task 10 の `cullSide`）。
 - コメントはまわりと同じく日本語で短く。各タスクの終わりに `npx vitest run`、`npx tsc -b`、`npm run lint` を通し、e2e を足したタスクは `npx playwright test <そのファイル>` と `E2E_GL=software npx playwright test <そのファイル>` も通す。コミットは日本語の 1 行の要約と、末尾にコミットしたモデルの `Co-Authored-By` 行。
 
 ## 仕様の補足（設計書からの具体化）

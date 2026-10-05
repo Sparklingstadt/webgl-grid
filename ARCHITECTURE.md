@@ -13,18 +13,26 @@ core/    純粋な計算とデータ (three.js の数学ライブラリは使っ
 ```
 
 - **core** は単体テストしやすい計算をまとめた場所です（シェーダーノードとノードツリー、ノードからの GLSL の組み立て、.pmx の材質の書き換え、積み重ねの判定、髪の錘の見つけ方、キーフレームの補間、.vpd の書式、Shift-JIS、タイムラインの目盛り、ストア、イベント）。
-- **core/fx/** は MME の .fx（DirectX 用の HLSL）を GLSL ES 3.00 にするコンパイラです。前処理 → 構文解析 → 型チェック → GLSL ES 3.00 の書き出しの順で、入口は `compileEffect`（`core/fx/index.ts`）。出力の `EffectDesc`（パラメータ・テクスチャ・サンプラー・テクニック・パスごとのプログラム）は、これから作る MME 互換モードの実行部が読みます。いまはコンパイラだけで、アプリからは使っていません。`npm run fx:check` が、`fx/`（ユーザーのエフェクト。Git に入れない）と `third_party/ray-mmd-1.5.2/`（テスト用の見本）の全部の .fx を変換して結果を表にします。実行部が知っておくこと:
+- **core/fx/** は MME の .fx（DirectX 用の HLSL）を GLSL ES 3.00 にするコンパイラです。前処理 → 構文解析 → 型チェック → GLSL ES 3.00 の書き出しの順で、入口は `compileEffect`（`core/fx/index.ts`）。出力の `EffectDesc`（パラメータ・テクスチャ・サンプラー・テクニック・パスごとのプログラム）は、MME 互換モードの実行部（`engine/mme/`）が読みます。コンパイラ自身は three.js にも画面にも触りません。`npm run fx:check` が、`fx/`（ユーザーのエフェクト。Git に入れない）と `third_party/ray-mmd-1.5.2/`（テスト用の見本）の全部の .fx を変換して結果を表にします。実行部が知っておくこと:
   - 配列の配列は 1 本に平らにする（`float2[6][9]` → `vec2[54]`。初期値も行ごとに並べて平らにする）。
   - `Program.uniformVectors` は、頂点・フラグメントの両方を合わせた 1 つの数（WebGL の上限は段ごとなので、実行部が分けて考える）。
-  - 組み込みの uniform に `mme_flipY`・`mme_halfPixel`・`mme_viewport` がある。`mme_flipY` は 1 なら D3D の画面の上が GL の上のまま、−1 なら上下を返す。上下を返すと三角形の回りの向きも逆になるので、実行部が `frontFace`（`CullMode`）を逆にする（`VFACE` は `gl_FrontFacing` に従う）。`mme_viewport` は描画先の大きさ（ピクセル）で、`VPOS` を読むプログラムにだけある。`mme_halfPixel` は頂点がいつも持つ `vec2` で、`gl_Position` の xy に `mme_halfPixel * w` を足す（DX9 の半画素のずれ。クリップ座標での量で、ずらさないなら 0。どれだけずらすかは実行部が決める）。
+  - 組み込みの uniform に `mme_flipY`・`mme_halfPixel`・`mme_viewport` がある。`mme_flipY` は 1 なら D3D の画面の上が GL の上のまま、−1 なら上下を返す。上下を返すと三角形の回りの向きも逆になるので、実行部が `frontFace`（`CullMode`）を逆にする（`VFACE` は `gl_FrontFacing` に従う）。`mme_viewport` は描画先の大きさ（ピクセル）で、`VPOS` を読むプログラムにだけある。`mme_halfPixel` は頂点がいつも持つ `vec2` で、`gl_Position` の xy に `mme_halfPixel * w` を足す（DX9 の半画素のずれ。クリップ座標での量で、ずらさないなら 0）。実行部は描画先ごとに `[+1 / 幅, −mme_flipY / 高さ]` を渡す（`PostChain.ts` の `builtins`。形が D3D の画面で右と下へ半画素ずれる。実装で符号を確かめて決めた）。
   - GLSL の名前: 頂点の入力は `a_<セマンティクス>`、頂点からフラグメントへは `v_<セマンティクス>`（どちらもいつも `vec4`）、フラグメントの出力は `o_COLORn`（`layout(location = n)`）。
   - RenderState の `{ expr }` の値は、定数に計算できなかった HLSL の式を書き直した文字列（GLSL ではない。実行部が計算する）。
   - vs_2_0・ps_2_0 の `COLORn` を [0, 1] に収める動きはまねしない（vs_3_0 はもともと収めない）。
   - D3D の行列は、そのまま（行ごとに並べた数、`transpose=false`）渡す。
   - 非正方の行列（`float4x3`・`float3x4[2]` など）の uniform は GLSL では `mat4`（配列は `mat4[n]`）で宣言し、読むところで `mat4x3(M)` に直す。`UniformRef.upload` が `'mat4'` のものは、1 つを 16 個の数（HLSL の行 r・列 c が `r * 4 + c`、残りは 0）にして `uniformMatrix4fv` で渡す（`uniformVectors` は 1 つにつき 4）。
   - サンプラーの `register(s0)` は `SamplerDecl.register`（小文字。なければ null）に残す。
+- **core/mme/** は MME 互換モードの純粋な計算です（three.js の数学ライブラリだけを使い、場面・DOM・WebGL には触りません。import は拡張子 `.ts` まで書き、消せる TypeScript の書き方だけを使うので、`scripts/` から Node で直接読めます）。`semantics.ts`（セマンティクスの値）・`coords.ts`（three.js の右手系と MMD の左手系の行き来・D3D の行列）・`technique.ts`（technique の選び方）・`script.ts`（Script の実行。GL には触らず `ScriptBackend` に頼む）・`targets.ts`（レンダーターゲットの大きさと形式）・`skinning.ts`（CPU の変形・頂点モーフ・輪郭線の広げ方。型付き配列だけ。`npm run mme:bench` で速さを測れる）・`settings.ts`（レンダーエンジンの設定）。
 - **engine** は、役割ごとのクラス（サービス）でできています。モジュールのグローバル変数は持たず、使う相手はコンストラクタで受け取ります。`Engine` がすべてを組み立てる場所（コンポジションルート）で、画面への窓口（ファサード）も兼ねます。
 - **ui** はエンジンを React の Context（`EngineProvider` / `useEngine`）で受け取り、状態は `useUi(selector)` で購読します。
+
+## MME 互換モードの決まりごと
+
+- 骨とモーフの変形は CPU（`Skinner`）。MME に渡す位置・法線・行列は MMD の左手系（z を反転）で、三角形の向きも D3D に合わせて（表が時計回りに）直した写しを使う。元の形（three.js の `SkinnedMesh`）は変えない。
+- 描画ステートは、pass の `RenderState` を D3D の既定の上に重ねて three.js の材質に移す。そのさらに前に、MMD がデバイスに残しているステートを置く（`EffectInstance` の `baseStates`）: 本体・地面の影・輪郭線はアルファブレンド `SRCALPHA` / `INVSRCALPHA` と深度テスト・書き込み（セルフシャドウの深度は blend なし）、面は本体が `CCW`（両面の材質は `NONE`）・輪郭線が `CW`、ポストエフェクトは深度なし・面を消さない。
+- 上下の向き: canvas に描くとき `mme_flipY = 1`、レンダーターゲットに描くとき −1。ポストエフェクトがあるときは、いちばん外側の描画先を canvas の代わりの画面の大きさのレンダーターゲットにして、最後に上下を返して canvas に写す（このあいだはアンチエイリアスがなく、グリッドなどの編集用の表示はモデルに隠れない）。
+- エフェクトのコンパイルやリンクができない・GPU のレンダーターゲットが不完全なときは、そのエフェクトを止める（物の .fx は `default.fx` で描く）。エフェクトごとの警告は `MmeEngine.publish` が `UiState.mme` に集める。
 
 ## engine の中
 
@@ -54,6 +62,12 @@ core/    純粋な計算とデータ (three.js の数学ライブラリは使っ
 | | `Motion` | VMD のダンスとカメラ (`System`、カメラは `CameraOverride`) | World, Physics, Stage, CameraController, UiChannel |
 | | `Posing` | 表情とボーン・IK と付与 (`System`) | World, Physics, Motion, Viewport, UiChannel |
 | | `VpdIO` | ポーズファイルの保存・読み込み | Posing, Viewport, UiChannel |
+| MME 互換 | `MmeEngine` | レンダーエンジン (標準 / MME 互換) の切り替えと設定 (セルフシャドウ・影の距離・地面の影。プロジェクトに保存する)。MME 互換のあいだは `Viewport.drawOverride` に描画を差し込む (例外が出たらそのフレームは標準のエンジンで描き、お知らせを 1 回出す)。.fx の割り当ての操作と、画面に知らせる状態 (`UiState.mme`: 設定・選んでいる物の .fx・ポストエフェクトの一覧・警告) もここ。割り当てはプロジェクトに保存せず、最初の状態に戻すときと開くときに外す | Viewport, SceneGraph, World, Selection, Clock, MaterialLibrary, RenderOutput, UiChannel |
+| | `EffectStore` | 選んだフォルダの .fx を `compileEffect` でコンパイルして持つ (失敗しても持ち、お知らせを出す)。物ごとの .fx とポストエフェクトの一覧 (順序・オン・オフ)・同梱の `default.fx` | UiChannel |
+| | `EffectInstance` | 1 つの .fx の GPU の資源: pass ごとの `RawShaderMaterial` (`Program` と描画ステートから。MMD がデバイスに残しているステートを pass のステートの前に置く)・テクスチャ (png・jpg・bmp・gif・webp・tga・dds)・パラメータの値 (セマンティクスから) | なし (レンダーターゲットは `TextureSource` で受け取る) |
+| | `Skinner` | MMD モデルの .pmx を読み、CPU の変形 (`core/mme/skinning.ts`) で骨とモーフを計算した、左手系の写しの形を持つ。三角形は D3D の向き (表が時計回り) に直し、輪郭線用に法線の向きへ広げた位置も作る。MMD でない物は、左手系にした写しだけ作る | なし |
+| | `MmeRenderer` | MME 互換の 1 フレーム: セルフシャドウの深度 → ポストエフェクトの入れ子の中で、モデルごとに地面の影・本体・輪郭線 → 編集用の表示。three.js の `render` の中 (`Scene.onAfterRender`) から `renderBufferDirect` で描く | Viewport, SceneGraph, World, Selection, Clock, MaterialLibrary, EffectStore, UiChannel |
+| | `Framebuffers` (と `PostChain`) | `Framebuffers`: MME のレンダーターゲットと、色 (最大 4 つ)・深度の組み合わせごとのフレームバッファ。ポストエフェクトがあるときの canvas の代わりの絵 (`screenSurface`) も持つ。`PostChain`: ポストエフェクトの入れ子 (外側から Script を実行し、`ScriptExternal=Color` で内側を描く) と、全面の四角の描画・canvas への写し | MmeRenderer が組み立てる (three.js の `WebGLRenderer`) |
 | 出力 | `RenderOutput` | レンダリング: 描画先を出力の大きさにして (`Viewport.beginOutput`。ビューポートの出力の枠 `outputFrame` の中がそのまま描かれるよう、画角を合わせる)、編集用の表示を隠して描く。動画はタイムラインを 1 フレームずつ進め (`Clock.advanceTo` と `Viewport.stepSystems`)、WebCodecs で圧縮する (mediabunny)。`renderPng` / `renderVideo` はデータを返すだけ (MCP も使う)、`renderImage` / `renderAnimation` は画面の操作 (レンダー結果・保存) | Viewport, SceneGraph, Clock, Music, UiChannel |
 | 元に戻す | `History` | 編集のひと区切り (マウスやキーを離した・読み込みが終わった) ごとに、場面の編集できる部分の写しを取って積む。戻すときは写しとの違いだけを直し、消した物は捨てずに持っておいて置き直す (`World.keepRemoved` / `World.restore`、`MaterialLibrary.snapshot` / `restore`) | World, MaterialLibrary, Physics, Motion, Posing, Keyframes, Clock, Selection, Viewport, UiChannel |
 | 自動保存 | `Autosave` | `History` の手が増えたら少し待って、参照だけのプロジェクトと参照するファイルを `AutosaveStore` (IndexedDB。テストではメモリ) にしまう。前の回があれば「前回の続き」として開ける | ProjectIO, History, UiChannel |
@@ -80,7 +94,7 @@ core/    純粋な計算とデータ (three.js の数学ライブラリは使っ
 3. `Posing` — モーションのあるモデルに、手で動かしたボーンを重ねる
 4. `Physics` — 物理演算
 5. `World` — 落下アニメーション
-6. 描く前のフック（カメラ・物の位置・明るさ・輪郭線・影の範囲）→ 描画（効果があれば後処理）→ 描いたあとのフック（選択とビューポート左上の文字を画面に知らせる）
+6. 描く前のフック（カメラ・物の位置・明るさ・輪郭線・影の範囲）→ 描画（効果があれば後処理。**レンダーエンジンが MME 互換なら、描画を `MmeEngine` が受け持つ**。`Viewport.drawOverride` から `MmeRenderer` が canvas に描き、標準の描画と後処理は使わない）→ 描いたあとのフック（選択とビューポート左上の文字を画面に知らせる）
 
 何も動いていなければループは止まり、変化があったときだけ `requestDraw()` で 1 回描きます。動いているあいだに `requestDraw()` が呼ばれても、そのフレームの描画にまとめます（1 フレームに描くのは 1 回だけ。`Viewport.test.ts`）。
 

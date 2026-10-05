@@ -1,7 +1,7 @@
 # MME 互換モード — 第 2 の計画: MME ランタイム 設計書
 
 - 日付: 2026-10-05
-- 状態: 設計（承認待ち）
+- 状態: 実装済み（実装でわかったことで直した所は、本文に反映してある）
 - 前の計画: `docs/superpowers/specs/2026-10-05-mme-fx-compiler-design.md`（FX コンパイラ。完了）
 - 前の計画で次に回したこと: `docs/superpowers/notes/2026-10-05-mme-fx-compiler-followups.md`
 
@@ -16,7 +16,7 @@
 | # | 部分 | 状態 |
 |---|---|---|
 | 1 | FX コンパイラ | 完了 |
-| 2 | **MME ランタイム（この設計書）** | |
+| 2 | **MME ランタイム（この設計書）** | 完了 |
 | 3 | エフェクトの割り当て（物・材質ごとの割り当ての画面、`OFFSCREENRENDERTARGET`、.x アクセサリ、`CONTROLOBJECT`、.emm、プロジェクトへの保存、パラメータの画面、`fx/` の一覧と MCP） | |
 | 4 | Ray-MMD で合格 | |
 | 5 | ほかの MME エフェクト | |
@@ -48,7 +48,7 @@
 | `technique.ts` | MME の決まりで technique を選ぶ（`MMDPass`・`Subset`・`UseTexture`・`UseSphereMap`・`UseToon`・`UseSelfShadow`） |
 | `script.ts` | `ScriptCommand[]` を実行する。GL には触らず、`ScriptBackend`（描画先を替える・消す・消す色や深度を決める・pass を描く・場面を描く・ループの番号を変数に入れる）に頼むだけ |
 | `targets.ts` | レンダーターゲットの大きさと形式を、注釈（`ViewportRatio`・`Dimensions`・`Width`/`Height`・`Format`・`MipLevels`）と描画先の大きさから決める |
-| `skinning.ts` | CPU での変形。BDEF1/2/4・SDEF・QDEF（BDEF4 として計算する）と、頂点モーフ・UV モーフ。型付き配列だけを使う |
+| `skinning.ts` | CPU での変形。BDEF1/2/4・SDEF・QDEF（BDEF4 として計算する）と、頂点モーフ（UV モーフはまだ。第 3 の計画以降）。型付き配列だけを使う |
 
 ### `engine/mme/`（three.js を使う部分）
 
@@ -82,7 +82,7 @@ MMD・MME の順に合わせる。
 
 1. **ポストエフェクト**: オンになっているポストエフェクトを、一覧の最後のものが外側になるよう入れ子にする。外側から順に technique の Script を実行し、`ScriptExternal=Color` に来たところで内側（次のポストエフェクト、いちばん内側は場面）を描く。一覧の上にあるものほど先に（場面の近くで）かかる。ポストエフェクトが 1 つもなければ、場面を描画先に直接描く。
 2. **場面**
-   1. セルフシャドウがオンなら、全モデルの `zplot` の pass を、ライトから見た深度マップ（2048×2048、`R32F`。描けなければ RGBA8 に詰める）に描く。
+   1. セルフシャドウがオンなら、全モデルの `zplot` の pass を、ライトから見た深度マップ（2048×2048、`R32F`）に描く。浮動小数のテクスチャに描けない環境ではセルフシャドウを切り、警告を出す（RGBA8 に詰めることはしない）。
    2. モデルを置いた順に 1 つずつ: 地面の影（`shadow`。地面の影がオンで、材質のフラグがオンの材質）→ 本体（材質ごとに、セルフシャドウがオンなら `object_ss`、オフなら `object`）→ 輪郭線（`edge`。材質の輪郭線のフラグがオンの材質）。
    3. その `MMDPass` に合う technique が .fx にないときは、`default.fx` の technique で描く（MME と同じ）。中身が空の technique は「その pass は描かない」の意味。
 3. **編集用の表示**: ビューポートでだけ、グリッド・ギズモ・選択の輪郭線などを上に重ねる。
@@ -141,7 +141,7 @@ MMD 標準のシェーダー（MME の `full.fx`）が前提にしている MMD 
 
 ## 座標と向きの約束
 
-- **頂点**: CPU で変形した位置と法線を、MMD の左手系（z を反転）で `a_POSITION`・`a_NORMAL` に渡す。`a_TEXCOORD0` は UV（UV モーフ込み）、追加 UV は `a_TEXCOORD1` から。
+- **頂点**: CPU で変形した位置と法線を、MMD の左手系（z を反転）で `a_POSITION`・`a_NORMAL` に渡す。`a_TEXCOORD0` は UV（UV モーフは未対応で、元の UV のまま）、追加 UV は `a_TEXCOORD1` から。
 - **行列**: 左手系に直した行列（列ベクトルの書き方で `S·M·S`、`S = diag(1, 1, −1)`）の three.js の `Matrix4.elements`（列ごとの並び）は、数の並びが D3D の行ごとの並びと同じなので、そのまま渡す（コンパイラの「D3D の行列はそのまま、`transpose=false`」と合う）。
 - **`VIEW`・`PROJECTION`**: カメラから D3D の決まり（左手系、深度 0〜1）で作る。深度を GL の −1〜1 に直す式は、コンパイラが入れ済み。
 - **上下の向き**
@@ -150,6 +150,7 @@ MMD 標準のシェーダー（MME の `full.fx`）が前提にしている MMD 
 - **面の向き**: 上下を返すと三角形の回る向きも逆になるので、描画先ごとに `frontFace` を合わせ、D3D の `CullMode`（既定 `CCW`）と同じ面を消す。`VFACE` は `gl_FrontFacing` に従う。
 - **半ピクセル**: DX9 は画素の中心が整数の位置、GL は 0.5 の位置にある。DX9 向けのポストエフェクトはそれを見越して texcoord に半画素足しているので、全部の描画で `mme_halfPixel = [+1 / 幅, −mme_flipY / 高さ]` だけずらして、DX9 のラスタライズをまねる（形を D3D の画面で右と下へ半画素ずらすと、GL の画素の中心で、DX9 がその画素の整数の位置で補間する値になる。D3D の下は、canvas では GL の −y、レンダーターゲットでは GL の +y）。
   - 全面の四角の上と左の縁は画素の中心を通る。DX9 はその画素を描く（左上の決まり）。GL の実装（ANGLE・SwiftShader）はメモリの先頭の行の側の縁を含むので、`mme_flipY = −1`（D3D の上の行がメモリの先頭）なら同じになるが、canvas（`mme_flipY = 1`）では上の行が抜け、アンチエイリアスで縁が混ざる。そのため、ポストエフェクトがあるときは、いちばん外側の「既定の描画先」を canvas の代わりのレンダーターゲット（画面の大きさ・`mme_flipY = −1`）にし、最後に上下を返して canvas に写す。
+  - この代わりの絵にはアンチエイリアス（MSAA）がないので、ポストエフェクトがあるあいだは縁がギザギザになる。また canvas の深度にモデルが残らないので、グリッドや編集用の目印は、モデルの陰にならずに上に重なる。
 
 ## テクスチャ
 
@@ -191,7 +192,7 @@ MMD 標準のシェーダー（MME の `full.fx`）が前提にしている MMD 
    - technique の選び方: `MMDPass`・`Subset`（`"0-3,5"` など）・`UseTexture` などの組み合わせの表。
    - Script の実行: 偽の `ScriptBackend` で、命令の順番・`LoopByCount`/`LoopGetIndex`・`ScriptExternal` の入れ子。
    - レンダーターゲットの大きさと形式。
-   - CPU の変形: BDEF1/2/4 は three.js の `SkinnedMesh.applyBoneTransform` の結果と照らし合わせる。SDEF は手で作った小さな例で式を確かめる。頂点モーフ・UV モーフ。輪郭線の広げ方。
+   - CPU の変形: BDEF1/2/4 は three.js の `SkinnedMesh.applyBoneTransform` の結果と照らし合わせる。SDEF は手で作った小さな例で式を確かめる。頂点モーフ（UV モーフは未対応）。輪郭線の広げ方。
 2. **エンジンのテスト（描画先なし）**: レンダーエンジンの切り替えと保存、.fx の割り当て、コンパイルに失敗したときに `default.fx` に戻ること、ポストエフェクトの並べ替え・オン・オフ。
 3. **e2e（本物の WebGL2。書き出した画像の画素を見る）**。テスト用の .pmx は `e2e/fixtures/pmx.ts` で作る。
    - `default.fx`: 材質の色（MMD の式で計算した色）で描かれる・輪郭線の色が出る・地面の影が落ちる・セルフシャドウで片方の箱にもう片方の影が落ちる。
