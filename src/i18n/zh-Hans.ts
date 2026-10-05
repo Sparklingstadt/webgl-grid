@@ -1202,7 +1202,7 @@ const dict: Dictionary = {
   "テクスチャ {name} のセマンティクス {semantic} には対応していません": "不支持纹理 {name} 的语义 {semantic}",
   "テクスチャ {name} のセマンティクス {semantic} を知りません": "纹理 {name} 的语义 {semantic} 未知",
   "サンプラー {name} の {state} の値 ({expr}) を計算できないので、既定の値にします": "无法计算采样器 {name} 的 {state} 的值（{expr}），使用默认值",
-  "サンプラー {name} の SRGBTexture には対応していないので無視します": "不支持采样器 {name} 的 SRGBTexture，已忽略",
+  "サンプラー {name} の SRGBTexture は、この形式の画像には使えないので無視します": "采样器 {name} 的 SRGBTexture 不能用于这种格式的图像，已忽略",
   "サンプラー {name}: {key} = {value} は GL にないので CLAMP にします": "采样器 {name}：GL 中没有 {key} = {value}，改用 CLAMP",
   "レンダーターゲット {name} を違う設定のサンプラーで読んでいます。最初のサンプラー {first} の設定にします": "渲染目标 {name} 被设置不同的采样器读取。使用第一个采样器 {first} 的设置",
   "セルフシャドウの深度マップ": "自阴影深度图",

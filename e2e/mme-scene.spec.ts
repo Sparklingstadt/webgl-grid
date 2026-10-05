@@ -94,6 +94,32 @@ sampler Smp = sampler_state { texture = <Tex>; MINFILTER = POINT; MAGFILTER = PO
   expect(errors).toEqual([]);
 });
 
+test('SRGBTexture = TRUE のサンプラーは画像を線形にして読む (灰色 128 → 55)。FALSE ならそのまま', async ({ page }) => {
+  const errors = await openMme(page);
+  await setCamera(page, { yaw: Math.PI / 2, pitch: 0.05, dist: 4.5, ty: 1 });
+  const gray = await page.evaluate(async () => {
+    const c = Object.assign(document.createElement('canvas'), { width: 4, height: 4 });
+    const g = c.getContext('2d')!;
+    g.fillStyle = '#808080';
+    g.fillRect(0, 0, 4, 4);
+    const bytes = new Uint8Array(await (await new Promise<Blob>(ok => c.toBlob(b => ok(b!), 'image/png'))).arrayBuffer());
+    let s = '';
+    for (const b of bytes) s += String.fromCharCode(b);
+    return btoa(s);
+  });
+  const i = await addPmx(page, { flags: ALL_FLAGS, texture: 'gray.png', files: [{ name: 'gray.png', base64: gray }] });
+  const fx = (srgb: string) => objectFx('return tex2D(Smp, Uv);', `texture Tex : MATERIALTEXTURE;
+sampler Smp = sampler_state { texture = <Tex>; MINFILTER = POINT; MAGFILTER = POINT; SRGBTexture = ${srgb}; };`);
+  expect(await assignFx(page, i, fx('TRUE'), 'srgb.fx')).toBe(true);
+  const [linear] = (await shoot(page, 'png', [[0, 1, 0.2]])).pixels;
+  expect(diff(linear, [55, 55, 55]), `${linear}`).toBeLessThanOrEqual(2);
+  expect(await assignFx(page, i, fx('FALSE'), 'plain.fx')).toBe(true);
+  const [plain] = (await shoot(page, 'png', [[0, 1, 0.2]])).pixels;
+  expect(diff(plain, [128, 128, 128]), `${plain}`).toBeLessThanOrEqual(1);
+  expect(await page.evaluate(() => (window as Win).engine.mme.renderer.allWarnings())).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
 test('形 (立方体) に上が赤・下が青の画像を貼ると、標準のエンジンと同じく上が赤', async ({ page }) => {
   const errors = await openMme(page);
   await setCamera(page, { yaw: Math.PI / 2, pitch: 0.05, dist: 3, ty: 0.5 });

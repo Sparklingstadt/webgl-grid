@@ -578,6 +578,41 @@ technique T { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = compile
     }
   });
 
+  it('SRGBTexture = TRUE: 8 ビットの RGBA の画像は sRGB として読む写し (GL が読むときに線形にする)。浮動小数の画像は D3D9 と同じく何もせず、'
+    + 'sRGB で読めないほかの形式は警告して無視する', async () => {
+    const FX2 = String.raw`
+texture Rgba < string ResourceName = "rgba.png"; >;
+sampler RgbaSamp = sampler_state { texture = <Rgba>; SRGBTexture = TRUE; };
+sampler RgbaPlain = sampler_state { texture = <Rgba>; SRGBTexture = FALSE; };
+texture Half < string ResourceName = "half.dds"; >;
+sampler HalfSamp = sampler_state { texture = <Half>; SRGBTexture = TRUE; };
+texture Red < string ResourceName = "red.dds"; >;
+sampler RedSamp = sampler_state { texture = <Red>; SRGBTexture = TRUE; };
+float4 VS(float4 p : POSITION) : POSITION { return p; }
+float4 PS(float2 uv : TEXCOORD0) : COLOR0 { return tex2D(RgbaSamp, uv) + tex2D(RgbaPlain, uv) + tex2D(HalfSamp, uv) + tex2D(RedSamp, uv); }
+technique T { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = compile ps_3_0 PS(); } }
+`;
+    const files: [string, Uint8Array][] = [['sub/rgba.png', new Uint8Array([1])], ['sub/half.dds', new Uint8Array([2])], ['sub/red.dds', new Uint8Array([3])]];
+    const e = loadEffect(FX2, files);
+    const decoded: Record<string, THREE.Texture> = {
+      'sub/rgba.png': pixel([1, 2, 3, 4]),
+      'sub/half.dds': new THREE.DataTexture(new Uint16Array(4), 1, 1, THREE.RGBAFormat, THREE.HalfFloatType),
+      'sub/red.dds': new THREE.DataTexture(new Uint8Array(1), 1, 1, THREE.RedFormat, THREE.UnsignedByteType),
+    };
+    const inst = new EffectInstance(e, () => {}, async (_bytes, path) => decoded[path]);
+    await inst.ready();
+    const pass = passOf(e, 'P');
+    const m = inst.material(pass, 1, OBJECT)!;
+    inst.bind(m, pass, makeCtx(), BUILTINS, noTextures());
+    const tex = (name: string) => m.uniforms[glslOf(pass.program!, name)].value as THREE.Texture;
+    expect(tex('RgbaSamp').colorSpace).toBe(THREE.SRGBColorSpace);
+    expect(tex('RgbaSamp').source).toBe(decoded['sub/rgba.png'].source);
+    expect(tex('RgbaPlain').colorSpace).toBe(THREE.NoColorSpace);
+    expect(tex('HalfSamp').colorSpace).toBe(THREE.NoColorSpace);
+    expect(tex('RedSamp').colorSpace).toBe(THREE.NoColorSpace);
+    expect(inst.warnings).toEqual(['サンプラー RedSamp の SRGBTexture は、この形式の画像には使えないので無視します']);
+  });
+
   it('ready は最初に読み始めた画像が全部読み終える (か失敗する) と終わる', async () => {
     const e = loadEffect();
     let resolve: (t: THREE.Texture) => void = () => {};

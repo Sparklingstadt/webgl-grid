@@ -498,6 +498,17 @@ export class EffectInstance {
     return tex;
   }
 
+  // SRGBTexture = TRUE: 8 ビットの RGBA の画像は sRGB の形式で GL に渡し、読むときに線形にさせる (D3D9 と同じく不透明度はそのまま)。
+  // 浮動小数の画像は D3D9 でも sRGB で読めず何も起きないので、そのまま。ほかの形式 (1・2 チャンネル・圧縮) は警告して無視する
+  private applySrgb(tex: THREE.Texture, s: SamplerDecl): void {
+    if (tex.type === THREE.FloatType || tex.type === THREE.HalfFloatType) return;
+    if (!(tex instanceof THREE.CompressedTexture) && tex.format === THREE.RGBAFormat && tex.type === THREE.UnsignedByteType) {
+      tex.colorSpace = THREE.SRGBColorSpace;
+      return;
+    }
+    this.warn(t('サンプラー {name} の SRGBTexture は、この形式の画像には使えないので無視します', { name: s.name }));
+  }
+
   // MinFilter・MagFilter・MipFilter・AddressU/V/W・MaxAnisotropy を移す (書いていなければ D3D の既定)
   private applySampler(tex: THREE.Texture, s: SamplerDecl, mipmaps: boolean): void {
     const v: Record<string, StateValue> = { MinFilter: 'POINT', MagFilter: 'POINT', MipFilter: 'NONE', AddressU: 'WRAP', AddressV: 'WRAP', AddressW: 'WRAP', MaxAnisotropy: 1 };
@@ -507,8 +518,8 @@ export class EffectInstance {
         continue;
       }
       v[st.name] = st.value;
-      if (st.name === 'SRGBTexture' && st.value === true) this.warn(t('サンプラー {name} の SRGBTexture には対応していないので無視します', { name: s.name }));
     }
+    if (v.SRGBTexture === true) this.applySrgb(tex, s);
     const mip = mipmaps ? String(v.MipFilter) : 'NONE';
     tex.minFilter = minFilter(String(v.MinFilter), mip);
     tex.magFilter = MAG_FILTER[String(v.MagFilter)] ?? THREE.NearestFilter;

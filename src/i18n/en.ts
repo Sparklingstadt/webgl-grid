@@ -1202,7 +1202,7 @@ const dict: Dictionary = {
   "テクスチャ {name} のセマンティクス {semantic} には対応していません": "Semantic {semantic} of texture {name} is not supported",
   "テクスチャ {name} のセマンティクス {semantic} を知りません": "Unknown semantic {semantic} of texture {name}",
   "サンプラー {name} の {state} の値 ({expr}) を計算できないので、既定の値にします": "The value of {state} in sampler {name} ({expr}) can't be computed, so the default is used",
-  "サンプラー {name} の SRGBTexture には対応していないので無視します": "SRGBTexture in sampler {name} is not supported, so it is ignored",
+  "サンプラー {name} の SRGBTexture は、この形式の画像には使えないので無視します": "SRGBTexture in sampler {name} cannot be used with this image format, so it is ignored",
   "サンプラー {name}: {key} = {value} は GL にないので CLAMP にします": "Sampler {name}: {key} = {value} doesn't exist in GL, so CLAMP is used",
   "レンダーターゲット {name} を違う設定のサンプラーで読んでいます。最初のサンプラー {first} の設定にします": "Render target {name} is read by samplers with different settings. The settings of the first sampler {first} are used",
   "セルフシャドウの深度マップ": "the self-shadow depth map",
