@@ -435,7 +435,7 @@ MME の .fx そのものを動かすモードです。.fx を WebGL2 の GLSL ES
 
 **Ray-MMD を使う**
 
-Ray-MMD 1.5.2 の標準の構成（`ray.conf` のまま）に、ライトとフォグを足したものを動かします。MME に渡す世界は MMD の単位なので（下の「座標の大きさ」）、太陽の陰影と影・材質（肌・髪の SSS など）・ライト・フォグは Ray-MMD の決まりどおりに描かれます。空（Time of day）は、Ray-MMD の Mie 散乱の係数の式を D3D9 の動きに合わせて書き換えて（`core/fx/compat.ts`）、MMD と同じ青い空になります。
+Ray-MMD 1.5.2 の標準の構成（`ray.conf` のまま）に、ライトとフォグを足したものを動かします。MME に渡す世界は MMD の単位なので（下の「座標の大きさ」）、太陽の陰影と影・材質（肌・髪の SSS など）・ライト・フォグは Ray-MMD の決まりどおりに描かれます。空（Time of day）は、Ray-MMD の Mie 散乱の係数の式を MMD の絵に合うように書き換えて（`core/fx/compat.ts`）、MMD と同じ青い空になります。
 
 1. [Ray-MMD 1.5.2](https://github.com/ray-cast/ray-mmd/tree/1.5.2)（MIT ライセンス）を `fx/ray-mmd-1.5.2/` に置きます（[fx/README.md](fx/README.md)）。
 2. レンダーエンジンを「MME 互換」にして、「ポストエフェクト」の「足す…」で `fx/ray-mmd-1.5.2` のフォルダを選び、`ray.fx` を選びます。`ray.x` と `ray_controller.pmx` は読み込みません（`ray_controller.pmx` の値は「コントローラー」のスライダーで入れます）。
@@ -459,7 +459,7 @@ Ray-MMD 1.5.2 の標準の構成（`ray.conf` のまま）に、ライトとフ�
 
 **できないこと・気をつけること**
 
-- D3D9 の動きをまねている所: Ray-MMD の空（Time of day・Time of night・`AtmosphericFog`）が使う Mie 散乱の係数（`Shader/PhaseFunctions.fxsub` の `ComputeWaveLengthMie`）の `pow(lambda, U - 2)` は、D3D9 では `lambda` として働くので（HLSL どおりに計算すると係数が大きすぎて空が真っ黒になります）、その行だけを書き換えて読み込みます（`core/fx/compat.ts`。ほかの `pow` は変わりません）。
+- MMD の絵に合わせた書き換え: Ray-MMD の空（Time of day・Time of night・`AtmosphericFog`）が使う Mie 散乱の係数（`Shader/PhaseFunctions.fxsub` の `ComputeWaveLengthMie`）の `pow(lambda, U - 2)` は、HLSL どおりに計算すると係数が大きすぎて空が真っ黒になります。`lambda` とみなすと MMD の絵（Ray-MMD のドキュメントの画面）に合うので、その行だけを書き換えて読み込みます（`core/fx/compat.ts`。ほかの `pow` は変わりません）。D3D9 で実際に何が起きているかは未確認です（設計書の Ruling 18）。
 - 大きい .pmx（横幅か奥行きが MMD の単位で 40 を超えるもの）はステージになります。ステージは 1 つだけなので、Ray-MMD の空（Time of day）をステージにすると、会場のステージと同時には使えません。置いた物は積み重なるので、空の球を置いた物にすると、ほかの物が上に乗ります。
 - このあともできないもの:
   - 第 3 の計画: .x のアクセサリとその項目（`CONTROLOBJECT` の `X`・`Si`・`Tr` などは 0 を渡して警告）、.emm、仮のコントローラーのキーフレーム、パラメータの画面、`fx/` の一覧から選ぶ画面、UV モーフ。

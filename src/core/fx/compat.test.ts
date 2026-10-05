@@ -28,7 +28,7 @@ function glslOf(src: string): { code: string } {
   return { code: emitFunctions([info], newEmitContext(c, 'fragment', new Diagnostics())) };
 }
 
-describe('D3D9 に合わせたソースの書き換え (compat)', () => {
+describe('MMD の絵に合わせたソースの書き換え (compat)', () => {
   it('Ray-MMD の ComputeWaveLengthMie: pow(lambda, U - 2.0) を lambda にする (U - 2 の書き方も)', () => {
     for (const exponent of ['U - 2.0', 'U - 2', 'U-2.0f', 'V - 2.0']) {
       const { code } = glslOf(MIE(exponent));
