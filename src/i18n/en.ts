@@ -1366,5 +1366,6 @@ const dict: Dictionary = {
   "fx/ に置いたエフェクトのフォルダを、フォルダを選んだときと同じように読み込みます": "Loads an effect folder you placed in fx/ the same way as choosing a folder",
   "fx/ のフォルダの一覧": "List of fx/ folders",
   ".fx {n} 個": "{n} .fx files",
+  "。": ". ",
 };
 export default dict;

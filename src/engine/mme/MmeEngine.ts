@@ -618,8 +618,9 @@ export class MmeEngine {
     if (missing.size) warnings.push(t('.emm の物 {names} は場面にないので、その割り当てを飛ばしました', { names: listOf([...missing]) }));
     if (full.size) warnings.push(t('.emm のアクセサリ {names} を置けなかったので、その割り当てを飛ばしました (これ以上置けません)', { names: listOf([...full]) }));
     if (lost.size) warnings.push(t('.emm の .fx {paths} は読み込んだフォルダにないので、その割り当てを飛ばしました', { paths: listOf([...lost]) }));
+    // (警告の区切りも言語ごと)
     this.deps.ui.toast(
-      warnings.length ? t('.emm を読みました (割り当て {n} 件。{notes})', { n: applied, notes: warnings.join('。') }) : t('.emm を読みました (割り当て {n} 件)', { n: applied }),
+      warnings.length ? t('.emm を読みました (割り当て {n} 件。{notes})', { n: applied, notes: warnings.join(t('。')) }) : t('.emm を読みました (割り当て {n} 件)', { n: applied }),
       warnings.length ? 8000 : 4000,
     );
     return { applied, warnings };

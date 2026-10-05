@@ -1501,10 +1501,13 @@ technique Post < string Script = "ScriptExternal=Color; Pass=P;"; > { pass P < s
 describe('MmeEngine の .emm', () => {
   const crlf = (lines: string[]) => `${lines.join('\r\n')}\r\n`;
   const sjis = (lines: string[]) => encodeShiftJis(crlf(lines));
-  // .pmx を読んだ MMD モデル (材質 n 個。骨はなくてよい)
+  afterEach(() => { vi.restoreAllMocks(); });
+  // .pmx を読んだ MMD モデルの代わり (材質 n 個。骨も MMD のデータ (IK・付与) もないので、取り消しで置き直したときのポーズの計算
+  // (Posing.solve。終わりを待たない) は止める)
   function model(e: Engine, file: string, n = 4) {
+    vi.spyOn(e.posing, 'solve').mockResolvedValue(undefined);
     const mats = Array.from({ length: n }, () => new THREE.MeshBasicMaterial());
-    const mesh = Object.assign(new THREE.Mesh(new THREE.BoxGeometry(), mats), { skeleton: new THREE.Skeleton([]) }); // (取り消しでポーズを解く)
+    const mesh = Object.assign(new THREE.Mesh(new THREE.BoxGeometry(), mats), { skeleton: new THREE.Skeleton([]) });
     mesh.userData.sourceFile = new File([], file);
     return e.world.addModel(mesh, 0, 0, []);
   }
