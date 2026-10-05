@@ -9,9 +9,11 @@ import type { DrawTarget, Framebuffers } from './Framebuffers';
 
 // --- ポストエフェクトの入れ子 (設計書「1 フレームの流れ」の 1) と、Script の描画先の命令 (物の .fx と共通) ---
 
-// 1 フレームの値。screen は canvas の大きさ (書き出し中は書き出しの大きさ。VIEWPORTPIXELSIZE と ViewportRatio の基準)
+// 1 フレームの値。screen は canvas の大きさ (書き出し中は書き出しの大きさ。VIEWPORTPIXELSIZE と ViewportRatio の基準)。
+// frameNo は描くたびに 1 つ増える番号 (同じフレームのうちは、描く物や骨の変形を作り直さない)
 export interface FrameState {
   camera: CameraState; light: LightState; eye: THREE.Vector3; time: number; elapsed: number; selfShadow: boolean; screen: [number, number];
+  frameNo: number;
 }
 
 // 描画先に合わせた組み込みの値。半ピクセル: DX9 は画素の中心が整数の位置にあるので、GL で同じ値を補間させるには、

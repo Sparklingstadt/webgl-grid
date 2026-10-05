@@ -35,6 +35,7 @@ interface Pose {
   prevInfluences: number[];
   prevEye: number[]; // 物の空間 (左手系) のカメラの位置と tanHalfFovY
   done: boolean; // 1 回は計算した
+  frameNo: number; // 骨とモーフを見たフレームの番号 (番号なしで呼ばれたら NaN)
   activeDeltas: Float32Array[]; // 作業用 (applyMorphs に渡す重みが 0 でないモーフ)
   activeWeights: number[];
 }
@@ -110,8 +111,9 @@ export class Skinner {
   private disposed = false;
 
   // MMD モデル: 初めて呼ばれたら .pmx を読み始めて null を返し、読み終えたら onReady を呼ぶ (1 つの物につき 1 回)。
-  // 読み終えていれば、変形して返す。呼ぶ前に、骨の世界の行列 (updateMatrixWorld) を最新にしておく
-  mmd(mesh: THREE.SkinnedMesh, eyeWorld: THREE.Vector3, tanHalfFovY: number, onReady: () => void): MmeGeometry | null {
+  // 読み終えていれば、変形して返す。呼ぶ前に、骨の世界の行列 (updateMatrixWorld) を最新にしておく。
+  // frameNo を渡すと、同じ番号の 2 回目からは骨とモーフを見直さない (1 フレームに場面を何度も描くので。輪郭線はカメラに合わせる)
+  mmd(mesh: THREE.SkinnedMesh, eyeWorld: THREE.Vector3, tanHalfFovY: number, onReady: () => void, frameNo?: number): MmeGeometry | null {
     const file = this.fileOf(mesh);
     if (!file || this.disposed) return null;
     const src = this.source(file);
@@ -139,23 +141,11 @@ export class Skinner {
       this.poses.set(mesh, pose);
     }
 
-    // 骨の行列 (左手系) と、モーフの重みを、前と比べる
-    this.boneMatrices(mesh, pose);
-    const inf = mesh.morphTargetInfluences ?? [];
-    let changed = !pose.done;
-    if (!changed) {
-      for (let i = 0; i < pose.bones.length; i++) if (pose.bones[i] !== pose.prevBones[i]) { changed = true; break; }
-    }
-    if (!changed) {
-      if (inf.length !== pose.prevInfluences.length) changed = true;
-      else for (let i = 0; i < inf.length; i++) if (inf[i] !== pose.prevInfluences[i]) { changed = true; break; }
-    }
-    if (changed) {
-      pose.prevBones.set(pose.bones);
-      pose.prevInfluences = [...inf];
-      this.skinMesh(pose, data, inf);
-      pose.posAttr.needsUpdate = true;
-      pose.nrmAttr.needsUpdate = true;
+    // 骨の行列 (左手系) と、モーフの重みを、前と比べる (このフレームでもう見たなら見ない)
+    let changed = false;
+    if (!pose.done || frameNo === undefined || pose.frameNo !== frameNo) {
+      pose.frameNo = frameNo ?? NaN;
+      changed = this.updatePose(mesh, pose, data);
     }
 
     // 物の空間 (左手系) のカメラ
@@ -331,9 +321,32 @@ export class Skinner {
       prevInfluences: [],
       prevEye: [NaN, 0, 0, 0],
       done: false,
+      frameNo: NaN,
       activeDeltas: [],
       activeWeights: [],
     };
+  }
+
+  // 骨の行列とモーフの重みを前と比べて、変わっていれば (初めてなら) 変形し直す。変形し直したら true
+  private updatePose(mesh: THREE.SkinnedMesh, pose: Pose, data: MmdData): boolean {
+    this.boneMatrices(mesh, pose);
+    const inf = mesh.morphTargetInfluences ?? [];
+    let changed = !pose.done;
+    if (!changed) {
+      for (let i = 0; i < pose.bones.length; i++) if (pose.bones[i] !== pose.prevBones[i]) { changed = true; break; }
+    }
+    if (!changed) {
+      if (inf.length !== pose.prevInfluences.length) changed = true;
+      else for (let i = 0; i < inf.length; i++) if (inf[i] !== pose.prevInfluences[i]) { changed = true; break; }
+    }
+    if (changed) {
+      pose.prevBones.set(pose.bones);
+      pose.prevInfluences = [...inf];
+      this.skinMesh(pose, data, inf);
+      pose.posAttr.needsUpdate = true;
+      pose.nrmAttr.needsUpdate = true;
+    }
+    return changed;
   }
 
   // bindMatrixInverse · boneMatrix · bindMatrix を左手系 (S·m·S) にして、骨ごとに 16 個ずつ pose.bones に置く

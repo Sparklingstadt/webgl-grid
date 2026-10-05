@@ -173,6 +173,40 @@ describe('Skinner.mmd', () => {
     expect(p.version).toBe(v[0] + 1);
   });
 
+  it('同じフレームの番号で 2 回呼ぶと、2 回目は骨の行列を計算しない (番号が変わるか、番号がなければ計算する)', async () => {
+    const { mesh, arm } = makeMesh();
+    const sk = new Skinner();
+    const g = await ready(sk, mesh);
+    const p = g.geometry.getAttribute('a_POSITION') as THREE.BufferAttribute;
+    const ep = g.edge!.getAttribute('a_POSITION') as THREE.BufferAttribute;
+    // 骨の行列の計算の回数 (計算のたびに skeleton.update を 1 回呼ぶ)
+    const computed = vi.spyOn(mesh.skeleton, 'update');
+    expect(sk.mmd(mesh, eye, 0.5, () => {}, 7)).toBe(g);
+    expect(computed).toHaveBeenCalledTimes(1);
+    const v = p.version;
+
+    // 同じフレームのうちに骨が動いても、2 回目は計算しない (形はそのフレームの最初のもの)
+    arm.rotation.z = 0.3;
+    mesh.updateMatrixWorld(true);
+    expect(sk.mmd(mesh, eye, 0.5, () => {}, 7)).toBe(g);
+    expect(computed).toHaveBeenCalledTimes(1);
+    expect(p.version).toBe(v);
+    // カメラが違えば、輪郭線は広げ直す
+    const ev = ep.version;
+    sk.mmd(mesh, new THREE.Vector3(0, 10, 80), 0.5, () => {}, 7);
+    expect(computed).toHaveBeenCalledTimes(1);
+    expect(ep.version).toBe(ev + 1);
+
+    // 次のフレームは計算する
+    sk.mmd(mesh, eye, 0.5, () => {}, 8);
+    expect(computed).toHaveBeenCalledTimes(2);
+    expect(p.version).toBe(v + 1);
+    // 番号を渡さなければ、毎回計算する
+    sk.mmd(mesh, eye, 0.5, () => {});
+    sk.mmd(mesh, eye, 0.5, () => {});
+    expect(computed).toHaveBeenCalledTimes(4);
+  });
+
   it('輪郭線の形は法線の向きに広がっている。ほかの属性・index・groups は共有', async () => {
     const { mesh } = makeMesh();
     mesh.position.set(5, 0, 0); // 物の空間のカメラは、世界のカメラを物の逆行列で直した位置

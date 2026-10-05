@@ -87,9 +87,11 @@ describe('MmeEngine', () => {
 
   // 描画先なしで、描く物の集め方と値を見る (private を呼ぶ)
   type Internals = {
-    collect(frame: unknown): { mesh: THREE.Mesh }[];
+    scenePass: {
+      collect(frame: { frameNo: number }): { mesh: THREE.Mesh }[];
+      toonOf(src: THREE.Texture): { tex: THREE.DataTexture } | null;
+    };
     frame(renderer: unknown): { selfShadow: boolean };
-    toonOf(src: THREE.Texture): { tex: THREE.DataTexture } | null;
     shadow: THREE.WebGLRenderTarget | null;
     effectOf(obj: unknown): unknown;
     instance(e: unknown): { stopped: boolean };
@@ -104,7 +106,7 @@ describe('MmeEngine', () => {
     const stage = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshBasicMaterial());
     e.stage.model = stage;
     e.graph.scene.add(stage);
-    const items = (e.mme.renderer as unknown as Internals).collect(null);
+    const items = (e.mme.renderer as unknown as Internals).scenePass.collect({ frameNo: 1 });
     expect(items.map(i => i.mesh)).toEqual([stage, a.mesh, b.mesh]);
   });
 
@@ -168,14 +170,14 @@ describe('MmeEngine', () => {
     convertMmdMesh(fake, e.library);
     const obj = e.world.addShape(0, 0, 0, 0);
     obj.mesh!.material = fake.material;
-    const kept = r.toonOf(used)!.tex, dropped = r.toonOf(orphan)!.tex;
+    const kept = r.scenePass.toonOf(used)!.tex, dropped = r.scenePass.toonOf(orphan)!.tex;
     const disposed = { kept: vi.fn(), dropped: vi.fn() };
     kept.addEventListener('dispose', disposed.kept);
     dropped.addEventListener('dispose', disposed.dropped);
     e.mme.renderer.prune();
     expect(disposed.dropped).toHaveBeenCalledTimes(1);
     expect(disposed.kept).not.toHaveBeenCalled();
-    expect(r.toonOf(used)!.tex).toBe(kept); // (使っているものは作り直さない)
+    expect(r.scenePass.toonOf(used)!.tex).toBe(kept); // (使っているものは作り直さない)
     e.world.remove(obj);
     expect(disposed.kept).toHaveBeenCalledTimes(1);
   });

@@ -1,28 +1,23 @@
 import * as THREE from 'three';
-import type { Pass } from '../../core/fx/index.ts';
 import { t } from '../../core/i18n';
 import type { Color3 } from '../../core/materials/nodes';
-import { inputLink, surfaceShader, upstreamOrder } from '../../core/materials/tree';
 import { orthoD3D, toMmd } from '../../core/mme/coords.ts';
-import { runTechnique } from '../../core/mme/script.ts';
-import { SHADOW_COLOR, type CameraState, type LightState, type MaterialState, type MmdPass, type SemanticContext } from '../../core/mme/semantics.ts';
-import { pickTechnique, type TechniqueQuery } from '../../core/mme/technique.ts';
+import type { CameraState, LightState } from '../../core/mme/semantics.ts';
 import type { Clock } from '../anim/Clock';
-import { mmeTexturesOf } from '../materials/fromMmd';
-import type { MaterialData, MaterialLibrary } from '../materials/MaterialLibrary';
+import type { MaterialLibrary } from '../materials/MaterialLibrary';
 import type { SceneGraph } from '../render/SceneGraph';
 import type { Viewport } from '../render/Viewport';
 import type { Obj } from '../types';
 import type { UiChannel } from '../UiChannel';
 import type { Selection } from '../world/Selection';
 import type { World } from '../world/World';
-import { EffectInstance, type BaseState, type TextureSource } from './EffectInstance';
+import { EffectInstance } from './EffectInstance';
 import type { EffectStore, LoadedEffect } from './EffectStore';
 import { CANVAS, Framebuffers, type DrawTarget } from './Framebuffers';
-import { mmdSourceOf, type MmdData } from './mmdData';
 import { SHADOW_DISTANCE_MAX, type MmeSettings } from '../../core/mme/settings.ts';
-import { builtins, PostChain, ScriptTargets, type FrameState } from './PostChain';
-import { Skinner, type MmeGeometry } from './Skinner';
+import { PostChain, type FrameState } from './PostChain';
+import { ScenePass, toSrgb, type PassTable, type Slot } from './ScenePass';
+import { Skinner } from './Skinner';
 
 // --- MME 互換の 1 フレーム (設計書「1 フレームの流れ」): セルフシャドウの深度 → ポストエフェクトの入れ子 (PostChain) の
 // いちばん内側で、モデルごとに地面の影・本体・輪郭線 → 編集用の表示 ---
@@ -34,8 +29,6 @@ export interface MmeRendererDeps {
 
 export type { DrawTarget, FrameState };
 
-// PMX の材質のフラグ
-const DOUBLE_SIDED = 0x01, GROUND_SHADOW = 0x02, CAST_SELF_SHADOW = 0x04, RECEIVE_SELF_SHADOW = 0x08, EDGE = 0x10;
 // セルフシャドウの深度マップの大きさと、影の範囲の既定 (標準のエンジンの太陽の影と同じ範囲になる値)
 const SHADOW_SIZE = 2048;
 const SHADOW_DISTANCE = 8875;
@@ -43,71 +36,14 @@ const SHADOW_DISTANCE = 8875;
 const OVERLAY_LAYER = 31;
 const DEG = Math.PI / 180;
 
-interface SubsetTextures { material: THREE.Texture | null; sphere: THREE.Texture | null; toon: THREE.Texture | null }
-// 材質の部分 (サブセット)。index は材質の番号 (technique の Subset と照らす)。group が null なら形全体。flags は PMX の材質のフラグ
-export interface Subset {
-  index: number; group: THREE.GeometryGroup | null; state: MaterialState; flags: number; doubleSided: boolean; textures: SubsetTextures;
-}
-// 描く物 (メッシュ 1 つ) と、1 フレームの値
-export interface DrawItem { mesh: THREE.Mesh; effect: LoadedEffect; geo: MmeGeometry; subsets: Subset[] }
-interface Toon { tex: THREE.DataTexture; color: Color3; version: number }
-
-const WHITE: Color3 = [1, 1, 1];
-
-// 祖先まで見えているか
-function visibleChain(o: THREE.Object3D | null): boolean {
-  for (; o; o = o.parent) if (!o.visible) return false;
-  return true;
-}
-
-function toSrgb(c: THREE.Color): Color3 {
-  const o = { r: 0, g: 0, b: 0 };
-  c.getRGB(o, THREE.SRGBColorSpace);
-  return [o.r, o.g, o.b];
-}
-
-// マテリアルのベースカラーにつながっている画像 (なければ null)
-function baseImage(lib: MaterialLibrary, data: MaterialData): THREE.Texture | null {
-  const bsdf = surfaceShader(data.tree);
-  const link = bsdf && inputLink(data.tree, bsdf.id, 'baseColor');
-  if (!link) return null;
-  for (const n of upstreamOrder(data.tree, link.from.node)) {
-    if (n.type !== 'image') continue;
-    const img = lib.images.get(String(n.props.image));
-    if (img) return img.texture;
-  }
-  return null;
-}
-
-// MMDLoader はトゥーンの画像を three.js のグラデーション用に 90° 回して (上の行が右の列に) 持っているので、元の向きに戻す。
-// color はいちばん下の行の色 (TOONCOLOR)。画像はガンマ空間のまま
-function unrotateToon(img: { data: ArrayLike<number>; width: number; height: number }): { tex: THREE.DataTexture; color: Color3 } {
-  const { width: w, height: h, data } = img;
-  const out = new Uint8Array(w * h * 4);
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      // 元の (x, y) は、回した画像の (w/2 − (y − h/2), h/2 + (x − w/2)) にある (画素の中心で)
-      const rx = Math.min(Math.max(Math.floor(w / 2 - (y + 0.5 - h / 2)), 0), w - 1);
-      const ry = Math.min(Math.max(Math.floor(h / 2 + (x + 0.5 - w / 2)), 0), h - 1);
-      for (let k = 0; k < 4; k++) out[(y * w + x) * 4 + k] = data[(ry * w + rx) * 4 + k];
-    }
-  }
-  const tex = new THREE.DataTexture(out, w, h);
-  tex.colorSpace = THREE.NoColorSpace;
-  tex.flipY = false;
-  tex.needsUpdate = true;
-  const b = (h - 1) * w * 4;
-  return { tex, color: [out[b] / 255, out[b + 1] / 255, out[b + 2] / 255] };
-}
-
 export class MmeRenderer {
   readonly warnings: string[] = []; // 描くときの、どのエフェクトのものでもない警告 (同じものは 1 回)。エフェクトの警告は EffectInstance.warnings
   skinner = new Skinner();
   private instances = new Map<LoadedEffect, EffectInstance>();
   private shadow: THREE.WebGLRenderTarget | null = null;
   private noShadow = false; // 浮動小数のテクスチャに描けない
-  private toons = new Map<THREE.Texture, Toon>(); // 元のトゥーンの画像ごと (場面にないモデルのものは prune で捨てる)
   private prevTime: number | null = null;
+  private frameNo = 0;
   // three.js の描画の中 (Scene.onAfterRender) で描くための空の場面。renderBufferDirect は render の中でしか使えないため
   private host = new THREE.Scene();
   private job: (() => void) | null = null;
@@ -116,11 +52,28 @@ export class MmeRenderer {
   private hiddenMaterial = new THREE.MeshBasicMaterial({ visible: false });
   private proxy = new THREE.Mesh(); // renderBufferDirect に渡す物 (単位行列。three.js の骨やモーフ・面の反転を効かせない)
   private clearColor = new THREE.Color();
-  private linked = new WeakSet<THREE.Material>(); // リンクできたかを確かめた材質
   private fb: Framebuffers | null = null; // レンダーターゲット (描画先を作り直したら作り直す)
   private chain: PostChain | null = null;
+  private scenePass: ScenePass;
+  // Main の表: 物の .fx (なければ default.fx)。ステージは default.fx
+  private main: PassTable = { name: 'Main', owner: null, slotFor: obj => this.mainSlot(obj) };
+  // このフレームの Main の物ごとの割り当て (フレームの途中でエフェクトを止めても、次のフレームまで変えない)
+  private mainSlots = new Map<Obj | null, Slot>();
 
   constructor(private d: MmeRendererDeps) {
+    this.scenePass = new ScenePass({
+      graph: d.graph, world: d.world, library: d.library, settings: d.settings, stage: d.stage,
+      renderer: () => d.viewport.renderer!,
+      outputting: () => d.viewport.outputting,
+      requestDraw: () => d.viewport.requestDraw(),
+      toast: m => d.ui.toast(m, 8000),
+      defaultEffect: d.store.defaultEffect,
+      fb: () => this.fb!,
+      instance: e => this.instance(e),
+      skinner: () => this.skinner,
+      shadowMap: () => this.shadow?.texture ?? null,
+      warn: m => this.warn(m),
+    });
     this.host.onAfterRender = () => {
       const job = this.job;
       this.job = null;
@@ -138,11 +91,12 @@ export class MmeRenderer {
     const fb = this.framebuffers(renderer);
     const frame = this.frame(renderer);
     fb.begin(frame.screen);
-    const items = this.collect(frame);
+    this.mainSlots.clear();
+    const geometries = this.scenePass.geometries(frame);
     renderer.getClearColor(this.clearColor);
     const clearAlpha = renderer.getClearAlpha();
     try {
-      this.inThree(renderer, items, () => this.drawFrame(renderer, fb, items, frame, clearAlpha));
+      this.inThree(renderer, geometries, () => this.drawFrame(renderer, fb, frame, clearAlpha));
     } finally {
       // (途中で例外が出ても、標準のエンジンが canvas に描けるように戻す)
       fb.bindSurface(CANVAS);
@@ -155,9 +109,9 @@ export class MmeRenderer {
   }
 
   // セルフシャドウの深度マップ → ポストエフェクトの入れ子と場面 (three.js の render の中で呼ぶ)
-  private drawFrame(renderer: THREE.WebGLRenderer, fb: Framebuffers, items: DrawItem[], frame: FrameState, clearAlpha: number): void {
+  private drawFrame(renderer: THREE.WebGLRenderer, fb: Framebuffers, frame: FrameState, clearAlpha: number): void {
     // 物の .fx のレンダーターゲット
-    for (const e of new Set([this.d.store.defaultEffect, ...items.map(it => it.effect)])) this.prepare(fb, e, frame.screen);
+    for (const e of new Set([this.d.store.defaultEffect, ...this.scenePass.effects(this.main, frame)])) this.prepare(fb, e, frame.screen);
     // セルフシャドウの深度マップ (R = z / w。何もない所は 1)
     if (frame.selfShadow && this.shadow) {
       const surface = { kind: 'three', target: this.shadow } as const;
@@ -165,9 +119,7 @@ export class MmeRenderer {
       fb.defaultSurface = surface;
       renderer.setClearColor(0xffffff, 1);
       this.clear(renderer);
-      for (const item of items) {
-        for (const sub of item.subsets) if (sub.flags & CAST_SELF_SHADOW) this.drawPass(item, sub, 'zplot', frame, target);
-      }
+      this.scenePass.drawSelfShadow(this.main, frame, target);
     }
     // ポストエフェクトがあれば canvas の代わりの絵に描いてから写す (Framebuffers.screenSurface)。背景の空は描かない。いまの消す色で消す
     const posts = this.posts(fb, frame.screen);
@@ -177,9 +129,9 @@ export class MmeRenderer {
     renderer.setClearColor(this.clearColor, clearAlpha);
     this.clear(renderer);
     if (posts.length === 0) {
-      this.drawScene(items, frame, target);
+      this.scenePass.draw(this.main, frame, target);
     } else {
-      this.chain!.run(posts, frame, t => this.drawScene(items, frame, t));
+      this.chain!.run(posts, frame, t => this.scenePass.draw(this.main, frame, t));
       fb.bindSurface(CANVAS);
       this.clear(renderer);
       const tex = fb.screenTexture;
@@ -205,53 +157,19 @@ export class MmeRenderer {
     for (const w of fb.prepare(e, screen)) if (!inst.warnings.includes(w)) inst.warnings.push(w);
   }
 
-  // モデルを置いた順に: 地面の影 → 本体 → 輪郭線。描画先はいまのもの (ポストエフェクトは ScriptExternal からここを呼ぶ)。
-  // 物の .fx の Script が「既定の描画先」と言ったら、いまの描画先
-  drawScene(items: DrawItem[], frame: FrameState, target: DrawTarget): void {
-    const fb = this.fb;
-    const outer = fb?.defaultSurface;
-    if (fb) fb.defaultSurface = fb.current;
-    // 地面の影のステンシルを 0 から始める (Script が Clear=Depth しない深度のターゲットでも、物を描く前に消す)
-    fb?.clear(null, null, 0);
-    try {
-      this.drawItems(items, frame, target);
-    } finally {
-      if (fb && outer) fb.defaultSurface = outer;
-    }
-  }
-
-  private drawItems(items: DrawItem[], frame: FrameState, target: DrawTarget): void {
-    const { groundShadow } = this.d.settings;
-    for (const item of items) {
-      if (groundShadow) for (const sub of item.subsets) if (sub.flags & GROUND_SHADOW) this.drawPass(item, sub, 'shadow', frame, target);
-      for (const sub of item.subsets) {
-        this.drawPass(item, sub, frame.selfShadow && sub.flags & RECEIVE_SELF_SHADOW ? 'object_ss' : 'object', frame, target);
-      }
-      if (item.geo.edge) for (const sub of item.subsets) if (sub.flags & EDGE) this.drawPass(item, sub, 'edge', frame, target);
-    }
-  }
-
   // 使う .fx のテクスチャと、MMD モデルの .pmx の読み込みが終わる (失敗しても) まで待つ
   async whenReady(): Promise<void> {
-    const waits: Promise<void>[] = [];
+    const waits: Promise<void>[] = [this.scenePass.whenReady()];
     const effects = new Set<LoadedEffect>([this.d.store.defaultEffect]);
-    const visit = (root: THREE.Object3D) => root.traverse(o => {
-      if (this.isMmd(o)) waits.push(this.skinner.settled(o as THREE.SkinnedMesh));
-    });
-    for (const obj of this.d.world.objects) {
-      effects.add(this.effectOf(obj));
-      visit(obj.node);
-    }
+    for (const obj of this.d.world.objects) effects.add(this.effectOf(obj));
     for (const p of this.d.store.posts) if (p.enabled && p.effect.result.ok) effects.add(p.effect);
-    const stage = this.d.stage();
-    if (stage) visit(stage);
     for (const e of effects) waits.push(this.instance(e).ready());
     await Promise.all(waits);
   }
 
   // どの物にも割り当てていない・ポストエフェクトの一覧にない .fx の資源と、場面にないモデルのトゥーンの画像を捨てる
   prune(): void {
-    this.pruneToons();
+    this.scenePass.prune();
     const used = new Set<LoadedEffect>([
       this.d.store.defaultEffect, ...this.d.world.objects.map(o => this.effectOf(o)), ...this.d.store.posts.map(p => p.effect),
     ]);
@@ -260,28 +178,6 @@ export class MmeRenderer {
       inst.dispose();
       this.fb?.release(e);
       this.instances.delete(e);
-    }
-  }
-
-  // 置いた物とステージの材質が使っていないトゥーンの画像を捨てる
-  private pruneToons(): void {
-    if (this.toons.size === 0) return;
-    const live = new Set<THREE.Texture>();
-    const visit = (root: THREE.Object3D) => root.traverse(o => {
-      const mesh = o as THREE.Mesh;
-      if (!mesh.isMesh) return;
-      for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
-        const toon = m && mmeTexturesOf(m)?.toon;
-        if (toon) live.add(toon);
-      }
-    });
-    for (const obj of this.d.world.objects) visit(obj.node);
-    const stage = this.d.stage();
-    if (stage) visit(stage);
-    for (const [src, toon] of this.toons) {
-      if (live.has(src)) continue;
-      toon.tex.dispose();
-      this.toons.delete(src);
     }
   }
 
@@ -295,8 +191,8 @@ export class MmeRenderer {
     this.shadow?.dispose();
     this.shadow = null;
     this.noShadow = false;
-    for (const toon of this.toons.values()) toon.tex.dispose();
-    this.toons.clear();
+    this.scenePass.dispose();
+    this.mainSlots.clear();
     this.uploaders = [];
     this.prevTime = null;
     this.fb?.dispose();
@@ -324,7 +220,7 @@ export class MmeRenderer {
     this.chain = new PostChain({
       fb, instance: e => this.instance(e),
       render: (m, geometry) => renderer.renderBufferDirect(this.d.graph.camera, null as unknown as THREE.Scene, geometry, m, this.proxy, null as unknown as THREE.GeometryGroup),
-      checkLink: (m, inst, effect) => this.checkLink(renderer, m, inst, effect),
+      checkLink: (m, inst, effect) => this.scenePass.checkLink(m, inst, effect),
     });
     return fb;
   }
@@ -350,7 +246,7 @@ export class MmeRenderer {
     }
     const selfShadow = settings.selfShadow && this.shadowTarget(renderer) !== null;
     const size = renderer.getDrawingBufferSize(new THREE.Vector2());
-    return { camera, light: this.light(), eye: position, time, elapsed, selfShadow, screen: [size.x, size.y] };
+    return { camera, light: this.light(), eye: position, time, elapsed, selfShadow, screen: [size.x, size.y], frameNo: ++this.frameNo };
   }
 
   // 太陽: 色 = 色 × min(明るさ ÷ π, 1)、向き = 来る向きの逆。影のカメラは標準のエンジンの太陽の影のカメラ。範囲は MMD の影の距離と
@@ -388,37 +284,19 @@ export class MmeRenderer {
     return this.shadow;
   }
 
-  // --- 描く物 ---
-  // ステージ (背景として先に描く。モデルの地面の影が床に重なるように) と、置いた物 (見えているもの) の見えているメッシュ。
-  // 編集用の物 (editorOnly) は除く
-  private collect(frame: FrameState): DrawItem[] {
-    const items: DrawItem[] = [];
-    const stage = this.d.stage();
-    if (stage && visibleChain(stage)) this.collectFrom(stage, this.d.store.defaultEffect, frame, items);
-    const outputting = this.d.viewport.outputting;
-    for (const obj of this.d.world.objects) {
-      if (outputting ? obj.hideRender : obj.hidden || obj.colHidden) continue;
-      if (visibleChain(obj.node)) this.collectFrom(obj.node, this.effectOf(obj), frame, items);
-    }
-    return items;
-  }
-
-  private collectFrom(root: THREE.Object3D, effect: LoadedEffect, frame: FrameState, items: DrawItem[]): void {
-    const visit = (o: THREE.Object3D) => {
-      if (!o.visible || o.userData.editorOnly) return;
-      if ((o as THREE.Mesh).isMesh) {
-        const item = this.item(o as THREE.Mesh, effect, frame);
-        if (item) items.push(item);
-      }
-      for (const c of o.children) visit(c);
-    };
-    visit(root);
-  }
-
   // .fx を割り当てていない・コンパイルできなかった・GPU で止めた物は default.fx
   private effectOf(obj: Obj): LoadedEffect {
     const e = this.d.store.objectEffect(obj.id);
     return e?.result.ok && !this.stopped(e) ? e : this.d.store.defaultEffect;
+  }
+
+  private mainSlot(obj: Obj | null): Slot {
+    let slot = this.mainSlots.get(obj);
+    if (!slot) {
+      slot = { kind: 'effect', effect: obj ? this.effectOf(obj) : this.d.store.defaultEffect };
+      this.mainSlots.set(obj, slot);
+    }
+    return slot;
   }
 
   // 全部の警告 (エフェクトの警告は「名前: 」を付ける。テスト用)
@@ -436,105 +314,6 @@ export class MmeRenderer {
     return this.instances.get(e)?.stopped ?? false;
   }
 
-  private isMmd(o: THREE.Object3D): boolean {
-    const m = o as THREE.SkinnedMesh;
-    return m.isSkinnedMesh === true && (mmdSourceOf(m.geometry) !== undefined || 'sourceFile' in m.userData);
-  }
-
-  private item(mesh: THREE.Mesh, effect: LoadedEffect, frame: FrameState): DrawItem | null {
-    if (!this.isMmd(mesh)) return { mesh, effect, geo: this.skinner.plain(mesh), subsets: this.subsets(mesh, null) };
-    const sm = mesh as THREE.SkinnedMesh;
-    // クローンは userData の File を失う。形が差し替わった (デフォーマで変形した) クローンは .pmx を引けない
-    if (!(mmdSourceOf(sm.geometry) ?? (sm.userData.sourceFile instanceof Blob))) {
-      this.warn(t('{name}: 元の .pmx が分からないので描けません (デフォーマで変形したモデルの複製)', { name: sm.name || t('MMD モデル') }));
-      return null;
-    }
-    // .pmx を読み終えていなければ、このフレームは描かない (読み終えたら描き直す)
-    const geo = this.skinner.mmd(sm, frame.eye, Math.tan(frame.camera.fovY / 2), () => this.d.viewport.requestDraw());
-    const data = this.skinner.data(sm);
-    if (!geo || !data) {
-      if (this.skinner.failed(sm)) this.warn(t('{name}: .pmx を読めないので描けません', { name: sm.name || t('MMD モデル') }));
-      return null;
-    }
-    return { mesh, effect, geo, subsets: this.subsets(mesh, data) };
-  }
-
-  // 材質の部分。材質が 1 つなら形全体
-  private subsets(mesh: THREE.Mesh, data: MmdData | null): Subset[] {
-    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-    const groups: (THREE.GeometryGroup | null)[] = Array.isArray(mesh.material) && mesh.geometry.groups.length ? mesh.geometry.groups : [null];
-    const out: Subset[] = [];
-    for (const g of groups) {
-      const index = g?.materialIndex ?? 0;
-      const m = materials[index];
-      if (m?.visible) out.push(this.subset(mesh, m, index, g, data));
-    }
-    return out;
-  }
-
-  // 材質の値 (設計書「MMD が .fx に渡す値」)。MMD の材質は .pmx の値、形はベースカラーとアルファから
-  private subset(mesh: THREE.Mesh, m: THREE.Material, index: number, group: THREE.GeometryGroup | null, data: MmdData | null): Subset {
-    const lib = this.d.library;
-    const md = lib.materials.get(m.userData.materialId);
-    const material = md ? baseImage(lib, md) : null;
-    const mme = mmeTexturesOf(m);
-    const info = data?.materials[index];
-    const toon = mme?.toon ? this.toonOf(mme.toon) : null;
-    const sphereMode = info?.sphereMode ?? 0;
-    const sphere = mme?.sphere && (sphereMode === 1 || sphereMode === 2) ? mme.sphere : null;
-    const textures: SubsetTextures = { material, sphere, toon: toon?.tex ?? null };
-    const transparent = md ? md.settings.blend === 'blend' : m.transparent;
-    const common = {
-      groundShadowColor: SHADOW_COLOR, hasTexture: !!material, hasSphere: !!sphere, hasToon: !!mme?.toon, sphereAdd: !!sphere && sphereMode === 2, transparent,
-    };
-    let state: MaterialState;
-    const src = md?.mmd;
-    if (src) {
-      state = {
-        ...common, diffuse: src.diffuse, ambient: src.ambient, specular: src.specular, power: src.shininess,
-        toon: toon?.color ?? WHITE, edgeColor: src.edgeColor,
-      };
-    } else {
-      // 形: 拡散色 = ベースカラー (ガンマ空間に直す)、環境色 = その半分、反射なし、輪郭線なし
-      const [base, alpha] = this.baseColor(md, m);
-      state = {
-        ...common, diffuse: [...base, alpha], ambient: base.map(v => v * 0.5) as Color3, specular: [0, 0, 0], power: 5,
-        toon: toon?.color ?? WHITE, edgeColor: [0, 0, 0, 1],
-      };
-    }
-    const shapeFlags = (mesh.castShadow ? GROUND_SHADOW | CAST_SELF_SHADOW : 0) | (mesh.receiveShadow ? RECEIVE_SELF_SHADOW : 0);
-    const flags = info ? info.flags : shapeFlags;
-    const doubleSided = info ? (info.flags & DOUBLE_SIDED) !== 0 : !(md?.settings.backfaceCulling ?? m.side === THREE.FrontSide);
-    return { index, group, state, flags, doubleSided, textures };
-  }
-
-  // ベースカラー (ガンマ空間) とアルファ。画像がつながっていれば白 (画像の色をそのまま使う)
-  private baseColor(md: MaterialData | undefined, m: THREE.Material): [Color3, number] {
-    const bsdf = md && surfaceShader(md.tree);
-    if (md && bsdf) {
-      const linked = !!inputLink(md.tree, bsdf.id, 'baseColor');
-      const c = bsdf.values.baseColor as Color3;
-      const alpha = inputLink(md.tree, bsdf.id, 'alpha') ? 1 : Number(bsdf.values.alpha ?? 1);
-      return [linked ? WHITE : toSrgb(new THREE.Color().setRGB(c[0], c[1], c[2], THREE.LinearSRGBColorSpace)), alpha];
-    }
-    const color = (m as THREE.MeshStandardMaterial).color;
-    return [color ? toSrgb(color) : WHITE, m.opacity];
-  }
-
-  // トゥーンの画像を元の向きにしたテクスチャといちばん下の行の色 (画像ごとに 1 回だけ作る)。読み終えていなければ null
-  private toonOf(src: THREE.Texture): Toon | null {
-    const img = src.image as { data?: ArrayLike<number>; width?: number; height?: number } | null | undefined;
-    if (!img?.data || !img.width || !img.height) return null;
-    const old = this.toons.get(src);
-    if (old && old.version === src.version) return old;
-    old?.tex.dispose();
-    const made = unrotateToon({ data: img.data, width: img.width, height: img.height });
-    const toon: Toon = { ...made, version: src.version };
-    this.toons.set(src, toon);
-    return toon;
-  }
-
-  // --- 描く ---
   private instance(e: LoadedEffect): EffectInstance {
     let inst = this.instances.get(e);
     if (!inst) {
@@ -544,81 +323,11 @@ export class MmeRenderer {
     return inst;
   }
 
-  // その MMDPass の technique を選んで (なければ default.fx のもの)、Script のとおりに描く
-  private drawPass(item: DrawItem, sub: Subset, pass: MmdPass, frame: FrameState, target: DrawTarget): void {
-    const s = sub.state;
-    const q: TechniqueQuery = { pass, subset: sub.index, useTexture: s.hasTexture, useSphereMap: s.hasSphere, useToon: s.hasToon, selfShadow: frame.selfShadow };
-    let effect = item.effect;
-    let tech = effect.result.ok ? pickTechnique(effect.result.effect, q) : null;
-    if (!tech) {
-      effect = this.d.store.defaultEffect;
-      tech = effect.result.ok ? pickTechnique(effect.result.effect, q) : null;
-    }
-    if (!tech) return;
-    const inst = this.instance(effect);
-    if (inst.stopped) return; // (このフレームの途中で止めた。次のフレームから default.fx)
-    // 物の technique の Script: Draw=Geometry でいまの材質の部分を描く。描画先を替えたら、終わったあと既定の描画先に戻す
-    const warn = (m: string) => inst.warn(m); // (そのエフェクトの警告)
-    const st = new ScriptTargets(this.fb!, effect, inst, warn, target);
-    runTechnique(tech, 'object', {
-      ...st.commands(),
-      drawPass: (p, mode) => {
-        if (mode === 'buffer') warn(t('物の .fx の Draw=Buffer にはまだ対応していないので無視します'));
-        else if (!inst.stopped) {
-          this.drawGeometry(inst, effect, p, item, sub, pass, frame, st.current());
-          if (st.changed) this.fb!.afterDraw();
-        }
-      },
-      drawExternal: () => {},
-      warn,
-    });
-    if (st.changed) this.fb!.bindSurface(this.fb!.defaultSurface);
-  }
-
-  private drawGeometry(inst: EffectInstance, effect: LoadedEffect, p: Pass, item: DrawItem, sub: Subset, pass: MmdPass, frame: FrameState, target: DrawTarget): void {
-    const renderer = this.d.viewport.renderer!;
-    const kind = pass === 'zplot' || pass === 'edge' || pass === 'shadow' ? pass : 'object';
-    const base: BaseState = { kind, doubleSided: sub.doubleSided };
-    const m = inst.material(p, target.flipY, base);
-    if (!m) return;
-    const ctx: SemanticContext = {
-      camera: frame.camera, light: frame.light, world: item.mesh.matrixWorld, material: sub.state, pass,
-      time: frame.time, elapsed: frame.elapsed, screen: frame.screen, selfShadow: frame.selfShadow,
-    };
-    const { textures: t } = sub;
-    // (深度マップに描いているあいだは、その深度マップを読ませない)
-    const shadow = pass === 'zplot' ? null : this.shadow?.texture ?? null;
-    const textures: TextureSource = {
-      role: name => (name === 'material' ? t.material : name === 'sphere' ? t.sphere : name === 'toon' ? t.toon : name === 'selfShadow' ? shadow
-        : this.fb?.colorTexture(effect, name) ?? null),
-    };
-    inst.bind(m, p, ctx, builtins(target), textures);
-    const geometry = pass === 'edge' && item.geo.edge ? item.geo.edge : item.geo.geometry;
-    // (scene と group は null でよい: three.js は空の場面・形全体として扱う)
-    renderer.renderBufferDirect(this.d.graph.camera, null as unknown as THREE.Scene, geometry, m, this.proxy, sub.group as THREE.GeometryGroup);
-    this.checkLink(renderer, m, inst, effect);
-  }
-
-  // 材質で初めて描いたあとに、シェーダーをリンクできたかを確かめる。できなければ、そのエフェクトを止めてお知らせを 1 回出す
-  private checkLink(renderer: THREE.WebGLRenderer, m: THREE.Material, inst: EffectInstance, effect: LoadedEffect): void {
-    if (this.linked.has(m)) return;
-    this.linked.add(m);
-    const program = (renderer.properties.get(m) as { currentProgram?: { program?: WebGLProgram } }).currentProgram?.program;
-    const gl = renderer.getContext();
-    if (!program || gl.getProgramParameter(program, gl.LINK_STATUS) !== false) return;
-    inst.stopped = true;
-    this.d.ui.toast(t('{name} のシェーダーを GPU で使えないので止めました', { name: effect.name }), 8000);
-    this.d.viewport.requestDraw();
-  }
-
-  // three.js の render の中 (空の場面の onAfterRender) で fn を呼ぶ。そのとき items の形を GPU に送らせる
-  private inThree(renderer: THREE.WebGLRenderer, items: DrawItem[], fn: () => void): void {
+  // three.js の render の中 (空の場面の onAfterRender) で fn を呼ぶ。そのとき描く形 (geometries) を GPU に送らせる
+  private inThree(renderer: THREE.WebGLRenderer, geometries: THREE.BufferGeometry[], fn: () => void): void {
     const geos = new Set<THREE.BufferGeometry>();
     if (this.chain) geos.add(this.chain.quad);
-    for (const it of items) {
-      geos.add(it.geo.geometry);
-      if (it.geo.edge) geos.add(it.geo.edge);
-    }
+    for (const g of geometries) geos.add(g);
     let i = 0;
     for (const g of geos) {
       let u = this.uploaders[i];
