@@ -260,8 +260,9 @@ export class MmeRenderer {
     }
   }
 
-  // GPU の資源と変形した形を捨てる (次に描くときに作り直す)
+  // GPU の資源と変形した形と警告を捨てる (次に描くときに作り直す)
   dispose(): void {
+    this.warnings.length = 0;
     for (const inst of this.instances.values()) inst.dispose();
     this.instances.clear();
     this.skinner.dispose();

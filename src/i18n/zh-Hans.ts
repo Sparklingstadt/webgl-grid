@@ -1272,5 +1272,6 @@ const dict: Dictionary = {
   "足す…": "添加…",
   "選んだフォルダに .fx がありません": "所选文件夹中没有 .fx",
   "選んでいる物の .fx": "所选物体的 .fx",
+  "GPU で使えないので止めました": "无法在 GPU 上使用，已停用",
 };
 export default dict;

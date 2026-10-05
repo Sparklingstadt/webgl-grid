@@ -1,12 +1,12 @@
 import type * as THREE from 'three';
 import { errorText } from '../../core/errors';
 import { t } from '../../core/i18n';
+import { MME_DEFAULTS, type MmeSettings } from '../../core/mme/settings.ts';
 import type { Clock } from '../anim/Clock';
 import type { MaterialLibrary } from '../materials/MaterialLibrary';
 import type { RenderOutput } from '../output/RenderOutput';
 import type { SceneGraph } from '../render/SceneGraph';
 import type { Viewport } from '../render/Viewport';
-import { MME_DEFAULTS, type MmeSettings } from '../../core/mme/settings.ts';
 import type { MmeEffectUi, MmeUiState, UiChannel } from '../UiChannel';
 import type { Selection } from '../world/Selection';
 import type { World } from '../world/World';
@@ -72,11 +72,12 @@ export class MmeEngine {
     this.deps.ui.set({ mme: state });
   }
 
-  // コンパイルの結果と警告 (コンパイラの警告のあとに、描いたときのそのエフェクトの警告)
+  // コンパイルの結果と警告 (コンパイラの警告のあとに、描いたときのそのエフェクトの警告。GPU で止めたらそのことも)
   private effectUi(e: LoadedEffect): MmeEffectUi {
     const r = e.result;
     const errors = r.ok ? [] : r.errors.slice(0, MAX_ERRORS).map(d => ({ code: d.code, where: `${d.file}:${d.line}`, message: d.message }));
     const warnings = [...r.warnings.map(d => `${d.file}:${d.line} ${d.message}`), ...this.renderer.warningsOf(e)];
+    if (this.renderer.stopped(e)) warnings.push(t('GPU で使えないので止めました'));
     return { name: e.name, ok: r.ok, errors, warnings };
   }
 

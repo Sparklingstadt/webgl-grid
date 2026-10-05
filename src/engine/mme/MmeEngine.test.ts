@@ -218,13 +218,21 @@ describe('MmeEngine', () => {
     // 描いたときの警告: エフェクトの警告はその行に、ほかは全体の警告に
     const r = e.mme.renderer as unknown as Internals;
     vi.spyOn(e.mme.renderer, 'render').mockImplementation(() => {
-      (r.instance(good) as unknown as EffectInstance).warnings.push('テクスチャ a.png が見つかりません');
-      e.mme.renderer.warnings.push('全体の警告');
+      (r.instance(good) as unknown as EffectInstance).warn('テクスチャ a.png が見つかりません');
+      if (!e.mme.renderer.warnings.length) e.mme.renderer.warnings.push('全体の警告');
       return true;
     });
     e.viewport.drawOverride!();
     expect(e.ui.state.mme.posts[0].warnings).toEqual(['テクスチャ a.png が見つかりません']);
     expect(e.ui.state.mme.warnings).toEqual(['全体の警告']);
+    // GPU で止めたら、その行に書く
+    (r.instance(good) as unknown as EffectInstance).stopped = true;
+    e.viewport.drawOverride!();
+    expect(e.ui.state.mme.posts[0].warnings).toEqual(['テクスチャ a.png が見つかりません', 'GPU で使えないので止めました']);
+    // 標準に戻すと警告も捨てる (MME 互換に戻して描き直すと、また集める)
+    e.mme.set({ engine: 'standard' });
+    expect(e.ui.state.mme.warnings).toEqual([]);
+    expect(e.ui.state.mme.posts[0].warnings).toEqual([]);
   });
 
   it('エラーは 20 個まで', async () => {
