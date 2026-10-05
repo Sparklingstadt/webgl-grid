@@ -353,6 +353,15 @@ describe('MmeEngine', () => {
     expect(e.world.objects).toHaveLength(2);
   });
 
+  it('ポストエフェクトの .fx のパスは大文字小文字を問わず、フォルダの中の書き方のもの (パラメータの一覧・割り当てと同じエフェクト)', async () => {
+    const e = new Engine();
+    const fx = await e.mme.loadEffect([fileAt('Fx/post.fx', paramFx())], 'post.fx');
+    const acc = e.addMmeObject({ kind: 'accessory', name: 'post.x' });
+    e.mme.assign(acc, 'Main', null, { folder: fx.folder.id, path: 'POST.FX' });
+    expect(e.mme.posts()[0].effect).toBe(fx);
+    expect(e.mme.paramsOf(acc).map(x => x.effect.path)).toEqual(['post.fx']);
+  });
+
   it('ポストエフェクトの (self) はそのアクセサリ: CONTROLOBJECT の Si はアクセサリの値 (同じ名前のアクセサリが 2 つでも、それぞれのもの)', async () => {
     const e = new Engine();
     const fx = await e.mme.loadEffect([fileAt('P/si.fx', 'float s : CONTROLOBJECT < string name = "(self)"; string item = "Si"; >;\ntechnique T { }')], 'si.fx');
