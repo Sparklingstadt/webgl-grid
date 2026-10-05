@@ -140,7 +140,7 @@ function surveyTargets(effects: Compiled[]): string {
   ];
   const unsupported = list.filter(s => !s.supported);
   out.push('', '#### Task 7 で足す', '');
-  if (unsupported.length === 0) out.push('`src/core/mme/targets.ts` (Framebuffers が使う) にない形式はない。');
+  if (unsupported.length === 0) out.push('なし。`src/core/mme/targets.ts` (Framebuffers が使う) に、使われている形式がすべてある。');
   else {
     out.push('`src/core/mme/targets.ts` (`src/engine/mme/Framebuffers.ts` が使う) にまだない形式。いまは警告を出して既定 (色は A8R8G8B8、深度は D24S8) にする:', '');
     const byFormat = new Map<string, Sig[]>();
