@@ -1,6 +1,7 @@
 import {
-  channelKeys, copyKeys, createAnimation, deleteKeys, pasteKeys, type ClipChannel, evaluate, insertKeys, insertPropKeys, isEmpty, keyFrames, moveKeys, PROPS, type BoneKey, type Channel, type Curve, type MorphKey,
+  channelKeys, copyKeys, createAnimation, deleteKeys, pasteKeys, type ClipChannel, evaluate, insertKeys, insertMmeKeys, insertPropKeys, isEmpty, keyFrames, moveKeys, PROPS, type BoneKey, type Channel, type Curve, type MorphKey,
 } from '../../core/animation';
+import { Emitter } from '../../core/events';
 import { FPS } from '../../core/constants';
 import type { BoneValue } from '../../core/types';
 import { t } from '../../core/i18n';
@@ -11,10 +12,12 @@ import type { LightSettings } from '../../core/light';
 import { isModel, isShape, type ModelObj, type Obj } from '../types';
 import type { UiChannel } from '../UiChannel';
 import type { World } from '../world/World';
+import { mmeChannel } from './mmeChannels';
 
 // --- キーフレーム (Blender の I キー) ---
 // モデルのボーンと表情に、チャンネル (ボーン 1 本・表情 1 つ) ごとにキーを打つ (core/animation.ts)。
 // 形・ライト・カメラには、位置 X・位置 Z・回転と、形は大きさ、ライトは強さ・色 (R・G・B)・高さ、カメラは視野角・高さのチャンネルに打つ。
+// MME の値 (Obj.mmeValues) には、名前ごとのチャンネル (Obj.mmeChannels の番号。anim/mmeChannels.ts) に打つ。
 // キーのあいだは、補間曲線にそって、回転は球面線形補間・位置と表情は線形補間でつなぐ。
 // タイムラインでは、キーはフレームごとにまとめて選び・ずらし・消す
 // 物にキーを打てる値 (PROPS の番号と、いまの値)
@@ -45,6 +48,8 @@ export interface PropTarget { light(obj: Obj, patch: Partial<LightSettings>): vo
 
 export class Keyframes {
   target: PropTarget | null = null;
+  // mmeChanged: キーで MME の値 (Obj.mmeValues) が変わった物 (applyAll で、値が変わったときだけ)
+  readonly events = new Emitter<{ mmeChanged: [objs: Obj[]] }>();
   readonly selected = new Set<number>(); // タイムラインで選んだフレーム (選んでいるモデルの)
   expanded = false; // タイムラインに、チャンネルごとの行を出す
   // コピーしたキー (Ctrl+C)。ボーン・表情は名前でも覚え、ほかのモデルにも同じ名前のチャンネルへ貼れる
@@ -80,6 +85,22 @@ export class Keyframes {
     this.ui.toast(t('フレーム {frame} にキーを打ちました ({n} チャンネル)', { frame, n }), 2500);
   }
 
+  // MME の値 (names: チャンネルの名前) の、いま (obj.mmeValues) の値をフレームに打つ。すでにキーがあれば値だけ替える。
+  // mmeValues に値のない名前は打たない (呼ぶ側が、先に値を入れておく)
+  insertMme(obj: Obj, frame: number, names: string[]) {
+    const values = names.flatMap(name => {
+      const v = obj.mmeValues?.[name];
+      return v === undefined ? [] : [[mmeChannel(obj, name), v] as [number, number]];
+    });
+    if (!values.length) return;
+    obj.anim ??= createAnimation();
+    const n = insertMmeKeys(obj.anim, frame, values);
+    this.selected.clear();
+    this.selected.add(frame);
+    this.changed();
+    this.ui.toast(t('フレーム {frame} にキーを打ちました ({n} チャンネル)', { frame, n }), 2500);
+  }
+
   // frames を選ぶ。add なら今の選択に足す (選んであるものは外す)
   select(frames: number[], add: boolean) {
     if (!add) this.selected.clear();
@@ -109,7 +130,8 @@ export class Keyframes {
     this.ui.toast(t('キーを {n} 個コピーしました', { n }), 2500);
     return n > 0;
   }
-  // 写したキーを、フレーム frame から貼る (Ctrl+V)。ボーン・表情は同じ名前のチャンネルへ、位置・回転・大きさはそのまま
+  // 写したキーを、フレーム frame から貼る (Ctrl+V)。ボーン・表情は同じ名前のチャンネルへ、位置・回転・大きさはそのまま。
+  // MME の値は、同じ名前のチャンネルか、同じ名前の値 (mmeValues) を持つ物ならチャンネルを足して貼る
   paste(obj: Obj, frame: number, time: number) {
     if (!this.clip) { this.ui.toast(t('先にキーをコピーしてください (Ctrl+C)'), 2500); return false; }
     const clip: ClipChannel[] = [];
@@ -128,10 +150,12 @@ export class Keyframes {
     return true;
   }
   private channelName(obj: Obj, c: ClipChannel) {
+    if (c.kind === 'mme') return obj.mmeChannels?.[c.index] ?? null;
     if (!isModel(obj) || c.kind === 'prop') return null;
     return c.kind === 'bone' ? obj.model.skeleton.bones[c.index]?.name ?? null : this.posing.morphs(obj).find(m => m.index === c.index)?.name ?? null;
   }
-  private channelIndex(obj: Obj, kind: 'bone' | 'morph', name: string | null) {
+  private channelIndex(obj: Obj, kind: 'bone' | 'morph' | 'mme', name: string | null) {
+    if (kind === 'mme') return name !== null && (obj.mmeChannels?.includes(name) || obj.mmeValues?.[name] !== undefined) ? mmeChannel(obj, name) : -1;
     if (!isModel(obj) || name === null) return -1;
     return kind === 'bone' ? obj.model.skeleton.bones.findIndex((b: { name: string }) => b.name === name) : this.posing.morphs(obj).find(m => m.name === name)?.index ?? -1;
   }
@@ -209,9 +233,11 @@ export class Keyframes {
   // force でなければ、サイドバーの描き直しは間引く (再生中は毎フレーム呼ばれるので)
   applyAll(t: number, force = false) {
     let any = false, moved = false;
+    const mmeChanged: Obj[] = [];
     for (const obj of this.world.objects) {
       if (isEmpty(obj.anim)) continue;
-      const { pose, morphs, props } = evaluate(obj.anim!, t * FPS);
+      const { pose, morphs, props, mme } = evaluate(obj.anim!, t * FPS);
+      if (mme.size && this.applyMme(obj, mme)) mmeChanged.push(obj);
       // 物の値 (位置・回転・大きさ)、ライト・カメラの設定 (強さ・色・視野角・高さ)
       const light: Partial<LightSettings> = {}, cam: Partial<CameraSettings> = {};
       let rgb: number[] | null = null;
@@ -243,9 +269,21 @@ export class Keyframes {
       this.world.settle();
       for (const o of this.world.objects) if (o.anim?.props.size) { o.py = o.y; o.vy = 0; }
     }
+    if (mmeChanged.length) this.events.emit('mmeChanged', mmeChanged);
     if (!any) return;
     if (force) this.ui.bump('values'); else this.ui.bumpValuesThrottled();
     this.viewport.requestDraw();
+  }
+  // MME のチャンネルの値 (番号 → 値) を mmeValues に書く。変わった値があれば true
+  private applyMme(obj: Obj, mme: Map<number, number>) {
+    let changed = false;
+    for (const [ch, v] of mme) {
+      const name = obj.mmeChannels?.[ch];
+      if (name === undefined) continue;
+      const values = obj.mmeValues ??= {};
+      if (values[name] !== v) { values[name] = v; changed = true; }
+    }
+    return changed;
   }
 
   private changed() {

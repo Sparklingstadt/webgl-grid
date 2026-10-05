@@ -1314,5 +1314,8 @@ const dict: Dictionary = {
   "コントローラー": "控制器",
   "{name} ({n} 項目)": "{name}（{n} 項）",
   "{name} は GPU で使えないので止めました": "{name} 無法在 GPU 上使用，已停用",
+  "MME: {name}": "MME：{name}",
+  "MME のチャンネル": "MME 通道",
+  "MME の値": "MME 值",
 };
 export default dict;

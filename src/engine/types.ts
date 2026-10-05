@@ -49,6 +49,8 @@ export interface Obj {
   collection?: string;                // 入っているコレクション (なしはシーン コレクション)
   colHidden?: boolean;                // コレクションを隠しているので見せない (Engine が合わせる)
   mme?: ObjectEffects;                // MME のエフェクトの割り当て (タブごとの、物全体と材質ごと。物の値 'mme')
+  mmeChannels?: string[];             // MME のチャンネルの名前 (anim.mme の番号 = この一覧の位置。消さない・並べ替えない。anim/mmeChannels.ts)
+  mmeValues?: Record<string, number>; // MME の値のいま (チャンネルの名前 → 値。キーのあるものは、毎フレーム Keyframes.applyAll が書く)
 }
 export type ModelObj = Obj & { model: Any };
 export const isModel = (o: Obj | null | undefined): o is ModelObj => o?.s === MODEL_KIND;

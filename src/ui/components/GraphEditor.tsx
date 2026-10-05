@@ -9,7 +9,7 @@ import { isModel, type Obj } from '../../engine/types';
 import { useEngine, useUi } from '../EngineContext';
 
 // --- グラフエディター (Blender のグラフエディター): アクティブな物のチャンネルの値を、時間を横軸にした曲線で描く ---
-// 位置 X は赤・Z は青・回転は緑 (度)・大きさは黄、ボーンは回転 X/Y/Z (度) と位置 X/Y/Z、表情は 0〜1。
+// 位置 X は赤・Z は青・回転は緑 (度)・大きさは黄、ボーンは回転 X/Y/Z (度) と位置 X/Y/Z、表情は 0〜1、MME の値はその値。
 // キーの点をドラッグして、上下で値を、左右でフレームを変える (左右は 6px 動かしてから)。何もない所のドラッグで再生位置を動かす。
 // 押したキーには、前のキーからの補間曲線のハンドル (2 つ) が出て、ドラッグで曲線の形を変える (MMD の補間曲線と同じく、前後のキーのあいだに収まる)。
 // ホイールで拡大縮小、Home で全体を表示。
@@ -25,6 +25,7 @@ const PROP_STYLE: Record<string, [string, number]> = {
   power: ['#ffd25e', 1], colorR: ['#ff7070', 1], colorG: ['#70e070', 1], colorB: ['#70a0ff', 1], fov: ['#8cc4ff', 1], height: ['#c8a2ff', 1],
 };
 const MORPH_COLORS = ['#d38cff', '#ff8cc6', '#8cf2ff', '#ffd08c'];
+const MME_COLORS = ['#ffb35a', '#5ae0c0', '#e0e05a', '#b0a0ff'];
 
 // 物のチャンネルの曲線の一覧 (ボーンは、どこかのキーで 0 でない成分だけ)
 function curvesOf(engine: Engine, obj: Obj | null): CurveDef[] {
@@ -50,6 +51,10 @@ function curvesOf(engine: Engine, obj: Obj | null): CurveDef[] {
       out.push({ id: `m${m}`, label: t('表情: {name}', { name: names.get(m) ?? m }), color: MORPH_COLORS[i % MORPH_COLORS.length], ch: { kind: 'morph', index: m }, comp: null, k: 1 });
     });
   }
+  // MME の値 (名前は物の MME のチャンネルの一覧)
+  [...anim.mme.keys()].sort((a, b) => a - b).forEach((c, i) => {
+    out.push({ id: `e${c}`, label: t('MME: {name}', { name: obj.mmeChannels?.[c] ?? c }), color: MME_COLORS[i % MME_COLORS.length], ch: { kind: 'mme', index: c }, comp: null, k: 1 });
+  });
   return out;
 }
 // 押したキーのハンドルの位置 (フレーム・表示の単位の値)。前のキーがなければ (最初のキー) null
@@ -67,6 +72,7 @@ const keyValue = (c: CurveDef, key: BoneKey | MorphKey) => (c.comp ? (key as Bon
 function valueAt(c: CurveDef, ev: ReturnType<typeof evaluate>) {
   if (c.ch.kind === 'prop') return ev.props.get(c.ch.index);
   if (c.ch.kind === 'morph') return ev.morphs.get(c.ch.index);
+  if (c.ch.kind === 'mme') return ev.mme.get(c.ch.index);
   const v = ev.pose.get(c.ch.index);
   return v && c.comp ? v[c.comp] : undefined;
 }

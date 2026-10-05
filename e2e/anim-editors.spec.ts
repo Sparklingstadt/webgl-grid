@@ -104,3 +104,20 @@ test('グラフエディター: キーの点を右へドラッグするとその
   await page.keyboard.press('Control+z');
   await expect.poll(xKeys).toEqual([0, 40]);
 });
+
+test('グラフエディター: MME の値のチャンネルも、物の MME のチャンネルの名前で曲線に並ぶ', async ({ page }) => {
+  await open(page);
+  await page.evaluate(() => {
+    const { engine } = window as Win;
+    engine.addShape(0);
+    const cube = engine.world.objects[0];
+    engine.select(cube);
+    cube.mmeValues = { 'SSAO+': 0 };
+    engine.clock.seekFrame(0); engine.keyframes.insertMme(cube, 0, ['SSAO+']);
+    engine.clock.seekFrame(40); cube.mmeValues['SSAO+'] = 1; engine.keyframes.insertMme(cube, 40, ['SSAO+']);
+    engine.clock.seekFrame(20);
+  });
+  expect(await page.evaluate(() => (window as Win).engine.world.objects[0].mmeValues['SSAO+'])).toBeCloseTo(0.5);
+  await choose(page, 'エディターの種類', 'グラフエディター');
+  await expect(page.getByRole('list', { name: '曲線' }).getByRole('button')).toHaveText(['MME: SSAO+']);
+});

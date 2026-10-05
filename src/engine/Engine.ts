@@ -861,6 +861,8 @@ export class Engine {
     }
     // 形・ライト (と、モデルの物の値): 位置・回転・大きさ
     for (const p of [...anim.props.keys()].sort((a, b) => a - b)) rows.push(row(t(PROPS[p]?.name ?? String(p)), { kind: 'prop', index: p }));
+    // MME の値 (名前は物の MME のチャンネルの一覧)
+    for (const i of [...anim.mme.keys()].sort((a, b) => a - b)) rows.push(row(t('MME: {name}', { name: obj.mmeChannels?.[i] ?? i }), { kind: 'mme', index: i }));
     return rows;
   }
   // 前後のキーフレーム (選んでいるモデルのキーフレームと、モーションのキーフレーム) へ
