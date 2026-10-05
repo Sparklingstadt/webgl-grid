@@ -270,7 +270,7 @@ export class ScenePass {
     if (stage && visibleChain(stage)) this.collectFrom(stage, null, frame, items);
     const outputting = this.d.outputting();
     for (const obj of this.d.world.objects) {
-      if (outputting ? obj.hideRender : obj.hidden || obj.colHidden) continue;
+      if (obj.mmeObj || (outputting ? obj.hideRender : obj.hidden || obj.colHidden)) continue; // (MME の物は形がない。値を読むだけ)
       if (visibleChain(obj.node)) this.collectFrom(obj.node, obj, frame, items);
     }
     this.items = items;

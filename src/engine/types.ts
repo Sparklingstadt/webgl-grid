@@ -2,7 +2,7 @@ import type * as THREE from 'three';
 import type { Animation } from '../core/animation';
 import type { CameraSettings } from '../core/camera';
 import type { LightSettings } from '../core/light';
-import type { ObjectEffects } from '../core/mme/settings.ts';
+import type { MmeObjData, ObjectEffects } from '../core/mme/settings.ts';
 import { MODEL_KIND } from '../core/shapes';
 import type { BoneValue } from '../core/types';
 
@@ -51,12 +51,13 @@ export interface Obj {
   mme?: ObjectEffects;                // MME のエフェクトの割り当て (タブごとの、物全体と材質ごと。物の値 'mme')
   mmeChannels?: string[];             // MME のチャンネルの名前 (anim.mme の番号 = この一覧の位置。消さない・並べ替えない。anim/mmeChannels.ts)
   mmeValues?: Record<string, number>; // MME の値のいま (チャンネルの名前 → 値。キーのあるものは、毎フレーム Keyframes.applyAll が書く)
+  mmeObj?: MmeObjData;                // MME の物 (仮のコントローラー・仮のアクセサリ。形がなく、描かない・積まない。world/MmeObjects.ts)
 }
 export type ModelObj = Obj & { model: Any };
 export const isModel = (o: Obj | null | undefined): o is ModelObj => o?.s === MODEL_KIND;
 // 物の種類 (画面・プロジェクト・MCP で使う名前)
-export type ObjKind = 'shape' | 'model' | 'light' | 'camera';
-export const kindOf = (o: Obj): ObjKind => (o.light ? 'light' : o.camera ? 'camera' : isModel(o) ? 'model' : 'shape');
+export type ObjKind = 'shape' | 'model' | 'light' | 'camera' | 'mme';
+export const kindOf = (o: Obj): ObjKind => (o.mmeObj ? 'mme' : o.light ? 'light' : o.camera ? 'camera' : isModel(o) ? 'model' : 'shape');
 // 形 (ライトでも MMD モデルでもない物)
 export const isShape = (o: Obj | null | undefined): o is Obj => !!o && kindOf(o) === 'shape';
 // 大きさ (拡大率) を変えられる物: 形と MMD モデル (モデルは物理演算ごと。ライト・カメラは目印だけなので変えない)

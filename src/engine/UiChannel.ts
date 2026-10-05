@@ -13,7 +13,7 @@ import type { ShadingMode } from './render/Viewport';
 // --- エンジンから画面 (React) へ知らせる状態と、お知らせ ---
 // エンジンの各部は、画面に見せたいことをここに書く (React の部品は Store を購読して描き直す)
 export interface SelInfo {
-  id: number; kind: 'shape' | 'model' | 'light' | 'camera'; name: string; c: number;
+  id: number; kind: 'shape' | 'model' | 'light' | 'camera' | 'mme'; name: string; c: number;
   light: LightSettings | null;   // ライトの設定 (ライトだけ)
   camera: CameraSettings | null; // カメラの設定 (カメラだけ)
   x: number; y: number; z: number; r: number; scale: number; animated: boolean;

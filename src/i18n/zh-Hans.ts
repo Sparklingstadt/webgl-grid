@@ -1317,5 +1317,7 @@ const dict: Dictionary = {
   "MME: {name}": "MME：{name}",
   "MME のチャンネル": "MME 通道",
   "MME の値": "MME 值",
+  "MME の物": "MME 物体",
+  "MME の物には名前が要ります": "MME 物体需要名称",
 };
 export default dict;

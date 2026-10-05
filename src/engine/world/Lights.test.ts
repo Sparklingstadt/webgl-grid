@@ -53,6 +53,17 @@ describe('ライト', () => {
     expect(dir.toArray().map(v => +v.toFixed(3))).toEqual([0, -0.866, 0.5]);
   });
 
+  it('消して元に戻すと、同じライトが戻る (材質のない物も置き直せる)', async () => {
+    const e = engineWithCube();
+    const light = e.addLight('point')!;
+    e.history.checkpoint();
+    e.deleteSelected();
+    e.history.checkpoint();
+    await e.history.undo();
+    expect(e.world.objects[1]).toBe(light);
+    expect(lightOf(e, 1)).toBeInstanceOf(THREE.PointLight);
+  });
+
   it('プロジェクトに保存して開くと、ライトも戻る', async () => {
     const e = engineWithCube();
     e.addLight('spot', { color: '#ff8800', power: 1500 });

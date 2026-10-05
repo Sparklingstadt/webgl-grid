@@ -5,6 +5,7 @@ import { MAX_BOXES, MMD_SCALE, PALETTE } from '../../core/constants';
 import { shapeDef } from '../../core/shapes';
 import { CAMERA_KIND, type CameraSettings } from '../../core/camera';
 import { LIGHT_KIND, type LightSettings } from '../../core/light';
+import { MME_OBJ_KIND, type MmeObjData } from '../../core/mme/settings.ts';
 import { freeSpot, radiusOf, settleHeights, stackFrom } from '../../core/stacking';
 import { surfaceShader } from '../../core/materials/tree';
 import type { MaterialLibrary } from '../materials/MaterialLibrary';
@@ -125,8 +126,12 @@ export class World implements System {
     holder.traverse(o => { o.castShadow = false; o.receiveShadow = false; });
     return obj;
   }
-  // 積み重ねに加わる物 (ライト・カメラは除く)
-  private get stackables() { return this.objects.filter(o => !o.light && !o.camera); }
+  // MME の物 (仮のコントローラー・仮のアクセサリ。中身はない: 描かず、選ぶのはアウトライナーから)。原点の床に置き、積み重ねにも足場にも加わらない
+  addMmeObject(mmeObj: MmeObjData): Obj {
+    return this.add({ x: 0, y: 0, z: 0, c: -1, s: MME_OBJ_KIND, r: 0, py: 0, vy: 0, h: 0, hx: 0, hz: 0, slots: [], mmeObj, name: mmeObj.name }, new THREE.Group());
+  }
+  // 積み重ねに加わる物 (ライト・カメラ・MME の物は除く)
+  private get stackables() { return this.objects.filter(stacks); }
 
   // MMD モデル (材質はマテリアルに変換したもの。slots はそのマテリアル) を、(cx, cz) に近い空いている場所に置く
   addModel(mesh: Any, cx: number, cz: number, slots: string[]): ModelObj {
@@ -177,13 +182,13 @@ export class World implements System {
     if (this.has(obj)) return;
     this.graph.scene.add(obj.node);
     this.objects.splice(Math.min(Math.max(index, 0), this.objects.length), 0, obj);
-    const target: THREE.Mesh = isModel(obj) ? obj.model : obj.mesh!;
-    const list = obj.slots.map(id => {
+    const target: THREE.Mesh | undefined = isModel(obj) ? obj.model : obj.mesh;
+    const list = !target ? [] : obj.slots.map(id => {
       const m = this.lib.instance(id);
       if (!isModel(obj) && shapeDef(obj.s).flat) m.flatShading = true;
       return m;
     });
-    target.material = Array.isArray(target.material) ? list : list[0];
+    if (target) target.material = Array.isArray(target.material) ? list : list[0]; // (ライト・カメラ・MME の物は材質がない)
     this.publishCanAdd();
     this.events.emit('added', obj);
     this.viewport.requestDraw();
@@ -203,21 +208,21 @@ export class World implements System {
     const used = PALETTE.map((_, i) => this.objects.filter(b => b.c === i).length);
     return used.indexOf(Math.min(...used));
   }
-  // (cx, cz) に近い、ほかの物と重ならないマス目 (半径 rad の物を置く)
-  findFreeSpot(rad: number, cx: number, cz: number) { return freeSpot(this.objects, rad, Math.round(cx), Math.round(cz)); }
+  // (cx, cz) に近い、ほかの物と重ならないマス目 (半径 rad の物を置く。場所を取らない MME の物は数えない)
+  findFreeSpot(rad: number, cx: number, cz: number) { return freeSpot(this.objects.filter(o => !o.mmeObj), rad, Math.round(cx), Math.round(cz)); }
 
   // --- 積み重ね ---
-  stackFrom(b: Obj) { return b.light || b.camera ? [b] : stackFrom(this.stackables, b); }
+  stackFrom(b: Obj) { return stacks(b) ? stackFrom(this.stackables, b) : [b]; }
   // 重力: 下にあるものから順に、足場の一番高い所まで落とす (exclude は動かさない)
   settle(exclude: Obj[] = []) {
     settleHeights(this.stackables, exclude);
-    for (const o of this.objects) { const h = o.light?.height ?? o.camera?.height; if (h !== undefined) { o.y = o.py = h; o.vy = 0; } } // ライト・カメラは決めた高さ
+    for (const o of this.objects) { const h = o.light?.height ?? o.camera?.height ?? (o.mmeObj ? 0 : undefined); if (h !== undefined) { o.y = o.py = h; o.vy = 0; } } // ライト・カメラは決めた高さ (MME の物は床)
     this.startFall();
   }
   // 置いた物を、少し上から落として着地させる
   dropIn(b: Obj) {
     this.settle();
-    if (b.light || b.camera) return;
+    if (!stacks(b)) return;
     b.py = b.y + 1.5;
     b.vy = 0;
     this.startFall();
@@ -271,6 +276,9 @@ export class World implements System {
     });
   }
 }
+
+// 積み重ねに加わる物か (ライト・カメラは決めた高さに浮かび、MME の物は形がない)
+const stacks = (o: Obj) => !o.light && !o.camera && !o.mmeObj;
 
 // MMD モデルの形状を片付ける (材質は MaterialLibrary に返す。テクスチャはマテリアルの画像として残る)
 export function disposeModel(root: THREE.Object3D) {

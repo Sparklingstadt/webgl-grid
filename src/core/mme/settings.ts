@@ -56,6 +56,20 @@ export function normalizeObjectEffects(raw: unknown): ObjectEffects | null {
   return Object.keys(out).length > 0 ? out : null;
 }
 
+// --- MME の物 (物の値 'mmeObj'。Obj.mmeObj): 形のない物。仮のコントローラー (ray_controller.pmx の代わり) と仮のアクセサリ (ray.x の代わり) ---
+// name は物の名前と同じ (CONTROLOBJECT・DefaultEffect はこの名前で照らす。アウトライナーで名前を変えると変わる)
+export interface MmeObjData { kind: 'controller' | 'accessory'; name: string }
+export const MME_OBJ_KIND = 14; // 物の種類の番号 (形・モデル・ライト・カメラと重ならない)
+const MME_NAME_MAX = 64; // (物の名前と同じ長さまで)
+
+// 保存されていた値を、使える値にそろえる (種類が分からない・名前が空なら null。名前は前後の空白を除く)
+export function normalizeMmeObj(raw: unknown): MmeObjData | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const { kind, name } = raw as Record<string, unknown>;
+  const n = typeof name === 'string' ? name.trim().slice(0, MME_NAME_MAX) : '';
+  return (kind === 'controller' || kind === 'accessory') && n !== '' ? { kind, name: n } : null;
+}
+
 // --- プロジェクトの場面の値 'mme': 設定・読み込んだフォルダ (id と名前。中のファイルはプロジェクトの mmeFiles)・ポストエフェクトの並び・
 // 仮のコントローラーの値 (名前 → 項目 → 0〜1)・ステージの割り当て (なければ項がない)。物ごとの割り当ては物の値 'mme' ---
 export interface MmeScene {

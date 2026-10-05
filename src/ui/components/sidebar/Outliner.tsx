@@ -22,6 +22,7 @@ const ICON: Record<IconKind, ReactNode> = {
   light: <><path d="M5.5 9.5a4 4 0 1 1 5 0c-.6.5-.9 1.2-.9 2h-3.2c0-.8-.3-1.5-.9-2z" /><path d="M6.5 14h3" /></>,
   bone: <path d="M8 2 11 6 8 14 5 6z M5 6h6" />,
   camera: <path d="M2.5 5h7v6h-7z M9.5 7.5 13.5 5v6l-4-2.5" />,
+  mme: <path d="M8 1.5 9.5 6.5 14.5 8 9.5 9.5 8 14.5 6.5 9.5 1.5 8 6.5 6.5z" />,
   stage: <path d="M1.5 12.5h13 M3 12.5V7l5-3 5 3v5.5 M6 12.5v-3h4v3" />,
   cameraMotion: <path d="M2.5 5h7v6h-7z M9.5 7.5 13.5 5v6l-4-2.5 M4 3h4" />,
   collection: <path d="M2.5 4.5h11v8h-11z M2.5 4.5 4 2.5h8l1.5 2" />,

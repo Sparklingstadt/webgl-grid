@@ -26,8 +26,10 @@ export function pmxName(mesh: { geometry: object; userData: Record<string, unkno
   return src instanceof File ? src.name : null;
 }
 
-// DefaultEffect と照らす物の名前: MMD モデルは .pmx のファイル名、ほかは付けた名前か種類の名前
+// DefaultEffect・CONTROLOBJECT と照らす物の名前: MMD モデルは .pmx のファイル名、MME の物はその名前 (ray_controller.pmx・ray.x など)、
+// ほかは付けた名前か種類の名前
 export function objectName(obj: Obj): string {
+  if (obj.mmeObj) return obj.mmeObj.name;
   return (isModel(obj) && pmxName(obj.model)) || nameOf(obj);
 }
 

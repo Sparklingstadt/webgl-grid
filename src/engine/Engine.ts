@@ -3,6 +3,7 @@ import { radiusOf } from '../core/stacking';
 import { applyObjectData } from './addons/registry';
 import { cameraAim, type CameraSettings } from '../core/camera';
 import type { LightSettings, LightType } from '../core/light';
+import type { MmeObjData } from '../core/mme/settings.ts';
 import { FPS } from '../core/constants';
 import { SONG_FILE } from '../core/models';
 import { errorText } from '../core/errors';
@@ -45,6 +46,7 @@ import { InputController } from './view/InputController';
 import { TransformTool } from './view/TransformTool';
 import { Lights } from './world/Lights';
 import { Cameras } from './world/Cameras';
+import { MmeObjects } from './world/MmeObjects';
 import { Hierarchy } from './world/Hierarchy';
 import { nameOf } from './world/Selection';
 import { ColorPicker } from './world/ColorPicker';
@@ -76,6 +78,7 @@ export class Engine {
   readonly selection = new Selection(this.world, this.ui);
   readonly lights = new Lights(this.world, this.viewport);
   readonly cameras = new Cameras(this.world, this.viewport);
+  readonly mmeObjects = new MmeObjects(this.world); // MME の物 (仮のコントローラー・仮のアクセサリ)
   readonly hierarchy = new Hierarchy(this.world); // 親子付け
   readonly materials = new MaterialEditor(this.library, this.world, this.selection, this.ui);
   readonly picker = new ColorPicker(this.world, this.viewport, this.ui);
@@ -352,7 +355,7 @@ export class Engine {
     const r = canvas.getBoundingClientRect(), cam = this.graph.camera, v = new THREE.Vector3();
     const [l, rr, top, bottom] = [Math.min(x0, x1), Math.max(x0, x1), Math.min(y0, y1), Math.max(y0, y1)];
     const hits = this.world.objects.filter(o => {
-      if (o.hidden || o.colHidden) return false;
+      if (o.hidden || o.colHidden || o.mmeObj) return false; // (MME の物は形がないので、ビューポートでは選ばない)
       v.set(o.x, o.py + o.h * (o.scale ?? 1) / 2, o.z).project(cam);
       if (v.z > 1) return false; // (カメラの後ろ)
       const sx = r.left + (v.x + 1) / 2 * r.width, sy = r.top + (1 - v.y) / 2 * r.height;
@@ -389,6 +392,14 @@ export class Engine {
     cam.getWorldDirection(dir);
     const { r, tiltDeg } = cameraAim(dir.x, dir.y, dir.z);
     const obj = this.cameras.add({ fov: cam.fov, height: Math.max(cam.position.y, 0.05), tiltDeg, ...settings }, cam.position.x, cam.position.z, r);
+    this.selection.select(obj);
+    this.viewport.requestDraw();
+    return obj;
+  }
+  // --- MME の物 (仮のコントローラー・仮のアクセサリ。形がなく、選ぶのはアウトライナーから) ---
+  // 置いて選ぶ (元に戻せる)
+  addMmeObject(data: MmeObjData): Obj {
+    const obj = this.mmeObjects.add(data);
     this.selection.select(obj);
     this.viewport.requestDraw();
     return obj;
@@ -467,18 +478,23 @@ export class Engine {
         obj = this.lights.add({ ...src.light }, x, z);
       } else if (src.camera) {
         obj = this.cameras.add({ ...src.camera }, x, z, src.r);
+      } else if (src.mmeObj) {
+        obj = this.mmeObjects.add(src.mmeObj);
       } else {
         obj = this.world.addShape(src.s, x, z, src.c);
         src.slots.forEach((id, i) => this.world.setSlot(obj, i, id));
       }
       obj.r = src.r;
-      // 物ごとの値 (表示・アドオンの値。名前は下で番号を付ける)
+      // MME の物は、キーフレーム (MME の値のキー) も写す (モデルは上で写した)
+      if (src.mmeObj) obj.anim = isEmpty(src.anim) ? null : animationFromJson(animationToJson(src.anim!));
+      // 物ごとの値 (表示・MME の値と割り当て・アドオンの値。名前は下で番号を付ける)
       for (const d of this.addons.objectData.list()) {
-        if (d.key === 'name' || d.key === 'light' || d.key === 'camera') continue;
+        if (d.key === 'name' || d.key === 'light' || d.key === 'camera' || d.key === 'mmeObj') continue;
         const v = d.get(src);
         if (v !== undefined && v !== null) applyObjectData(d, obj, structuredClone(v));
       }
       obj.name = this.nextName(nameOf(src));
+      if (obj.mmeObj) obj.mmeObj = { ...obj.mmeObj, name: obj.name }; // (MME の物の名前は、物の名前と同じ)
       if (src.parent !== undefined) this.hierarchy.set(obj, this.hierarchy.parentOf(src)); // (親子付けも写す)
       this.world.settle();
       return obj;
@@ -583,8 +599,9 @@ export class Engine {
   // 名前を付ける (空・null で種類の名前に戻す)
   renameObj(obj: Obj, name: string | null) {
     const n = name?.trim().slice(0, MAX_NAME) || undefined;
-    if (obj.name === n) return;
+    if (obj.name === n || (obj.mmeObj && !n)) return; // (MME の物は名前で照らすので、名前をなしにはしない)
     obj.name = n;
+    if (obj.mmeObj && n) obj.mmeObj = { ...obj.mmeObj, name: n };
     this.objChanged();
   }
   // ビューポートで隠す・レンダリングに写さない (Blender の目とカメラのアイコン)。隠した物は選択を外す
