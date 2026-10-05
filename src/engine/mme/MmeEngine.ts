@@ -85,9 +85,9 @@ export class MmeEngine {
     return { id: e.id, name: e.name, ok: r.ok, errors, errorCount: r.ok ? 0 : r.errors.length, warnings };
   }
 
-  // .fx が入っているフォルダのファイルを読んでコンパイルする (失敗したらお知らせを出す)
-  loadEffect(files: File[], entry: string): Promise<LoadedEffect> {
-    return this.store.load(files, entry);
+  // .fx が入っているフォルダを読み込んで (同じ名前のフォルダにはまとめて)、その .fx をコンパイルする (失敗したらお知らせを出す)
+  async loadEffect(files: File[], entry: string): Promise<LoadedEffect> {
+    return this.store.effect(await this.store.addFolder(files), entry);
   }
 
   // --- 画面の操作 (割り当ては保存せず、元に戻すの対象にもしない) ---
@@ -123,7 +123,7 @@ export class MmeEngine {
   // ファイルを読めなければ (File.arrayBuffer の失敗など) お知らせを出して null
   private async read(files: File[], entry: string): Promise<LoadedEffect | null> {
     try {
-      return await this.store.load(files, entry);
+      return await this.loadEffect(files, entry);
     } catch (err) {
       this.deps.ui.toast(t('.fx を読めませんでした: {error}', { error: errorText(err) }), 8000);
       return null;

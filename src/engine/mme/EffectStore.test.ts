@@ -1,8 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
+import { compileEffect } from '../../core/fx/index.ts';
 import { pickTechnique, type TechniqueQuery } from '../../core/mme/technique.ts';
 import type { MmdPass } from '../../core/mme/semantics.ts';
 import type { UiChannel } from '../UiChannel';
-import { EffectStore } from './EffectStore.ts';
+import { EffectStore, readBinary } from './EffectStore.ts';
+
+// compileEffect の呼ばれた数を数える (中身はそのまま)
+vi.mock('../../core/fx/index.ts', async importOriginal => {
+  const mod = await importOriginal<typeof import('../../core/fx/index.ts')>();
+  return { ...mod, compileEffect: vi.fn(mod.compileEffect) };
+});
 
 function fakeUi() {
   return { toast: vi.fn() } as unknown as UiChannel & { toast: ReturnType<typeof vi.fn> };
@@ -70,36 +77,118 @@ describe('EffectStore', () => {
     const mixed = [fileAt('A/a.fx', ''), fileAt('B/sub/b.fx', ''), new File([''], 'c.fx')];
     expect(EffectStore.fxFilesIn(mixed)).toEqual(['A/a.fx', 'B/sub/b.fx', 'c.fx']);
     const store = new EffectStore(fakeUi());
-    const e = await store.load([fileAt('A/a.fx', '#include "../B/inc.fxsub"\ntechnique T { }'), fileAt('B/inc.fxsub', '')], 'A/a.fx');
-    expect([...e.bytes.keys()].sort()).toEqual(['A/a.fx', 'B/inc.fxsub']);
+    const two = await store.addFolder([fileAt('A/a.fx', '#include "../B/inc.fxsub"\ntechnique T { }'), fileAt('B/inc.fxsub', '')]);
+    expect(two.name).toBe('');
+    expect([...two.files.keys()].sort()).toEqual(['A/a.fx', 'B/inc.fxsub']);
+    const e = store.effect(two, 'A/a.fx');
     expect(e.result.ok).toBe(true);
     expect(e.name).toBe('A/a.fx');
+    expect(e.folder).toBe(two);
     // 1 つのフォルダなら、その名前を取る (名前は「フォルダ/パス」)
-    const one = await store.load([fileAt('Fx/sub/a.fx', 'technique T { }'), fileAt('Fx/tex.png', '')], 'sub/a.fx');
-    expect([...one.bytes.keys()].sort()).toEqual(['sub/a.fx', 'tex.png']);
-    expect(one.name).toBe('Fx/sub/a.fx');
+    const one = await store.addFolder([fileAt('Fx/sub/a.fx', 'technique T { }'), fileAt('Fx/tex.png', '')]);
+    expect(one.name).toBe('Fx');
+    expect([...one.files.keys()].sort()).toEqual(['sub/a.fx', 'tex.png']);
+    expect(store.effect(one, 'sub/a.fx').name).toBe('Fx/sub/a.fx');
   });
 
-  it('load: サブフォルダの #include を大文字小文字を無視して読む', async () => {
+  it('effect: サブフォルダの #include を大文字小文字を無視して読み、読んだパスを used に足す', async () => {
     const ui = fakeUi();
     const store = new EffectStore(ui);
-    const files = [
-      fileAt('MyFx/Main.fx', `#include "Sub/Common.fxsub"\n${MINIMAL}`),
-      fileAt('MyFx/sub/common.FXSUB', 'float4 Tint() { return float4(1, 0, 0, 1); }'),
-    ];
-    const e = await store.load(files, 'Main.fx');
+    const folder = await store.addFolder([
+      fileAt('MyFx/Main.fx', `#include "shader/math.fxsub"\n${MINIMAL}`),
+      fileAt('MyFx/Shader/Math.fxsub', 'float4 Tint() { return float4(1, 0, 0, 1); }'),
+      fileAt('MyFx/unused.fxsub', ''),
+    ]);
+    const e = store.effect(folder, 'main.FX'); // エントリーも大文字小文字を無視して探す
     expect(e.result).toMatchObject({ ok: true, warnings: [] });
     expect(e.entry).toBe('Main.fx');
-    expect([...e.bytes.keys()].sort()).toEqual(['Main.fx', 'sub/common.FXSUB']);
-    expect(new TextDecoder().decode(e.bytes.get('sub/common.FXSUB'))).toContain('Tint');
+    expect(e.name).toBe('MyFx/Main.fx');
+    expect(new TextDecoder().decode(folder.text.get('Shader/Math.fxsub'))).toContain('Tint');
+    expect([...folder.used].sort()).toEqual(['Main.fx', 'Shader/Math.fxsub']);
     expect(e.id).not.toBe(store.defaultEffect.id);
     expect(ui.toast).not.toHaveBeenCalled();
   });
 
-  it('load に失敗しても LoadedEffect を返し、お知らせに最初のエラーを出す', async () => {
+  it('effect は同じフォルダ・同じパス (大文字小文字は問わない) なら同じ LoadedEffect を返し、コンパイルは 1 回', async () => {
+    const store = new EffectStore(fakeUi());
+    const folder = await store.addFolder([fileAt('Fx/a.fx', 'technique T { }'), fileAt('Fx/b.fx', 'technique T { }')]);
+    vi.mocked(compileEffect).mockClear();
+    const a = store.effect(folder, 'a.fx');
+    expect(store.effect(folder, 'a.fx')).toBe(a);
+    expect(store.effect(folder, './A.FX')).toBe(a);
+    expect(compileEffect).toHaveBeenCalledTimes(1);
+    expect(store.effect(folder, 'b.fx')).not.toBe(a);
+    expect(compileEffect).toHaveBeenCalledTimes(2);
+    // 既定の default.fx は builtin のフォルダにある
+    expect(store.effect(store.defaultEffect.folder, 'default.fx')).toBe(store.defaultEffect);
+    expect(store.defaultEffect.folder.id).toBe('builtin');
+    expect(store.folder('builtin')).toBe(store.defaultEffect.folder);
+    expect(store.folders()).toEqual([folder]); // (読み込んだフォルダだけ)
+    expect(store.folder(folder.id)).toBe(folder);
+    expect(store.folder('nothing')).toBeNull();
+  });
+
+  it('画像は addFolder では読まず、readBinary で (大文字小文字を無視して) 読んで used に足す', async () => {
+    const store = new EffectStore(fakeUi());
+    const fx = fileAt('Fx/a.fx', 'technique T { }');
+    const png = fileAt('Fx/Tex/Stone.png', 'PNG!');
+    const fxRead = vi.spyOn(fx, 'arrayBuffer');
+    const pngRead = vi.spyOn(png, 'arrayBuffer');
+    const folder = await store.addFolder([fx, png]);
+    expect(fxRead).toHaveBeenCalledTimes(1);
+    expect(pngRead).not.toHaveBeenCalled();
+    expect([...folder.text.keys()]).toEqual(['a.fx']);
+    expect(folder.used.size).toBe(0);
+    const bytes = await readBinary(folder, 'tex\\stone.PNG');
+    expect(new TextDecoder().decode(bytes!)).toBe('PNG!');
+    expect(pngRead).toHaveBeenCalledTimes(1);
+    expect([...folder.used]).toEqual(['Tex/Stone.png']);
+    expect(await readBinary(folder, 'nothing.png')).toBeNull();
+    expect([...folder.used]).toEqual(['Tex/Stone.png']);
+  });
+
+  it('同じ名前のフォルダを 2 回読むと 1 つにまとめ、ないファイルだけ足す。大きさが変わったファイルは新しいほうにする。変わったらコンパイルし直す', async () => {
+    const store = new EffectStore(fakeUi());
+    const first = await store.addFolder([fileAt('Ray/a.fx', 'technique T { }'), fileAt('Ray/tex.png', 'x')]);
+    const a = store.effect(first, 'a.fx');
+    // 同じ中身で読み直しても、コンパイル結果はそのまま
+    expect(await store.addFolder([fileAt('Ray/a.fx', 'technique T { }')])).toBe(first);
+    expect(store.effect(first, 'a.fx')).toBe(a);
+    // 2 回目にだけあったファイルを足す (足りないファイルを補う)
+    const keep = first.files.get('tex.png');
+    const again = await store.addFolder([fileAt('Ray/a.fx', 'technique T { }'), fileAt('Ray/tex.png', 'x'), fileAt('Ray/Lighting/b.fx', 'technique T { }')]);
+    expect(again).toBe(first);
+    expect(store.folders()).toEqual([first]);
+    expect([...first.files.keys()].sort()).toEqual(['Lighting/b.fx', 'a.fx', 'tex.png']);
+    expect(first.files.get('tex.png')).toBe(keep);
+    expect(first.text.has('Lighting/b.fx')).toBe(true);
+    // 大きさが違うファイルは新しいほうにして、コンパイル結果を捨てる
+    const before = store.effect(first, 'a.fx');
+    await store.addFolder([fileAt('Ray/a.fx', 'float4 x = ;')]);
+    const b = store.effect(first, 'a.fx');
+    expect(b).not.toBe(before);
+    expect(b.result.ok).toBe(false);
+    // ファイルを足したときもコンパイルし直す (足りなかった #include が読めるように)
+    await store.addFolder([fileAt('Ray/c.fx', '#include "inc.fxsub"\ntechnique T { }')]);
+    expect(store.effect(first, 'c.fx').result.ok).toBe(false);
+    await store.addFolder([fileAt('Ray/inc.fxsub', '')]);
+    expect(store.effect(first, 'c.fx').result.ok).toBe(true);
+    // 名前の違うフォルダは別
+    const other = await store.addFolder([fileAt('Other/a.fx', 'technique T { }')]);
+    expect(other).not.toBe(first);
+    expect(other.id).not.toBe(first.id);
+    expect(store.folders()).toEqual([first, other]);
+    // 同じ名前のフォルダを続けて (前のを読み終える前に) 読んでも 1 つ
+    const [p, q] = await Promise.all([store.addFolder([fileAt('New/a.fx', '')]), store.addFolder([fileAt('New/b.fx', '')])]);
+    expect(p).toBe(q);
+    expect([...p.files.keys()].sort()).toEqual(['a.fx', 'b.fx']);
+  });
+
+  it('effect に失敗しても LoadedEffect を返し、初めてのときだけお知らせに最初のエラーを出す', async () => {
     const ui = fakeUi();
     const store = new EffectStore(ui);
-    const e = await store.load([fileAt('Bad/bad.fx', MINIMAL)], 'bad.fx'); // Tint がない
+    const folder = await store.addFolder([fileAt('Bad/bad.fx', MINIMAL)]);
+    const e = store.effect(folder, 'bad.fx'); // Tint がない
     expect(e.result.ok).toBe(false);
     if (e.result.ok) return;
     const first = e.result.errors[0];
@@ -107,15 +196,29 @@ describe('EffectStore', () => {
     const text = ui.toast.mock.calls[0][0] as string;
     expect(text).toContain(e.name);
     expect(text).toContain(`${first.code} ${first.file}:${first.line} ${first.message}`);
+    expect(store.effect(folder, 'bad.fx')).toBe(e);
+    expect(ui.toast).toHaveBeenCalledTimes(1);
+  });
+
+  it('effect: フォルダにないファイルは ok でない結果 (FX-IO-NOT-FOUND)', async () => {
+    const ui = fakeUi();
+    const store = new EffectStore(ui);
+    const folder = await store.addFolder([fileAt('Fx/a.fx', 'technique T { }')]);
+    const e = store.effect(folder, 'sub/none.fx');
+    expect(e.result.ok).toBe(false);
+    expect(e.result.ok ? [] : e.result.errors.map(d => d.code)).toEqual(['FX-IO-NOT-FOUND']);
+    expect(e.entry).toBe('sub/none.fx');
+    expect(store.effect(folder, 'sub/none.fx')).toBe(e);
+    expect(ui.toast).toHaveBeenCalledTimes(1);
   });
 
   it('物の割り当て・ポストエフェクトの並べ替え・オン・オフ・外す・物を消したら割り当ても消える', async () => {
     const store = new EffectStore(fakeUi());
     const changed = vi.fn();
     store.events.on('changed', changed);
-    const a = await store.load([fileAt('A/a.fx', '')], 'a.fx');
-    const b = await store.load([fileAt('B/b.fx', '')], 'b.fx');
-    const c = await store.load([fileAt('C/c.fx', '')], 'c.fx');
+    const a = store.effect(await store.addFolder([fileAt('A/a.fx', '')]), 'a.fx');
+    const b = store.effect(await store.addFolder([fileAt('B/b.fx', '')]), 'b.fx');
+    const c = store.effect(await store.addFolder([fileAt('C/c.fx', '')]), 'c.fx');
 
     expect(store.objectEffect(1)).toBeNull();
     store.setObjectEffect(1, a);

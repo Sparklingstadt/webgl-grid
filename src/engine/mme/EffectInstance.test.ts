@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
-import { compileEffect, type Pass, type Program, type RenderState } from '../../core/fx/index.ts';
+import { type Pass, type Program, type RenderState } from '../../core/fx/index.ts';
 import { addDictionary, setLang } from '../../core/i18n.ts';
 import en from '../../i18n/en.ts';
 import { buildDds } from '../../core/testing/dds.ts';
 import { semanticValue, SHADOW_COLOR, type MaterialState, type SemanticContext } from '../../core/mme/semantics.ts';
 import type { UiChannel } from '../UiChannel';
-import { EffectStore, type LoadedEffect } from './EffectStore.ts';
+import { EffectStore, type EffectFolder, type LoadedEffect } from './EffectStore.ts';
 import { applyStates, cullSide, EffectInstance, type BaseState, type DrawBuiltins, type TextureSource } from './EffectInstance.ts';
 
 const FX = String.raw`
@@ -44,12 +44,17 @@ technique T {
 }
 `;
 
-// フォルダごと読んだエフェクト (EffectStore.load と同じ形)
+// フォルダごと読んだエフェクト (EffectStore.addFolder と同じ形。画像は File のまま)
+function folderOf(fx: string, files: [string, Uint8Array][]): EffectFolder {
+  const text = new Map([['sub/effect.fx', new TextEncoder().encode(fx)]]);
+  const all: [string, Uint8Array][] = [...text, ...files];
+  return { id: 'f1', name: 'Fx', files: new Map(all.map(([p, b]) => [p, new File([new Uint8Array(b)], p)])), text, used: new Set() };
+}
+
 function loadEffect(fx = FX, files: [string, Uint8Array][] = [['sub/tex/stone.png', new Uint8Array([9, 8, 7])]]): LoadedEffect {
-  const bytes = new Map<string, Uint8Array>([['sub/effect.fx', new TextEncoder().encode(fx)], ...files]);
-  const result = compileEffect('sub/effect.fx', p => bytes.get(p) ?? null, { listFiles: () => [...bytes.keys()] });
-  if (!result.ok) throw new Error(result.errors.map(e => `${e.code}: ${e.message}`).join('\n'));
-  return { id: 'fx1', name: 'effect.fx', entry: 'sub/effect.fx', result, bytes };
+  const e = new EffectStore({ toast: vi.fn() } as unknown as UiChannel).effect(folderOf(fx, files), 'sub/effect.fx');
+  if (!e.result.ok) throw new Error(e.result.errors.map(d => `${d.code}: ${d.message}`).join('\n'));
+  return e;
 }
 
 function passOf(e: LoadedEffect, name: string): Pass {
@@ -250,12 +255,15 @@ describe('EffectInstance', () => {
     const decode = vi.fn(async () => decoded);
     const requestDraw = vi.fn();
     const inst = new EffectInstance(e, requestDraw, decode);
-    expect(decode).toHaveBeenCalledTimes(1);
-    expect(decode).toHaveBeenCalledWith(e.bytes.get('sub/tex/stone.png'), 'sub/tex/stone.png');
+    // 画像は readBinary で File から読む (読んだパスは used に入る)
+    await vi.waitFor(() => expect(decode).toHaveBeenCalledTimes(1));
+    expect(decode).toHaveBeenCalledWith(new Uint8Array([9, 8, 7]), 'sub/Tex/Stone.PNG');
+    expect(e.folder.used.has('sub/tex/stone.png')).toBe(true);
     const pass = passOf(e, 'P');
     const prog = pass.program!;
     const m = inst.material(pass, 1, OBJECT)!;
-    await vi.waitFor(() => expect(requestDraw).toHaveBeenCalled());
+    await inst.ready(); // (見つからない画像の警告も、読み終えてから)
+    expect(requestDraw).toHaveBeenCalled();
     inst.bind(m, pass, makeCtx(), BUILTINS, noTextures());
     const tex = m.uniforms[glslOf(prog, 'SampLinear')].value as THREE.Texture;
     expect(tex).not.toBe(decoded);
@@ -271,7 +279,8 @@ describe('EffectInstance', () => {
     const e = loadEffect();
     const requestDraw = vi.fn();
     const inst = new EffectInstance(e, requestDraw, async () => { throw new Error('broken'); });
-    await vi.waitFor(() => expect(requestDraw).toHaveBeenCalled());
+    await inst.ready(); // (見つからない画像の警告も、読み終えてから)
+    expect(requestDraw).toHaveBeenCalled();
     const pass = passOf(e, 'P');
     const m = inst.material(pass, 1, OBJECT)!;
     inst.bind(m, pass, makeCtx(), BUILTINS, noTextures());
@@ -285,7 +294,8 @@ describe('EffectInstance', () => {
     const decoded = pixel([1, 2, 3, 4]);
     const requestDraw = vi.fn();
     const inst = new EffectInstance(e, requestDraw, async () => decoded);
-    await vi.waitFor(() => expect(requestDraw).toHaveBeenCalled());
+    await inst.ready(); // (見つからない画像の警告も、読み終えてから)
+    expect(requestDraw).toHaveBeenCalled();
     const pass = passOf(e, 'P');
     const prog = pass.program!;
     const m = inst.material(pass, 1, OBJECT)!;
@@ -343,13 +353,16 @@ describe('EffectInstance', () => {
     let resolve: (t: THREE.Texture) => void = () => {};
     const decoded = pixel([1, 2, 3, 4]);
     const requestDraw = vi.fn();
-    const inst = new EffectInstance(e, requestDraw, () => new Promise(r => { resolve = r; }));
+    const decode = vi.fn(() => new Promise<THREE.Texture>(r => { resolve = r; }));
+    const inst = new EffectInstance(e, requestDraw, decode);
+    await vi.waitFor(() => expect(decode).toHaveBeenCalled()); // (File を読み終えて、画像を作っているところ)
     const pass = passOf(e, 'P');
     const m = inst.material(pass, 1, OBJECT)!;
     const disposedM = vi.fn();
     const disposedT = vi.fn();
     m.addEventListener('dispose', disposedM);
     decoded.addEventListener('dispose', disposedT);
+    requestDraw.mockClear(); // (見つからない画像の警告で頼んだ分)
     inst.dispose();
     expect(disposedM).toHaveBeenCalled();
     resolve(decoded);
@@ -541,10 +554,11 @@ technique T { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = compile
   it('ready は最初に読み始めた画像が全部読み終える (か失敗する) と終わる', async () => {
     const e = loadEffect();
     let resolve: (t: THREE.Texture) => void = () => {};
-    const inst = new EffectInstance(e, () => {}, () => new Promise(r => { resolve = r; }));
+    const decode = vi.fn(() => new Promise<THREE.Texture>(r => { resolve = r; }));
+    const inst = new EffectInstance(e, () => {}, decode);
     let done = false;
     const ready = inst.ready().then(() => { done = true; });
-    await Promise.resolve();
+    await vi.waitFor(() => expect(decode).toHaveBeenCalled());
     await Promise.resolve();
     expect(done).toBe(false);
     resolve(pixel([1, 2, 3, 4]));

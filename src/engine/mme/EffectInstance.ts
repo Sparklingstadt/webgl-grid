@@ -1,11 +1,11 @@
 import * as THREE from 'three';
 import type { EffectDesc, Param, Pass, RenderState, SamplerDecl, StateValue, TextureDecl, UniformRef } from '../../core/fx/index.ts';
-import { dirname, joinPath, resolveFile } from '../../core/fx/source.ts';
+import { dirname, joinPath } from '../../core/fx/source.ts';
 import { msg, t } from '../../core/i18n.ts';
 import { annotation } from '../../core/mme/annotations.ts';
 import { semanticValue, textureRole, type SemanticContext } from '../../core/mme/semantics.ts';
 import { typeShape } from '../../core/mme/typeShape.ts';
-import type { LoadedEffect } from './EffectStore.ts';
+import { readBinary, type LoadedEffect } from './EffectStore.ts';
 import { cloneTexture, decodeTexture } from './textures.ts';
 
 // --- 1 つのエフェクトの GPU の資源: pass ごとの RawShaderMaterial、ResourceName のテクスチャ、パラメータの値 ---
@@ -364,17 +364,17 @@ export class EffectInstance {
     const name = typeof a?.value === 'string' ? a.value : '';
     const entry: FileTexture = { label: name, tex: null, failed: false };
     this.files.set(decl.name, entry);
-    const bytes = this.effect.bytes;
-    const found = resolveFile({ readFile: p => bytes.get(p) ?? null, listFiles: () => [...bytes.keys()] }, joinPath(dirname(this.effect.entry), name));
-    if (!found) {
-      entry.failed = true;
-      this.warn(t('テクスチャ {name} が見つかりません', { name }));
-      return;
-    }
+    const path = joinPath(dirname(this.effect.entry), name);
     const mip = annotation(decl.annotations, 'MipLevels');
     const mipmaps = !(Array.isArray(mip?.value) && mip.value[0] === 1);
-    const load = this.decode(found.bytes, found.path).then(tex => {
-      if (this.disposed) { tex.dispose(); return; }
+    const load = readBinary(this.effect.folder, path).then(bytes => (bytes && !this.disposed ? this.decode(bytes, path) : null)).then(tex => {
+      if (this.disposed) { tex?.dispose(); return; }
+      if (!tex) {
+        entry.failed = true;
+        this.warn(t('テクスチャ {name} が見つかりません', { name }));
+        this.requestDraw();
+        return;
+      }
       tex.colorSpace = THREE.NoColorSpace;
       tex.flipY = false;
       tex.generateMipmaps = mipmaps && !hasOwnMips(tex);
