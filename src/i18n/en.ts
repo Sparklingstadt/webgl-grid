@@ -1360,5 +1360,11 @@ const dict: Dictionary = {
   "いまの割り当てを MMD のエフェクト割当ファイルにします": "Save the current assignments as an MMD effect assignment file",
   ".emm を書き出す": "Export .emm",
   ".emm を選ぶ": "Choose an .emm",
+  "fx/ から選ぶ": "Choose from fx/",
+  "fx/ のフォルダ": "fx/ folders",
+  "どのフォルダを読みますか": "Which folder do you want to load?",
+  "fx/ に置いたエフェクトのフォルダを、フォルダを選んだときと同じように読み込みます": "Loads an effect folder you placed in fx/ the same way as choosing a folder",
+  "fx/ のフォルダの一覧": "List of fx/ folders",
+  ".fx {n} 個": "{n} .fx files",
 };
 export default dict;
