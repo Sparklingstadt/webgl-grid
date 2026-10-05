@@ -86,12 +86,17 @@ export class Assignments {
     return [...out];
   }
 
-  // DefaultEffect の規則が描く、見つかる .fx (規則の順。同じものは 1 つ)。警告は出さない
-  defaultEffects(defaults: DefaultsOf): LoadedEffect[] {
+  // DefaultEffect の規則で、names (場面の物とステージの名前) のどれかを描く、見つかる .fx (同じものは 1 つ)。警告は出さない。
+  // 名前ごとに最初に合う規則だけを見る (どの物にも使われない規則の .fx は入れない)。self は持ち主が分からないので、
+  // 持ち主のとき (self に合う) とそうでないときの両方を入れる
+  defaultEffects(defaults: DefaultsOf, names: string[]): LoadedEffect[] {
     const out = new Set<LoadedEffect>();
-    for (const { action } of defaults.rules) {
-      const e = action.kind === 'effect' ? this.find({ folder: defaults.folder.id, path: joinPath(defaults.base, action.path) }, false) : null;
-      if (e) out.add(e);
+    for (const name of names) {
+      for (const isSelf of [false, true]) {
+        const action = resolveDefault(defaults.rules, name, isSelf);
+        const e = action?.kind === 'effect' ? this.find({ folder: defaults.folder.id, path: joinPath(defaults.base, action.path) }, false) : null;
+        if (e) out.add(e);
+      }
     }
     return [...out];
   }

@@ -12,7 +12,7 @@ import type { Obj } from '../types';
 import type { UiChannel } from '../UiChannel';
 import type { Selection } from '../world/Selection';
 import type { World } from '../world/World';
-import { Assignments } from './Assignments';
+import { Assignments, objectName, pmxName } from './Assignments';
 import type { Controllers } from './Controllers';
 import { EffectInstance, resourcePaths } from './EffectInstance';
 import { markUsed, type EffectStore, type LoadedEffect } from './EffectStore';
@@ -214,17 +214,18 @@ export class MmeRenderer {
   }
 
   // 割り当てた (全部のタブ)・ポストエフェクトの一覧にある (offPosts ならオフのものも)・前のフレームにオフスクリーンで使った .fx と、
-  // それらが宣言するオフスクリーンの DefaultEffect が描く .fx (その宣言も、たどる)。見つからない .fx は入れない
+  // それらが宣言するオフスクリーンの DefaultEffect が、場面の物かステージを描く .fx (その宣言も、たどる)。見つからない .fx は入れない
   private reachable(offPosts: boolean): Set<LoadedEffect> {
     const found = new Set<LoadedEffect>(this.offscreen.effects());
     for (const e of this.referenced()) found.add(e);
     for (const p of this.d.store.posts) if (offPosts || p.enabled) found.add(p.effect);
+    const names = this.sceneNames();
     const queue = [...found];
     for (let e = queue.pop(); e; e = queue.pop()) {
       // (規則だけを見るので、画面の大きさは何でもよい)
       for (const decl of offscreenDecls(e, [1, 1]).decls) {
         if (!decl.draws) continue;
-        for (const x of this.assignments.defaultEffects(defaultsOf(decl))) {
+        for (const x of this.assignments.defaultEffects(defaultsOf(decl), names)) {
           if (found.has(x)) continue;
           found.add(x);
           queue.push(x);
@@ -232,6 +233,13 @@ export class MmeRenderer {
       }
     }
     return found;
+  }
+
+  // DefaultEffect と照らす名前: 置いた物 (隠した物も) と、ステージのメッシュ (.pmx のファイル名。Assignments.slotFor と同じ)
+  private sceneNames(): string[] {
+    const names = new Set(this.d.world.objects.map(objectName));
+    this.d.stage()?.traverse(o => { if ((o as THREE.Mesh).isMesh) names.add(pmxName(o as THREE.Mesh) ?? ''); });
+    return [...names];
   }
 
   // どの物にも割り当てていない・ポストエフェクトの一覧にない・オフスクリーンで使っていない .fx の資源と、場面にないモデルのトゥーンの画像を捨てる

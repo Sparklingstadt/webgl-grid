@@ -685,6 +685,7 @@ technique Post { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = comp
 
   it('whenReady (書き出しの前) も、オフスクリーンの DefaultEffect で描く .fx の画像を、まだ描いていなくても待つ。オフのポストエフェクトのものは待たない', async () => {
     const e = new Engine();
+    e.world.addShape(0, 0, 0, 0); // (規則 * で描く物)
     const on = await e.mme.loadEffect([fileAt('On/post.fx', OFF_POST('*=off.fx;')), fileAt('On/off.fx', TEX_FX('on.png')), bin('On/on.png', [1])], 'post.fx');
     const off = await e.mme.loadEffect([fileAt('Off/post.fx', OFF_POST('*=off.fx;')), fileAt('Off/off.fx', TEX_FX('off.png')), bin('Off/off.png', [2])], 'post.fx');
     e.mme.store.addPost(on);
@@ -693,6 +694,33 @@ technique Post { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = comp
     await e.mme.whenReady();
     expect([...on.folder.used].sort()).toEqual(['off.fx', 'on.png', 'post.fx']);
     expect([...off.folder.used].sort()).toEqual(['post.fx']);
+  });
+
+  it('保存の前に読んだファイルにするのは、DefaultEffect の規則のうち場面の物かステージを描くもの (名前ごとに最初に合う規則) の .fx だけ', async () => {
+    const e = new Engine();
+    const rules = 'self=hide;Doll*=doll.fx;D*=shadowed.fx;Lamp=lamp.fx;Time of day.pmx=sky.fx;*=hide;';
+    const files = ['doll', 'shadowed', 'lamp', 'sky'].map(n => fileAt(`R/${n}.fx`, TEX_FX(`${n}.png`)));
+    const pngs = ['doll', 'shadowed', 'lamp', 'sky'].map(n => bin(`R/${n}.png`, [1]));
+    const post = await e.mme.loadEffect([fileAt('R/post.fx', OFF_POST(rules)), ...files, ...pngs], 'post.fx');
+    e.mme.store.addPost(post);
+    const saved = async () => {
+      const { data } = await readEmbedded(await e.project.save('embedded'));
+      return (data.mmeFiles as { path: string }[]).map(m => m.path);
+    };
+    // 物がなければ、規則の .fx は読まない
+    expect(await saved()).toEqual(['post.fx']);
+    // Doll で始まる物 (D* より先に合う) だけ
+    const doll = e.world.addShape(0, 0, 0, 0);
+    doll.name = 'Dolly';
+    expect(await saved()).toEqual(['doll.fx', 'doll.png', 'post.fx']);
+    // ステージは .pmx のファイル名で照らす
+    const mesh = new THREE.SkinnedMesh(new THREE.BoxGeometry(), new THREE.MeshBasicMaterial());
+    mesh.userData.sourceFile = new File([], 'Time of day.pmx');
+    const stage = new THREE.Group();
+    stage.add(mesh);
+    stage.userData.sourceFile = mesh.userData.sourceFile; // (保存するステージのファイル)
+    e.stage.model = stage;
+    expect(await saved()).toEqual(['doll.fx', 'doll.png', 'post.fx', 'sky.fx', 'sky.png']);
   });
 
   it('used にあってフォルダにないパスは保存しない (例外にならない)', async () => {
