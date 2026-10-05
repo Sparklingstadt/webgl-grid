@@ -113,7 +113,7 @@ const UNARY_FNS: Record<string, (x: number) => number> = {
   frac: x => x - Math.floor(x), sin: Math.sin, cos: Math.cos, tan: Math.tan, exp: Math.exp, exp2: x => 2 ** x,
   log: Math.log, log2: Math.log2,
 };
-const BINARY_FNS: Record<string, (x: number, y: number) => number> = { min: Math.min, max: Math.max, pow: (x, y) => x ** y };
+const BINARY_FNS: Record<string, (x: number, y: number) => number> = { min: Math.min, max: Math.max, pow: (x, y) => Math.abs(x) ** y }; // (D3D9 の pow は |x|^y)
 const VECTOR_FNS = new Set(['lerp', 'normalize', 'length', 'dot']);
 
 function evalIntrinsic(name: string, args: Num[]): Num | null {

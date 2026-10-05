@@ -170,6 +170,11 @@ describe('GLSL の書き出し: 式', () => {
     expect(exprOf('atan2(t, t)', v)).toBe('atan(t, t)');
     expect(exprOf('saturate(x)', v)).toBe('clamp(x, 0.0, 1.0)');
     expect(exprOf('log10(x)', v)).toBe('(log(x) * 0.4342944819)');
+    // D3D9 (MME) の pow は |x|^y (GL の pow は x < 0 で NaN)
+    expect(exprOf('pow(x, y)', v)).toBe('pow(abs(x), y)');
+    expect(exprOf('pow(t - 1.0, 1.5)', v)).toBe('pow(abs(t - 1.0), 1.5)');
+    // D3D9 の normalize (nrm) は 0 のベクトルを 0 にする (GL は NaN)
+    expect(exprOf('normalize(x)', v)).toBe('mme_normalize(x)');
     expect(exprOf('ldexp(x, y)', v)).toBe('(x * exp2(y))');
     expect(exprOf('isfinite(t)', v)).toBe('!(isnan(t) || isinf(t))');
     expect(exprOf('isfinite(x.xy)', v)).toBe('bvec2(!(isnan(x.xy.x) || isinf(x.xy.x)), !(isnan(x.xy.y) || isinf(x.xy.y)))');

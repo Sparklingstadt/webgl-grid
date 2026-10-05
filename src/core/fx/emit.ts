@@ -549,9 +549,10 @@ function emitCall(e: ExprOf<'call'>, ctx: EmitContext): Code {
 // 名前だけ付け替える組み込み関数 (同じ名前のものも)
 const RENAMED: Record<string, string> = {
   atan2: 'atan', frac: 'fract', rsqrt: 'inversesqrt', lerp: 'mix', ddx: 'dFdx', fmod: 'mme_fmod', sincos: 'mme_sincos', lit: 'mme_lit',
+  normalize: 'mme_normalize',
 };
-const SAME = new Set(`abs acos asin atan ceil clamp cos cosh degrees exp exp2 floor fwidth isinf isnan log log2 max min modf pow
-  radians round sign sin sinh smoothstep sqrt step tan tanh trunc cross distance dot faceforward length normalize reflect refract
+const SAME = new Set(`abs acos asin atan ceil clamp cos cosh degrees exp exp2 floor fwidth isinf isnan log log2 max min modf
+  radians round sign sin sinh smoothstep sqrt step tan tanh trunc cross distance dot faceforward length reflect refract
   determinant transpose`.split(/\s+/));
 const MATRIX_OK = new Set(['mul', 'transpose', 'determinant']);
 const FRAGMENT_ONLY = new Set(['ddx', 'ddy', 'fwidth', 'clip']);
@@ -583,6 +584,8 @@ function emitIntrinsic(e: ExprOf<'call'>, params: Type[], ctx: EmitContext): Cod
       return code(`(${c[1].s}) * (${c[0].s})`, P.mul); // HLSL の行を GLSL の列として持つので、順を入れ替える
     }
     case 'saturate': return call('clamp', [a[0], '0.0', '1.0']);
+    // D3D9 (vs_3_0・ps_3_0) の pow は |x|^y。GL の pow は x < 0 で決まらない (NaN) ので、cos(π/2) のようなわずかに負の値で絵が黒くなる
+    case 'pow': return call('pow', [`abs(${a[0]})`, a[1]]);
     case 'ddy':
       ctx.helpers.add('mme_flipY');
       return primary(`(-mme_flipY * dFdy(${a[0]}))`);
@@ -782,6 +785,8 @@ const HELPERS: [string, () => string][] = [
   }).join('')],
   ['mme_imod', () => INT_TYPES.map(T => `${T} mme_imod(${T} a, ${T} b) { return a - b * mme_idiv(a, b); }\n`).join('')],
   ['mme_sincos', () => FLOAT_TYPES.map(T => `void mme_sincos(${T} x, out ${T} s, out ${T} c) { s = sin(x); c = cos(x); }\n`).join('')],
+  // D3D9 の nrm は v × rsq(v·v)。0 のベクトルは rsq が ∞ になり、D3D9 の掛け算 (0 × ∞ = 0) で 0 になる (GL の normalize は NaN)
+  ['mme_normalize', () => FLOAT_TYPES.map(T => `${T} mme_normalize(${T} v) { float d = dot(v, v); return d > 0.0 ? v * inversesqrt(d) : v * 0.0; }\n`).join('')],
   ['mme_lit', () => 'vec4 mme_lit(float l, float h, float m) { return vec4(1.0, max(l, 0.0), (l < 0.0 || h < 0.0) ? 0.0 : pow(h, m), 1.0); }\n'],
 ];
 

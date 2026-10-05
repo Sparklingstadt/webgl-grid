@@ -273,6 +273,7 @@ describe('型チェック: 定数の計算', () => {
     expect(evalIn('static const float3 v = float3(3, 0, 4);', 'length(v)')).toEqual({ kind: 'num', type: F, values: [5] });
     expect(evalIn('static const float3 v = float3(3, 0, 4);', 'normalize(v).z')).toEqual({ kind: 'num', type: F, values: [0.8] });
     expect(evalIn('const float2 a = float2(1, 2);', 'dot(a, a) + max(1, 3) + pow(2, 3) + saturate(1.5) + frac(2.25) + lerp(0, 10, 0.5)')).toEqual({ kind: 'num', type: F, values: [5 + 3 + 8 + 1 + 0.25 + 5] });
+    expect(evalIn('', 'pow(-8.0, 1.0 / 3.0)')).toEqual({ kind: 'num', type: F, values: [expect.closeTo(2, 6)] }); // (D3D9 の pow は |x|^y)
     expect(evalIn('', '(1 < 2) ? 3 : 4')).toEqual({ kind: 'num', type: I, values: [3] });
     expect(evalIn('float u;', 'u + 1')).toBeNull();
     expect(evalIn('static float s = 2;', 's * 2')).toEqual({ kind: 'num', type: F, values: [4] });
