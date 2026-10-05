@@ -53,9 +53,19 @@ describe('MmeEngine', () => {
     expect(e.viewport.drawOverride!()).toBe(true); // (前の描画の結果)
     expect(e.viewport.drawOverride!()).toBe(true);
     expect(prev).toHaveBeenCalledTimes(2);
-    expect(error).toHaveBeenCalledTimes(2);
+    expect(error).toHaveBeenCalledTimes(1); // (同じ例外が続くあいだ、コンソールにも 1 回)
     expect(toast).toHaveBeenCalledTimes(1);
     expect(e.ui.state.toast?.text).toContain('壊れた');
+    // 違う例外は書く。一度描けたら、同じ例外もまた書く (お知らせは同じ文なら 1 回のまま)
+    const render = vi.spyOn(e.mme.renderer, 'render').mockImplementation(() => { throw new Error('別の壊れ方'); });
+    e.viewport.drawOverride!();
+    expect(error).toHaveBeenCalledTimes(2);
+    render.mockReturnValueOnce(true);
+    e.viewport.drawOverride!();
+    render.mockImplementation(() => { throw new Error('別の壊れ方'); });
+    e.viewport.drawOverride!();
+    expect(error).toHaveBeenCalledTimes(3);
+    expect(toast).toHaveBeenCalledTimes(2);
   });
 
   it('物を消すと、その物の .fx の割り当ても消える', async () => {

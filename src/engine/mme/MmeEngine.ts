@@ -28,6 +28,7 @@ export class MmeEngine {
   readonly settings: MmeSettings = { ...MME_DEFAULTS };
   readonly renderer: MmeRenderer;
   private reported = new Set<string>(); // お知らせに出した例外の文
+  private logged: string | null = null; // 続けて出ている例外の文 (コンソールに 1 回だけ書く。描けたら忘れる)
   private shown = ''; // 画面に出した状態 (JSON。同じなら知らせない)
 
   constructor(private deps: MmeDeps) {
@@ -137,15 +138,20 @@ export class MmeEngine {
     this.publish();
   }
 
-  // MME 互換で描く。例外を出したら false (そのフレームは標準のエンジンと効果で描く。同じ例外のお知らせは 1 回)
+  // MME 互換で描く。例外を出したら false (そのフレームは標準のエンジンと効果で描く。同じ例外のお知らせは 1 回。
+  // 毎フレーム同じ例外が出るあいだは、コンソールにも 1 回だけ書く)
   private draw(): boolean {
     try {
       const drawn = this.renderer.render();
+      this.logged = null;
       this.publish(); // (描いたときの警告)
       return drawn;
     } catch (err) {
-      console.error(err);
       const error = errorText(err);
+      if (error !== this.logged) {
+        this.logged = error;
+        console.error(err);
+      }
       if (!this.reported.has(error)) {
         this.reported.add(error);
         this.deps.ui.toast(t('MME 互換で描けなかったので、標準のエンジンで描きました: {error}', { error }), 8000);
