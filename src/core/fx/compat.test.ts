@@ -3,8 +3,11 @@ import { check } from './check.ts';
 import { applyCompat } from './compat.ts';
 import { Diagnostics } from './diagnostics.ts';
 import { emitFunctions, newEmitContext } from './emit.ts';
+import { compileEffect } from './index.ts';
 import { parse } from './parser.ts';
 import { preprocess } from './preprocess.ts';
+// 固定した Ray-MMD 1.5.2 の本物のソース (Time of day・Fog が #include するもの)
+import PHASE_FUNCTIONS from '../../../third_party/ray-mmd-1.5.2/Shader/PhaseFunctions.fxsub?raw';
 
 // Ray-MMD 1.5.2 の Shader/PhaseFunctions.fxsub のとおりの関数 (U - 2.0 の書き方)。PI は自分で宣言する
 const MIE = (exponent: string) => `static const float PI = 3.14159265;
@@ -64,5 +67,25 @@ describe('MMD の絵に合わせたソースの書き換え (compat)', () => {
     // lambda でも mieConst * K でもないものは当たらない
     const near = 'float3 f(float3 lambda, float3 K) { return mieConst * K / pow(lambda, 3.0); }';
     expect(applyCompat(near)).toBe(near);
+  });
+
+  it('固定した Ray-MMD 1.5.2 の Shader/PhaseFunctions.fxsub (#include で読む) にも当たる: 規則が当たらなくなったら (Ray-MMD の書き方が変わったら) ここで落ちる', () => {
+    const changed = applyCompat(PHASE_FUNCTIONS).split('\n').filter((l, i) => l !== PHASE_FUNCTIONS.split('\n')[i]);
+    expect(changed.map(l => l.trim())).toEqual(['return mieConst * K / lambda;']);
+    // Ray-MMD のように、別のフォルダから小文字のパスで #include して、コンパイラを通す
+    const files: Record<string, string> = {
+      'Shader/PhaseFunctions.fxsub': PHASE_FUNCTIONS,
+      'Sky/sky.fx': `static const float PI = 3.14159265;
+static const float PI_2 = 6.2831853;
+#include "../shader/PhaseFunctions.fxsub"
+float4 VS(float4 p : POSITION) : POSITION { return p; }
+float4 PS(float3 l : TEXCOORD0) : COLOR0 { return float4(ComputeWaveLengthMie(l, 1.0, 100.0), 1); }
+technique T { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = compile ps_3_0 PS(); } }`,
+    };
+    const r = compileEffect('Sky/sky.fx', p => (p in files ? new TextEncoder().encode(files[p]) : null), { listFiles: () => Object.keys(files) });
+    if (!r.ok) throw new Error(r.errors.map(e => `${e.code} ${e.file}:${e.line} ${e.message}`).join('\n'));
+    const fragment = r.effect.techniques[0].passes[0].program!.fragment;
+    expect(fragment).toContain('mieConst * K / lambda');
+    expect(fragment).not.toContain('pow(abs(lambda');
   });
 });
