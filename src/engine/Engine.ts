@@ -98,6 +98,7 @@ export class Engine {
     viewport: this.viewport, graph: this.graph, world: this.world, selection: this.selection, clock: this.clock,
     library: this.library, ui: this.ui, output: this.output, stage: () => this.stage.model,
     edited: () => this.history.soon(),
+    sceneEdited: () => this.autosave.schedule(),
   });
   readonly loader = new MmdLoader(this.ui, this.library, () => this.viewport.requestDraw());
   readonly vpd = new VpdIO(this.posing, this.viewport, this.ui);

@@ -52,6 +52,9 @@ export interface MmeDeps {
   output: RenderOutput;
   stage: () => THREE.Object3D | null; // ステージ (MMD モデル。割り当ては場面の値 stageEffects)
   edited: () => void; // 画面から割り当てを変えた (元に戻すの手にする)
+  // 元に戻すの対象にしない場面の値 (ステージの割り当て・ポストエフェクト・フォルダ・仮のコントローラーの値・設定) を変えた (自動保存する)。
+  // 毎フレームの publish では呼ばない
+  sceneEdited: () => void;
 }
 
 export class MmeEngine {
@@ -97,7 +100,9 @@ export class MmeEngine {
   // 変えたら描き直す。標準に戻したら、MME の資源 (GPU のものと変形した形) を片付ける
   set(patch: Partial<MmeSettings>): void {
     const was = this.settings.engine;
+    const before = JSON.stringify(this.settings);
     Object.assign(this.settings, patch);
+    if (JSON.stringify(this.settings) !== before) this.deps.sceneEdited();
     if (was === 'mme' && this.settings.engine !== 'mme') this.renderer.dispose();
     this.publish();
     this.deps.viewport.requestDraw();
@@ -106,13 +111,15 @@ export class MmeEngine {
   // 仮のコントローラー (場面にない CONTROLOBJECT の名前) の項目の値 (0〜1) を変えて描き直す。場面の値なので、元に戻すの対象にしない
   setControl(name: string, item: string, v: number): void {
     this.controllers.set(name, item, v);
+    this.deps.sceneEdited();
     this.publish();
     this.deps.viewport.requestDraw();
   }
 
-  // 割り当て・ポストエフェクトが変わった: 使わなくなった資源を捨てて、画面に知らせて描き直す
+  // 割り当て・ポストエフェクト・フォルダが変わった: 使わなくなった資源を捨てて、画面に知らせて描き直す (自動保存もする)
   private changed(): void {
     this.changes++;
+    this.deps.sceneEdited();
     this.renderer.prune();
     this.publish();
     this.deps.viewport.requestDraw();
