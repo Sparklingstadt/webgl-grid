@@ -20,7 +20,7 @@ import { EffectInstance, type BaseState, type TextureSource } from './EffectInst
 import type { EffectStore, LoadedEffect } from './EffectStore';
 import { CANVAS, Framebuffers, type DrawTarget } from './Framebuffers';
 import { mmdSourceOf, type MmdData } from './mmdData';
-import type { MmeSettings } from '../../core/mme/settings.ts';
+import { SHADOW_DISTANCE_MAX, type MmeSettings } from '../../core/mme/settings.ts';
 import { builtins, PostChain, ScriptTargets, type FrameState } from './PostChain';
 import { Skinner, type MmeGeometry } from './Skinner';
 
@@ -326,7 +326,8 @@ export class MmeRenderer {
     return { camera, light: this.light(), eye: position, time, elapsed, selfShadow, screen: [size.x, size.y] };
   }
 
-  // 太陽: 色 = 色 × min(明るさ ÷ π, 1)、向き = 来る向きの逆。影のカメラは標準のエンジンの太陽の影のカメラ (範囲を shadowDistance で広げる)
+  // 太陽: 色 = 色 × min(明るさ ÷ π, 1)、向き = 来る向きの逆。影のカメラは標準のエンジンの太陽の影のカメラ。範囲は MMD の影の距離と
+  // 同じく、値が大きいほど狭い ((10000 − 値) に比例。既定の 8875 で標準のエンジンと同じ範囲)
   private light(): LightState {
     const { sun } = this.d.graph;
     const k = Math.min(sun.intensity / Math.PI, 1);
@@ -335,7 +336,8 @@ export class MmeRenderer {
     const target = sun.target.getWorldPosition(new THREE.Vector3());
     const world = new THREE.Matrix4().lookAt(eye, target, new THREE.Vector3(0, 1, 0)).setPosition(eye);
     const c = sun.shadow.camera;
-    const s = Math.max(this.d.settings.shadowDistance, 1) / SHADOW_DISTANCE; // (0 だと範囲が潰れる)
+    const v = Math.min(Math.max(this.d.settings.shadowDistance, 0), SHADOW_DISTANCE_MAX); // (10000 だと範囲が潰れる)
+    const s = (10000 - v) / (10000 - SHADOW_DISTANCE); // (1 より大きいと既定より広い)
     return {
       direction: this.d.graph.sunDirection().negate(),
       color,

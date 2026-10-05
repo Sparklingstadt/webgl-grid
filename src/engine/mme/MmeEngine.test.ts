@@ -122,11 +122,26 @@ describe('MmeEngine', () => {
     expect(dispose).toHaveBeenCalledTimes(1);
   });
 
-  it('影の距離が 0 でもセルフシャドウの射影は有限', () => {
+  it('影の距離が 0 でも 9999 でもセルフシャドウの射影は有限', () => {
     const e = new Engine();
-    e.mme.set({ shadowDistance: 0 });
-    const p = (e.mme.renderer as unknown as Internals).light().shadowProjection;
-    expect(p.elements.every(Number.isFinite)).toBe(true);
+    for (const shadowDistance of [0, 9999]) {
+      e.mme.set({ shadowDistance });
+      const p = (e.mme.renderer as unknown as Internals).light().shadowProjection;
+      expect(p.elements.every(Number.isFinite)).toBe(true);
+    }
+  });
+
+  it('影の距離は MMD と同じく、大きいほど範囲が狭い (範囲は (10000 − 値) に比例。8875 が標準のエンジンの太陽の影と同じ)', () => {
+    const e = new Engine();
+    // 正射影の x の倍率 (範囲の幅に反比例)
+    const scaleX = (shadowDistance: number) => {
+      e.mme.set({ shadowDistance });
+      return (e.mme.renderer as unknown as Internals).light().shadowProjection.elements[0];
+    };
+    const base = scaleX(8875);
+    expect(scaleX(9999) / base).toBeCloseTo(1125, 6); // 幅は 1 / 1125
+    expect(scaleX(0) / base).toBeCloseTo(1125 / 10000, 9); // 幅は 10000 / 1125 倍
+    expect(scaleX(5000) / base).toBeCloseTo(1125 / 5000, 9);
   });
 
   it('レンダーエンジンの設定をプロジェクトの場面の値として保存し、開き直すと戻る', async () => {

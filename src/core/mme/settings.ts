@@ -1,6 +1,6 @@
 // --- レンダーエンジン (標準 / MME 互換) の設定 (プロジェクトの場面の値 'mme') ---
 export interface MmeSettings { engine: 'standard' | 'mme'; selfShadow: boolean; shadowDistance: number; groundShadow: boolean }
-// shadowDistance: セルフシャドウの範囲 (8875 で標準のエンジンの太陽の影と同じ。大きいほど広い)
+// shadowDistance: セルフシャドウの範囲 (MMD の影の距離と同じく、大きいほど狭くくっきりする。8875 で標準のエンジンの太陽の影と同じ)
 export const MME_DEFAULTS: MmeSettings = { engine: 'standard', selfShadow: true, shadowDistance: 8875, groundShadow: true };
 export const SHADOW_DISTANCE_MAX = 9999;
 
