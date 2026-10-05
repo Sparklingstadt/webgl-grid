@@ -31,6 +31,7 @@ import { ProjectIO } from './project/ProjectIO';
 import { RemoteLink } from './remote/RemoteLink';
 import { Addons } from './addons/Addons';
 import { registerBuiltins } from './addons/builtins';
+import { MmeEngine } from './mme/MmeEngine';
 import { Effects } from './render/Effects';
 import { Environment } from './render/Environment';
 import { SceneGraph } from './render/SceneGraph';
@@ -92,6 +93,13 @@ export class Engine {
     () => this.ui.state.projectName ?? this.selection.model?.model.name ?? t('レンダー'));
   readonly environment = new Environment(this.graph, this.viewport, this.ui);
   readonly effects = new Effects(this.viewport, this.ui, () => this.camera.focusPoint());
+  // レンダーエンジン「MME 互換」(.fx で描く)。効果のあとに作り、その描画 (drawOverride) を包む
+  readonly mme = new MmeEngine({
+    viewport: this.viewport, graph: this.graph, world: this.world, selection: this.selection, clock: this.clock,
+    library: this.library, ui: this.ui, output: this.output, stage: () => this.stage.model,
+    edited: () => this.history.soon(),
+    sceneEdited: () => this.autosave.schedule(),
+  });
   readonly loader = new MmdLoader(this.ui, this.library, () => this.viewport.requestDraw());
   readonly vpd = new VpdIO(this.posing, this.viewport, this.ui);
   readonly history = new History(this.world, this.library, this.physics, this.motion, this.posing, this.keyframes, this.clock, this.selection, this.viewport, this.ui, this.addons);
@@ -238,6 +246,7 @@ export class Engine {
     this.input?.dispose();
     this.input = null;
     this.effects.reset();
+    this.mme.reset();
     this.viewport.unmount();
   }
 

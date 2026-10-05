@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { FPS } from '../../../core/constants';
 import { t } from '../../../core/i18n';
+import { SHADOW_DISTANCE_MAX, type MmeSettings } from '../../../core/mme/settings.ts';
 import {
   OUTPUT_PRESETS, RESOLUTION_PRESETS, VIDEO_FORMATS, VIDEO_QUALITIES, frameSpan, presetIndex, regionPixels, type OutputPreset, type VideoFormat, type VideoQuality,
 } from '../../../core/output';
@@ -25,6 +26,34 @@ function saveUser(list: OutputPreset[]) {
 const same = (p: OutputPreset, o: { width: number; height: number; format: VideoFormat; quality: VideoQuality }) =>
   p.width === o.width && p.height === o.height && p.format === o.format && p.quality === o.quality;
 
+// レンダーエンジン (標準 / MME 互換)。MME 互換のときだけ、セルフシャドウ・影の距離・地面の影
+function EnginePanel() {
+  const engine = useEngine();
+  const m = useUi(s => s.mme.settings);
+  const mme = m.engine === 'mme';
+  return (
+    <Panel title={t('レンダーエンジン')}>
+      <div className="prop">
+        <label htmlFor="out-engine">{t('エンジン')}</label>
+        <BSelect<MmeSettings['engine']> id="out-engine" label={t('レンダーエンジン')} value={m.engine} onChange={v => engine.mme.set({ engine: v })}
+                 options={[{ value: 'standard', label: t('標準') }, { value: 'mme', label: t('MME 互換') }]} />
+      </div>
+      {mme && (
+        <>
+          <BCheck checked={m.selfShadow} onChange={selfShadow => engine.mme.set({ selfShadow })}>{t('セルフシャドウ')}</BCheck>
+          <div className="prop">
+            <label htmlFor="out-shadow-distance">{t('影の距離')}</label>
+            <NumField id="out-shadow-distance" label={t('影の距離')} value={m.shadowDistance} min={0} max={SHADOW_DISTANCE_MAX}
+                      onCommit={shadowDistance => engine.mme.set({ shadowDistance })} />
+          </div>
+          <BCheck checked={m.groundShadow} onChange={groundShadow => engine.mme.set({ groundShadow })}>{t('地面の影')}</BCheck>
+          <div className="note">{t('MME 互換は、MikuMikuEffect の .fx で描きます。.fx は「効果」のタブで読み込みます')}</div>
+        </>
+      )}
+    </Panel>
+  );
+}
+
 // --- 出力 (Blender の出力プロパティ): レンダリングする画像・動画の大きさ・範囲・形式 ---
 // 出力のプリセット (大きさ・形式・画質をまとめて)。いまの設定を自分のプリセットとして保存できる。
 // レンダー範囲 (Ctrl+B) と、モーションブラーもここで
@@ -43,6 +72,7 @@ export function OutputPage() {
   const region = o.region ? regionPixels(o) : null;
   return (
     <>
+      <EnginePanel />
       <Panel title={t('出力のプリセット')}>
         <div className="prop">
           <label htmlFor="out-all-preset">{t('プリセット')}</label>

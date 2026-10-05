@@ -1,0 +1,12 @@
+// include.fx から読まれる共通の部分
+float CommonScale = 0.5;
+
+float3 CommonColor()
+{
+    return float3(1.0, 0.5, 0.25);
+}
+
+float4 CommonVS(float4 Pos : POSITION) : POSITION
+{
+    return Pos;
+}

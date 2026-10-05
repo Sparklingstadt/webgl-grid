@@ -13,6 +13,9 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:all": "node scripts/test-all.mjs",
+    "fx:check": "node scripts/fx-check.ts",
+    "ray:survey": "node scripts/ray-survey.ts",
+    "mme:bench": "node scripts/mme-skin-bench.ts",
     "mcp": "node mcp/server.ts",
     "lint": "oxlint --deny-warnings src mcp e2e scripts electron vite.config.ts playwright.config.ts",
     "electron:main": "vite build --ssr electron/main.ts --outDir dist-electron --emptyOutDir",
@@ -31,6 +34,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
+    "@shaderfrog/glsl-parser": "^7.0.1",
     "@testing-library/dom": "^10.4.2",
     "@testing-library/react": "^16.3.3",
     "@types/node": "^24.13.3",

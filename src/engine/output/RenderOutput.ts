@@ -25,6 +25,8 @@ export class RenderOutput {
   settings: OutputSettings = normalizeOutput(undefined);
   active = false; // 描いている最中 (編集用の表示を隠す)
   hooks: { begin?: () => void; end?: () => void } = {}; // 描く前・描いたあと (場面のカメラに切り替える・戻す)
+  // 描く前に待つもの (MME 互換のテクスチャ・.pmx の読み込み)。null を返したら待たない (標準のエンジン)
+  waitReady: (() => Promise<void> | null) | null = null;
   private cancelled = false;
 
   // baseName: 書き出すファイルの名前の元
@@ -89,6 +91,8 @@ export class RenderOutput {
   // --- データを作る ---
   // いまのフレームを 1 枚描いて、PNG にする
   async renderPng(): Promise<Blob> {
+    const wait = this.waitReady?.();
+    if (wait) await wait;
     const copy = this.flatCanvas(), { clock } = this, t0 = clock.t, blur = this.settings.motionBlur;
     try {
       this.begin();
@@ -148,6 +152,8 @@ export class RenderOutput {
           clock.advanceTo((start + i) / FPS);
           this.viewport.stepSystems(1 / FPS);
         }
+        const wait = this.waitReady?.();
+        if (wait) await wait;
         this.shoot(flat, (start + i) / FPS);
         const frame = new VideoFrame(flat, { timestamp: Math.round(i * 1e6 / FPS), duration: Math.round(1e6 / FPS) });
         const sample = new mb.VideoSample(frame, { timestamp: i / FPS, duration: 1 / FPS });

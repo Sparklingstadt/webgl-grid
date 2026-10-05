@@ -1,26 +1,38 @@
 import { strFromU8 } from 'fflate';
 import { animationFromJson, animationFromPoseKeys, animationToJson, isEmpty } from '../../core/animation';
-import { matchAssets } from '../../core/assetMatch';
+import { matchAssetPaths, matchAssets, nameKey } from '../../core/assetMatch';
 import { FPS } from '../../core/constants';
 import { errorText } from '../../core/errors';
 import { t } from '../../core/i18n';
 import type { CameraSettings } from '../../core/camera';
 import type { LightSettings } from '../../core/light';
+import { normalizeMmeScene } from '../../core/mme/settings.ts';
 import type { Engine } from '../Engine';
 import { applyObjectData } from '../addons/registry';
 import { download } from '../io/download';
 import { isModel, kindOf, type Any, type ModelObj, type Obj } from '../types';
 import {
-  MOVED_TO_ADDONS, PROJECT_EXT, PROJECT_FORMAT, PROJECT_VERSION, ProjectCancelled, parseData, projectBaseName, readEmbedded, writeEmbedded, writeReference,
+  MOVED_TO_ADDONS, PROJECT_EXT, PROJECT_FORMAT, PROJECT_VERSION, ProjectCancelled, parseData, projectBaseName, readEmbedded, savedMmeFiles, writeEmbedded, writeReference,
   type PickMissing, type ProjectData, type ProjectStorage, type SavedAsset, type SavedImage, type SavedMaterial, type SavedObject,
 } from './format';
 
 export { PROJECT_EXT, ProjectCancelled, projectBaseName, type ProjectData, type ProjectStorage } from './format';
 
+// MME のフォルダのファイルの asset の id → フォルダの名前 (名前のないフォルダは '') とフォルダの中のパス
+function mmeAssetPaths(data: ProjectData): Map<string, { folder: string; path: string }> {
+  const names = new Map(normalizeMmeScene(data.mme).folders.map(f => [f.id, f.name]));
+  return new Map(savedMmeFiles(data).map(m => [m.asset, { folder: names.get(m.folder) ?? '', path: m.path }]));
+}
+
+const mmeKey = (folder: string, path: string, size: number | undefined) => `${folder.normalize('NFC')}\0${path.normalize('NFC')}\0${size}`;
+
 // --- プロジェクト: 場面とプロジェクトのデータ (format.ts) の行き来と、保存・開く画面の操作 ---
 export class ProjectIO {
   // このページで読み込んだファイル (名前と大きさ → File)。参照だけのプロジェクトを開くとき、まずここから探す
   private known = new Map<string, File>();
+  // このページで開いたプロジェクトの MME のフォルダのファイル (フォルダの名前・パス・大きさ → File)。
+  // Ray-MMD には名前も大きさも同じで中身の違うファイルがあるので、MME のファイルは known (名前と大きさ) では探さない
+  private knownMme = new Map<string, File>();
 
   constructor(private engine: Engine) {}
 
@@ -85,16 +97,29 @@ export class ProjectIO {
   remember(files: File[]) {
     for (const f of files) this.known.set(`${f.name.normalize('NFC')}\0${f.size}`, f);
   }
+  // 開いたプロジェクトの MME のフォルダのファイルを、フォルダの名前とパスで覚える (名前のないフォルダのものは、どれのものか分からないので覚えない)
+  private rememberMme(data: ProjectData, files: Map<string, File>) {
+    const sizes = new Map(data.assets.map(a => [a.id, a.size]));
+    for (const [id, m] of mmeAssetPaths(data)) {
+      const f = files.get(id);
+      if (f && m.folder) this.knownMme.set(mmeKey(m.folder, m.path, sizes.get(id)), f);
+    }
+  }
 
-  // いまの場面を .wgp (ZIP) か .wgpj (JSON) のバイト列にする
+  // いまの場面を .wgp (ZIP) か .wgpj (JSON) のバイト列にする。
+  // (組み立てる前に、MME 互換で割り当てた .fx の画像を、まだ描いていなくても読んだファイル (used) にする。画像そのものは読まず、保存するときにファイルから読む)
   async save(storage: ProjectStorage = 'embedded'): Promise<Uint8Array> {
+    await this.engine.mme.whenFilesRead();
     const { data, assets } = this.build(storage);
     return storage === 'reference' ? writeReference(data) : writeEmbedded(data, assets);
   }
-  // 参照だけの形 (.wgpj の JSON) と、参照しているファイル (asset の id → File)。自動保存で使う
-  saveReference(): { bytes: Uint8Array; files: Map<string, File> } {
+  // 参照だけの形 (.wgpj の JSON) と、参照しているファイル (asset の id → File)。自動保存で使う。
+  // mmePaths: MME のフォルダのファイルの asset の id → 'フォルダの名前/パス' (名前と大きさと更新日時が同じ別のファイルと分けてしまうため)
+  async saveReference(): Promise<{ bytes: Uint8Array; files: Map<string, File>; mmePaths: Map<string, string> }> {
+    await this.engine.mme.whenFilesRead();
     const { data, assets } = this.build('reference');
-    return { bytes: writeReference(data), files: new Map([...assets].map(([f, a]) => [a.id, f])) };
+    const mmePaths = new Map([...mmeAssetPaths(data)].map(([id, { folder, path }]) => [id, `${folder}/${path}`]));
+    return { bytes: writeReference(data), files: new Map([...assets].map(([f, a]) => [a.id, f])), mmePaths };
   }
   // いまの場面をプロジェクトのデータにする (読み込んだファイルは asset として並べる)
   private build(storage: ProjectStorage): { data: ProjectData; assets: Map<File, SavedAsset> } {
@@ -160,16 +185,29 @@ export class ProjectIO {
       selected: cur ? e.world.objects.indexOf(cur) : null,
     };
     for (const d of e.addons.sceneData.list()) data[d.key] = structuredClone(d.save()); // 場面の値 (シーン・出力・アドオンのもの)
+    // MME 互換で読んだ .fx のフォルダのファイル (コンパイルで読んだ文字のファイルと、画像として読んだもの。フォルダにもうないものは飛ばす)
+    const mmeFiles = e.mme.store.folders().flatMap(f => [...f.used].sort().flatMap(path => {
+      const file = f.files.get(path);
+      return file ? [{ folder: f.id, path, asset: asset(file) }] : [];
+    }));
+    if (mmeFiles.length > 0) data.mmeFiles = mmeFiles;
     data.assets = [...assets.values()];
     return { data, assets };
   }
 
-  // .wgpj: 参照しているファイルを、渡されたもの → このページで読んだもの → 選んでもらったもの、の順に探す
+  // .wgpj: 参照しているファイルを、渡されたもの → このページで読んだもの → 選んでもらったもの、の順に探す。
+  // MME のフォルダのファイルは、このページで読んだものもフォルダの名前とパスで探し、名前と大きさ (known) では探さない。
+  // 選んでもらったものは、MME のフォルダのファイルなら先に相対パス ('フォルダの名前/パス'、'パス') で探す (Ray-MMD のように、
+  // 別のフォルダに名前も大きさも同じファイルがあっても取り違えない)。ほかは名前と大きさで
   private async readReference(bytes: Uint8Array, opts: { provided?: Map<string, File>; pick?: PickMissing }) {
     const data = parseData(strFromU8(bytes));
     const files = new Map<string, File>();
+    const effects = this.effectFilesInPage(data);
+    const mme = mmeAssetPaths(data);
     for (const a of data.assets) {
-      const f = opts.provided?.get(a.id) ?? this.known.get(`${a.name.normalize('NFC')}\0${a.size}`);
+      const m = mme.get(a.id);
+      const inPage = m ? (m.folder ? this.knownMme.get(mmeKey(m.folder, m.path, a.size)) : undefined) : this.known.get(`${a.name.normalize('NFC')}\0${a.size}`);
+      const f = opts.provided?.get(a.id) ?? effects.get(a.id) ?? inPage;
       if (f) files.set(a.id, f);
     }
     for (;;) {
@@ -178,9 +216,41 @@ export class ProjectIO {
       const picked = await opts.pick(missing);
       if (picked === 'cancel') throw new ProjectCancelled();
       if (picked === 'skip') break;
-      for (const [id, f] of matchAssets(missing, picked)) files.set(id, f);
+      const byPath = matchAssetPaths(missing.flatMap(a => {
+        const m = mme.get(a.id);
+        return m ? [{ id: a.id, size: a.size, paths: m.folder ? [`${m.folder}/${m.path}`, m.path] : [m.path] }] : [];
+      }), picked);
+      for (const [id, f] of byPath) files.set(id, f);
+      // 相対パスで見つからなかったものは名前と大きさで探す。ただし MME のフォルダのファイルは、プロジェクトの中にも選んだファイルの中にも
+      // 同じ名前・大きさのものが 1 つしかないときだけ (Ray-MMD の同じ名前のファイルを取り違えるくらいなら、見つからないほうにする)
+      const count = (list: { name: string; size?: number }[]) => {
+        const n = new Map<string, number>();
+        for (const x of list) n.set(`${nameKey(x.name)}\0${x.size}`, (n.get(`${nameKey(x.name)}\0${x.size}`) ?? 0) + 1);
+        return (x: { name: string; size?: number }) => n.get(`${nameKey(x.name)}\0${x.size}`) ?? 0;
+      };
+      const inProject = count(data.assets.filter(a => mme.has(a.id)));
+      const inPicked = count(picked);
+      const rest = missing.filter(a => !byPath.has(a.id) && (!mme.has(a.id) || (inProject(a) === 1 && inPicked(a) <= 1)));
+      for (const [id, f] of matchAssets(rest, picked)) files.set(id, f);
     }
     return { data, files };
+  }
+
+  // MME 互換のフォルダのファイル (asset の id → File): このページで読んだ同じ名前のフォルダの、同じパス・大きさのもの
+  // (Ray-MMD のように、別のフォルダに同じ名前のファイルがあっても取り違えない)
+  private effectFilesInPage(data: ProjectData): Map<string, File> {
+    const out = new Map<string, File>();
+    const names = new Map(normalizeMmeScene(data.mme).folders.map(f => [f.id, f.name]));
+    const sizes = new Map(data.assets.map(a => [a.id, a.size]));
+    for (const m of savedMmeFiles(data)) {
+      const name = names.get(m.folder);
+      if (!name) continue; // (名前のないフォルダ (1 つだけ落としたファイルなど) は、どれのものか分からないので探さない)
+      for (const folder of this.engine.mme.store.folders()) {
+        const f = folder.name === name ? folder.files.get(m.path) : undefined;
+        if (f && f.size === sizes.get(m.asset)) { out.set(m.asset, f); break; }
+      }
+    }
+    return out;
   }
 
   // .wgp / .wgpj を開いて、場面をそのとおりに作り直す。
@@ -189,6 +259,7 @@ export class ProjectIO {
     const e = this.engine, lib = e.library;
     const { data, files } = bytes[0] === 0x7b /* { */ ? await this.readReference(bytes, opts) : await readEmbedded(bytes);
     this.remember([...files.values()]);
+    this.rememberMme(data, files);
     const fileOf = (id: string | null | undefined) => (id ? files.get(id) ?? null : null);
     const filesOf = (ids: string[] | undefined) => (ids ?? []).map(fileOf).filter((f): f is File => !!f);
 
@@ -196,6 +267,8 @@ export class ProjectIO {
     e.resetAll();
     e.world.clear();
     lib.reset();
+    // MME 互換のフォルダ (保存したときの id で。見つからないファイルは、そのファイルなしで作る)。物の割り当てと場面の値 mme の参照より先に
+    await e.mme.store.restore(normalizeMmeScene(data.mme).folders, savedMmeFiles(data).map(m => ({ folder: m.folder, path: m.path, file: fileOf(m.asset) })));
 
     // ステージと物 (保存した順。積み重ねの高さも戻す)
     if (data.stage) {

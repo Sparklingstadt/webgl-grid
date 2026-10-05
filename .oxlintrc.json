@@ -24,7 +24,8 @@
     "unicorn/prefer-add-event-listener": "off",
     "import/no-unassigned-import": "off",
     "react/exhaustive-effect-dependencies": "off",
-    "react/memo-dependencies": "off"
+    "react/memo-dependencies": "off",
+    "unicorn/no-thenable": "off"
   },
   "ignorePatterns": [
     "dist/**",

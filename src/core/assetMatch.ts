@@ -20,3 +20,26 @@ export function matchAssets<T extends Candidate>(refs: AssetRef[], files: T[]): 
   }
   return out;
 }
+
+// 名前だけでは分からない参照 (MME のフォルダのファイル。Ray-MMD には、名前も大きさも同じで中身の違うファイルが別のフォルダにある) を、
+// 選ばれたファイルの相対パス (フォルダを選んだ・落としたときの webkitRelativePath) の終わりで探す。
+// paths: 合ってほしいパスの終わり (先のものほど優先。'フォルダの名前/パス'、'パス' の順など)。パスの区切りでだけ合わせ、大文字・小文字と
+// Unicode の正規化の違いは無視する。合うものがいくつかあれば大きさが合うもの、なければ先のもの。相対パスのないファイルは見ない
+export interface PathRef { id: string; paths: string[]; size?: number }
+export interface PathCandidate extends Candidate { webkitRelativePath?: string }
+
+const pathKey = (path: string) => path.replace(/\\/g, '/').replace(/^(\.?\/)+/, '').normalize('NFC').toLowerCase();
+
+export function matchAssetPaths<T extends PathCandidate>(refs: PathRef[], files: T[]): Map<string, T> {
+  const withPath = files.filter(f => f.webkitRelativePath).map(f => ({ f, key: pathKey(f.webkitRelativePath!) }));
+  const out = new Map<string, T>();
+  for (const r of refs) {
+    for (const p of r.paths) {
+      const want = pathKey(p);
+      const same = withPath.filter(({ key }) => key === want || key.endsWith(`/${want}`)).map(({ f }) => f);
+      const hit = same.find(f => r.size === undefined || f.size === r.size) ?? same[0];
+      if (hit) { out.set(r.id, hit); break; }
+    }
+  }
+  return out;
+}

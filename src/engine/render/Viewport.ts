@@ -59,7 +59,8 @@ export class Viewport {
   // canvas に描き始める。WebGL が使えなければ false
   mount(canvas: HTMLCanvasElement, container: HTMLElement) {
     try {
-      this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true }); // (背景の空も描くので、透けない)
+      // (背景の空も描くので、透けない。ステンシルは MME 互換の地面の影と .fx のステンシルのステートが使う)
+      this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, stencil: true });
     } catch {
       return false;
     }

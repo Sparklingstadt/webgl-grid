@@ -51,7 +51,7 @@ describe('Autosave', () => {
       const e = engineWithCube();
       await e.autosave.start(store);
       // 参照するファイルがある場面のかわりに、保存の中身を差し替える
-      vi.spyOn(e.project, 'saveReference').mockReturnValue({ bytes: new TextEncoder().encode('{}'), files: new Map([['a1', i < 4 ? file : new File(['x'], 'b.pmx', { lastModified: 2 })]]) });
+      vi.spyOn(e.project, 'saveReference').mockResolvedValue({ bytes: new TextEncoder().encode('{}'), files: new Map([['a1', i < 4 ? file : new File(['x'], 'b.pmx', { lastModified: 2 })]]), mmePaths: new Map() });
       e.addShape(0);
       e.history.checkpoint();
       await e.autosave.saveNow();
@@ -60,5 +60,54 @@ describe('Autosave', () => {
     expect(put).toHaveBeenCalledTimes(2); // a.pmx と b.pmx を 1 回ずつ
     expect(await store.sessions()).toHaveLength(3);
     expect((await store.fileKeys()).sort()).toEqual(['a.pmx\0' + 3 + '\0' + 1, 'b.pmx\0' + 1 + '\0' + 2].sort());
+  });
+
+  it('MME のフォルダの、名前も大きさも更新日時も同じで中身の違うファイル (別のフォルダのもの) を分けてしまい、前回の続きでそれぞれに戻す', async () => {
+    const at = (path: string, text: string) => {
+      const f = new File([text], path.slice(path.lastIndexOf('/') + 1), { lastModified: 5 });
+      Object.defineProperty(f, 'webkitRelativePath', { value: path });
+      return f;
+    };
+    const store = memoryStore();
+    const a = engineWithCube();
+    await a.autosave.start(store);
+    const folder = await a.mme.store.addFolder([at('Ray/Default Ambient/spot.fx', 'technique B { }'), at('Ray/Default/spot.fx', 'technique A { }')]);
+    a.mme.store.addPost(a.mme.store.effect(folder, 'Default/spot.fx'));
+    a.mme.store.addPost(a.mme.store.effect(folder, 'Default Ambient/spot.fx'));
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY);
+    await a.autosave.saveNow();
+    expect(await store.fileKeys()).toHaveLength(2);
+
+    const b = engineWithCube();
+    await b.autosave.start(store);
+    await b.autosave.recover();
+    expect(b.mme.store.posts.map(p => (p.effect.result.ok ? p.effect.result.effect.techniques[0].name : null))).toEqual(['A', 'B']);
+  });
+
+  // (MME の場面の値は元に戻すの対象にしないので、履歴の changed では保存されない)
+  it('MME の場面の値 (ステージの割り当て・仮のコントローラーのスライダー・設定) を変えただけでも保存する', async () => {
+    const edits: [string, (e: Engine) => void][] = [
+      ['ステージの割り当て', e => e.mme.assignStage('Main', null, 'hide')],
+      ['スライダー', e => e.mme.setControl('ray_controller.pmx', 'SunLight+', 0.5)],
+      ['設定', e => e.mme.set({ engine: 'mme' })],
+    ];
+    for (const [what, edit] of edits) {
+      const store = memoryStore();
+      const a = engineWithCube();
+      await a.autosave.start(store);
+      edit(a);
+      await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY);
+      await a.autosave.saveNow();
+      expect(await store.sessions(), what).toHaveLength(1);
+    }
+    // (同じ値にしただけ・毎フレームの publish では保存しない)
+    const store = memoryStore();
+    const a = engineWithCube();
+    await a.autosave.start(store);
+    a.mme.set({ ...a.mme.settings });
+    for (let i = 0; i < 3; i++) a.mme.publish();
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY);
+    await a.autosave.saveNow();
+    expect(await store.sessions()).toHaveLength(0);
   });
 });

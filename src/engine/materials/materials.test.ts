@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { addNode, connect, surfaceShader } from '../../core/materials/tree';
-import { convertMmdMaterial } from './fromMmd';
+import { convertMmdMaterial, convertMmdMesh, mmeTexturesOf } from './fromMmd';
 import { MaterialLibrary } from './MaterialLibrary';
 import { toPmxValues } from './toPmx';
 import { engineWithCube } from '../testEngine';
@@ -168,5 +168,38 @@ describe('MMD の材質の変換と .pmx への書き戻し', () => {
     // マテリアルがない (外した) スロットは元の値
     expect(toPmxValues(null, data.mmd!)).toEqual({ diffuse: data.mmd!.diffuse, specular: data.mmd!.specular, specularPower: 50,
       ambient: data.mmd!.ambient, edge: true, edgeColor: data.mmd!.edgeColor, edgeSize: data.mmd!.edgeSize });
+  });
+
+  it('convertMmdMesh は材質ごとのトゥーンとスフィアのテクスチャを残す (材質を捨てても破棄しない)', () => {
+    const lib = new MaterialLibrary();
+    const gradient = new THREE.Texture(), matcap = new THREE.Texture();
+    let disposed = 0;
+    gradient.addEventListener('dispose', () => disposed++);
+    matcap.addEventListener('dispose', () => disposed++);
+    const a = toon(), b = toon();
+    Object.assign(a, { gradientMap: gradient, matcap });
+    const mesh = { name: 'm', material: [a, b], userData: {} } as unknown as THREE.Mesh;
+    convertMmdMesh(mesh, lib);
+    const [ma, mb] = mesh.material as THREE.Material[];
+    expect(mmeTexturesOf(ma)).toEqual({ toon: gradient, sphere: matcap });
+    expect(mmeTexturesOf(ma)!.toon).toBe(gradient);
+    expect(mmeTexturesOf(mb)).toEqual({ toon: null, sphere: null });
+    expect(mmeTexturesOf(new THREE.MeshBasicMaterial())).toBeNull();
+    expect(mesh.userData.mmeTextures).toBeUndefined();
+    expect(disposed).toBe(0);
+  });
+
+  it('見つからなかったトゥーン・スフィアのファイルは null にする', () => {
+    const lib = new MaterialLibrary();
+    const gradient = new THREE.Texture(), matcap = new THREE.Texture();
+    const a = toon(), b = toon();
+    Object.assign(a, { gradientMap: gradient, matcap });
+    a.userData.MMD = { matcapFileName: 'sph\\Env.SPH' };
+    Object.assign(b, { gradientMap: gradient, matcap });
+    const mesh = { name: 'm', material: [a, b], userData: { missingTextures: new Set(['env.sph', 'toon_x.bmp']), toonFileNames: [null, 'tex/Toon_X.bmp'] } } as unknown as THREE.Mesh;
+    convertMmdMesh(mesh, lib);
+    const [ma, mb] = mesh.material as THREE.Material[];
+    expect(mmeTexturesOf(ma)).toEqual({ toon: gradient, sphere: null }); // スフィアだけ見つからない
+    expect(mmeTexturesOf(mb)).toEqual({ toon: null, sphere: matcap }); // トゥーンだけ見つからない
   });
 });

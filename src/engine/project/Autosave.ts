@@ -8,7 +8,9 @@ import type { ProjectIO } from './ProjectIO';
 export const AUTOSAVE_DELAY = 3000; // 最後の変更から保存するまで (ミリ秒)
 const KEEP_SESSIONS = 3;           // 残しておく、ページを開いた回の数
 
-const fileKey = (f: File) => `${f.name}\0${f.size}\0${f.lastModified}`;
+// ファイルの鍵: 名前・大きさ・更新日時。MME のフォルダのファイルは、名前の代わりに 'フォルダの名前/パス' (Ray-MMD には、名前も大きさも
+// 更新日時も同じで中身の違うファイルが別のフォルダにあり、名前の鍵では 1 つにまとめてしまう)
+const fileKey = (f: File, mmePath: string | undefined) => `${mmePath === undefined ? f.name : `mme:${mmePath}`}\0${f.size}\0${f.lastModified}`;
 
 // --- 自動保存と復元 (Blender の「前回のセッションを復元」) ---
 // 編集して少し待ったら、ブラウザの中 (IndexedDB) に場面を保存する。中身は参照だけのプロジェクト (.wgpj) と、
@@ -50,10 +52,10 @@ export class Autosave {
     const store = this.store;
     if (!store || !this.dirty) return;
     this.dirty = false;
-    const { bytes, files } = this.project.saveReference();
+    const { bytes, files, mmePaths } = await this.project.saveReference();
     const map: Record<string, string> = {};
     for (const [id, f] of files) {
-      const key = fileKey(f);
+      const key = fileKey(f, mmePaths.get(id));
       if (!(await store.hasFile(key))) await store.putFile(key, f);
       map[id] = key;
     }

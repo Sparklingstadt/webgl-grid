@@ -69,6 +69,12 @@ export function convertMmdMaterial(toon: Any, lib: MaterialLibrary, label: strin
   });
 }
 
+// MMD の材質のトゥーンとスフィアのテクスチャ (変換したマテリアルの実体ごと)。userData に入れると、複製 (Object3D.copy) で
+// JSON を通って壊れるので WeakMap に置く。複製はマテリアルの実体を共有するので、同じ引き方で見つかる
+export interface MmeTextures { toon: THREE.Texture | null; sphere: THREE.Texture | null }
+const mmeTextures = new WeakMap<THREE.Material, MmeTextures>();
+export const mmeTexturesOf = (material: THREE.Material): MmeTextures | null => mmeTextures.get(material) ?? null;
+
 // MMD のメッシュの材質をすべて変換し、変換したマテリアルの材質に差し替える。スロットのマテリアルの id を返す
 export function convertMmdMesh(mesh: Any, lib: MaterialLibrary): string[] {
   const toons: Any[] = [mesh.material].flat();
@@ -79,6 +85,17 @@ export function convertMmdMesh(mesh: Any, lib: MaterialLibrary): string[] {
   const instances = ids.map(id => lib.instance(id));
   mesh.material = Array.isArray(mesh.material) ? instances : instances[0];
   mesh.userData.slotSources = ids.map(id => lib.materials.get(id)!.mmd); // .pmx に書き出すときの元の値
+  // トゥーンとスフィアのテクスチャ (MME の toon・sphere に使う)。材質の dispose はテクスチャを捨てないので、そのまま残る。
+  // 見つからなかったテクスチャは null (読めない画像は黒く写るので)
+  const missing: Set<string> | undefined = mesh.userData.missingTextures;
+  const gone = (file: string | undefined | null) => !!file && !!missing?.has(fileKey(file));
+  instances.forEach((inst, i) => {
+    const m = toons[i];
+    mmeTextures.set(inst, {
+      toon: m.gradientMap && !gone(mesh.userData.toonFileNames?.[i]) ? m.gradientMap : null,
+      sphere: m.matcap && !gone(m.userData?.MMD?.matcapFileName) ? m.matcap : null,
+    });
+  });
   for (const t of toons) t.dispose(); // テクスチャは画像として残す
   return ids;
 }

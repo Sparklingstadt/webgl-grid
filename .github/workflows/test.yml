@@ -1,5 +1,7 @@
-# push と pull request のたびに、型チェック・lint・単体テスト・e2e テストを流す (npm run test:all)。
-# 公開 (GitHub Pages) はしない
+# push と pull request のたびに、型チェック・lint・単体テストと、e2e テストを流す。
+# e2e は GitHub の CI ではソフトウェア描画 (SwiftShader) で遅いので、3 つに分けて同時に流す (Playwright の --shard)。
+# Chromium はキャッシュし、当たったときは動かすのに要る OS のものだけを入れる
+# 手元では npm run test:all (全部を同時に) を使う。公開 (GitHub Pages) はしない
 name: test
 
 on:
@@ -15,7 +17,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
+  # 型チェック・lint・単体テスト (ブラウザは使わない)
+  check:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -27,13 +30,45 @@ jobs:
       - run: npm ci
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: 1 # (デスクトップ版の Electron はテストに使わない)
-      # e2e のブラウザ (Chromium) と、動かすのに要るもの
-      - run: npx playwright install --with-deps chromium
-      - run: npm run test:all
+      - run: npx tsc -b
+      - run: npm run -s lint
+      - run: npx vitest run
+
+  # e2e テスト (3 つに分けて同時に)
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+      # e2e のブラウザ (Chromium) は、Playwright の版ごとにキャッシュする
+      - id: pw
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      - if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+      # (キャッシュに当たったときも、動かすのに要る OS のもの (ライブラリ・フォント) は入れる)
+      - if: steps.pw-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+      - run: npx playwright test --shard=${{ matrix.shard }}/3
       # 失敗したときは、e2e の記録 (スクリーンショット・トレース) を残す
       - uses: actions/upload-artifact@v7
         if: failure()
         with:
-          name: playwright-results
+          name: playwright-results-${{ matrix.shard }}
           path: test-results/
           retention-days: 7

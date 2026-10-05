@@ -3,6 +3,7 @@ import { errorText } from '../../core/errors';
 import { t } from '../../core/i18n';
 import { convertMmdMesh } from '../materials/fromMmd';
 import type { MaterialLibrary } from '../materials/MaterialLibrary';
+import { registerMmdSource } from '../mme/mmdData';
 import type { Any } from '../types';
 import type { UiChannel } from '../UiChannel';
 import { Stage } from './Stage';
@@ -95,6 +96,8 @@ export class MmdLoader {
       const mesh = loader.meshBuilder.build(data, './', undefined, (err: unknown) => console.error(err));
       // 見つからなかったテクスチャ (組み立てるあいだに、すぐ分かる)。マテリアルにするとき、画像なしにする (黒く写らないように)
       mesh.userData.missingTextures = new Set([...missing].map(fileKey));
+      // 材質ごとの、自分で選んだトゥーンのテクスチャのファイル名 (共有トゥーンは null。見つからないかの判定に使う)
+      mesh.userData.toonFileNames = data.materials.map((m: Any) => (m.toonFlag === 0 && m.toonIndex !== -1 ? data.textures[m.toonIndex] : null));
       mesh.userData.missingTextureNames = [...missing].map(n => n.replace(/\\/g, '/'));
       mesh.userData.morphPanels = new Map(data.morphs.map((m: Any) => [m.name, m.panel]));
       // ボーンを手で動かすための情報: 表示枠 (MMD でボーンを選ぶときのグループ)、フラグ、最初の姿勢
@@ -105,6 +108,7 @@ export class MmdLoader {
       mesh.userData.rest = mesh.skeleton.bones.map((b: THREE.Bone) => ({ p: b.position.clone(), q: b.quaternion.clone() }));
       mesh.userData.fileName = pmx.name;
       mesh.userData.sourceFile = pmx;    // .pmx に書き出すときの元のファイル
+      registerMmdSource(mesh.geometry, pmx); // クローンは userData の File を失うので、形からも引けるように (MME)
       mesh.userData.usedFiles = used;    // プロジェクトに入れるファイル (テクスチャは読み終わると増える)
       mesh.name ||= data.metadata.modelName || pmx.name.replace(/\.pmx$/i, '');
       fixEmptyMorphs(mesh);
