@@ -3,6 +3,7 @@ import { DDSLoader } from 'three/examples/jsm/loaders/DDSLoader.js';
 import { TGALoader } from 'three/examples/jsm/loaders/TGALoader.js';
 import type { EffectDesc, Param, Pass, RenderState, SamplerDecl, StateValue, TextureDecl, UniformRef } from '../../core/fx/index.ts';
 import { dirname, joinPath, resolveFile } from '../../core/fx/source.ts';
+import { msg, t } from '../../core/i18n.ts';
 import { annotation } from '../../core/mme/annotations.ts';
 import { semanticValue, textureRole, type SemanticContext } from '../../core/mme/semantics.ts';
 import { typeShape } from '../../core/mme/typeShape.ts';
@@ -56,11 +57,11 @@ const STENCIL_OP: Record<string, THREE.StencilOp> = {
 };
 // 値が true (FillMode は書いた値) なら対応していないので警告するステート
 const UNSUPPORTED_ON: Record<string, string> = {
-  AlphaTestEnable: 'AlphaTestEnable (アルファテスト) には対応していないので無視します',
-  TwoSidedStencilMode: 'TwoSidedStencilMode (裏の面のステンシル) には対応していないので無視します',
-  SRGBWriteEnable: 'SRGBWriteEnable には対応していないので無視します',
-  ScissorTestEnable: 'ScissorTestEnable には対応していないので無視します',
-  PointSpriteEnable: 'PointSpriteEnable には対応していないので無視します',
+  AlphaTestEnable: msg('AlphaTestEnable (アルファテスト) には対応していないので無視します'),
+  TwoSidedStencilMode: msg('TwoSidedStencilMode (裏の面のステンシル) には対応していないので無視します'),
+  SRGBWriteEnable: msg('SRGBWriteEnable には対応していないので無視します'),
+  ScissorTestEnable: msg('ScissorTestEnable には対応していないので無視します'),
+  PointSpriteEnable: msg('PointSpriteEnable には対応していないので無視します'),
 };
 // 黙って無視するステート (固定機能の値で、使う側のステートがオフなら意味がないもの)
 const IGNORED = new Set(['AlphaFunc', 'AlphaRef', 'CCW_StencilFunc', 'CCW_StencilPass', 'CCW_StencilFail', 'CCW_StencilZFail', 'MultiSampleAntialias', 'ShadeMode']);
@@ -72,7 +73,7 @@ export function applyStates(m: THREE.Material, states: RenderState[], flipY: 1 |
   const colorMask = [15, 15, 15, 15];
   for (const s of states) {
     if (typeof s.value === 'object' && !Array.isArray(s.value)) {
-      warnings.push(`ステート ${s.name} の値 (${s.value.expr}) を計算できないので、既定の値にします`);
+      warnings.push(t('ステート {name} の値 ({expr}) を計算できないので、既定の値にします', { name: s.name, expr: s.value.expr }));
       continue;
     }
     if (s.name === 'ColorWriteEnable') colorMask[s.index ?? 0] = Number(s.value);
@@ -122,22 +123,23 @@ export function applyStates(m: THREE.Material, states: RenderState[], flipY: 1 |
   m.stencilZPass = STENCIL_OP[str('StencilPass')] ?? THREE.KeepStencilOp;
   // 色の書き込み: RGBA ごとには分けられないので、少しでも書くなら全部
   m.colorWrite = colorMask[0] !== 0;
-  if (colorMask[0] !== 0 && colorMask[0] !== 15) warnings.push('ColorWriteEnable は RGBA ごとに分けられないので、全部を書きます');
+  if (colorMask[0] !== 0 && colorMask[0] !== 15) warnings.push(t('ColorWriteEnable は RGBA ごとに分けられないので、全部を書きます'));
   for (let i = 1; i < 4; i++) {
-    if (colorMask[i] !== 15) warnings.push(`ColorWriteEnable${i} には対応していないので無視します`);
+    if (colorMask[i] !== 15) warnings.push(t('ColorWriteEnable{i} には対応していないので無視します', { i }));
   }
   // 塗り方
   const fill = str('FillMode');
   if (m instanceof THREE.ShaderMaterial) m.wireframe = fill === 'WIREFRAME';
-  if (fill === 'POINT') warnings.push('FillMode = POINT には対応していないので無視します');
+  if (fill === 'POINT') warnings.push(t('FillMode = POINT には対応していないので無視します'));
   // 対応していない・知らないステート
   for (const s of states) {
-    const msg = UNSUPPORTED_ON[s.name];
-    if (msg !== undefined) {
-      if (v[s.name] === true && !warnings.includes(msg)) warnings.push(msg);
+    const known = UNSUPPORTED_ON[s.name];
+    if (known !== undefined) {
+      const text = t(known);
+      if (v[s.name] === true && !warnings.includes(text)) warnings.push(text);
     } else if (!(s.name in D3D_DEFAULTS) && s.name !== 'ColorWriteEnable' && !IGNORED.has(s.name)) {
-      const msg2 = `知らないステート ${s.name} を無視します`;
-      if (!warnings.includes(msg2)) warnings.push(msg2);
+      const text = t('知らないステート {name} を無視します', { name: s.name });
+      if (!warnings.includes(text)) warnings.push(text);
     }
   }
   return warnings;
@@ -205,7 +207,7 @@ export async function decodeTexture(bytes: Uint8Array, path: string): Promise<TH
   } else if (ext === 'dds') {
     const d = new DDSLoader().parse(bufferOf(bytes), true);
     // 読めない dds は例外でなく空の結果になる (console.error は DDSLoader が出す)
-    if (d.mipmaps.length === 0 || d.format == null) throw new Error('dds を読めません');
+    if (d.mipmaps.length === 0 || d.format == null) throw new Error(t('dds を読めません'));
     if (d.isCubemap) {
       const faces = d.mipmaps.length / d.mipmapCount;
       const images = Array.from({ length: faces }, (_, f) => ({
@@ -221,7 +223,7 @@ export async function decodeTexture(bytes: Uint8Array, path: string): Promise<TH
     tex = new THREE.Texture(bitmap);
     tex.addEventListener('dispose', () => bitmap.close());
   } else {
-    throw new Error(`知らない画像の形式です: .${ext}`);
+    throw new Error(t('知らない画像の形式です: .{ext}', { ext }));
   }
   tex.colorSpace = THREE.NoColorSpace;
   tex.flipY = false;
@@ -373,7 +375,8 @@ export class EffectInstance {
     for (const t of Object.values(this.fallbacks)) t.dispose();
   }
 
-  private warn(message: string): void {
+  // 警告を足す (同じものは 1 回)
+  warn(message: string): void {
     if (!this.warnings.includes(message)) this.warnings.push(message);
   }
 
@@ -387,26 +390,26 @@ export class EffectInstance {
       if (ctx) {
         const r = semanticValue(p, ctx);
         if (r.kind === 'numbers') values = r.values;
-        else if (r.kind === 'unsupported') this.warn(`セマンティクス ${r.what} には値を入れません (${p.name})`);
+        else if (r.kind === 'unsupported') this.warn(t('セマンティクス {semantic} には値を入れません ({name})', { semantic: r.what, name: p.name }));
       }
     }
     return uniformValue(u, values ?? []);
   }
 
   // ResourceName をエフェクトのファイルのフォルダから探して読む (大文字小文字と '\' は問わない)
-  private loadFile(t: TextureDecl): void {
-    const a = annotation(t.annotations, 'ResourceName');
+  private loadFile(decl: TextureDecl): void {
+    const a = annotation(decl.annotations, 'ResourceName');
     const name = typeof a?.value === 'string' ? a.value : '';
     const entry: FileTexture = { label: name, tex: null, failed: false };
-    this.files.set(t.name, entry);
+    this.files.set(decl.name, entry);
     const bytes = this.effect.bytes;
     const found = resolveFile({ readFile: p => bytes.get(p) ?? null, listFiles: () => [...bytes.keys()] }, joinPath(dirname(this.effect.entry), name));
     if (!found) {
       entry.failed = true;
-      this.warn(`テクスチャ ${name} が見つかりません`);
+      this.warn(t('テクスチャ {name} が見つかりません', { name }));
       return;
     }
-    const mip = annotation(t.annotations, 'MipLevels');
+    const mip = annotation(decl.annotations, 'MipLevels');
     const mipmaps = !(Array.isArray(mip?.value) && mip.value[0] === 1);
     const load = this.decode(found.bytes, found.path).then(tex => {
       if (this.disposed) { tex.dispose(); return; }
@@ -418,7 +421,7 @@ export class EffectInstance {
     }, (e: unknown) => {
       if (this.disposed) return;
       entry.failed = true;
-      this.warn(`テクスチャ ${name} を読めませんでした: ${e instanceof Error ? e.message : String(e)}`);
+      this.warn(t('テクスチャ {name} を読めませんでした: {error}', { name, error: e instanceof Error ? e.message : String(e) }));
       this.requestDraw();
     });
     this.loads.push(load);
@@ -430,7 +433,7 @@ export class EffectInstance {
     const flat = s.dim === '2D' || s.dim === '1D';
     if (typeof r === 'string') return flat ? this.fallbacks[r] : null;
     if (!fitsDim(s.dim, r.tex)) {
-      this.warn(`サンプラー ${s.name} の形 (${s.dim}) とテクスチャの形が合いません`);
+      this.warn(t('サンプラー {name} の形 ({dim}) とテクスチャの形が合いません', { name: s.name, dim: s.dim }));
       return flat ? this.fallbacks.magenta : null;
     }
     return r.copy ? this.copyFor(s, r.tex) : r.tex;
@@ -444,24 +447,24 @@ export class EffectInstance {
         const t = textures.role('selfShadow');
         return t ? { tex: t, copy: false } : 'white';
       }
-      this.warn(`サンプラー ${s.name} にテクスチャがありません`);
+      this.warn(t('サンプラー {name} にテクスチャがありません', { name: s.name }));
       return 'blank';
     }
     const decl = this.textureDecls.get(s.texture);
     if (!decl) {
-      this.warn(`サンプラー ${s.name} のテクスチャ ${s.texture} がありません`);
+      this.warn(t('サンプラー {name} のテクスチャ {texture} がありません', { name: s.name, texture: s.texture }));
       return 'magenta';
     }
     const role = textureRole(decl);
     switch (role) {
       case 'material': case 'sphere': case 'toon': {
-        const t = textures.role(role);
-        return t ? { tex: t, copy: true } : 'white';
+        const tex = textures.role(role);
+        return tex ? { tex, copy: true } : 'white';
       }
       case 'colorTarget': {
-        const t = textures.role(decl.name);
-        if (t) return { tex: t, copy: false };
-        this.warn(`レンダーターゲット ${decl.name} がありません`);
+        const tex = textures.role(decl.name);
+        if (tex) return { tex, copy: false };
+        this.warn(t('レンダーターゲット {name} がありません', { name: decl.name }));
         return 'magenta';
       }
       case 'file': {
@@ -470,13 +473,13 @@ export class EffectInstance {
         return f.tex ? { tex: f.tex, copy: true } : 'blank';
       }
       case 'depthTarget':
-        this.warn(`深度のターゲット ${decl.name} はテクスチャとして読めません`);
+        this.warn(t('深度のターゲット {name} はテクスチャとして読めません', { name: decl.name }));
         return 'magenta';
       case 'unsupported':
-        this.warn(`テクスチャ ${decl.name} のセマンティクス ${decl.semantic} には対応していません`);
+        this.warn(t('テクスチャ {name} のセマンティクス {semantic} には対応していません', { name: decl.name, semantic: decl.semantic ?? '' }));
         return 'blank';
       case 'none':
-        if (decl.semantic !== null) this.warn(`テクスチャ ${decl.name} のセマンティクス ${decl.semantic} を知りません`);
+        if (decl.semantic !== null) this.warn(t('テクスチャ {name} のセマンティクス {semantic} を知りません', { name: decl.name, semantic: decl.semantic }));
         return 'blank';
     }
   }
@@ -510,30 +513,30 @@ export class EffectInstance {
   }
 
   // MinFilter・MagFilter・MipFilter・AddressU/V/W・MaxAnisotropy を移す (書いていなければ D3D の既定)
-  private applySampler(t: THREE.Texture, s: SamplerDecl, mipmaps: boolean): void {
+  private applySampler(tex: THREE.Texture, s: SamplerDecl, mipmaps: boolean): void {
     const v: Record<string, StateValue> = { MinFilter: 'POINT', MagFilter: 'POINT', MipFilter: 'NONE', AddressU: 'WRAP', AddressV: 'WRAP', AddressW: 'WRAP', MaxAnisotropy: 1 };
     for (const st of s.states) {
       if (typeof st.value === 'object' && !Array.isArray(st.value)) {
-        this.warn(`サンプラー ${s.name} の ${st.name} の値 (${st.value.expr}) を計算できないので、既定の値にします`);
+        this.warn(t('サンプラー {name} の {state} の値 ({expr}) を計算できないので、既定の値にします', { name: s.name, state: st.name, expr: st.value.expr }));
         continue;
       }
       v[st.name] = st.value;
-      if (st.name === 'SRGBTexture' && st.value === true) this.warn(`サンプラー ${s.name} の SRGBTexture には対応していないので無視します`);
+      if (st.name === 'SRGBTexture' && st.value === true) this.warn(t('サンプラー {name} の SRGBTexture には対応していないので無視します', { name: s.name }));
     }
     const mip = mipmaps ? String(v.MipFilter) : 'NONE';
-    t.minFilter = minFilter(String(v.MinFilter), mip);
-    t.magFilter = MAG_FILTER[String(v.MagFilter)] ?? THREE.NearestFilter;
-    if (!(t instanceof THREE.CompressedTexture)) t.generateMipmaps = mip !== 'NONE';
+    tex.minFilter = minFilter(String(v.MinFilter), mip);
+    tex.magFilter = MAG_FILTER[String(v.MagFilter)] ?? THREE.NearestFilter;
+    if (!(tex instanceof THREE.CompressedTexture)) tex.generateMipmaps = mip !== 'NONE';
     const aniso = v.MinFilter === 'ANISOTROPIC' || v.MagFilter === 'ANISOTROPIC';
-    t.anisotropy = aniso ? Math.max(1, Number(v.MaxAnisotropy)) : 1;
+    tex.anisotropy = aniso ? Math.max(1, Number(v.MaxAnisotropy)) : 1;
     const wrap = (name: string): THREE.Wrapping => {
       const a = String(v[name]);
       if (a in WRAP) return WRAP[a];
-      this.warn(`サンプラー ${s.name}: ${name} = ${a} は GL にないので CLAMP にします`);
+      this.warn(t('サンプラー {name}: {key} = {value} は GL にないので CLAMP にします', { name: s.name, key: name, value: a }));
       return THREE.ClampToEdgeWrapping;
     };
-    t.wrapS = wrap('AddressU');
-    t.wrapT = wrap('AddressV');
-    if (t instanceof THREE.Data3DTexture) t.wrapR = wrap('AddressW');
+    tex.wrapS = wrap('AddressU');
+    tex.wrapT = wrap('AddressV');
+    if (tex instanceof THREE.Data3DTexture) tex.wrapR = wrap('AddressW');
   }
 }

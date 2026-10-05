@@ -1,5 +1,6 @@
 // MME のレンダーターゲット (RENDERCOLORTARGET・RENDERDEPTHSTENCILTARGET) の大きさと形式
 import type { Annotation, TextureDecl } from '../fx/desc.ts';
+import { t } from '../i18n.ts';
 import { annotation } from './annotations.ts';
 
 export type TargetFormat = 'rgba8' | 'rgba16f' | 'rgba32f' | 'r16f' | 'r32f' | 'rg16f' | 'rg32f' | 'depth24stencil8';
@@ -21,8 +22,8 @@ function text(list: Annotation[], name: string): string | null {
   return typeof v === 'string' ? v : null;
 }
 
-export function targetSpec(t: TextureDecl, screen: [number, number], depth: boolean): TargetSpec {
-  const an = t.annotations;
+export function targetSpec(decl: TextureDecl, screen: [number, number], depth: boolean): TargetSpec {
+  const an = decl.annotations;
   const warnings: string[] = [];
   const dim = numbers(an, 'Dimensions');
   const ratio = numbers(an, 'ViewportRatio');
@@ -38,7 +39,7 @@ export function targetSpec(t: TextureDecl, screen: [number, number], depth: bool
     const key = raw.trim().toUpperCase().replace(/^D3DFMT_/, '');
     const known = depth ? (DEPTH_FORMATS.has(key) ? fallback : undefined) : COLOR_FORMATS[key];
     if (known) format = known;
-    else warnings.push(`レンダーターゲット ${t.name} の形式 ${raw} は使えないので既定にします`);
+    else warnings.push(t('レンダーターゲット {name} の形式 {format} は使えないので既定にします', { name: decl.name, format: raw }));
   }
 
   // MipLevels の既定は D3DX と同じく 1 (なし → ミップマップなし)。0 は全段、2 以上も作る

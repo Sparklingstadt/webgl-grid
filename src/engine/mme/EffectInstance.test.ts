@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { compileEffect, type Pass, type Program, type RenderState } from '../../core/fx/index.ts';
+import { addDictionary, setLang } from '../../core/i18n.ts';
+import en from '../../i18n/en.ts';
 import { semanticValue, SHADOW_COLOR, type MaterialState, type SemanticContext } from '../../core/mme/semantics.ts';
 import type { UiChannel } from '../UiChannel';
 import { EffectStore, type LoadedEffect } from './EffectStore.ts';
@@ -129,6 +131,17 @@ describe('EffectInstance', () => {
     expect(m.depthFunc).toBe(THREE.LessEqualDepth); // 式は既定のまま
     expect(warnings).toHaveLength(3);
     for (const name of ['AlphaTestEnable', 'ColorWriteEnable', 'ZFunc']) expect(warnings.some(w => w.includes(name)), name).toBe(true);
+  });
+
+  it('ステートの警告は画面の言語で出す', () => {
+    addDictionary('en', en);
+    setLang('en');
+    try {
+      expect(applyStates(new THREE.RawShaderMaterial(), [{ name: 'AlphaTestEnable', value: true }, { name: 'Foo', value: 1 }], 1))
+        .toEqual(['AlphaTestEnable (alpha test) is not supported, so it is ignored', 'Ignoring unknown state Foo']);
+    } finally {
+      setLang('ja');
+    }
   });
 
   it('材質は #version の行を除いた GLSL と GLSL3。program がない pass は null', () => {

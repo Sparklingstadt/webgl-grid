@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { EffectDesc, StateValue } from '../../core/fx/index.ts';
+import { t } from '../../core/i18n.ts';
 import { textureRole } from '../../core/mme/semantics.ts';
 import { targetSpec, type TargetFormat } from '../../core/mme/targets.ts';
 import { MAG_FILTER, minFilter, WRAP } from './EffectInstance';
@@ -27,7 +28,7 @@ export type Surface =
 export const CANVAS: Surface = { kind: 'canvas' };
 
 export interface FramebufferEvents {
-  warn(message: string): void;
+  warn(message: string, effect: LoadedEffect | null): void; // effect: そのエフェクトの警告 (null は全体の警告)
   broken(effects: LoadedEffect[]): void; // フレームバッファが不完全 (そのエフェクトを止める)
 }
 
@@ -58,7 +59,7 @@ export function targetSampling(desc: EffectDesc, name: string, mipmaps: boolean)
     const wrap = (key: string): THREE.Wrapping => {
       const a = String(v[key]);
       if (a in WRAP) return WRAP[a];
-      if (!first) warnings.push(`サンプラー ${s.name}: ${key} = ${a} は GL にないので CLAMP にします`);
+      if (!first) warnings.push(t('サンプラー {name}: {key} = {value} は GL にないので CLAMP にします', { name: s.name, key, value: a }));
       return THREE.ClampToEdgeWrapping;
     };
     const mine: Sampling = {
@@ -70,7 +71,7 @@ export function targetSampling(desc: EffectDesc, name: string, mipmaps: boolean)
       first = mine;
       firstName = s.name;
     } else if (mine.minFilter !== first.minFilter || mine.magFilter !== first.magFilter || mine.wrapS !== first.wrapS || mine.wrapT !== first.wrapT) {
-      warnings.push(`レンダーターゲット ${name} を違う設定のサンプラーで読んでいます。最初のサンプラー ${firstName} の設定にします`);
+      warnings.push(t('レンダーターゲット {name} を違う設定のサンプラーで読んでいます。最初のサンプラー {first} の設定にします', { name, first: firstName }));
     }
   }
   return first ?? { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, wrapS: THREE.ClampToEdgeWrapping, wrapT: THREE.ClampToEdgeWrapping, warnings };
@@ -88,8 +89,8 @@ export function resolveSurface(
   else if (def.kind === 'targets') lead = def.colors[0];
   else {
     // canvas (やセルフシャドウの深度マップ) と自分のターゲットは、1 つのフレームバッファにできない
-    const what = def.kind === 'canvas' ? 'canvas' : 'セルフシャドウの深度マップ';
-    warnings.push(`既定の描画先 (${what}) とレンダーターゲットは同時に使えないので、既定の描画先だけに描きます`);
+    const what = def.kind === 'canvas' ? 'canvas' : t('セルフシャドウの深度マップ');
+    warnings.push(t('既定の描画先 ({what}) とレンダーターゲットは同時に使えないので、既定の描画先だけに描きます', { what }));
     return { surface: def, warnings };
   }
   if (!lead) return { surface: def, warnings };
@@ -97,7 +98,7 @@ export function resolveSurface(
   for (let i = 1; i < 4; i++) {
     const c = named.colors[i] ? colors[i] : null;
     if (c && (c.width !== lead.width || c.height !== lead.height)) {
-      warnings.push(`レンダーターゲット ${c.name} の大きさが RenderColorTarget0 と違うので使いません`);
+      warnings.push(t('レンダーターゲット {name} の大きさが RenderColorTarget0 と違うので使いません', { name: c.name }));
       out.push(null);
     } else out.push(c);
   }
@@ -107,7 +108,7 @@ export function resolveSurface(
   // (縮めたターゲットに全面の深度を付けたまま描くのはよくある書き方) ので、警告は小さいときだけ
   if (d && (d.width !== lead.width || d.height !== lead.height)) {
     if (named.depth && (d.width < lead.width || d.height < lead.height)) {
-      warnings.push(`深度のターゲット ${d.name} が色のターゲットより小さいので、同じ大きさの深度を使います`);
+      warnings.push(t('深度のターゲット {name} が色のターゲットより小さいので、同じ大きさの深度を使います', { name: d.name }));
     }
     d = null;
   }
@@ -152,26 +153,26 @@ export class Framebuffers {
     const desc = effect.result.effect;
     let targets = this.effects.get(effect);
     if (!targets) this.effects.set(effect, (targets = new Map()));
-    for (const t of desc.textures) {
-      const role = textureRole(t);
+    for (const tex of desc.textures) {
+      const role = textureRole(tex);
       if (role !== 'colorTarget' && role !== 'depthTarget') continue;
-      const spec = targetSpec(t, screen, role === 'depthTarget');
+      const spec = targetSpec(tex, screen, role === 'depthTarget');
       warnings.push(...spec.warnings);
-      const old = targets.get(t.name);
+      const old = targets.get(tex.name);
       if (role === 'depthTarget') {
         if (old?.kind === 'depth' && old.width === spec.width && old.height === spec.height) continue;
         if (old) this.drop(old);
-        targets.set(t.name, this.makeDepth(effect, t.name, spec.width, spec.height));
+        targets.set(tex.name, this.makeDepth(effect, tex.name, spec.width, spec.height));
         continue;
       }
-      const format = this.usable(spec.format, t.name, warnings);
-      const sampling = targetSampling(desc, t.name, spec.mipmaps);
+      const format = this.usable(spec.format, tex.name, warnings);
+      const sampling = targetSampling(desc, tex.name, spec.mipmaps);
       warnings.push(...sampling.warnings);
       let mipmaps = spec.mipmaps;
       // 32 ビットの浮動小数は、OES_texture_float_linear がないと LINEAR で読めず、ミップも作れない (generateMipmap が INVALID_OPERATION)
       if (FLOAT32.has(format) && !this.renderer.extensions.has('OES_texture_float_linear')
         && (mipmaps || sampling.minFilter !== THREE.NearestFilter || sampling.magFilter !== THREE.NearestFilter)) {
-        warnings.push(`浮動小数のレンダーターゲット ${t.name} を LINEAR で読めない環境なので、POINT にしてミップマップを作りません`);
+        warnings.push(t('浮動小数のレンダーターゲット {name} を LINEAR で読めない環境なので、POINT にしてミップマップを作りません', { name: tex.name }));
         sampling.minFilter = THREE.NearestFilter;
         sampling.magFilter = THREE.NearestFilter;
         mipmaps = false;
@@ -179,7 +180,7 @@ export class Framebuffers {
       const key = [spec.width, spec.height, format, mipmaps, sampling.minFilter, sampling.magFilter, sampling.wrapS, sampling.wrapT].join(' ');
       if (old?.kind === 'color' && old.key === key) continue;
       if (old) this.drop(old);
-      targets.set(t.name, this.makeColor(effect, t.name, spec.width, spec.height, format, mipmaps, sampling, key));
+      targets.set(tex.name, this.makeColor(effect, tex.name, spec.width, spec.height, format, mipmaps, sampling, key));
     }
     return warnings;
   }
@@ -220,7 +221,7 @@ export class Framebuffers {
     const c = [0, 1, 2, 3].map(i => lookup(colors[i] ?? null, 'color'));
     const d = lookup(depth, 'depth');
     const { surface, warnings } = resolveSurface(this.defaultSurface, c, d, { colors: c.map(x => x !== null), depth: d !== null });
-    for (const w of warnings) this.events.warn(effect ? `${effect.name}: ${w}` : w);
+    for (const w of warnings) this.events.warn(w, effect);
     return this.bindSurface(surface);
   }
 
@@ -314,7 +315,7 @@ export class Framebuffers {
     const ext = this.renderer.extensions;
     const ok = format === 'rgba8' || ext.has('EXT_color_buffer_float') || (HALF.has(format) && ext.has('EXT_color_buffer_half_float'));
     if (ok) return format;
-    warnings.push(`浮動小数のレンダーターゲット ${name} に描けない環境なので A8R8G8B8 にします`);
+    warnings.push(t('浮動小数のレンダーターゲット {name} に描けない環境なので A8R8G8B8 にします', { name }));
     return 'rgba8';
   }
 
@@ -366,9 +367,14 @@ export class Framebuffers {
     state.bindFramebuffer(gl.FRAMEBUFFER, null);
     if (!ok) {
       const names = colors.filter(c => c).map(c => c!.name).join(', ');
-      const owners = [...new Set([...colors, depth].map(t => t?.effect?.name).filter(Boolean))].join(', ');
-      const msg = `${owners ? `${owners}: ` : ''}レンダーターゲット ${names} のフレームバッファを作れません`;
-      if (!this.reported.has(msg)) { this.reported.add(msg); this.events.warn(msg); }
+      const owners = [...new Set([...colors, depth].map(x => x?.effect ?? null).filter(e => e !== null))];
+      const msg = t('レンダーターゲット {names} のフレームバッファを作れません', { names });
+      const key = `${owners.map(e => e.id).join(',')}|${msg}`;
+      if (!this.reported.has(key)) {
+        this.reported.add(key);
+        if (owners.length === 0) this.events.warn(msg, null);
+        for (const e of owners) this.events.warn(msg, e);
+      }
     }
     const rt = new THREE.WebGLRenderTarget(lead.width, lead.height, { depthBuffer: false });
     // (three.js の型にない関数。XR と同じく、外で作ったフレームバッファを付ける)

@@ -43,8 +43,8 @@ async function solidBox(page: Page) {
 }
 
 const rgb = (p: number[]) => p.slice(0, 3);
-// 描くときの警告 (MmeRenderer.warnings。Framebuffers の警告もここに出る)
-const warnings = (page: Page) => page.evaluate(() => (window as Win).engine.mme.renderer.warnings as string[]);
+// 描くときの警告 (全体の警告と、エフェクトごとの警告。Framebuffers・Script の警告はエフェクトのもの)
+const warnings = (page: Page) => page.evaluate(() => (window as Win).engine.mme.renderer.allWarnings() as string[]);
 const scale = (c: number[], k: number) => c.map(v => v * k);
 
 test('色の反転: 1 − 元の色', async ({ page }) => {

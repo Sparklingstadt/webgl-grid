@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { compileEffect } from '../fx/index.ts';
+import { addDictionary, setLang } from '../i18n.ts';
+import en from '../../i18n/en.ts';
 import { targetSpec } from './targets.ts';
 
 const TECH = 'float4 VS(float4 p : POSITION) : POSITION { return p; } float4 PS() : COLOR0 { return 1; } technique T { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = compile ps_3_0 PS(); } }';
@@ -71,5 +73,16 @@ describe('targetSpec', () => {
   it('色に深度の形式 (深度に色の形式) を書いても既定にして警告する', () => {
     expect(spec('texture2D T : RENDERCOLORTARGET < string Format = "D24S8"; >;', [10, 10])).toMatchObject({ format: 'rgba8', warnings: [expect.any(String)] });
     expect(spec('texture2D D : RENDERDEPTHSTENCILTARGET < string Format = "A8R8G8B8"; >;', [10, 10], true)).toMatchObject({ format: 'depth24stencil8', warnings: [expect.any(String)] });
+  });
+
+  it('警告は画面の言語で出す', () => {
+    addDictionary('en', en);
+    setLang('en');
+    try {
+      expect(spec('texture2D T : RENDERCOLORTARGET < string Format = "FOO"; >;', [10, 10]).warnings)
+        .toEqual(["Format FOO of render target T can't be used, so the default is used"]);
+    } finally {
+      setLang('ja');
+    }
   });
 });

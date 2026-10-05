@@ -101,7 +101,7 @@ function unrotateToon(img: { data: ArrayLike<number>; width: number; height: num
 }
 
 export class MmeRenderer {
-  readonly warnings: string[] = []; // 描くときの警告 (同じものは 1 回)。エフェクトごとの警告は EffectInstance.warnings
+  readonly warnings: string[] = []; // 描くときの、どのエフェクトのものでもない警告 (同じものは 1 回)。エフェクトの警告は EffectInstance.warnings
   skinner = new Skinner();
   private instances = new Map<LoadedEffect, EffectInstance>();
   private shadow: THREE.WebGLRenderTarget | null = null;
@@ -284,7 +284,7 @@ export class MmeRenderer {
   private framebuffers(renderer: THREE.WebGLRenderer): Framebuffers {
     if (this.fb) return this.fb;
     const fb = new Framebuffers(renderer, {
-      warn: m => this.warn(m),
+      warn: (m, e) => (e ? this.instance(e).warn(m) : this.warn(m)),
       broken: effects => {
         for (const e of effects) {
           const inst = this.instances.get(e);
@@ -297,7 +297,7 @@ export class MmeRenderer {
     });
     this.fb = fb;
     this.chain = new PostChain({
-      fb, instance: e => this.instance(e), warn: m => this.warn(m),
+      fb, instance: e => this.instance(e),
       render: (m, geometry) => renderer.renderBufferDirect(this.d.graph.camera, null as unknown as THREE.Scene, geometry, m, this.proxy, null as unknown as THREE.GeometryGroup),
       checkLink: (m, inst, effect) => this.checkLink(renderer, m, inst, effect),
     });
@@ -346,7 +346,7 @@ export class MmeRenderer {
     if (this.shadow || this.noShadow) return this.shadow;
     if (!renderer.extensions.has('EXT_color_buffer_float')) {
       this.noShadow = true;
-      this.warn('浮動小数のテクスチャに描けない環境なので、セルフシャドウを切ります');
+      this.warn(t('浮動小数のテクスチャに描けない環境なので、セルフシャドウを切ります'));
       return null;
     }
     this.shadow = new THREE.WebGLRenderTarget(SHADOW_SIZE, SHADOW_SIZE, {
@@ -389,6 +389,11 @@ export class MmeRenderer {
     return e?.result.ok && !this.stopped(e) ? e : this.d.store.defaultEffect;
   }
 
+  // 全部の警告 (エフェクトの警告は「名前: 」を付ける。テスト用)
+  allWarnings(): string[] {
+    return [...this.warnings, ...[...this.instances].flatMap(([e, inst]) => inst.warnings.map(w => `${e.name}: ${w}`))];
+  }
+
   // そのエフェクトの描いたときの警告 (まだ描いていなければ空)
   warningsOf(e: LoadedEffect): string[] {
     return [...(this.instances.get(e)?.warnings ?? [])];
@@ -409,14 +414,14 @@ export class MmeRenderer {
     const sm = mesh as THREE.SkinnedMesh;
     // クローンは userData の File を失う。形が差し替わった (デフォーマで変形した) クローンは .pmx を引けない
     if (!(mmdSourceOf(sm.geometry) ?? sm.userData.sourceFile instanceof Blob)) {
-      this.warn(`${sm.name || 'MMD モデル'}: 元の .pmx が分からないので描けません (デフォーマで変形したモデルの複製)`);
+      this.warn(t('{name}: 元の .pmx が分からないので描けません (デフォーマで変形したモデルの複製)', { name: sm.name || t('MMD モデル') }));
       return null;
     }
     // .pmx を読み終えていなければ、このフレームは描かない (読み終えたら描き直す)
     const geo = this.skinner.mmd(sm, frame.eye, Math.tan(frame.camera.fovY / 2), () => this.d.viewport.requestDraw());
     const data = this.skinner.data(sm);
     if (!geo || !data) {
-      if (this.skinner.failed(sm)) this.warn(`${sm.name || 'MMD モデル'}: .pmx を読めないので描けません`);
+      if (this.skinner.failed(sm)) this.warn(t('{name}: .pmx を読めないので描けません', { name: sm.name || t('MMD モデル') }));
       return null;
     }
     return { mesh, effect, geo, subsets: this.subsets(mesh, data) };
@@ -522,18 +527,19 @@ export class MmeRenderer {
     const inst = this.instance(effect);
     if (inst.stopped) return; // (このフレームの途中で止めた。次のフレームから default.fx)
     // 物の technique の Script: Draw=Geometry でいまの材質の部分を描く。描画先を替えたら、終わったあと既定の描画先に戻す
-    const st = new ScriptTargets(this.fb!, effect, inst, m => this.warn(m), target);
+    const warn = (m: string) => inst.warn(m); // (そのエフェクトの警告)
+    const st = new ScriptTargets(this.fb!, effect, inst, warn, target);
     runTechnique(tech, 'object', {
       ...st.commands(),
       drawPass: (p, mode) => {
-        if (mode === 'buffer') this.warn('物の .fx の Draw=Buffer にはまだ対応していないので無視します');
+        if (mode === 'buffer') warn(t('物の .fx の Draw=Buffer にはまだ対応していないので無視します'));
         else if (!inst.stopped) {
           this.drawGeometry(inst, effect, p, item, sub, pass, frame, st.current());
           if (st.changed) this.fb!.afterDraw();
         }
       },
       drawExternal: () => {},
-      warn: m => this.warn(m),
+      warn,
     });
     if (st.changed) this.fb!.bindSurface(this.fb!.defaultSurface);
   }

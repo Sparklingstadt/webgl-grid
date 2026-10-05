@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { Pass } from '../../core/fx/index.ts';
+import { t } from '../../core/i18n.ts';
 import { runTechnique, type ScriptBackend } from '../../core/mme/script.ts';
 import type { CameraState, LightState, SemanticContext } from '../../core/mme/semantics.ts';
 import type { DrawBuiltins, EffectInstance } from './EffectInstance';
@@ -15,9 +16,9 @@ export interface FrameState {
 
 // 描画先に合わせた組み込みの値。半ピクセル: DX9 は画素の中心が整数の位置にあるので、GL で同じ値を補間させるには、
 // 形を D3D の画面で右と下へ半画素ずらす (クリップ座標で x は +1 / 幅、y は D3D の下 = GL の −mme_flipY の向きに 1 / 高さ)
-export function builtins(t: DrawTarget): DrawBuiltins {
-  const [w, h] = t.size;
-  return { flipY: t.flipY, halfPixel: [1 / w, -t.flipY / h], viewport: [w, h] };
+export function builtins(target: DrawTarget): DrawBuiltins {
+  const [w, h] = target.size;
+  return { flipY: target.flipY, halfPixel: [1 / w, -target.flipY / h], viewport: [w, h] };
 }
 
 type TargetCommands = Pick<ScriptBackend, 'setColorTarget' | 'setDepthTarget' | 'setClearColor' | 'setClearDepth' | 'setClearStencil' | 'clear' | 'loopCount' | 'setLoopIndex'>;
@@ -48,13 +49,13 @@ export class ScriptTargets {
   commands(): TargetCommands {
     return {
       setColorTarget: (i, name) => {
-        if (i > 3) { this.warn(`RenderColorTarget${i} には対応していないので無視します (3 まで)`); return; }
-        if (name !== null && !this.fb.has(this.effect, name, 'color')) { this.warn(`レンダーターゲット ${name} がないので無視します`); return; }
+        if (i > 3) { this.warn(t('RenderColorTarget{i} には対応していないので無視します (3 まで)', { i })); return; }
+        if (name !== null && !this.fb.has(this.effect, name, 'color')) { this.warn(t('レンダーターゲット {name} がないので無視します', { name })); return; }
         this.colors[i] = name;
         this.select();
       },
       setDepthTarget: name => {
-        if (name !== null && !this.fb.has(this.effect, name, 'depth')) { this.warn(`深度のターゲット ${name} がないので無視します`); return; }
+        if (name !== null && !this.fb.has(this.effect, name, 'depth')) { this.warn(t('深度のターゲット {name} がないので無視します', { name })); return; }
         this.depth = name;
         this.select();
       },
@@ -78,7 +79,7 @@ export class ScriptTargets {
 
   private value(param: string, what: string): number[] | null {
     const v = this.inst.param(param);
-    if (!v) this.warn(`${what} のパラメータ ${param} がありません`);
+    if (!v) this.warn(t('{what} のパラメータ {param} がありません', { what, param }));
     return v;
   }
 }
@@ -88,7 +89,6 @@ export interface PostChainDeps {
   instance(e: LoadedEffect): EffectInstance;
   render(m: THREE.RawShaderMaterial, geometry: THREE.BufferGeometry): void; // 材質で形を描く (three.js の render の中)
   checkLink(m: THREE.RawShaderMaterial, inst: EffectInstance, effect: LoadedEffect): void; // 初めて描いた材質がリンクできたか
-  warn(message: string): void;
 }
 
 // 全面の四角: a_POSITION = (±1, ±1, 0, 1)、a_TEXCOORD0 = (u, v, 0, 1) で v = 0 が上。D3D の表 (時計回り) を向ける
@@ -140,14 +140,14 @@ export class PostChain {
     const inst = this.d.instance(effect);
     const tech = effect.result.ok ? effect.result.effect.techniques[0] : undefined;
     if (!tech || inst.stopped) { inner(); return; }
-    const warn = (m: string) => this.d.warn(`${effect.name}: ${m}`);
+    const warn = (m: string) => inst.warn(m); // (そのエフェクトの警告)
     const st = new ScriptTargets(fb, effect, inst, warn, null);
     const outer = fb.defaultSurface;
     let external = false;
     const backend: ScriptBackend = {
       ...st.commands(),
       drawPass: (p, mode) => {
-        if (mode === 'geometry') warn('ポストエフェクトの Draw=Geometry は無視します');
+        if (mode === 'geometry') warn(t('ポストエフェクトの Draw=Geometry は無視します'));
         else if (!inst.stopped) this.drawBuffer(inst, effect, p, st.current(), frame);
       },
       drawExternal: () => {
@@ -162,7 +162,7 @@ export class PostChain {
       warn,
     };
     runTechnique(tech, 'post', backend);
-    if (!external) warn('ScriptExternal=Color がないので、内側 (場面) を描きません');
+    if (!external) warn(t('ScriptExternal=Color がないので、内側 (場面) を描きません'));
   }
 
   // Draw=Buffer: 描画先いっぱいの四角を描く

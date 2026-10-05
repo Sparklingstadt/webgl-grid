@@ -196,7 +196,7 @@ test('.pmx を読み終える前の最初のフレームでも止まらず、あ
       g.drawImage(canvas, 0, 0);
       w.__seen = Array.from(g.getImageData(Math.floor((v.x + 1) / 2 * c.width), Math.floor((1 - v.y) / 2 * c.height), 1, 1).data);
     });
-    return { before, warnings: engine.mme.renderer.warnings.length };
+    return { before, warnings: engine.mme.renderer.allWarnings().length };
   }, i);
   expect(first).toEqual({ before: null, warnings: 0 });
   // 拡散色 (0.9, 0.7, 0.5) の明るい側か暗い側。背景ではない
