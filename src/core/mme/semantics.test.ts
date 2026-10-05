@@ -197,10 +197,24 @@ describe('MME のセマンティクスの値', () => {
     expect(val('float4x4 M : VIEW;', { pass: null })).toHaveLength(16);
   });
 
-  it('CONTROLOBJECT は unsupported、知らないものは none', () => {
+  it('CONTROLOBJECT は control の値、なければ型の大きさの 0', () => {
+    const decl = 'float mMultiLightP : CONTROLOBJECT<string name = "ray_controller.pmx"; string item = "MultiLight+";>;';
+    const seen: unknown[] = [];
+    const control = (ref: unknown) => { seen.push(ref); return [0.25]; };
+    expect(val(decl, { control })).toEqual([0.25]);
+    expect(seen).toEqual([{ param: 'mMultiLightP', name: 'ray_controller.pmx', item: 'MultiLight+', type: 'float' }]);
+    expect(val(decl)).toEqual([0]);
+    expect(val(decl, { control: () => null })).toEqual([0]);
+    expect(val('float3 P : CONTROLOBJECT<string name = "(self)"; string item = "Position";>;')).toEqual([0, 0, 0]);
+    expect(val('float3 P : CONTROLOBJECT<string name = "(self)"; string item = "Position";>;', { control: () => [1, 2, 3] })).toEqual([1, 2, 3]);
+    expect(val('float4x4 M : CONTROLOBJECT<string name = "a.pmx";>;')).toEqual(Array.from({ length: 16 }, () => 0));
+    // 型が合わない宣言 (float2 など) は項目にならず、control も呼ばれず、0 のまま
+    expect(val('float2 P : CONTROLOBJECT<string name = "a.pmx";>;', { control })).toEqual([0, 0]);
+    expect(seen).toHaveLength(1);
+  });
+
+  it('知らないものは none、マウスなどは unsupported', () => {
     const c = makeCtx();
-    expect(semanticValue(paramOf('float3 P : CONTROLOBJECT < string name = "(self)"; string item = "センター"; >;'), c))
-      .toEqual({ kind: 'unsupported', what: 'CONTROLOBJECT' });
     for (const s of ['MOUSEPOSITION', 'LEFTMOUSEDOWN', 'MIDDLEMOUSEDOWN', 'RIGHTMOUSEDOWN', 'TEXTUREVALUE']) {
       expect(semanticValue(paramOf(`float4 P : ${s};`), c).kind).toBe('unsupported');
     }

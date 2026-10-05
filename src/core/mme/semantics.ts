@@ -2,6 +2,7 @@
 import { Matrix4, Vector3 } from 'three';
 import type { Param, TextureDecl } from '../fx/desc.ts';
 import { annotation } from './annotations.ts';
+import { controlRef, type ControlRef } from './controllers.ts';
 import { groundShadowMatrix, perspectiveD3D, toMmd, toMmdVec, viewLH } from './coords.ts';
 import { typeShape } from './typeShape.ts';
 
@@ -20,6 +21,7 @@ export interface MaterialState {
 export interface SemanticContext {
   camera: CameraState; light: LightState; world: Matrix4 /* three.js の物 → 世界 */; material: MaterialState | null;
   pass: MmdPass | null /* null はポストエフェクト */; time: number; elapsed: number; screen: [number, number]; selfShadow: boolean;
+  control?: (ref: ControlRef) => number[] | null; // CONTROLOBJECT の値 (null と、この関数がないときは 0)
 }
 export type SemanticValue = { kind: 'numbers'; values: number[] } | { kind: 'unsupported'; what: string } | { kind: 'none' };
 export type TextureRole = 'material' | 'sphere' | 'toon' | 'colorTarget' | 'depthTarget' | 'file' | 'unsupported' | 'none';
@@ -31,7 +33,7 @@ export const SHADOW_COLOR: [number, number, number, number] = [0, 0, 0, 0.5];
 export const LIGHT_DISTANCE = 1000;
 
 const MATRIX_RE = /^(WORLD|VIEW|PROJECTION|WORLDVIEW|VIEWPROJECTION|WORLDVIEWPROJECTION)(INVERSE|TRANSPOSE|INVERSETRANSPOSE)?$/;
-const UNSUPPORTED = new Set(['CONTROLOBJECT', 'MOUSEPOSITION', 'LEFTMOUSEDOWN', 'MIDDLEMOUSEDOWN', 'RIGHTMOUSEDOWN', 'TEXTUREVALUE']);
+const UNSUPPORTED = new Set(['MOUSEPOSITION', 'LEFTMOUSEDOWN', 'MIDDLEMOUSEDOWN', 'RIGHTMOUSEDOWN', 'TEXTUREVALUE']);
 
 const numbers = (values: number[]): SemanticValue => ({ kind: 'numbers', values });
 const NONE: SemanticValue = { kind: 'none' };
@@ -135,9 +137,19 @@ function namedValue(name: string, ctx: SemanticContext): number[] | null {
   }
 }
 
+// CONTROLOBJECT の値。項目にならない宣言 (型が合わない・name がない) は control を呼ばずに 0
+function controlValue(p: Param, ctx: SemanticContext): number[] {
+  const ref = controlRef(p);
+  const v = ref ? ctx.control?.(ref) ?? null : null;
+  if (v) return v;
+  const s = typeShape(p.type);
+  return Array.from({ length: s ? s.rows * s.cols * s.elems : 1 }, () => 0);
+}
+
 function semanticNumbers(p: Param, ctx: SemanticContext): number[] | SemanticValue {
   if (p.semantic === null) return namedValue(p.name, ctx) ?? NONE;
   const sem = p.semantic.toUpperCase();
+  if (sem === 'CONTROLOBJECT') return controlValue(p, ctx);
   if (UNSUPPORTED.has(sem)) return { kind: 'unsupported', what: sem };
   const mm = MATRIX_RE.exec(sem);
   if (mm) return matrixValue(mm, p, ctx);
