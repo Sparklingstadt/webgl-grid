@@ -230,7 +230,7 @@ describe('MME のセマンティクスの値', () => {
     expect(role('texture T : MATERIALTOONTEXTURE;')).toBe('toon');
     expect(role('texture2D T : RENDERCOLORTARGET < float2 ViewportRatio = {1, 1}; >;')).toBe('colorTarget');
     expect(role('texture2D T : RENDERDEPTHSTENCILTARGET < float2 ViewportRatio = {1, 1}; >;')).toBe('depthTarget');
-    expect(role('texture2D T : OFFSCREENRENDERTARGET < float2 ViewportRatio = {1, 1}; >;')).toBe('unsupported');
+    expect(role('texture2D T : OFFSCREENRENDERTARGET < float2 ViewportRatio = {1, 1}; >;')).toBe('offscreen');
     expect(role('texture2D T : ANIMATEDTEXTURE < string ResourceName = "a.gif"; >;')).toBe('unsupported');
     expect(role('texture2D T < string ResourceName = "a.png"; >;')).toBe('file');
     expect(role('texture2D T;')).toBe('none');

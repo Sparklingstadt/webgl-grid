@@ -13,6 +13,7 @@ import { cloneTexture, decodeTexture } from './textures.ts';
 export interface DrawBuiltins { flipY: 1 | -1; halfPixel: [number, number]; viewport: [number, number] }
 export interface TextureSource {
   role(name: string): THREE.Texture | null; // 'material' | 'sphere' | 'toon' | 'selfShadow' と、レンダーターゲットの名前
+  offscreen?(name: string): THREE.Texture | null; // オフスクリーンの名前 (この関数がなければ、どのオフスクリーンもない)
 }
 // pass を描く場面。MMD がデバイスに残しているステート (pass のステートの前に置く) を決める
 export interface BaseState { kind: 'object' | 'shadow' | 'zplot' | 'edge' | 'post'; doubleSided: boolean }
@@ -433,6 +434,13 @@ export class EffectInstance {
         const f = this.files.get(decl.name);
         if (!f || f.failed) return 'magenta';
         return f.tex ? { tex: f.tex, copy: true } : 'blank';
+      }
+      case 'offscreen': {
+        // (まだ描いていない・描けなかった (入れ子が深すぎる・止めた) ものは黒)
+        const tex = textures.offscreen?.(decl.name) ?? null;
+        if (tex) return { tex, copy: false };
+        this.warn(t('オフスクリーン {name} を描いていないので、黒にします', { name: decl.name }));
+        return 'blank';
       }
       case 'depthTarget':
         this.warn(t('深度のターゲット {name} はテクスチャとして読めません', { name: decl.name }));

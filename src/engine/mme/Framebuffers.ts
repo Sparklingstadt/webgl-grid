@@ -6,7 +6,8 @@ import { declaresLayout, targetSpec, type TargetFormat, type TargetSpec } from '
 import { MAG_FILTER, minFilter, WRAP } from './EffectInstance';
 import type { LoadedEffect } from './EffectStore';
 
-// --- MME のレンダーターゲット (RENDERCOLORTARGET・RENDERDEPTHSTENCILTARGET) と、その組み合わせのフレームバッファ ---
+// --- MME のレンダーターゲット (RENDERCOLORTARGET・RENDERDEPTHSTENCILTARGET)・オフスクリーン (OFFSCREENRENDERTARGET) の色と、
+// その組み合わせのフレームバッファ ---
 // shared のターゲットは、名前ごとに全エフェクトで 1 つ (SharedSlot)。使うエフェクトのいちばん先に書いた形・大きさで作る
 // 色のテクスチャは three.js の Texture (initTexture で GPU に作る)、深度・ステンシルは自分で作る renderbuffer (DEPTH24_STENCIL8)。
 // 色 (最大 4 つ) と深度の組み合わせごとに gl のフレームバッファを作り、setRenderTargetFramebuffer で WebGLRenderTarget に付けて使う
@@ -51,6 +52,7 @@ const FORMATS: Record<TargetFormat, [THREE.PixelFormat, THREE.TextureDataType]> 
   r16f: [THREE.RedFormat, THREE.HalfFloatType], r32f: [THREE.RedFormat, THREE.FloatType], rg16f: [THREE.RGFormat, THREE.HalfFloatType],
   rg32f: [THREE.RGFormat, THREE.FloatType], depth24stencil8: [THREE.RGBAFormat, THREE.UnsignedByteType],
 };
+const EMPTY_DESC: EffectDesc = { params: [], textures: [], samplers: [], techniques: [] };
 const sameShape = (a: TargetSpec, b: TargetSpec) => a.width === b.width && a.height === b.height && a.format === b.format && a.mipmaps === b.mipmaps;
 const FLOAT32 = new Set<TargetFormat>(['rgba32f', 'r32f', 'rg32f']);
 const HALF = new Set<TargetFormat>(['rgba16f', 'r16f', 'rg16f']);
@@ -139,6 +141,9 @@ export class Framebuffers {
   private fbos = new Map<string, Fbo>();
   private autoDepth = new Map<string, DepthTarget>(); // 大きさごとの共有の深度
   private screenTarget: ColorTarget | null = null;     // ポストエフェクトがあるときの canvas の代わり
+  private offscreens = new Map<string, ColorTarget>(); // オフスクリーンの色 (Offscreen が決める key ごと)
+  // 大きさごとのオフスクリーンの深度。オフスクリーンは 1 つずつ描き終えてから次を描く (入れ子は先に描く) ので、同じ大きさのものは共有する
+  private offscreenDepth = new Map<string, DepthTarget>();
   private screen: [number, number] = [0, 0];
   private reported = new Set<string>();
 
@@ -287,6 +292,50 @@ export class Framebuffers {
     return this.effects.get(effect)?.get(name)?.kind === kind;
   }
 
+  // オフスクリーンの色のターゲット (key ごと。大きさ・形式・サンプラーの設定が変わったときだけ作り直す)。サンプラーの設定は、
+  // そのオフスクリーンを読む effect の最初のサンプラーのもの。浮動小数に描けない環境では null にして effect を止める (broken)
+  offscreenTarget(key: string, effect: LoadedEffect, name: string, spec: TargetSpec): { target: ColorTarget | null; warnings: string[] } {
+    const warnings = [...spec.warnings];
+    if (!this.renderable(spec.format)) {
+      this.stop(effect, name, warnings);
+      return { target: null, warnings };
+    }
+    const plan = this.plan(spec, effect.result.ok ? effect.result.effect : EMPTY_DESC, name, warnings);
+    const old = this.offscreens.get(key);
+    if (old && old.key === plan.key) return { target: old, warnings };
+    const target = this.makeColor(effect, name, spec.width, spec.height, plan.format, plan.mipmaps, plan.sampling, plan.key);
+    this.offscreens.set(key, target);
+    if (old) this.dropOffscreenColor(old);
+    return { target, warnings };
+  }
+
+  // オフスクリーンに描くときの描画先 (色と、同じ大きさのオフスクリーンの深度)
+  offscreenSurface(target: ColorTarget): Surface {
+    const size = `${target.width}x${target.height}`;
+    let depth = this.offscreenDepth.get(size);
+    if (!depth) this.offscreenDepth.set(size, (depth = this.makeDepth(null, '(offscreen depth)', target.width, target.height)));
+    return { kind: 'targets', colors: [target], depth };
+  }
+
+  // オフスクリーンの色を捨てる (使わなくなったとき)。その大きさのオフスクリーンがなくなれば、深度も捨てる
+  dropOffscreen(key: string): void {
+    const target = this.offscreens.get(key);
+    if (!target) return;
+    this.offscreens.delete(key);
+    this.dropOffscreenColor(target);
+  }
+
+  // (offscreens から外した色を捨てる。その大きさのオフスクリーンがなくなれば深度も)
+  private dropOffscreenColor(target: ColorTarget): void {
+    this.drop(target);
+    const size = `${target.width}x${target.height}`;
+    const depth = this.offscreenDepth.get(size);
+    if (depth && ![...this.offscreens.values()].some(t => `${t.width}x${t.height}` === size)) {
+      this.drop(depth);
+      this.offscreenDepth.delete(size);
+    }
+  }
+
   // ポストエフェクトがあるときの canvas の代わり (画面の大きさ)。DX9 の画素の位置に合わせた全面の四角は、上と左の縁が画素の
   // 中心を通る。canvas に直接描くと、アンチエイリアスで縁が背景と混ざり、上下の向きも GL の塗りの決まり (メモリの先頭の行の縁を含む) と
   // 逆になって上の行が抜ける。ほかのレンダーターゲットと同じ向き (mme_flipY = −1。D3D の上の行がメモリの先頭) で描いて、
@@ -405,6 +454,10 @@ export class Framebuffers {
     this.slots.clear();
     for (const d of this.autoDepth.values()) this.drop(d);
     this.autoDepth.clear();
+    for (const t of this.offscreens.values()) this.drop(t);
+    this.offscreens.clear();
+    for (const d of this.offscreenDepth.values()) this.drop(d);
+    this.offscreenDepth.clear();
     if (this.screenTarget) this.drop(this.screenTarget);
     this.screenTarget = null;
     this.renderer.setRenderTarget(null);

@@ -1287,5 +1287,12 @@ const dict: Dictionary = {
   "DDS の形式 {format} は読めません": "DDS format {format} can't be read",
   "配列テクスチャの DDS は読めません": "Array texture DDS files can't be read",
   "DDS の画素のデータが足りません": "The DDS pixel data is incomplete",
+  "オフスクリーン {name} を描いていないので、黒にします": "Offscreen {name} hasn't been drawn, so it is black",
+  "{path} が見つからないので、オフスクリーン {tab} では描きません": "Couldn't find {path}, so it isn't drawn in offscreen {tab}",
+  "{name} をコンパイルできないので、オフスクリーン {tab} では描きません": "{name} couldn't be compiled, so it isn't drawn in offscreen {tab}",
+  "オフスクリーン {name} の AntiAlias には対応していないので、アンチエイリアスなしで描きます": "AntiAlias on offscreen {name} isn't supported, so it is drawn without anti-aliasing",
+  "共有のオフスクリーン {name} の形か大きさが、先に描いたエフェクトの宣言と違うので、先に描いたものを使います": "The format or size of shared offscreen {name} differs from the declaration of the effect that drew it first, so the first one is used",
+  "オフスクリーン {name} は入れ子の {depth} 段目なので描きません ({max} 段まで)": "Offscreen {name} is nested {depth} levels deep, so it isn't drawn (up to {max} levels)",
+  "{name} を止めたので、オフスクリーン {tab} では描きません": "{name} was stopped, so it isn't drawn in offscreen {tab}",
 };
 export default dict;

@@ -108,6 +108,26 @@ describe('Assignments', () => {
     expect(effectOf(slotFor(fallback, mesh, 0))).toBe(s.effect(folder, 'a.fx'));
   });
 
+  it('オフスクリーンのタブ (DefaultEffect がある) では、見つからない .fx・コンパイルできない .fx は描かない (hide。警告はそれぞれ 1 回)', async () => {
+    const s = store();
+    const folder = await s.addFolder([fileAt('fx/a.fx', 'technique T { }'), fileAt('fx/broken.fx', 'technique T { pass P { VertexShader = compile vs_3_0 nothing(); } }')]);
+    const warn = vi.fn();
+    const { rules } = parseDefaultEffect('gone* = gone.fx; bad* = broken.fx; * = a.fx;');
+    const slotFor = new Assignments(s, warn).slotFor('MaterialMap', { rules, base: '', folder }, null);
+    const missing = shape(1, { MaterialMap: { materials: { 0: { folder: folder.id, path: 'nothing.fx' } }, object: { folder: folder.id, path: 'a.fx' } } });
+    for (let k = 0; k < 2; k++) {
+      expect(effectOf(slotFor(shape(2, undefined, 'gone1'), mesh, 0))).toBe('hide');
+      expect(effectOf(slotFor(shape(3, undefined, 'bad1'), mesh, 0))).toBe('hide');
+      expect(effectOf(slotFor(missing, mesh, 0))).toBe('hide'); // (物の割り当てに戻らない)
+      expect(effectOf(slotFor(missing, mesh, 1))).toBe(s.effect(folder, 'a.fx'));
+    }
+    expect(warn.mock.calls.map(c => c[0])).toEqual([
+      'fx/gone.fx が見つからないので、オフスクリーン MaterialMap では描きません',
+      'fx/broken.fx をコンパイルできないので、オフスクリーン MaterialMap では描きません',
+      'fx/nothing.fx が見つからないので、オフスクリーン MaterialMap では描きません',
+    ]);
+  });
+
   it('referenced: 物の全部のタブで割り当てていて、探せる .fx', async () => {
     const s = store();
     const folder = await s.addFolder([fileAt('fx/a.fx', 'technique T { }'), fileAt('fx/b.fx', 'technique T { }')]);

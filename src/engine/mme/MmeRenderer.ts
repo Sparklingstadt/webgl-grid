@@ -15,13 +15,14 @@ import { Assignments } from './Assignments';
 import { EffectInstance } from './EffectInstance';
 import type { EffectStore, LoadedEffect } from './EffectStore';
 import { CANVAS, Framebuffers, type DrawTarget } from './Framebuffers';
+import { Offscreen } from './Offscreen';
 import { SHADOW_DISTANCE_MAX, type MmeSettings } from '../../core/mme/settings.ts';
 import { PostChain, type FrameState } from './PostChain';
 import { ScenePass, toSrgb, type PassTable, type Slot, type SlotFor } from './ScenePass';
 import { Skinner } from './Skinner';
 
-// --- MME 互換の 1 フレーム (設計書「1 フレームの流れ」): セルフシャドウの深度 → ポストエフェクトの入れ子 (PostChain) の
-// いちばん内側で、モデルごとに地面の影・本体・輪郭線 → 編集用の表示 ---
+// --- MME 互換の 1 フレーム (設計書「1 フレームの流れ」): セルフシャドウの深度 → オフスクリーン (Offscreen) →
+// ポストエフェクトの入れ子 (PostChain) のいちばん内側で、モデルごとに地面の影・本体・輪郭線 → 編集用の表示 ---
 
 export interface MmeRendererDeps {
   viewport: Viewport; graph: SceneGraph; world: World; selection: Selection; clock: Clock; library: MaterialLibrary;
@@ -56,6 +57,7 @@ export class MmeRenderer {
   private fb: Framebuffers | null = null; // レンダーターゲット (描画先を作り直したら作り直す)
   private chain: PostChain | null = null;
   private scenePass: ScenePass;
+  private offscreen: Offscreen;
   private assignments: Assignments;
   // Main の表: 材質・物の割り当て (なければ default.fx)。ステージは default.fx
   private main: PassTable = { name: 'Main', owner: null, slotFor: (obj, mesh, i) => this.mainSlot(obj, mesh, i) };
@@ -77,7 +79,16 @@ export class MmeRenderer {
       instance: e => this.instance(e),
       skinner: () => this.skinner,
       shadowMap: () => this.shadow?.texture ?? null,
+      offscreen: (e, name, owner) => this.offscreen.texture(e, name, owner),
       warn: m => this.warn(m),
+    });
+    this.offscreen = new Offscreen({
+      fb: () => this.fb!,
+      scene: this.scenePass,
+      slotFor: (tab, defaults, owner) => this.assignments.slotFor(tab, defaults, owner),
+      prepare: (e, screen) => this.prepare(this.fb!, e, screen),
+      stopped: e => this.stopped(e),
+      warn: (m, e) => (e ? this.warnFor(e, m) : this.warn(m)),
     });
     this.host.onAfterRender = () => {
       const job = this.job;
@@ -96,6 +107,7 @@ export class MmeRenderer {
     const fb = this.framebuffers(renderer);
     const frame = this.frame(renderer);
     fb.begin(frame.screen);
+    if (this.offscreen.begin(frame.frameNo)) this.prune(); // (捨てたオフスクリーンでだけ使っていた .fx の資源も捨てる)
     this.mainSlots.clear();
     const geometries = this.scenePass.geometries(frame);
     renderer.getClearColor(this.clearColor);
@@ -113,10 +125,11 @@ export class MmeRenderer {
     return true;
   }
 
-  // セルフシャドウの深度マップ → ポストエフェクトの入れ子と場面 (three.js の render の中で呼ぶ)
+  // セルフシャドウの深度マップ → オフスクリーン → ポストエフェクトの入れ子と場面 (three.js の render の中で呼ぶ)
   private drawFrame(renderer: THREE.WebGLRenderer, fb: Framebuffers, frame: FrameState, clearAlpha: number): void {
     // 物の .fx のレンダーターゲット
-    for (const e of new Set([this.d.store.defaultEffect, ...this.scenePass.effects(this.main, frame)])) this.prepare(fb, e, frame.screen);
+    const uses = this.scenePass.uses(this.main, frame);
+    for (const e of new Set([this.d.store.defaultEffect, ...uses.map(u => u.effect)])) this.prepare(fb, e, frame.screen);
     // セルフシャドウの深度マップ (R = z / w。何もない所は 1)
     if (frame.selfShadow && this.shadow) {
       const surface = { kind: 'three', target: this.shadow } as const;
@@ -126,8 +139,11 @@ export class MmeRenderer {
       this.clear(renderer);
       this.scenePass.drawSelfShadow(this.main, frame, target);
     }
-    // ポストエフェクトがあれば canvas の代わりの絵に描いてから写す (Framebuffers.screenSurface)。背景の空は描かない。いまの消す色で消す
+    // オフスクリーン: ポストエフェクトと Main の物のエフェクトが宣言するもの (その中の入れ子は Offscreen が先に描く)
     const posts = this.posts(fb, frame.screen);
+    for (const p of posts) this.offscreen.ensure(p, null, frame);
+    for (const u of uses) this.offscreen.ensure(u.effect, u.obj, frame);
+    // ポストエフェクトがあれば canvas の代わりの絵に描いてから写す (Framebuffers.screenSurface)。背景の空は描かない。いまの消す色で消す
     const surface = posts.length > 0 ? fb.screenSurface() : CANVAS;
     const target = fb.bindSurface(surface);
     fb.defaultSurface = surface;
@@ -168,15 +184,18 @@ export class MmeRenderer {
     const effects = new Set<LoadedEffect>([this.d.store.defaultEffect]);
     for (const obj of this.d.world.objects) for (const e of this.assignments.referenced(obj)) if (e.result.ok && !this.stopped(e)) effects.add(e);
     for (const p of this.d.store.posts) if (p.enabled && p.effect.result.ok) effects.add(p.effect);
+    // (オフスクリーンに描くエフェクトは、前のフレームで描いたもの)
+    for (const e of this.offscreen.effects()) if (e.result.ok && !this.stopped(e)) effects.add(e);
     for (const e of effects) waits.push(this.instance(e).ready());
     await Promise.all(waits);
   }
 
-  // どの物にも割り当てていない・ポストエフェクトの一覧にない .fx の資源と、場面にないモデルのトゥーンの画像を捨てる
+  // どの物にも割り当てていない・ポストエフェクトの一覧にない・オフスクリーンで使っていない .fx の資源と、場面にないモデルのトゥーンの画像を捨てる
   prune(): void {
     this.scenePass.prune();
     const used = new Set<LoadedEffect>([
       this.d.store.defaultEffect, ...this.d.world.objects.flatMap(o => this.assignments.referenced(o)), ...this.d.store.posts.map(p => p.effect),
+      ...this.offscreen.effects(),
     ]);
     for (const [e, inst] of this.instances) {
       if (used.has(e)) continue;
@@ -198,6 +217,7 @@ export class MmeRenderer {
     this.shadow = null;
     this.noShadow = false;
     this.scenePass.dispose();
+    this.offscreen.dispose();
     this.mainSlots.clear();
     this.uploaders = [];
     this.prevTime = null;
@@ -227,6 +247,7 @@ export class MmeRenderer {
       fb, instance: e => this.instance(e),
       render: (m, geometry) => renderer.renderBufferDirect(this.d.graph.camera, null as unknown as THREE.Scene, geometry, m, this.proxy, null as unknown as THREE.GeometryGroup),
       checkLink: (m, inst, effect) => this.scenePass.checkLink(m, inst, effect),
+      offscreen: (e, name) => this.offscreen.texture(e, name, null),
     });
     return fb;
   }
@@ -301,6 +322,11 @@ export class MmeRenderer {
       slots.set(materialIndex, slot);
     }
     return slot;
+  }
+
+  // いま使っているエフェクトが宣言するオフスクリーン (割り当てのタブ。名前ごとに 1 つ)
+  offscreenTabs(): { name: string; description: string }[] {
+    return this.offscreen.tabs();
   }
 
   // 全部の警告 (エフェクトの警告は「名前: 」を付ける。テスト用)

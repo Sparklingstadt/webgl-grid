@@ -92,6 +92,7 @@ export interface PostChainDeps {
   instance(e: LoadedEffect): EffectInstance;
   render(m: THREE.RawShaderMaterial, geometry: THREE.BufferGeometry): void; // 材質で形を描く (three.js の render の中)
   checkLink(m: THREE.RawShaderMaterial, inst: EffectInstance, effect: LoadedEffect): void; // 初めて描いた材質がリンクできたか
+  offscreen(effect: LoadedEffect, name: string): THREE.Texture | null; // ポストエフェクトが宣言したオフスクリーンのテクスチャ
 }
 
 // 全面の四角: a_POSITION = (±1, ±1, 0, 1)、a_TEXCOORD0 = (u, v, 0, 1) で v = 0 が上。D3D の表 (時計回り) を向ける
@@ -174,9 +175,9 @@ export class PostChain {
     if (!m) return;
     const ctx: SemanticContext = {
       camera: frame.camera, light: frame.light, world: IDENTITY, material: null, pass: null,
-      time: frame.time, elapsed: frame.elapsed, screen: frame.screen, selfShadow: frame.selfShadow,
+      time: frame.time, elapsed: frame.elapsed, screen: frame.screen, selfShadow: frame.selfShadow, owner: null,
     };
-    inst.bind(m, p, ctx, builtins(target), { role: name => this.d.fb.colorTexture(effect, name) });
+    inst.bind(m, p, ctx, builtins(target), { role: name => this.d.fb.colorTexture(effect, name), offscreen: name => this.d.offscreen(effect, name) });
     this.d.render(m, this.quad);
     this.d.checkLink(m, inst, effect);
     this.d.fb.afterDraw();

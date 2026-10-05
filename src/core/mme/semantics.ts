@@ -22,9 +22,11 @@ export interface SemanticContext {
   camera: CameraState; light: LightState; world: Matrix4 /* three.js の物 → 世界 */; material: MaterialState | null;
   pass: MmdPass | null /* null はポストエフェクト */; time: number; elapsed: number; screen: [number, number]; selfShadow: boolean;
   control?: (ref: ControlRef) => number[] | null; // CONTROLOBJECT の値 (null と、この関数がないときは 0)
+  // いま描いているオフスクリーンの持ち主 ((OffscreenOwner)。engine の Obj。Main とポストエフェクト・持ち主のないオフスクリーンは null)
+  owner?: object | null;
 }
 export type SemanticValue = { kind: 'numbers'; values: number[] } | { kind: 'unsupported'; what: string } | { kind: 'none' };
-export type TextureRole = 'material' | 'sphere' | 'toon' | 'colorTarget' | 'depthTarget' | 'file' | 'unsupported' | 'none';
+export type TextureRole = 'material' | 'sphere' | 'toon' | 'colorTarget' | 'depthTarget' | 'offscreen' | 'file' | 'unsupported' | 'none';
 
 // 地面の影の既定の色 (MMD と同じ半透明の黒)
 export const SHADOW_COLOR: [number, number, number, number] = [0, 0, 0, 0.5];
@@ -184,7 +186,8 @@ export function textureRole(t: TextureDecl): TextureRole {
     case 'MATERIALTOONTEXTURE': return 'toon';
     case 'RENDERCOLORTARGET': return 'colorTarget';
     case 'RENDERDEPTHSTENCILTARGET': return 'depthTarget';
-    case 'OFFSCREENRENDERTARGET': case 'ANIMATEDTEXTURE': return 'unsupported';
+    case 'OFFSCREENRENDERTARGET': return 'offscreen';
+    case 'ANIMATEDTEXTURE': return 'unsupported';
     case undefined: return annotation(t.annotations, 'ResourceName') ? 'file' : 'none';
     default: return 'none';
   }

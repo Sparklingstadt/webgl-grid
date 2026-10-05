@@ -28,8 +28,10 @@ export type SlotFor = (obj: Obj | null /* ステージは null */, mesh: THREE.M
 export interface PassTable {
   name: string; // 'Main' かオフスクリーンの名前
   slotFor: SlotFor;
-  owner: Obj | null; // 入れ子のオフスクリーンの持ち主
+  owner: Obj | null; // 入れ子のオフスクリーンの持ち主 ((OffscreenOwner)。SemanticContext.owner に渡す)
 }
+// その表で描く物と、そのエフェクト (オフスクリーンを先に描くため)
+export interface TableUse { obj: Obj | null; effect: LoadedEffect }
 
 export interface ScenePassDeps {
   graph: SceneGraph; world: World; library: MaterialLibrary; settings: MmeSettings;
@@ -43,6 +45,8 @@ export interface ScenePassDeps {
   instance(e: LoadedEffect): EffectInstance;
   skinner(): Skinner;
   shadowMap(): THREE.Texture | null; // セルフシャドウの深度マップ
+  // エフェクトが宣言したオフスクリーンのテクスチャ (owner はそのエフェクトで描く物。描いていなければ null)
+  offscreen(effect: LoadedEffect, name: string, owner: Obj | null): THREE.Texture | null;
   warn(message: string): void; // どのエフェクトのものでもない警告
 }
 
@@ -140,7 +144,7 @@ export class ScenePass {
   // セルフシャドウの深度マップ: 影を落とす材質の部分を、いまの描画先に zplot で描く (three.js の render の中で呼ぶ)
   drawSelfShadow(table: PassTable, frame: FrameState, target: DrawTarget): void {
     for (const item of this.collect(frame)) {
-      for (const { sub, effect } of this.parts(table, item)) if (sub.flags & CAST_SELF_SHADOW) this.drawPass(effect, item, sub, 'zplot', frame, target);
+      for (const { sub, effect } of this.parts(table, item)) if (sub.flags & CAST_SELF_SHADOW) this.drawPass(table, effect, item, sub, 'zplot', frame, target);
     }
   }
 
@@ -154,10 +158,19 @@ export class ScenePass {
     return out;
   }
 
-  // その表で、そのフレームに使うエフェクト (描く順に、1 つずつ)
-  effects(table: PassTable, frame: FrameState): Set<LoadedEffect> {
-    const out = new Set<LoadedEffect>();
-    for (const item of this.collect(frame)) for (const { effect } of this.parts(table, item)) out.add(effect);
+  // その表で、そのフレームに描く物とエフェクトの組 (描く順に、1 つずつ)
+  uses(table: PassTable, frame: FrameState): TableUse[] {
+    const out: TableUse[] = [];
+    const seen = new Map<Obj | null, Set<LoadedEffect>>();
+    for (const item of this.collect(frame)) {
+      let effects = seen.get(item.obj);
+      if (!effects) seen.set(item.obj, (effects = new Set()));
+      for (const { effect } of this.parts(table, item)) {
+        if (effects.has(effect)) continue;
+        effects.add(effect);
+        out.push({ obj: item.obj, effect });
+      }
+    }
     return out;
   }
 
@@ -222,11 +235,11 @@ export class ScenePass {
     const { groundShadow } = this.d.settings;
     for (const item of this.collect(frame)) {
       const parts = this.parts(table, item);
-      if (groundShadow) for (const { sub, effect } of parts) if (sub.flags & GROUND_SHADOW) this.drawPass(effect, item, sub, 'shadow', frame, target);
+      if (groundShadow) for (const { sub, effect } of parts) if (sub.flags & GROUND_SHADOW) this.drawPass(table, effect, item, sub, 'shadow', frame, target);
       for (const { sub, effect } of parts) {
-        this.drawPass(effect, item, sub, frame.selfShadow && sub.flags & RECEIVE_SELF_SHADOW ? 'object_ss' : 'object', frame, target);
+        this.drawPass(table, effect, item, sub, frame.selfShadow && sub.flags & RECEIVE_SELF_SHADOW ? 'object_ss' : 'object', frame, target);
       }
-      if (item.geo.edge) for (const { sub, effect } of parts) if (sub.flags & EDGE) this.drawPass(effect, item, sub, 'edge', frame, target);
+      if (item.geo.edge) for (const { sub, effect } of parts) if (sub.flags & EDGE) this.drawPass(table, effect, item, sub, 'edge', frame, target);
     }
   }
 
@@ -366,7 +379,7 @@ export class ScenePass {
 
   // --- 描く ---
   // その MMDPass の technique を選んで (なければ default.fx のもの)、Script のとおりに描く
-  private drawPass(slotEffect: LoadedEffect, item: DrawItem, sub: Subset, pass: MmdPass, frame: FrameState, target: DrawTarget): void {
+  private drawPass(table: PassTable, slotEffect: LoadedEffect, item: DrawItem, sub: Subset, pass: MmdPass, frame: FrameState, target: DrawTarget): void {
     const s = sub.state;
     const q: TechniqueQuery = { pass, subset: sub.index, useTexture: s.hasTexture, useSphereMap: s.hasSphere, useToon: s.hasToon, selfShadow: frame.selfShadow };
     let effect = slotEffect;
@@ -387,7 +400,7 @@ export class ScenePass {
       drawPass: (p, mode) => {
         if (mode === 'buffer') warn(t('物の .fx の Draw=Buffer にはまだ対応していないので無視します'));
         else if (!inst.stopped) {
-          this.drawGeometry(inst, effect, p, item, sub, pass, frame, st.current());
+          this.drawGeometry(table, inst, effect, p, item, sub, pass, frame, st.current());
           if (st.changed) fb.afterDraw();
         }
       },
@@ -397,7 +410,9 @@ export class ScenePass {
     if (st.changed) fb.bindSurface(fb.defaultSurface);
   }
 
-  private drawGeometry(inst: EffectInstance, effect: LoadedEffect, p: Pass, item: DrawItem, sub: Subset, pass: MmdPass, frame: FrameState, target: DrawTarget): void {
+  private drawGeometry(
+    table: PassTable, inst: EffectInstance, effect: LoadedEffect, p: Pass, item: DrawItem, sub: Subset, pass: MmdPass, frame: FrameState, target: DrawTarget,
+  ): void {
     const renderer = this.d.renderer();
     const kind = pass === 'zplot' || pass === 'edge' || pass === 'shadow' ? pass : 'object';
     const base: BaseState = { kind, doubleSided: sub.doubleSided };
@@ -405,7 +420,7 @@ export class ScenePass {
     if (!m) return;
     const ctx: SemanticContext = {
       camera: frame.camera, light: frame.light, world: item.mesh.matrixWorld, material: sub.state, pass,
-      time: frame.time, elapsed: frame.elapsed, screen: frame.screen, selfShadow: frame.selfShadow,
+      time: frame.time, elapsed: frame.elapsed, screen: frame.screen, selfShadow: frame.selfShadow, owner: table.owner,
     };
     const { textures: t } = sub;
     const fb = this.d.fb();
@@ -414,6 +429,7 @@ export class ScenePass {
     const textures: TextureSource = {
       role: name => (name === 'material' ? t.material : name === 'sphere' ? t.sphere : name === 'toon' ? t.toon : name === 'selfShadow' ? shadow
         : fb.colorTexture(effect, name)),
+      offscreen: name => this.d.offscreen(effect, name, item.obj),
     };
     inst.bind(m, p, ctx, builtins(target), textures);
     const geometry = pass === 'edge' && item.geo.edge ? item.geo.edge : item.geo.geometry;

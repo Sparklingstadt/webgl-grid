@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { compileEffect, type EffectDesc } from '../../core/fx/index.ts';
+import type { TargetSpec } from '../../core/mme/targets.ts';
 import type { LoadedEffect } from './EffectStore.ts';
 import { CANVAS, Framebuffers, resolveSurface, targetSampling, type ColorTarget, type DepthTarget, type Surface } from './Framebuffers.ts';
 
@@ -317,5 +318,42 @@ texture2D X : RENDERCOLORTARGET < string Format = "A2B10G10R10"; int MipLevels =
     expect(fb.colorTexture(e, 'L')!.format).toBe(THREE.RedFormat);
     expect(fb.colorTexture(e, 'A')!.format).toBe(THREE.RGBAFormat);
     expect(fb.colorTexture(e, 'X')!.generateMipmaps).toBe(true);
+  });
+});
+
+describe('Framebuffers のオフスクリーン', () => {
+  const spec = (width: number, height: number, format: TargetSpec['format'] = 'rgba8'): TargetSpec => ({ width, height, format, mipmaps: false, warnings: [] });
+
+  it('key ごとの色 (形が同じなら同じもの、変われば作り直して古いものを捨てる)。サンプラーの設定は読むサンプラーのもの。深度は大きさごとに共有し、その大きさがなくなれば捨てる', () => {
+    const { fb, calls } = fakeGl([]);
+    const e = loaded('texture M : OFFSCREENRENDERTARGET; sampler S = sampler_state { texture = <M>; MinFilter = POINT; MagFilter = POINT; };');
+    const a = fb.offscreenTarget('a', e, 'M', spec(320, 240));
+    expect(a.warnings).toEqual([]);
+    expect([a.target!.tex.minFilter, a.target!.tex.magFilter, a.target!.effect]).toEqual([THREE.NearestFilter, THREE.NearestFilter, e]);
+    expect(fb.offscreenTarget('a', e, 'M', spec(320, 240)).target).toBe(a.target);
+    const b = fb.offscreenTarget('b', e, 'M', spec(320, 240)).target!;
+    const [sa, sb] = [fb.offscreenSurface(a.target!), fb.offscreenSurface(b)];
+    if (sa.kind !== 'targets' || sb.kind !== 'targets') throw new Error('targets');
+    expect(sa.colors).toEqual([a.target]);
+    expect(sa.depth).toBe(sb.depth); // (同じ大きさの深度は 1 つ)
+    expect(calls.renderbuffers).toBe(1);
+    // 大きさが変わると作り直す (古い色を捨てる。同じ大きさのものが残っているので深度は残す)
+    const gone = disposed(a.target!.tex);
+    const resized = fb.offscreenTarget('a', e, 'M', spec(160, 120)).target!;
+    expect([widthOf(resized.tex), heightOf(resized.tex), gone.count, calls.deletedRenderbuffers]).toEqual([160, 120, 1, 0]);
+    fb.dropOffscreen('b');
+    expect(calls.deletedRenderbuffers).toBe(1); // (320×240 のオフスクリーンがなくなった)
+    fb.offscreenSurface(resized);
+    fb.dropOffscreen('a');
+    expect(calls.deletedRenderbuffers).toBe(2);
+  });
+
+  it('浮動小数に描けない環境では null にして、宣言したエフェクトを止める', () => {
+    const broken: LoadedEffect[][] = [];
+    const { fb } = fakeGl([], { warn: () => {}, broken: x => broken.push(x) });
+    const e = loaded('texture M : OFFSCREENRENDERTARGET;');
+    const r = fb.offscreenTarget('k', e, 'M', spec(64, 64, 'rg32f'));
+    expect(r).toEqual({ target: null, warnings: ['浮動小数のレンダーターゲット M に描けない環境なので、このエフェクトを止めます'] });
+    expect(broken).toEqual([[e]]);
   });
 });
