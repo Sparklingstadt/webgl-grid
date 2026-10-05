@@ -120,8 +120,8 @@ export class Engine {
     registerBuiltins(this);
     // キーのあるライト・カメラの強さ・色・視野角・高さを、再生に合わせて当てる
     this.keyframes.target = { light: (o, p) => this.lights.set(o, p), camera: (o, p) => this.cameras.set(o, p) };
-    // 元に戻した・やり直したら、コレクションの表示と、親の位置を合わせ直す
-    this.history.events.on('restored', () => { this.applyCollections(); this.hierarchy.resetPoses(); });
+    // 元に戻した・やり直したら、コレクションの表示と、親の位置と、MME の値の欄 (物の値 mmeValues は描き直しを待たずに) を合わせ直す
+    this.history.events.on('restored', () => { this.applyCollections(); this.hierarchy.resetPoses(); this.mme.publish(); });
     // ステージ・カメラモーションを付けた・外したことも、元に戻せる (外したものは、しばらく取っておく)
     this.history.addExtra({
       key: 'stage', label: msg('ステージ'),
@@ -289,6 +289,7 @@ export class Engine {
     const list = this.selection.list;
     if (!list.length) return;
     for (const o of list) {
+      if (o.mmeObj) continue; // (MME の物は場面の位置を持たない)
       if (what === 'location') { o.x = 0; o.z = 0; }
       else if (what === 'rotation') o.r = 0;
       else if (canScale(o)) o.scale = undefined;
@@ -365,10 +366,10 @@ export class Engine {
     this.selection.setMany(hits, hits.at(-1) ?? (extend ? this.selection.current : null), extend);
     this.viewport.requestDraw();
   }
-  // プロパティの「オブジェクト」・N パネルから位置・向きを変える
+  // プロパティの「オブジェクト」・N パネルから位置・向きを変える (MME の物は場面の位置を持たない。値は MME のページ)
   setObjProp(key: 'x' | 'z' | 'r', v: number) {
     const o = this.selection.current;
-    if (!o || !Number.isFinite(v)) return;
+    if (!o || o.mmeObj || !Number.isFinite(v)) return;
     if (key === 'r') o.r = v * Math.PI / 180;
     else o[key] = v;
     this.world.settle();
@@ -803,14 +804,16 @@ export class Engine {
 
   // --- キーフレーム ---
   // 選んでいるモデルの、いまのポーズと表情を、いまのフレームに記録する (I)
-  // 形・ライトは、選んでいる物すべての位置・回転・大きさに打つ
+  // 形・ライトは、選んでいる物すべての位置・回転・大きさに打つ。MME の物は MME の値 (MME のページに出す値の全部) に打つ
   insertKey() {
     const obj = this.model;
     if (!obj) {
       const f = this.clock.frame;
       const objs = this.selection.list.filter(o => !isModel(o));
       if (!objs.length) { this.ui.toast(t('キーフレームを打つ物をクリックして選んでください。')); return; }
-      this.keyframes.insertTransform(objs, f);
+      const placed = objs.filter(o => !o.mmeObj);
+      if (placed.length) this.keyframes.insertTransform(placed, f);
+      for (const o of objs) if (o.mmeObj) this.mme.insertKeys(o, f);
       if (f > this.clock.end) this.clock.setRange(this.clock.start, f);
       return;
     }

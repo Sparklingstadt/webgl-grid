@@ -52,6 +52,9 @@ function ItemTab() {
       </Panel>
     );
   }
+  if (sel.kind === 'mme') {
+    return <Panel title={t('トランスフォーム')}><div className="npanel-name">{t(sel.name)}</div><Empty>{t('MME の物は場面の位置を持ちません。値は「MME」のタブで変えます')}</Empty></Panel>;
+  }
   const deg = ((sel.r * 180 / Math.PI) % 360 + 540) % 360 - 180;
   return (
     <Panel title={t('トランスフォーム')}>

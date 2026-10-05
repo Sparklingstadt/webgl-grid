@@ -85,11 +85,11 @@ describe('MmeEngine', () => {
     const draw = vi.spyOn(e.viewport, 'requestDraw');
     e.keyframes.applyAll(0, true); // (0 フレーム)
     expect(e.mme.controllers.value(ctl('SSAO+'), null, null)).toEqual([0]);
-    expect(e.ui.state.mme.controllers).toEqual([{ name: 'ray_controller.pmx', items: [{ item: 'SSAO+', value: 0 }] }]);
+    expect(e.ui.state.mme.values?.items).toEqual([{ name: 'SSAO+', value: 0 }]); // (選んでいるコントローラーの物の値の欄)
     draw.mockClear();
     e.keyframes.applyAll(1, true); // (30 フレーム = 1 秒)
     expect(e.mme.controllers.value(ctl('SSAO+'), null, null)).toEqual([1]);
-    expect(e.ui.state.mme.controllers).toEqual([{ name: 'ray_controller.pmx', items: [{ item: 'SSAO+', value: 1 }] }]);
+    expect(e.ui.state.mme.values?.items).toEqual([{ name: 'SSAO+', value: 1 }]);
     expect(draw).toHaveBeenCalled();
   });
 
@@ -101,11 +101,13 @@ describe('MmeEngine', () => {
     expect(e.mme.missingControllers()).toEqual([]);
     e.mme.assign(box, 'Main', null, ref(fx));
     expect(e.mme.missingControllers()).toEqual([{ name: 'other.pmx', items: ['On'] }, { name: 'ray_controller.pmx', items: ['Bloom+', 'SSAO+'] }]);
-    expect(e.ui.state.mme.controllers).toEqual([]); // (画面のスライダーは置いた物だけ)
-    e.addMmeObject({ kind: 'controller', name: 'Ray_Controller.pmx' });
-    e.mme.publish();
+    // (画面の一覧は場面にない名前も (「置く」の元)。名前の順)
+    expect(e.ui.state.mme.controllers).toEqual([{ name: 'other.pmx', items: ['On'], objId: null }, { name: 'ray_controller.pmx', items: ['Bloom+', 'SSAO+'], objId: null }]);
+    const obj = e.addMmeObject({ kind: 'controller', name: 'Ray_Controller.pmx' });
     expect(e.mme.missingControllers()).toEqual([{ name: 'other.pmx', items: ['On'] }]);
-    expect(e.ui.state.mme.controllers).toEqual([{ name: 'ray_controller.pmx', items: [{ item: 'Bloom+', value: 0 }, { item: 'SSAO+', value: 0 }] }]);
+    expect(e.ui.state.mme.controllers).toEqual([{ name: 'other.pmx', items: ['On'], objId: null }, { name: 'ray_controller.pmx', items: ['Bloom+', 'SSAO+'], objId: obj.id }]);
+    // (置いた物を選んでいるので、値の欄はその物の項目。値がなければ 0)
+    expect(e.ui.state.mme.values).toEqual({ objId: obj.id, kind: 'controller', items: [{ name: 'Bloom+', value: 0 }, { name: 'SSAO+', value: 0 }], effects: [] });
   });
 
   it('engine を mme にすると drawOverride が MME の描画を呼び、standard に戻すと前の描画に戻る', () => {
@@ -558,7 +560,7 @@ describe('MmeEngine', () => {
 
   it('画面に、設定・選んでいる物の .fx・ポストエフェクトの一覧とコンパイルの結果・描くときの警告を出す', async () => {
     const e = new Engine();
-    expect(e.ui.state.mme).toEqual({ settings: MME_DEFAULTS, object: null, posts: [], warnings: [], folders: [], tabs: [{ name: 'Main', description: '' }], rows: { Main: [] }, controllers: [] });
+    expect(e.ui.state.mme).toEqual({ settings: MME_DEFAULTS, object: null, posts: [], warnings: [], folders: [], tabs: [{ name: 'Main', description: '' }], rows: { Main: [] }, controllers: [], values: null });
     e.mme.set({ engine: 'mme' });
     expect(e.ui.state.mme.settings.engine).toBe('mme');
     const obj = e.world.addShape(0, 0, 0, 0);
@@ -633,15 +635,15 @@ describe('MmeEngine', () => {
     e.mme.publish();
     e.mme.publish();
     expect(fallbackFor).not.toHaveBeenCalled();
-    // 仮のコントローラー: 描いているエフェクトの、コントローラーの物がある名前の float の項目と値
+    // 仮のコントローラー: 描いているエフェクトが読む名前と float の項目、その名前のコントローラーの物
     e.mme.assign(obj, 'Main', null, { folder: good.folder.id, path: 'sub/ctl.fx' });
     expect(fallbackFor).toHaveBeenCalled(); // (割り当てが変わったので作り直した)
-    expect(e.ui.state.mme.controllers).toEqual([]);
-    e.addMmeObject({ kind: 'controller', name: 'ray_controller.pmx' });
-    e.mme.publish();
-    expect(e.ui.state.mme.controllers).toEqual([{ name: 'ray_controller.pmx', items: [{ item: 'Red', value: 0 }] }]);
+    expect(e.ui.state.mme.controllers).toEqual([{ name: 'ray_controller.pmx', items: ['Red'], objId: null }]);
+    const ctl = e.addMmeObject({ kind: 'controller', name: 'ray_controller.pmx' });
+    expect(e.ui.state.mme.controllers).toEqual([{ name: 'ray_controller.pmx', items: ['Red'], objId: ctl.id }]);
+    expect(e.ui.state.mme.values?.items).toEqual([{ name: 'Red', value: 0 }]);
     e.mme.setControl('RAY_CONTROLLER.pmx', 'Red', 0.25);
-    expect(e.ui.state.mme.controllers).toEqual([{ name: 'ray_controller.pmx', items: [{ item: 'Red', value: 0.25 }] }]);
+    expect(e.ui.state.mme.values?.items).toEqual([{ name: 'Red', value: 0.25 }]);
   });
 
   it('毎フレームの publish は、元 (割り当て・物・名前・マテリアル・フォルダ・タブ・止めたエフェクト) が変わらなければ物の材質やエフェクトを集め直さない', async () => {
@@ -1368,5 +1370,127 @@ technique Post < string Script = "ScriptExternal=Color; Pass=P;"; > { pass P < s
     });
     const frame = { camera: {}, light: {}, time: 0, elapsed: 0, selfShadow: false, screen: [320, 240], frameNo: 1 } as unknown as FrameState;
     expect(captureParam('Strength', () => chain.run(e.mme.posts(), frame, () => {}))).toEqual([1, 2]);
+  });
+  // --- サイドバーの「MME」のページ (値の欄) ---
+  const POST_FX = `float Strength < float UIMin = 0; float UIMax = 4; > = 1;
+float3 Col < string UIWidget = "Color"; > = {1, 0, 0};
+float4 VS(float4 p : POSITION) : POSITION { return p; }
+float4 PS() : COLOR0 { return float4(Col * Strength, 1); }
+technique Post < string Script = "ScriptExternal=Color; Pass=P;"; > { pass P < string Script = "Draw=Buffer;"; > { VertexShader = compile vs_3_0 VS(); PixelShader = compile ps_3_0 PS(); } }`;
+
+  it('値の欄: アクセサリは X〜Tr (値がなければ既定) と当てた .fx のパラメータ (成分ごとのチャンネル)。MME の物でもモデルでもない物は null', async () => {
+    const e = new Engine();
+    const box = e.world.addShape(0, 0, 0, 0);
+    e.select(box);
+    expect(e.ui.state.mme.values).toBeNull();
+    const fx = await e.mme.loadEffect([fileAt('P/post.fx', POST_FX)], 'post.fx');
+    const acc = e.mme.addPost(fx)!;
+    e.select(acc);
+    const v = e.ui.state.mme.values!;
+    expect(v.objId).toBe(acc.id);
+    expect(v.kind).toBe('accessory');
+    expect(v.items).toEqual([['X', 0], ['Y', 0], ['Z', 0], ['Rx', 0], ['Ry', 0], ['Rz', 0], ['Si', 1], ['Tr', 1]].map(([name, value]) => ({ name, value })));
+    const base = `${fx.folder.id}/post.fx`;
+    expect(v.effects).toEqual([{
+      effect: { folder: fx.folder.id, path: 'post.fx', name: 'P/post.fx' },
+      params: [
+        { name: 'Strength', label: 'Strength', type: 'float', init: [1], min: 0, max: 4, color: false, value: [1], channels: [`${base}:Strength`] },
+        { name: 'Col', label: 'Col', type: 'float3', init: [1, 0, 0], min: 0, max: 2, color: true, value: [1, 0, 0], channels: ['x', 'y', 'z'].map(c => `${base}:Col:${c}`) },
+      ],
+    }]);
+    e.select(null);
+    expect(e.ui.state.mme.values).toBeNull();
+  });
+
+  it('setItem: アクセサリの X〜Tr (Si は 0 以上・Tr は 0〜1) とコントローラーの項目 (0〜1) を物に書き、値の欄に出す。元に戻すと、描き直す前でも値の欄が戻る', async () => {
+    const e = new Engine();
+    const acc = e.addMmeObject({ kind: 'accessory', name: 'a.x' });
+    e.history.checkpoint();
+    const edited = vi.spyOn(e.history, 'soon');
+    e.mme.setItem(acc, 'Rx', 450);
+    e.mme.setItem(acc, 'Si', -2);
+    e.mme.setItem(acc, 'Tr', 3);
+    e.mme.setItem(acc, 'Nope', 1); // (アクセサリの項目でない)
+    e.mme.setItem(acc, 'X', Number.NaN);
+    expect(acc.mmeValues).toMatchObject({ Rx: 450, Si: 0, Tr: 1, X: 0 });
+    expect(acc.mmeValues).not.toHaveProperty('Nope');
+    expect(acc.mmeChannels).toEqual(['Rx', 'Si', 'Tr']);
+    expect(edited).toHaveBeenCalled();
+    expect(e.ui.state.mme.values?.items.find(x => x.name === 'Rx')?.value).toBe(450);
+    const ctl = e.addMmeObject({ kind: 'controller', name: 'ray_controller.pmx' });
+    e.mme.setItem(ctl, 'SSAO+', 2);
+    expect(ctl.mmeValues).toEqual({ 'SSAO+': 1 });
+    expect(e.ui.state.mme.values?.items).toEqual([{ name: 'SSAO+', value: 1 }]); // (物のチャンネルも項目に並ぶ)
+    const box = e.world.addShape(0, 0, 0, 0);
+    e.mme.setItem(box, 'X', 1); // (MME の物でなければ何もしない)
+    expect(box.mmeValues).toBeUndefined();
+    // 元に戻す (標準のエンジンなので、描き直しの publish はない)
+    e.select(acc);
+    e.history.checkpoint();
+    e.mme.setItem(acc, 'Tr', 0.5);
+    expect(e.ui.state.mme.values?.items.find(x => x.name === 'Tr')?.value).toBe(0.5);
+    e.history.checkpoint();
+    await e.history.undo();
+    expect(acc.mmeValues?.Tr).toBe(1);
+    expect(e.ui.state.mme.values?.items.find(x => x.name === 'Tr')?.value).toBe(1);
+  });
+
+  it('toggleKey: いまのフレームにキーがなければ、値のないチャンネルに画面の値 (初期値) を入れてから打ち、あれば消す。hasKey', async () => {
+    const e = new Engine();
+    const fx = await e.mme.loadEffect([fileAt('P/post.fx', POST_FX)], 'post.fx');
+    const acc = e.mme.addPost(fx)!;
+    const chs = ['x', 'y', 'z'].map(c => `${fx.folder.id}/post.fx:Col:${c}`);
+    e.clock.setRange(0, 10);
+    e.clock.seekFrame(40);
+    expect(e.mme.hasKey(acc, chs)).toBe(false);
+    e.mme.toggleKey(acc, { [chs[0]]: 1, [chs[1]]: 0, [chs[2]]: 0 });
+    expect(acc.mmeValues).toMatchObject({ [chs[0]]: 1, [chs[1]]: 0, [chs[2]]: 0 });
+    expect(e.mme.hasKey(acc, chs)).toBe(true);
+    expect(e.mme.hasKey(acc, chs, 0)).toBe(false);
+    expect(e.clock.end).toBe(40); // (終わりのフレームを延ばす)
+    expect(e.timelineRows(true)[0].keys).toEqual([40]);
+    // 値のあるものは物の値のまま打つ
+    e.mme.setItem(acc, 'Si', 2);
+    e.mme.toggleKey(acc, { Si: 1 });
+    expect(acc.mmeValues?.Si).toBe(2);
+    expect([...acc.anim!.mme.get(acc.mmeChannels!.indexOf('Si'))!.values()].map(k => k.v)).toEqual([2]);
+    // あれば消す (Col の 3 つ。Si は残る)
+    e.mme.toggleKey(acc, { [chs[0]]: 1, [chs[1]]: 0, [chs[2]]: 0 });
+    expect(e.mme.hasKey(acc, chs)).toBe(false);
+    expect(e.mme.hasKey(acc, ['Si'])).toBe(true);
+  });
+
+  it('I (insertKey) は MME の物には値の欄の値の全部に打ち、位置・回転には打たない。位置の欄・Alt+G でも位置は変えない', async () => {
+    const e = new Engine();
+    const fx = await e.mme.loadEffect([fileAt('P/post.fx', POST_FX)], 'post.fx');
+    const acc = e.mme.addPost(fx)!;
+    e.select(acc);
+    e.clock.seekFrame(5);
+    e.insertKey();
+    const names = (acc.mmeChannels ?? []).filter((_, i) => acc.anim?.mme.get(i)?.has(5));
+    expect(names.sort()).toEqual(['X', 'Y', 'Z', 'Rx', 'Ry', 'Rz', 'Si', 'Tr', `${fx.folder.id}/post.fx:Strength`, ...['x', 'y', 'z'].map(c => `${fx.folder.id}/post.fx:Col:${c}`)].sort());
+    expect(acc.anim?.props.size).toBe(0);
+    e.setObjProp('x', 3);
+    expect(acc.x).toBe(0);
+    acc.x = 1; // (前の版で動かしてしまった物も、クリアで動かさない)
+    e.clearTransform('location');
+    expect(acc.x).toBe(1);
+  });
+
+  it('毎フレームの publish は、選んでいる物と値が変わらなければ値の欄を作り直さない。値が変われば作り直す', async () => {
+    const e = new Engine();
+    const fx = await e.mme.loadEffect([fileAt('P/post.fx', POST_FX)], 'post.fx');
+    const acc = e.mme.addPost(fx)!;
+    e.select(acc);
+    e.mme.publish(); // (選んだあとの版の数の変化)
+    const paramsOf = vi.spyOn(e.mme, 'paramsOf');
+    const set = vi.spyOn(e.ui, 'set');
+    for (let k = 0; k < 3; k++) e.mme.publish();
+    expect(paramsOf).not.toHaveBeenCalled();
+    expect(set).not.toHaveBeenCalled();
+    acc.mmeValues!.X = 2; // (キーフレームなどで物の値が変わった)
+    e.mme.publish();
+    expect(paramsOf).toHaveBeenCalledTimes(1);
+    expect(e.ui.state.mme.values?.items[0]).toEqual({ name: 'X', value: 2 });
   });
 });

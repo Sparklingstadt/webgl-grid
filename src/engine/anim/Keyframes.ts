@@ -24,7 +24,7 @@ import { mmeChannel } from './mmeChannels';
 type PropKey = typeof PROPS[number]['key'];
 const LIGHT_PROPS: PropKey[] = ['power', 'colorR', 'colorG', 'colorB', 'height'];
 export function propApplies(obj: Obj, key: PropKey) {
-  if (isModel(obj)) return false;
+  if (isModel(obj) || obj.mmeObj) return false; // (MME の物は場面の位置を持たない。値は MME のチャンネル)
   if (key === 'x' || key === 'z' || key === 'r') return true;
   if (key === 'scale') return isShape(obj);
   if (key === 'fov') return !!obj.camera;

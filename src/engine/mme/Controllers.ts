@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { MMD_UNITS } from '../../core/constants';
-import { ACCESSORY_DEFAULTS, ACCESSORY_ITEMS, accessoryMatrix, type AccessoryItem } from '../../core/mme/accessory.ts';
+import { ACCESSORY_DEFAULTS, ACCESSORY_ITEMS, accessoryMatrix, isAccessoryItem, type AccessoryItem } from '../../core/mme/accessory.ts';
 import { controlRefs, virtualControls, type ControlRef } from '../../core/mme/controllers.ts';
 import { toMmd, toMmdVec } from '../../core/mme/coords.ts';
 import { isModel, type Obj } from '../types';
@@ -23,7 +23,6 @@ interface Target { node: THREE.Object3D; mesh: THREE.SkinnedMesh | null; visible
 
 const DEG = Math.PI / 180;
 const ROTATIONS: readonly string[] = ['Rx', 'Ry', 'Rz'];
-const isAccessoryItem = (item: string): item is AccessoryItem => (ACCESSORY_ITEMS as readonly string[]).includes(item);
 
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 

@@ -1,7 +1,7 @@
 import type * as THREE from 'three';
 import { errorText } from '../../core/errors';
 import { getLang, t } from '../../core/i18n';
-import { accessoryNameFor } from '../../core/mme/accessory.ts';
+import { ACCESSORY_DEFAULTS, ACCESSORY_ITEMS, accessoryNameFor, isAccessoryItem } from '../../core/mme/accessory.ts';
 import { effectParams, fitParam, paramChannels, paramRange, type ParamUi } from '../../core/mme/params.ts';
 import { MME_DEFAULTS, normalizeMmeObj, normalizeObjectEffects, type MmeScene, type MmeSettings, type ObjectEffects, type SavedSlot, type TabEffects } from '../../core/mme/settings.ts';
 import { same } from '../addons/registry';
@@ -13,7 +13,7 @@ import type { RenderOutput } from '../output/RenderOutput';
 import type { SceneGraph } from '../render/SceneGraph';
 import type { Viewport } from '../render/Viewport';
 import { isModel, type Obj } from '../types';
-import { STAGE_ROW_ID, type MmeEffectUi, type MmeRowUi, type MmeUiState, type UiChannel } from '../UiChannel';
+import { STAGE_ROW_ID, type MmeEffectUi, type MmeRowUi, type MmeUiState, type MmeValuesUi, type UiChannel } from '../UiChannel';
 import { nameOf } from '../world/Selection';
 import type { Selection } from '../world/Selection';
 import type { MmeObjects } from '../world/MmeObjects';
@@ -28,7 +28,7 @@ import type { Slot } from './ScenePass';
 export { MME_DEFAULTS, normalizeMme, type MmeSettings } from '../../core/mme/settings.ts';
 const MAX_ERRORS = 20; // 画面に出すエラーの数
 
-type AssignUi = Pick<MmeUiState, 'folders' | 'tabs' | 'rows'>;
+type AssignUi = Pick<MmeUiState, 'folders' | 'tabs' | 'rows' | 'controllers'>;
 
 // エフェクト割当に載せる物 (ライト・カメラは描く形がないので除く)
 const assignable = (o: Obj) => !o.light && !o.camera;
@@ -36,6 +36,7 @@ const assignable = (o: Obj) => !o.light && !o.camera;
 const fxIn = (f: EffectFolder) => [...f.text.keys()].filter(p => p.toLowerCase().endsWith('.fx')).sort();
 const slotName = (s: Slot) => (s.kind === 'hide' ? 'hide' : s.effect.name);
 const sameList = (a: unknown[], b: unknown[]) => a.length === b.length && a.every((x, i) => x === b[i]);
+const byName = (a: { name: string }, b: { name: string }) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
 
 // 画面の「エフェクトのパラメータ」: 物 (ステージ) に当てた .fx ごとの、いまのパラメータと値 (範囲は入れ替わっていればそろえたもの)
 export interface EffectParamsUi { effect: { folder: string; path: string; name: string }; params: (ParamUi & { value: number[] })[] }
@@ -84,16 +85,19 @@ export class MmeEngine {
   private logged: string | null = null; // 続けて出ている例外の文 (コンソールに 1 回だけ書く。描けたら忘れる)
   private shown = ''; // 画面に出した状態 (JSON。同じなら知らせない)
   private changes = 0; // 割り当て・フォルダを変えた回数 (changed)
-  // エフェクト割当のタブ・行と JSON、仮のコントローラーの項目。作ったときの元 (inputs) が変わったときだけ作り直す
+  // エフェクト割当のタブ・行と仮のコントローラーの名前・項目 (と JSON)。作ったときの元 (inputs) が変わったときだけ作り直す
   private assignInputs: unknown[] = [];
-  private assignUi: AssignUi = { folders: [], tabs: [], rows: {} };
+  private assignUi: AssignUi = { folders: [], tabs: [], rows: {}, controllers: [] };
   private assignJson = '';
   private catalog = new Map<string, string[]>();
-  // 画面のスライダー (置いたコントローラーの物の項目と値) と、その物 (並びは controlUi と同じ) と JSON
-  // (項目を作り直したか、値が変わったときだけ並べ直す)
-  private controlUi: MmeUiState['controllers'] = [];
-  private controlObjs: Obj[] = [];
-  private controlJson = '';
+  // 選んでいる物の MME の値の欄と JSON、その元 (物・欄に出したチャンネルの名前と、作ったときの物の値 (mmeValues) とチャンネルの数)。
+  // 物か割り当ての元が変わったか、物の値 (画面・元に戻す・キーフレームで変わる) が作ったときと違うときだけ作り直す
+  private valuesUi: MmeValuesUi | null = null;
+  private valuesJson = 'null';
+  private valuesObj: Obj | null = null;
+  private valuesNames: string[] = [];
+  private valuesRaw: (number | undefined)[] = [];
+  private valuesChannelCount = 0;
   private openNotes: string[] = []; // 開いたときに知らせること (古いプロジェクトの移し替えで合わなかったもの。takeOpenNotes)
 
   constructor(private deps: MmeDeps) {
@@ -111,7 +115,7 @@ export class MmeEngine {
     // (物の割り当ては物に残す (元に戻すと戻る)。その物だけが使っていた .fx の資源と、そのモデルのトゥーンの画像を捨てる)
     deps.world.events.on('removed', () => this.renderer.prune());
     deps.selection.events.on('changed', () => this.publish());
-    // キーフレームで仮のコントローラーの値が変わった (再生・フレームを動かした): 画面の値を並べ直して描き直す
+    // キーフレームで MME の値 (仮のコントローラー・アクセサリ・パラメータ) が変わった (再生・フレームを動かした): 画面の値を並べ直して描き直す
     deps.keyframes.events.on('mmeChanged', () => { this.publish(); deps.viewport.requestDraw(); });
     this.publish();
   }
@@ -140,8 +144,73 @@ export class MmeEngine {
 
   // 描いているエフェクトが読む仮のコントローラーのうち、場面に物がない名前と項目 (名前の順。画面の「置く」の元。アクセサリの名前 (.x) は除く)
   missingControllers(): { name: string; items: string[] }[] {
-    return [...this.catalog].filter(([name]) => !this.controllers.controller(name)).map(([name, items]) => ({ name, items }))
-      .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    return [...this.catalog].filter(([name]) => !this.controllers.controller(name)).map(([name, items]) => ({ name, items })).sort(byName);
+  }
+
+  // MME の物 obj の値 item を書いて描き直す (画面の「MME」のページ)。コントローラーは項目 (0〜1 に収める)、アクセサリは X〜Tr
+  // (Rx〜Rz は度。Si は 0 以上、Tr は 0〜1 に収める)。項目は物の MME のチャンネルにする (キーを打てる)。物の値なので元に戻すの手になる。
+  // MME の物でない・アクセサリの項目でない・数でなければ何もしない
+  setItem(obj: Obj, item: string, v: number): void {
+    const kind = obj.mmeObj?.kind;
+    if (!kind || !Number.isFinite(v)) return;
+    if (kind === 'controller') this.writeControl(obj, item, v);
+    else if (isAccessoryItem(item)) {
+      mmeChannel(obj, item);
+      (obj.mmeValues ??= {})[item] = item === 'Tr' ? Math.min(Math.max(v, 0), 1) : item === 'Si' ? Math.max(v, 0) : v;
+    } else return;
+    this.deps.edited();
+    this.publish();
+    this.deps.viewport.requestDraw();
+  }
+
+  // 物の MME の値 (names: チャンネルの名前) のどれかに、フレーム frame (省けばいまのフレーム) のキーがある
+  hasKey(obj: Obj, names: readonly string[], frame = this.deps.clock.frame): boolean {
+    const mme = obj.anim?.mme;
+    if (!mme?.size) return false;
+    return names.some(name => {
+      const i = obj.mmeChannels?.indexOf(name) ?? -1;
+      return i >= 0 && !!mme.get(i)?.has(frame);
+    });
+  }
+
+  // 画面の ◆: いまのフレームに values (チャンネルの名前 → 画面に出している値) のどれかのキーがあれば、それらのキーを消す。
+  // なければ、物に値のないチャンネルに画面の値を入れてから (パラメータを変えていなければ初期値)、全部のキーを打つ
+  toggleKey(obj: Obj, values: Readonly<Record<string, number>>): void {
+    const names = Object.keys(values);
+    const { clock, keyframes } = this.deps;
+    const frame = clock.frame;
+    if (!this.hasKey(obj, names, frame)) {
+      this.keyValues(obj, frame, values);
+      return;
+    }
+    for (const name of names) {
+      if (this.hasKey(obj, [name], frame)) keyframes.deleteAt(obj, frame, clock.t, { kind: 'mme', index: mmeChannel(obj, name) });
+    }
+  }
+
+  // MME の物 (選んでいる物の I) の、MME の値の欄に出す値の全部を、フレーム frame のキーにする (値のないものは、欄に出す値を入れてから)
+  insertKeys(obj: Obj, frame: number): void {
+    const v = this.valuesOf(obj);
+    if (!v) return;
+    const values: Record<string, number> = {};
+    for (const item of v.items) values[item.name] = item.value;
+    for (const { params } of v.effects) for (const p of params) p.channels.forEach((ch, i) => { values[ch] = p.value[i]; });
+    if (Object.keys(values).length === 0) this.deps.ui.toast(t('キーを打つ MME の値がありません'));
+    else this.keyValues(obj, frame, values);
+  }
+
+  // 値のないチャンネルに values の値を入れて、全部をフレームのキーにする (後ろのフレームなら、終わりのフレームを延ばす)
+  private keyValues(obj: Obj, frame: number, values: Readonly<Record<string, number>>): void {
+    const own = (obj.mmeValues ??= {});
+    for (const [name, v] of Object.entries(values)) {
+      if (own[name] !== undefined) continue;
+      mmeChannel(obj, name);
+      own[name] = v;
+    }
+    this.deps.keyframes.insertMme(obj, frame, Object.keys(values));
+    const { clock } = this.deps;
+    if (frame > clock.end) clock.setRange(clock.start, frame);
+    this.publish();
   }
 
   // .fx (フォルダの id とその中のパス) のパラメータ name の値を、物 (その .fx を当てた物。ポストエフェクトはアクセサリ) かステージに
@@ -210,14 +279,14 @@ export class MmeEngine {
   }
 
   // 画面に設定・選んでいる物の .fx (Main の物の割り当て)・ポストエフェクト (アクセサリの物。隠したものも。オンはビューポートでも
-  // 書き出しでも隠していないもの)・エフェクト割当のタブと行・仮のコントローラーを知らせる
-  // (変わったときだけ)。毎フレーム呼ばれるので、割り当ての行と仮のコントローラーの項目は元 (inputs) が変わったときだけ作り、
-  // 仮のコントローラーの値は値を変えたときだけ並べ直す。どちらも JSON を使い回す
+  // 書き出しでも隠していないもの)・エフェクト割当のタブと行・仮のコントローラー・選んでいる物の MME の値の欄を知らせる
+  // (変わったときだけ)。毎フレーム呼ばれるので、割り当ての行と仮のコントローラーは元 (inputs) が変わったときだけ作り、
+  // 値の欄は、それに加えて選んでいる物が変わったか、物の値が変わったときだけ作る。どちらも JSON を使い回す
   publish(): void {
     const saved = this.deps.selection.current?.mme?.Main?.object;
     // (見つからない .fx はコンパイルしない: コンパイルできないお知らせを出さない。見つからないことは描くときに警告する)
     const fx = saved && saved !== 'hide' ? this.renderer.assignments.effectOf(saved) : null;
-    const rest: Omit<MmeUiState, keyof AssignUi | 'controllers'> = {
+    const rest: Omit<MmeUiState, keyof AssignUi | 'values'> = {
       settings: { ...this.settings },
       object: fx ? this.effectUi(fx) : null,
       posts: this.renderer.posts('all').map(({ obj, effect }) => ({
@@ -232,29 +301,50 @@ export class MmeEngine {
       this.assignInputs = inputs;
       this.rebuild(tabs);
     }
-    if (rebuilt || this.controlValuesChanged()) this.rebuildControls();
-    const json = `${JSON.stringify(rest)}\n${this.assignJson}\n${this.controlJson}`;
+    const current = this.deps.selection.current;
+    const target = current && (current.mmeObj || isModel(current)) ? current : null;
+    if (rebuilt || target !== this.valuesObj || this.valuesChanged()) this.rebuildValues(target);
+    const json = `${JSON.stringify(rest)}\n${this.assignJson}\n${this.valuesJson}`;
     if (json === this.shown) return;
     this.shown = json;
-    this.deps.ui.set({ mme: { ...rest, ...this.assignUi, controllers: this.controlUi } });
+    this.deps.ui.set({ mme: { ...rest, ...this.assignUi, values: this.valuesUi } });
   }
 
-  // 画面のスライダー: 仮のコントローラーの名前のうち、コントローラーの物があるものの項目と値
-  private rebuildControls(): void {
-    this.controlUi = [];
-    this.controlObjs = [];
-    for (const [name, items] of this.catalog) {
-      const obj = this.controllers.controller(name);
-      if (!obj) continue;
-      this.controlUi.push({ name, items: items.map(item => ({ item, value: obj.mmeValues?.[item] ?? 0 })) });
-      this.controlObjs.push(obj);
+  // 値の欄に出した物の値 (mmeValues) かチャンネルの数が、作ったときと違う (毎フレーム呼ぶので、作らずに比べる)
+  private valuesChanged(): boolean {
+    const obj = this.valuesObj;
+    if (!obj) return false;
+    const own = obj.mmeValues;
+    return (obj.mmeChannels?.length ?? 0) !== this.valuesChannelCount || this.valuesNames.some((name, i) => own?.[name] !== this.valuesRaw[i]);
+  }
+
+  private rebuildValues(obj: Obj | null): void {
+    this.valuesObj = obj;
+    this.valuesUi = obj && this.valuesOf(obj);
+    this.valuesNames = this.valuesUi ? [...this.valuesUi.items.map(x => x.name), ...this.valuesUi.effects.flatMap(e => e.params.flatMap(p => p.channels))] : [];
+    this.valuesRaw = this.valuesNames.map(name => obj?.mmeValues?.[name]);
+    this.valuesChannelCount = obj?.mmeChannels?.length ?? 0;
+    this.valuesJson = JSON.stringify(this.valuesUi);
+  }
+
+  // MME の値の欄: コントローラーの物は項目 (描いているエフェクトがその物の名前で読む項目と、物のチャンネル。値がなければ 0)、
+  // アクセサリの物は X〜Tr (値がなければ MMD の既定)、MMD モデルは項目なし。どれにも当てた .fx ごとのパラメータ (paramsOf)。ほかの物は null
+  private valuesOf(obj: Obj): MmeValuesUi | null {
+    const kind = obj.mmeObj?.kind ?? (isModel(obj) ? 'model' : null);
+    if (!kind) return null;
+    const own = obj.mmeValues ?? {};
+    let items: MmeValuesUi['items'] = [];
+    if (kind === 'accessory') items = ACCESSORY_ITEMS.map(name => ({ name, value: own[name] ?? ACCESSORY_DEFAULTS[name] }));
+    else if (kind === 'controller') {
+      const names = new Set<string>();
+      for (const [name, list] of this.catalog) if (this.controllers.controller(name) === obj) for (const item of list) names.add(item);
+      for (const name of obj.mmeChannels ?? []) names.add(name);
+      items = [...names].map(name => ({ name, value: own[name] ?? 0 }));
     }
-    this.controlJson = JSON.stringify(this.controlUi);
-  }
-
-  // 画面のスライダーの値が、物の値 (setControl・元に戻す・キーフレームで変わる) と違う (毎フレーム呼ぶので、作らずに比べる)
-  private controlValuesChanged(): boolean {
-    return this.controlUi.some((c, i) => c.items.some(({ item, value }) => (this.controlObjs[i].mmeValues?.[item] ?? 0) !== value));
+    const effects = this.paramsOf(obj).map(({ effect, params }) => ({
+      effect, params: params.map(p => ({ ...p, channels: paramChannels(effect.folder, effect.path, p) })),
+    }));
+    return { objId: obj.id, kind, items, effects };
   }
 
   // 割り当ての行と仮のコントローラーの項目の元。物の数によらず、版の数 (言語・フォルダ・割り当て・場面の物 (足す・消す・名前・隠す・
@@ -271,7 +361,8 @@ export class MmeEngine {
     return out;
   }
 
-  // エフェクト割当 (タブ・タブごとのステージと物と材質の行・フォルダの .fx) と、仮のコントローラーの項目 (描いているエフェクトの、場面にない名前のもの) を作る
+  // エフェクト割当 (タブ・タブごとのステージと物と材質の行・フォルダの .fx) と、仮のコントローラーの名前と項目 (描いているエフェクトが読む、
+  // 場面にない名前とコントローラーの物がある名前。名前の順) を作る
   private rebuild(tabs: { name: string; description: string }[]): void {
     const objects = this.deps.world.objects.filter(assignable);
     const stage = this.stageMesh();
@@ -284,9 +375,10 @@ export class MmeEngine {
         ...objects.flatMap(o => this.rowsOf(o, tab.name, d.defaults, d.owners.has(o))),
       ];
     }
-    this.assignUi = { folders: this.store.folders().map(f => ({ id: f.id, name: f.name, fx: fxIn(f) })), tabs, rows };
-    this.assignJson = JSON.stringify(this.assignUi);
     this.catalog = this.controllers.catalog(this.renderer.drawnEffects());
+    const controllers = [...this.catalog].map(([name, items]) => ({ name, items, objId: this.controllers.controller(name)?.id ?? null })).sort(byName);
+    this.assignUi = { folders: this.store.folders().map(f => ({ id: f.id, name: f.name, fx: fxIn(f) })), tabs, rows, controllers };
+    this.assignJson = JSON.stringify(this.assignUi);
   }
 
   // 物の行と、MMD モデルなら材質の行

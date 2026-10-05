@@ -1,25 +1,43 @@
 import { t } from '../../core/i18n';
 import { useEngine, useUi } from '../EngineContext';
-import { BSlider } from './BSlider';
 
-// --- MME 互換の「コントローラー」: 仮のコントローラー (ray_controller.pmx など。読み込まない) のうち、場面に置いたコントローラーの物ごとに、
-// 項目のスライダー (0〜1) をまとめて出す (Ray-MMD は 50 ほどあるので、見出しを押して開く)。値はその物の値 (元に戻せる)。
-// 場面に物がない名前 (engine.mme.missingControllers) は出さない ---
-export function MmeControllers() {
+// --- MME 互換の「コントローラー」: 描いているエフェクトが読む仮のコントローラー (ray_controller.pmx など。読み込まない) の名前ごとに、
+// 場面にその名前のコントローラーの物があれば、その物を選ぶリンク (値はサイドバーの「MME」のページ)、なければ「置く」ボタン
+// (勝手には置かない。押すとコントローラーの物を置いて選ぶ)。onShowValues: 選んだら「MME」のページを見せる ---
+export function MmeControllers({ onShowValues }: { onShowValues?: () => void }) {
   const engine = useEngine();
   const controllers = useUi(s => s.mme.controllers);
   if (controllers.length === 0) return null;
+  const show = (id: number) => {
+    engine.selectById(id);
+    onShowValues?.();
+  };
+  const place = (name: string) => {
+    try {
+      engine.addMmeObject({ kind: 'controller', name });
+    } catch {
+      return; // (置けないことは、お知らせに出ている)
+    }
+    onShowValues?.();
+  };
   return (
     <>
       <div className="mme-head">{t('コントローラー')}</div>
-      {controllers.map(c => (
-        <details key={c.name} className="mme-ctl" aria-label={c.name}>
-          <summary title={c.name}>{t('{name} ({n} 項目)', { name: c.name, n: c.items.length })}</summary>
-          {c.items.map(({ item, value }) => (
-            <BSlider key={item} label={item} value={value} min={0} max={1} step={0.01} onChange={v => engine.mme.setControl(c.name, item, v)} />
-          ))}
-        </details>
-      ))}
+      <ul className="mme-ctls" aria-label={t('仮のコントローラーの一覧')}>
+        {controllers.map(c => (
+          <li key={c.name} className="mme-ctl-row">
+            {c.objId !== null ? (
+              <button type="button" className="mme-link" title={t('{name} を選ぶ ({n} 項目)', { name: c.name, n: c.items.length })}
+                      onClick={() => show(c.objId!)}>{c.name}</button>
+            ) : (
+              <>
+                <span className="mme-name" title={t('{name} は場面にありません ({n} 項目)', { name: c.name, n: c.items.length })}>{c.name}</span>
+                <button type="button" className="bbtn" aria-label={t('{name} を置く', { name: c.name })} onClick={() => place(c.name)}>{t('置く')}</button>
+              </>
+            )}
+          </li>
+        ))}
+      </ul>
     </>
   );
 }

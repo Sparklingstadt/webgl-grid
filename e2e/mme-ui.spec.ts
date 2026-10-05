@@ -10,7 +10,8 @@ const FACE: Vec3 = [0, 1, 0.2]; // テスト用の .pmx (四角柱) の前の面
 const SOLID = objectFx('return float4(0.2, 0.4, 0.6, 1.0);'); // 箱の色 (51, 102, 153)
 
 // 場面を写して、PS で色を変えて canvas に出すポストエフェクト
-const filterFx = (ps: string) => `
+const filterFx = (ps: string, decls = '') => `
+${decls}
 float Script : STANDARDSGLOBAL < string ScriptOutput = "color"; string ScriptClass = "scene"; string ScriptOrder = "postprocess"; > = 0.8;
 float2 ViewportSize : VIEWPORTPIXELSIZE;
 static float2 ViewportOffset = float2(0.5, 0.5) / ViewportSize;
@@ -276,16 +277,22 @@ test('エフェクト割当: モデルの行を開くと材質の行が出て、
   expect(errors).toEqual([]);
 });
 
-test('コントローラーの欄: 置いたコントローラーの物 ray_controller.pmx の項目のスライダーが出て、動かすと色が変わる', async ({ page }) => {
+// --- 仮のコントローラーの欄 (「置く」と物を選ぶリンク) と、サイドバーの「MME」のページ (選んでいる物の MME の値) ---
+const mmeTab = (page: Page) => page.getByRole('tab', { name: 'MME', exact: true });
+const tree = (page: Page) => page.getByRole('tree', { name: 'シーンの物' });
+const noOverflow = (page: Page) => page.locator('.side-content').evaluate(el => el.scrollWidth <= el.clientWidth);
+
+test('コントローラー: 場面にない名前は「置く」で置け、MME のページの項目のスライダーで色が変わる。◆ でキーを打ち (タイムラインにチャンネル)・消せる', async ({ page }) => {
   const errors = await boxScene(page);
   expect(await assignFx(page, 0, redFrom('ray_controller.pmx', 'Red'))).toBe(true);
-  const controller = panel(page).getByRole('group', { name: 'ray_controller.pmx' });
-  await expect(controller).toHaveCount(0); // (場面に物がない名前は出さない)
-  expect(await page.evaluate(() => (window as Win).engine.mme.missingControllers())).toEqual([{ name: 'ray_controller.pmx', items: ['Red'] }]);
-  await page.evaluate(() => { (window as Win).engine.addMmeObject({ kind: 'controller', name: 'ray_controller.pmx' }); });
-  const slider = controller.getByRole('slider', { name: 'Red' });
-  await expect(slider).toBeHidden(); // (見出しを押して開く)
-  await controller.getByText('ray_controller.pmx (1 項目)').click();
+  const list = panel(page).getByRole('list', { name: '仮のコントローラーの一覧' });
+  await expect(list.getByRole('listitem')).toHaveText(['ray_controller.pmx置く']);
+  await expect(mmeTab(page)).toHaveAttribute('aria-selected', 'false');
+  await panel(page).getByRole('button', { name: 'ray_controller.pmx を置く' }).click();
+  // 置いた物を選び、MME のページを見せる
+  expect(await page.evaluate(() => (window as Win).engine.world.objects.map((o: Win) => o.mmeObj?.name ?? null))).toEqual([null, 'ray_controller.pmx']);
+  await expect(mmeTab(page)).toHaveAttribute('aria-selected', 'true');
+  const slider = page.getByRole('slider', { name: 'Red', exact: true });
   await expect(slider).toHaveAttribute('aria-valuenow', '0');
   await expect.poll(() => rgb(page)).toEqual([0, 0, 0]);
   await slider.click(); // (動かさずに押すと数値を打てる)
@@ -294,6 +301,86 @@ test('コントローラーの欄: 置いたコントローラーの物 ray_cont
   await input.press('Enter');
   await expect(slider).toHaveAttribute('aria-valuenow', '1');
   await expect.poll(() => rgb(page)).toEqual([255, 0, 0]);
-  expect(await page.evaluate(() => (window as Win).engine.mme.controllers.controller('ray_controller.pmx').mmeValues.Red)).toBe(1);
+  expect(await noOverflow(page)).toBe(true);
+  // ◆: いまのフレームにキーを打つ。タイムラインのチャンネルに名前が出る
+  const key = page.getByRole('button', { name: 'Red のキー' });
+  await expect(key).toHaveAttribute('aria-pressed', 'false');
+  await key.click();
+  await expect(key).toHaveAttribute('aria-pressed', 'true');
+  await expect(key).toHaveText('◆');
+  await page.getByRole('button', { name: /チャンネル/ }).click();
+  expect(await page.evaluate(() => (window as Win).engine.timelineRows().map((r: { label: string }) => r.label))).toEqual(['ray_controller.pmx', 'MME: Red']);
+  // もう一度押すと消す
+  await key.click();
+  await expect(key).toHaveAttribute('aria-pressed', 'false');
+  expect(await page.evaluate(() => (window as Win).engine.timelineRows().map((r: { label: string }) => r.label))).toEqual(['ray_controller.pmx']);
+  // MME の物は場面の位置を持たない (オブジェクトのタブに位置の欄を出さない)
+  await page.getByRole('tab', { name: 'オブジェクト' }).click();
+  await expect(page.getByRole('spinbutton', { name: '位置 X' })).toHaveCount(0);
+  // 効果のタブ: 場面にある名前は、その物を選ぶリンク
+  await tree(page).getByRole('treeitem', { name: 'テスト人形', exact: true }).locator(':scope > .ol-row').click();
+  await page.getByRole('tab', { name: '効果' }).click();
+  await expect(panel(page).getByRole('button', { name: 'ray_controller.pmx を置く' })).toHaveCount(0);
+  await list.getByRole('button', { name: 'ray_controller.pmx', exact: true }).click();
+  await expect(mmeTab(page)).toHaveAttribute('aria-selected', 'true');
+  expect(await page.evaluate(() => (window as Win).engine.selection.current?.mmeObj?.name)).toBe('ray_controller.pmx');
+  expect(errors).toEqual([]);
+});
+
+test('アクセサリ: MME のページの X〜Tr (Si・Tr はスライダーも) で、(self) の Si を読むポストエフェクトの色が変わる', async ({ page }, info) => {
+  const errors = await boxScene(page);
+  await page.getByLabel('物の .fx のフォルダを選ぶ').setInputFiles(await folder(info.outputPath('Solid'), { 'solid.fx': SOLID }));
+  await expect.poll(() => rgb(page)).toEqual([51, 102, 153]);
+  const siFx = filterFx('return float4(c.rgb * Si, 1.0);', 'float Si : CONTROLOBJECT < string name = "(self)"; string item = "Si"; >;');
+  await page.getByLabel('ポストエフェクトのフォルダを選ぶ').setInputFiles(await folder(info.outputPath('Si'), { 'si.fx': siFx }));
+  await expect.poll(() => rgb(page)).toEqual([51, 102, 153]); // (Si の既定は 1)
+  await tree(page).getByRole('treeitem', { name: 'si.x', exact: true }).locator(':scope > .ol-row').click();
+  await mmeTab(page).click();
+  for (const name of ['X', 'Y', 'Z', 'Rx (度)', 'Ry (度)', 'Rz (度)', 'Si', 'Tr']) await expect(page.getByRole('spinbutton', { name, exact: true })).toBeVisible();
+  await expect(page.getByRole('slider', { name: 'Si のスライダー' })).toHaveAttribute('aria-valuenow', '1');
+  await expect(page.getByRole('slider', { name: 'Tr のスライダー' })).toHaveAttribute('aria-valuenow', '1');
+  const si = page.getByRole('spinbutton', { name: 'Si', exact: true });
+  await si.click();
+  await si.fill('0.5');
+  await si.press('Enter');
+  await expect.poll(async () => near(await rgb(page), [26, 51, 77])).toBe(true);
+  await expect(page.getByRole('slider', { name: 'Si のスライダー' })).toHaveAttribute('aria-valuenow', '0.5');
+  expect(await page.evaluate(() => (window as Win).engine.selection.current.mmeValues.Si)).toBe(0.5);
+  // 当てた .fx のパラメータ (ベクトルは成分ごとのスライダー)
+  const params = page.getByRole('group', { name: 'Si/si.fx' });
+  await expect(params.getByRole('slider', { name: /^ClearColor\./ })).toHaveCount(4);
+  await expect(params.getByRole('slider', { name: 'ClearDepth', exact: true })).toHaveAttribute('aria-valuenow', '1');
+  expect(await noOverflow(page)).toBe(true);
+  // 元に戻すと値の欄も戻る
+  await page.keyboard.press('Control+z');
+  await expect(page.getByRole('slider', { name: 'Si のスライダー' })).toHaveAttribute('aria-valuenow', '1');
+  await expect.poll(() => rgb(page)).toEqual([51, 102, 153]);
+  expect(errors).toEqual([]);
+});
+
+test('モデル: MME のページに当てた .fx のパラメータが出て、色の欄で色が変わる。◆ で全部の成分にキーを打つ', async ({ page }) => {
+  const errors = await boxScene(page);
+  const colFx = objectFx('return float4(Col, 1.0);', 'float3 Col < string UIName = "色"; string UIWidget = "Color"; > = {1, 0, 0};\nfloat Gain < float UIMin = 0; float UIMax = 2; > = 1;');
+  expect(await assignFx(page, 0, colFx, 'col.fx')).toBe(true);
+  await expect.poll(() => rgb(page)).toEqual([255, 0, 0]);
+  await mmeTab(page).click();
+  const params = page.getByRole('group', { name: 'fx/col.fx' });
+  await expect(params).toBeVisible();
+  await expect(params.getByRole('slider', { name: 'Gain', exact: true })).toHaveAttribute('aria-valuenow', '1');
+  // 色の欄 (画面の色のまま .fx に渡す)
+  await params.getByRole('button', { name: '色', exact: true }).click();
+  const hex = page.getByRole('textbox', { name: '色 (16 進)' });
+  await hex.fill('#00ff00');
+  await hex.press('Enter');
+  await expect.poll(() => rgb(page)).toEqual([0, 255, 0]);
+  // ◆: 成分ごとの 3 つのチャンネルに打つ
+  await params.getByRole('button', { name: '色 のキー' }).click();
+  await expect(params.getByRole('button', { name: '色 のキー' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(params.getByRole('button', { name: 'Gain のキー' })).toHaveAttribute('aria-pressed', 'false');
+  expect(await page.evaluate(() => {
+    const o = (window as Win).engine.world.objects[0];
+    return (o.mmeChannels as string[]).filter((_, i) => o.anim?.mme.get(i)?.has(0)).map(n => n.slice(n.indexOf(':')));
+  })).toEqual([':Col:x', ':Col:y', ':Col:z']);
+  expect(await noOverflow(page)).toBe(true);
   expect(errors).toEqual([]);
 });

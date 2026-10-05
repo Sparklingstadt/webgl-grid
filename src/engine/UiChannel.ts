@@ -6,6 +6,7 @@ import { normalizeScene, type SceneSettings } from '../core/scene';
 import { createStore, type Store } from '../core/store';
 import type { AddonInfo } from './addons/Addons';
 import { getLang, langEvents, msg, type Lang } from '../core/i18n';
+import type { ParamUi } from '../core/mme/params.ts';
 import { MME_DEFAULTS, type MmeSettings } from '../core/mme/settings.ts';
 import { FX_LEVEL_DEFAULT, type FxLevel, type FxState } from './render/postfx';
 import type { ShadingMode } from './render/Viewport';
@@ -31,13 +32,25 @@ export const STAGE_ROW_ID = -1;
 // warnings: どのエフェクトのものでもない、描くときの警告 (セルフシャドウを切った・モデルを描けないなど)。
 // folders: 読み込んだフォルダと、その中の .fx (フォルダからの相対パス)。tabs: エフェクト割当のタブ (先頭は Main。オフスクリーンは
 // 使っているエフェクトが宣言するもの)。rows: タブごとの行 (描く宣言のないオフスクリーンのタブは載せない。そのタブの割り当ては効かない)。
-// controllers: 置いた仮のコントローラー (コントローラーの物。CONTROLOBJECT の名前) ごとの、スライダーにする項目と値 (0〜1)
+// controllers: 描いているエフェクトが読む仮のコントローラーの名前 (CONTROLOBJECT の名前の順) と項目、その名前のコントローラーの物 (場面になければ null。「置く」の元)。
+// values: 選んでいる物 (MME の物かモデル) の MME の値の欄 (サイドバーの「MME」のページ)
 export interface MmeUiState {
   settings: MmeSettings; object: MmeEffectUi | null /* 選んでいる物の .fx */; posts: (MmeEffectUi & { enabled: boolean; objId: number; accessory: string })[] /* ポストエフェクト (アクセサリの物。enabled はビューポートでも書き出しでも隠していないか) */; warnings: string[];
   folders: { id: string; name: string; fx: string[] }[];
   tabs: { name: string; description: string }[];
   rows: Record<string, MmeRowUi[]>;
-  controllers: { name: string; items: { item: string; value: number }[] }[];
+  controllers: { name: string; items: string[]; objId: number | null }[];
+  values: MmeValuesUi | null;
+}
+// MME の値の欄の 1 つの値 (name は MME のチャンネルの名前。コントローラーの項目・アクセサリの X〜Tr)
+export interface MmeItemUi { name: string; value: number }
+// .fx のパラメータ 1 つ (channels は成分ごとの MME のチャンネルの名前、value は範囲に収めた成分の値)
+export interface MmeParamUi extends ParamUi { channels: string[]; value: number[] }
+// MME の値の欄: コントローラーは項目 (0〜1)、アクセサリは X〜Tr (Rx〜Rz は度)、モデルは項目なし。どれにも当てた .fx ごとのパラメータ
+export interface MmeValuesUi {
+  objId: number; kind: 'controller' | 'accessory' | 'model';
+  items: MmeItemUi[];
+  effects: { effect: { folder: string; path: string; name: string }; params: MmeParamUi[] }[];
 }
 export interface UiState {
   mode: 'orbit' | 'pan';
@@ -95,7 +108,7 @@ export class UiChannel {
     toast: null, palette: null, viewInfo: '', hairHang: null, materialsVersion: 0, projectName: null,
     output: { ...OUTPUT_DEFAULT }, rendering: null, renderResult: null, remote: 'off', missingFiles: null, missingTextures: null, history: { labels: [msg('最初')], index: 0 }, recovery: null, scene: normalizeScene(undefined),
     addons: [], addonsVersion: 0, lang: getLang(), poseMode: false, poseTool: 'rotate', rigShown: false, modelPicker: false, sceneVersion: 0,
-    mme: { settings: { ...MME_DEFAULTS }, object: null, posts: [], warnings: [], folders: [], tabs: [{ name: 'Main', description: '' }], rows: {}, controllers: [] },
+    mme: { settings: { ...MME_DEFAULTS }, object: null, posts: [], warnings: [], folders: [], tabs: [{ name: 'Main', description: '' }], rows: {}, controllers: [], values: null },
   });
   constructor() {
     langEvents.on('changed', lang => this.set({ lang }));

@@ -58,7 +58,7 @@ export class TransformTool {
     const canvas = this.viewport.canvas;
     if (!canvas) return false;
     if (this.s) { this.restore(); this.s.mode = mode; this.s.typed = ''; this.begin(); this.update(); return true; } // (途中でほかの操作に切り替える)
-    const items = this.selection.list.filter(o => !o.hidden && (mode !== 'scale' || canScale(o)))
+    const items = this.selection.list.filter(o => !o.hidden && !o.mmeObj && (mode !== 'scale' || canScale(o))) // (MME の物は場面の位置を持たない)
       .map(obj => ({ obj, x: obj.x, z: obj.z, r: obj.r, scale: obj.scale ?? 1 }));
     if (!items.length) return false;
     this.history.checkpoint(); // (前の操作がまだ手になっていなければ、先に 1 手にしておく)

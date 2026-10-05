@@ -40,7 +40,7 @@ function FxResult({ fx }: { fx: MmeEffectUi }) {
 // MME 互換 (レンダーエンジンが MME 互換のときだけ): 選んでいる物の .fx・ポストエフェクトの一覧・エフェクト割当・仮のコントローラー。
 // ポストエフェクトはアクセサリの物に当てた .fx: 上下はアクセサリの並び (アウトライナーと同じ)、オン・オフはアクセサリを隠す
 // (ビューポートでも書き出しでも。オンは両方見せる)、外すはアクセサリを消す
-function MmePanel() {
+function MmePanel({ onShowValues }: { onShowValues?: () => void }) {
   const engine = useEngine();
   const selected = useUi(s => s.sel !== null); // (動かしているあいだの位置の変化では描き直さない)
   const mme = useUi(s => s.mme);
@@ -90,7 +90,7 @@ function MmePanel() {
         {posts.length > 1 && <div className="note">{t('上のものほど先に (場面の近くで) かかります')}</div>}
       </MmeEffectPicker>
       <MmeAssignTabs />
-      <MmeControllers />
+      <MmeControllers onShowValues={onShowValues} />
       {mme.warnings.length > 0 && (
         <details className="mme-diag">
           <summary className="note">{t('描くときの警告 {n}', { n: mme.warnings.length })}</summary>
@@ -102,14 +102,15 @@ function MmePanel() {
   );
 }
 
-export function FxPage() {
+// onShowValues: 仮のコントローラーの物を選んだら、その値 (サイドバーの「MME」のページ) を見せる
+export function FxPage({ onShowValues }: { onShowValues?: () => void }) {
   const engine = useEngine();
   const state = useUi(s => s.fxState);
   const level = useUi(s => s.fxLevel);
   const mme = useUi(s => s.mme.settings.engine === 'mme');
   return (
     <>
-      {mme && <MmePanel />}
+      {mme && <MmePanel onShowValues={onShowValues} />}
       {mme && <div className="note" style={{ padding: '2px 2px 0' }}>{t('MME 互換で描いているあいだは、下の効果はかかりません')}</div>}
       <div className="note" style={{ padding: '2px 2px 6px' }}>{t('MME 風の効果。オフの効果のスライダーを動かすとオンになります。設定はブラウザに保存されます')}</div>
       {FX_ROWS.map(row => (

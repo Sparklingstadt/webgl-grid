@@ -5,6 +5,8 @@ import { Matrix4 } from 'three';
 export const ACCESSORY_ITEMS = ['X', 'Y', 'Z', 'Rx', 'Ry', 'Rz', 'Si', 'Tr'] as const;
 export type AccessoryItem = typeof ACCESSORY_ITEMS[number];
 
+export const isAccessoryItem = (item: string): item is AccessoryItem => (ACCESSORY_ITEMS as readonly string[]).includes(item);
+
 // Si (拡大) と Tr (透明度) は 1、ほかは 0
 export const ACCESSORY_DEFAULTS: Record<AccessoryItem, number> = { X: 0, Y: 0, Z: 0, Rx: 0, Ry: 0, Rz: 0, Si: 1, Tr: 1 };
 
