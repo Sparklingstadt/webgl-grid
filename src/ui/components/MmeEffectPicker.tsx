@@ -7,11 +7,12 @@ import { fetchFxFiles, listFxFolder } from '../../engine/io/fxFolder';
 import { filesFromDrop } from '../dropFiles';
 import { useEngine } from '../EngineContext';
 import { Modal } from './Dialogs';
+import { MmeFxChooser } from './MmeFxChooser';
 
 const mb = (n: number) => (n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
 
 // --- MME 互換の .fx を読む: .fx が入っているフォルダを選ぶ (ボタン) か落とす。中の .fx が 1 つならそれを、
-// いくつかあれば、見つかった .fx (フォルダからの相対パス) の一覧から選んでもらう。
+// いくつかあれば、見つかった .fx (フォルダからの相対パス) のフォルダの木から選んでもらう (MmeFxChooser)。
 // アプリを配るサーバーが fx/ の一覧を教えてくれるときは、「fx/ から選ぶ」でそのフォルダを、フォルダを選んだときと同じように読む (なければ出さない) ---
 // children は結果などの中身。その下にボタン (label と buttons) を並べる。落とす先は全体
 export function MmeEffectPicker({ label, inputLabel, onPick, buttons, children }: {
@@ -102,11 +103,7 @@ export function MmeEffectPicker({ label, inputLabel, onPick, buttons, children }
       {choice && createPortal(
         <Modal label={t('.fx を選ぶ')} title={t('どの .fx を読みますか')} className="missing-files" onBackdrop={() => setChoice(null)}>
           <div className="note">{t('フォルダに .fx がいくつかあります。読むものを選んでください')}</div>
-          <div className="mme-fx-list" role="group" aria-label={t('見つかった .fx')}>
-            {choice.entries.map(entry => (
-              <button key={entry} type="button" className="bbtn" onClick={() => { setChoice(null); onPick(choice.files, entry); }}>{entry}</button>
-            ))}
-          </div>
+          <MmeFxChooser entries={choice.entries} onPick={entry => { setChoice(null); onPick(choice.files, entry); }} />
           <div className="row"><button type="button" className="bbtn" onClick={() => setChoice(null)}>{t('やめる (Esc)')}</button></div>
         </Modal>,
         document.body,

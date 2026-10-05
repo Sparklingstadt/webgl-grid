@@ -390,7 +390,12 @@ button.ol-twist[aria-expanded="true"]::before { border-left-color: transparent; 
 .mme-diag ul { margin: 2px 0 0; padding: 0 0 0 16px; max-height: 200px; overflow: auto; overflow-wrap: anywhere; font-size: 11px; }
 .mme-error { color: #e88; }
 .mme-fx-list { display: flex; flex-direction: column; gap: 3px; max-height: 40vh; overflow: auto; }
-.mme-fx-list .bbtn { text-align: left; }
+/* (ボタンは overflow: hidden なので、縮めてよいことになる。.fx が数百あってもつぶさない) */
+.mme-fx-list .bbtn { flex: none; text-align: left; }
+.mme-fx-dir:disabled { opacity: 1; cursor: default; } /* (絞り込み中は開いたまま) */
+/* (矢印は飾り: 名前に入れない (/ '')。開いているかは aria-expanded で伝える) */
+.mme-fx-dir::before { content: '▸ ' / ''; color: var(--dim); }
+.mme-fx-dir[aria-expanded="true"]::before { content: '▾ ' / ''; }
 /* エフェクト割当: タブ (多ければ折り返す) と、物・材質の行 (開く印・名前・選択、選んでいなければ下に既定のもの) */
 .mme-tabs { display: flex; flex-wrap: wrap; gap: 2px; }
 .mme-tabs .bbtn { flex: 1 1 auto; max-width: 100%; padding: 3px 6px; }

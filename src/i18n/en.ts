@@ -1271,6 +1271,8 @@ const dict: Dictionary = {
   "描くときの警告": "Drawing warnings",
   "物の .fx のフォルダを選ぶ": "Choose the folder of the object's .fx",
   "物を選ぶと、その物に .fx を読み込めます": "Select an object to load an .fx file for it",
+  ".fx を絞り込む": "Filter .fx files",
+  "合う .fx がありません": "No matching .fx files",
   "見つかった .fx": "Found .fx files",
   "警告 {warnings}": "warnings: {warnings}",
   "足す…": "Add…",

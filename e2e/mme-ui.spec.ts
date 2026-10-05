@@ -87,6 +87,50 @@ test('出力のタブでレンダーエンジンを MME 互換にでき、効果
   expect(errors).toEqual([]);
 });
 
+test('.fx がたくさんあるフォルダは、読める大きさの行のフォルダの木で選ぶ (開け閉め・絞り込み)', async ({ page }, info) => {
+  const errors = await boxScene(page);
+  // Ray-MMD のように、入れ子のフォルダに .fx が数百ある
+  const files: Record<string, string> = { 'ray.fx': SOLID, 'Lighting/only/deep/light.fx': SOLID };
+  for (let i = 0; i < 300; i++) files[`Materials/Group${i % 10}/mat${i}.fx`] = SOLID;
+  for (let i = 0; i < 100; i++) files[`Skybox/sky${i}/sky.fx`] = SOLID;
+  files['Skybox/sky7/Time of day.fx'] = SOLID;
+  const dir = await folder(info.outputPath('Many'), files);
+  const input = page.getByLabel('物の .fx のフォルダを選ぶ');
+  await input.setInputFiles(dir);
+  const dialog = page.getByRole('dialog', { name: '.fx を選ぶ' });
+  const list = dialog.getByRole('group', { name: '見つかった .fx' });
+  const filter = dialog.getByRole('searchbox', { name: '.fx を絞り込む' });
+  await expect(filter).toBeFocused(); // (開いたらすぐ打てる)
+  // 一番上の階層だけ: ファイルが先、フォルダは閉じている。フォルダ 1 つだけのフォルダは 1 行にまとめる
+  await expect(list.getByRole('button')).toHaveText(['ray.fx', /^Lighting\/only\/deep/, /^Materials/, /^Skybox/]);
+  const materials = list.getByRole('button', { name: /^Materials/ });
+  await expect(materials).toHaveAttribute('aria-expanded', 'false');
+  await expect(materials).toContainText('300');
+  // 行はつぶれない (文字が読める高さ)
+  for (const row of await list.getByRole('button').all()) expect((await row.boundingBox())!.height).toBeGreaterThanOrEqual(18);
+  // 開く・閉じる
+  await materials.click();
+  await expect(materials).toHaveAttribute('aria-expanded', 'true');
+  await expect(list.getByRole('button', { name: /^Group0/ })).toBeVisible();
+  await expect(list.getByRole('button')).toHaveCount(4 + 10);
+  await list.getByRole('button', { name: /^Group3/ }).click();
+  await expect(list.getByRole('button', { name: 'mat3.fx', exact: true })).toBeVisible();
+  for (const row of await list.getByRole('button').all()) expect((await row.boundingBox())!.height).toBeGreaterThanOrEqual(18);
+  await materials.click();
+  await expect(list.getByRole('button')).toHaveCount(4);
+  // 絞り込み: 合うものだけを、フォルダを開いて出す。1 つに絞れたら Enter で選べる
+  await filter.fill('time of');
+  await expect(list.getByRole('button')).toHaveText([/^Skybox\/sky7/, 'Time of day.fx']);
+  await filter.fill('nothing');
+  await expect(list.getByRole('button')).toHaveCount(0);
+  await expect(dialog).toContainText('合う .fx がありません');
+  await filter.fill('time of');
+  await filter.press('Enter');
+  await expect(dialog).toHaveCount(0);
+  await expect(panel(page)).toContainText('Many/Skybox/sky7/Time of day.fx');
+  expect(errors).toEqual([]);
+});
+
 test('フォルダを選んで .fx を読み (2 つあれば選ばせる)、選んでいる物に当たる。エラーの一覧を開ける', async ({ page }, info) => {
   const errors = await boxScene(page);
   const before = await rgb(page); // (default.fx の色)
@@ -95,7 +139,8 @@ test('フォルダを選んで .fx を読み (2 つあれば選ばせる)、選�
   // .fx が 2 つあるので選ばせる (フォルダからの相対パス)
   await input.setInputFiles(dir);
   const dialog = page.getByRole('dialog', { name: '.fx を選ぶ' });
-  await expect(dialog.getByRole('button')).toHaveText(['solid.fx', 'sub/broken.fx', 'やめる (Esc)']);
+  // (フォルダの木: 一番上の階層を見せ、フォルダは閉じておく)
+  await expect(dialog.getByRole('button')).toHaveText(['solid.fx', /^sub/, 'やめる (Esc)']);
   await page.keyboard.press('x'); // (窓のあいだは、場面のショートカット (X で消す) を効かせない)
   await page.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);
@@ -107,7 +152,8 @@ test('フォルダを選んで .fx を読み (2 つあれば選ばせる)、選�
   await expect.poll(() => rgb(page)).toEqual([51, 102, 153]);
   // 壊れた .fx: お知らせが出て、エラーの一覧を開ける。モデルは default.fx で描く
   await input.setInputFiles(dir);
-  await dialog.getByRole('button', { name: 'sub/broken.fx' }).click();
+  await dialog.getByRole('button', { name: /^sub/ }).click();
+  await dialog.getByRole('button', { name: 'broken.fx' }).click();
   await expect(page.getByRole('status')).toContainText('Fx/sub/broken.fx をコンパイルできませんでした');
   const summary = panel(page).getByText(/^コンパイルできませんでした \(エラー \d+・警告 \d+\)$/);
   await expect(summary).toBeVisible();
