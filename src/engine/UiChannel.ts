@@ -7,7 +7,7 @@ import { createStore, type Store } from '../core/store';
 import type { AddonInfo } from './addons/Addons';
 import { getLang, langEvents, msg, type Lang } from '../core/i18n';
 import type { ParamUi } from '../core/mme/params.ts';
-import { MME_DEFAULTS, type MmeSettings } from '../core/mme/settings.ts';
+import { MME_DEFAULTS, type EffectRef, type MmeSettings } from '../core/mme/settings.ts';
 import { FX_LEVEL_DEFAULT, type FxLevel, type FxState } from './render/postfx';
 import type { ShadingMode } from './render/Viewport';
 
@@ -27,7 +27,8 @@ export interface MmeEffectUi { id: string; name: string; ok: boolean; errors: { 
 // 材質の行の fallback は物の割り当て (なければ既定)。stopped: 行で描くはずの .fx (割り当てか、なければ既定のもの) を GPU で使えないので
 // 止めていれば、その名前 (描くときと同じく、Main では default.fx、オフスクリーンでは描かない。fallback もそうしたもの)
 // objId: 物の番号 (ステージの行は STAGE_ROW_ID)
-export interface MmeRowUi { objId: number; label: string; material: number | null; assigned: string | null; fallback: string; stopped: string | null }
+// assignedRef: 同じ割り当ての参照 (フォルダの id とパス。画面の選択を、表示の文ではなくこれで照らす)
+export interface MmeRowUi { objId: number; label: string; material: number | null; assigned: string | null; assignedRef: EffectRef | 'hide' | null; fallback: string; stopped: string | null }
 export const STAGE_ROW_ID = -1;
 // warnings: どのエフェクトのものでもない、描くときの警告 (セルフシャドウを切った・モデルを描けないなど)。
 // folders: 読み込んだフォルダと、その中の .fx (フォルダからの相対パス)。tabs: エフェクト割当のタブ (先頭は Main。オフスクリーンは

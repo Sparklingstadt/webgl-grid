@@ -5,7 +5,7 @@ import { ACCESSORY_DEFAULTS, ACCESSORY_ITEMS, accessoryNameFor, isAccessoryItem 
 import { decodeEmm, encodeEmm, matchFxPath, parseEmm, writeEmm, type EmmDoc, type EmmEntry } from '../../core/mme/emm.ts';
 import { effectParams, fitParam, paramChannels, paramRange, type ParamUi } from '../../core/mme/params.ts';
 import { textureRole } from '../../core/mme/semantics.ts';
-import { MME_DEFAULTS, normalizeMmeObj, normalizeObjectEffects, type EffectRef, type MmeScene, type MmeSettings, type ObjectEffects, type SavedSlot, type TabEffects } from '../../core/mme/settings.ts';
+import { MME_DEFAULTS, normalizeMmeObj, normalizeObjectEffects, type EffectRef, type MmeScene, type MmeSettings, type MmeStage, type ObjectEffects, type SavedSlot, type TabEffects } from '../../core/mme/settings.ts';
 import { same } from '../addons/registry';
 import type { Clock } from '../anim/Clock';
 import type { Keyframes } from '../anim/Keyframes';
@@ -21,7 +21,7 @@ import { nameOf } from '../world/Selection';
 import type { Selection } from '../world/Selection';
 import type { MmeObjects } from '../world/MmeObjects';
 import type { World } from '../world/World';
-import { objectName, pmxName, STAGE, type DefaultsOf, type Owner } from './Assignments';
+import { objectName, pmxName, STAGE, stageNameOf, type DefaultsOf, type Owner } from './Assignments';
 import { Controllers } from './Controllers';
 import { EffectStore, findFile, type EffectFolder, type LoadedEffect } from './EffectStore';
 import { MmeRenderer, type PostEffect } from './MmeRenderer';
@@ -85,8 +85,9 @@ export class MmeEngine {
   readonly settings: MmeSettings = { ...MME_DEFAULTS };
   readonly renderer: MmeRenderer;
   readonly controllers: Controllers; // CONTROLOBJECT の値 (仮のコントローラーの値はコントローラーの物の値)
-  // ステージの割り当て (場面の値。元に戻すの対象にしない。ステージを差し替えても残る)
-  private stageEffects: ObjectEffects | null = null;
+  // ステージの割り当てと、その .pmx のファイル名 (場面の値。元に戻すの対象にしない)。名前が違うステージ (差し替えたあと) には当てないが、
+  // 名前のまま残す (元の .pmx に戻すと当たる)。別のステージには、割り当てを変えたときに置き換わる (保存するのは 1 つのステージ分)
+  private stageData: MmeStage | null = null;
   // ステージに当てた .fx のパラメータの値 (場面の値。チャンネルの名前 → 値。キーフレームなし。元に戻すの対象にしない)
   private stageParams: Record<string, number> = {};
   private reported = new Set<string>(); // お知らせに出した例外の文
@@ -97,6 +98,7 @@ export class MmeEngine {
   private assignInputs: unknown[] = [];
   private assignUi: AssignUi = { folders: [], tabs: [], rows: {}, controllers: [] };
   private assignJson = '';
+  private foldersJson = '[]'; // assignUi.folders の JSON
   private catalog = new Map<string, string[]>();
   // 選んでいる物の MME の値の欄と JSON、その元 (物・欄に出したチャンネルの名前と、作ったときの物の値 (mmeValues) とチャンネルの数)。
   // 物か割り当ての元が変わったか、物の値 (画面・元に戻す・キーフレームで変わる) が作ったときと違うときだけ作り直す
@@ -112,7 +114,7 @@ export class MmeEngine {
     this.store = new EffectStore(deps.ui);
     this.controllers = new Controllers({ world: deps.world, stage: deps.stage, outputting: () => deps.viewport.outputting });
     this.renderer = new MmeRenderer({
-      ...deps, store: this.store, settings: this.settings, controllers: this.controllers, stageEffects: () => this.stageEffects,
+      ...deps, store: this.store, settings: this.settings, controllers: this.controllers, stageEffects: () => this.stageData,
       stageParams: () => this.stageParams,
     });
     // 前の描画 (効果の後処理) は、標準のエンジンのときに使う
@@ -230,6 +232,8 @@ export class MmeEngine {
     const found = e ? paramChannelsOf(e).find(x => x.param.name === name) : undefined;
     if (!found || values.length === 0) return;
     const { param, channels } = found;
+    // (ステージに別の名前の割り当てが残っているときは、その .fx はいまのステージに当たっていないので値を置かない)
+    if (target === 'stage' && this.stageData && !this.activeStage()) return;
     const store = target === 'stage' ? this.stageParams : (target.mmeValues ??= {});
     const next = fitParam(param, channels.map((ch, i) => (i < values.length ? values[i] : store[ch] ?? param.init[i])));
     for (let i = 0; i < Math.min(values.length, channels.length); i++) {
@@ -248,7 +252,7 @@ export class MmeEngine {
   paramsOf(target: Obj | 'stage'): EffectParamsUi[] {
     const { assignments } = this.renderer;
     let effects: LoadedEffect[];
-    if (target === 'stage') effects = assignments.referencedStage();
+    if (target === 'stage') effects = assignments.referencedStage(stageNameOf(this.deps.stage()));
     else if (!target.mmeObj) effects = assignments.referenced(target);
     else {
       const saved = target.mmeObj.kind === 'accessory' ? target.mme?.Main?.object : undefined;
@@ -385,7 +389,14 @@ export class MmeEngine {
     }
     this.catalog = this.controllers.catalog(this.renderer.drawnEffects());
     const controllers = [...this.catalog].map(([name, items]) => ({ name, items, objId: this.controllers.controller(name)?.id ?? null })).sort(byName);
-    this.assignUi = { folders: this.store.folders().map(f => ({ id: f.id, name: f.name, fx: fxIn(f) })), tabs, rows, controllers };
+    // (フォルダの一覧は、変わらなければ同じ配列を渡す: 画面は一覧が変わったときだけ選択肢を作る)
+    const folders = this.store.folders().map(f => ({ id: f.id, name: f.name, fx: fxIn(f) }));
+    const foldersJson = JSON.stringify(folders);
+    if (foldersJson !== this.foldersJson) {
+      this.foldersJson = foldersJson;
+      this.assignUi.folders = folders;
+    }
+    this.assignUi = { folders: this.assignUi.folders, tabs, rows, controllers };
     this.assignJson = JSON.stringify(this.assignUi);
   }
 
@@ -401,7 +412,7 @@ export class MmeEngine {
     const name = pmxName(mesh) ?? '';
     const fallback = (material: number | null) => this.renderer.assignments.stageFallbackFor(tab, defaults, name, material, isOwner);
     const label = t('ステージ: {name}', { name: name || t('ステージ') });
-    return this.rows(STAGE_ROW_ID, label, this.materialNames(mesh), this.stageEffects?.[tab], defaults, fallback);
+    return this.rows(STAGE_ROW_ID, label, this.materialNames(mesh), this.renderer.assignments.stageEffectsFor(name)?.[tab], defaults, fallback);
   }
 
   // 1 つの物の行と材質の行。既定の欄は Assignments の決め方 (割り当てがないときに描くもの)。
@@ -416,7 +427,7 @@ export class MmeEngine {
       const fallbackStopped = slot.kind === 'effect' ? stoppedIn(slot.effect) : null;
       const fallback = fallbackStopped ? (defaults ? 'hide' : this.store.defaultEffect.name) : slotName(slot);
       const stopped = saved === undefined ? fallbackStopped : saved === 'hide' ? null : stoppedIn(assignments.effectOf(saved));
-      return { objId, label, material, assigned: this.savedName(saved), fallback, stopped };
+      return { objId, label, material, assigned: this.savedName(saved), assignedRef: this.savedRef(saved), fallback, stopped };
     };
     return [
       row(label, null, effects?.object),
@@ -435,6 +446,14 @@ export class MmeEngine {
   private materialNames(mesh: THREE.Mesh): string[] {
     const m = mesh.material as THREE.Material | THREE.Material[] | undefined;
     return (Array.isArray(m) ? m : m ? [m] : []).map(x => this.deps.library.materials.get(x.userData.materialId)?.name || x.name);
+  }
+
+  // 割り当ての参照 (選択を照らす id。パスはフォルダの中で見つかればその書き方 = 選択肢のパス)
+  private savedRef(saved: SavedSlot | undefined): MmeRowUi['assignedRef'] {
+    if (saved === undefined) return null;
+    if (saved === 'hide') return 'hide';
+    const folder = this.store.folder(saved.folder);
+    return { folder: saved.folder, path: (folder && findFile(folder, saved.path)) ?? saved.path };
   }
 
   // 割り当ての名前 ("フォルダ名/パス"・'hide'。パスはフォルダの中で見つかればその書き方)
@@ -477,12 +496,20 @@ export class MmeEngine {
     this.deps.edited();
   }
 
+  // いまのステージ (.pmx のファイル名が合うもの) に当たっている割り当て。ステージがない・名前が違うなら null
+  activeStage(): ObjectEffects | null {
+    return this.renderer.assignments.stageEffectsFor(stageNameOf(this.deps.stage()));
+  }
+
   // ステージのタブの、物全体 (materialIndex が null) か材質の割り当てを変える (slot が null なら外して既定に戻す)。
-  // 場面の値なので、元に戻すの対象にしない
+  // 場面の値なので、元に戻すの対象にしない。残っている割り当てが別の名前のステージのものなら、それは捨てて (パラメータの値も)
+  // いまのステージの名前で置き直す (何も変わらなければ捨てない)
   assignStage(tab: string, materialIndex: number | null, slot: SavedSlot | null): void {
-    const next = normalizeObjectEffects(withSlot(this.stageEffects ?? {}, tab, materialIndex, slot));
-    if (same(this.stageEffects, next)) return;
-    this.stageEffects = next;
+    const old = this.activeStage();
+    const next = normalizeObjectEffects(withSlot(old ?? {}, tab, materialIndex, slot));
+    if (same(old, next)) return;
+    if (!old && this.stageData) this.stageParams = {};
+    this.stageData = next ? { name: stageNameOf(this.deps.stage()) ?? this.stageData?.name ?? '', effects: next } : null;
     this.changed();
   }
 
@@ -535,8 +562,8 @@ export class MmeEngine {
   clearEffects(): void {
     const assigned = this.deps.world.objects.filter(o => o.mme);
     for (const obj of assigned) obj.mme = undefined;
-    const stage = this.stageEffects !== null;
-    this.stageEffects = null;
+    const stage = this.stageData !== null;
+    this.stageData = null;
     if (assigned.length > 0 || stage) this.changed();
   }
 
@@ -629,7 +656,7 @@ export class MmeEngine {
   // ステージの割り当てを effects に置き換える (assignStage で 1 つずつ。場面の値なので取り消しの対象にしない)
   private replaceStageEffects(effects: ObjectEffects): void {
     const want = normalizeObjectEffects(effects) ?? {};
-    for (const [tab, old] of Object.entries(this.stageEffects ?? {})) {
+    for (const [tab, old] of Object.entries(this.activeStage() ?? {})) {
       if (old.object && !want[tab]?.object) this.assignStage(tab, null, null);
       for (const m of Object.keys(old.materials ?? {})) if (!want[tab]?.materials?.[m]) this.assignStage(tab, Number(m), null);
     }
@@ -648,7 +675,7 @@ export class MmeEngine {
       .map(o => ({ file: objectName(o), effects: o.mme ?? null }));
     const stageMesh = this.stageMesh();
     const stageName = stageMesh && pmxName(stageMesh);
-    if (stageName) list.push({ file: stageName, effects: this.stageEffects });
+    if (stageName) list.push({ file: stageName, effects: this.renderer.assignments.stageEffectsFor(stageName) });
     const doc: EmmDoc = { objects: list.map((x, i) => ({ index: i + 1, file: x.file })), tabs: { Main: [] } };
     const entry = (object: number, material: number | null, slot: SavedSlot): EmmEntry =>
       slot === 'hide' ? { object, material, value: 'none', show: false } : { object, material, value: this.emmPath(slot) };
@@ -714,7 +741,7 @@ export class MmeEngine {
     return {
       settings: { ...this.settings },
       folders: this.store.folders().map(f => ({ id: f.id, name: f.name })),
-      ...(this.stageEffects ? { stage: structuredClone(this.stageEffects) } : {}),
+      ...(this.stageData ? { stage: structuredClone(this.stageData) } : {}),
       ...(Object.keys(this.stageParams).length > 0 ? { stageParams: { ...this.stageParams } } : {}),
     };
   }
@@ -722,7 +749,10 @@ export class MmeEngine {
   // 開いたプロジェクトの設定・ステージの割り当てにする (フォルダと物は戻してある)。
   // 第 4 の計画の形のポストエフェクトの並び (posts) はアクセサリの物に、仮のコントローラーの値 (controls) はコントローラーの物に移す
   loadScene(scene: MmeScene): void {
-    this.stageEffects = scene.stage ? structuredClone(scene.stage) : null;
+    // (第 4 の計画の形の割り当ては名前がない。プロジェクトといっしょに読み込んだステージ (物より先に読み込んである) のものとする。
+    // ステージがなければ名前は '' (どのステージにも当たらないが、名前のないステージには当たる))
+    this.stageData = scene.stage ? structuredClone(scene.stage)
+      : scene.legacyStage ? { name: stageNameOf(this.deps.stage()) ?? '', effects: structuredClone(scene.legacyStage) } : null;
     this.stageParams = { ...scene.stageParams };
     this.openNotes = [...this.migrateControls(scene.controls ?? {}), ...this.migratePosts(scene.posts ?? [])];
     this.set(scene.settings);

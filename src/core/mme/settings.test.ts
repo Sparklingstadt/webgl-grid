@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MME_DEFAULTS, normalizeMmeScene } from './settings.ts';
+import { MME_DEFAULTS, normalizeMmeScene, sameStageName } from './settings.ts';
 
 // プロジェクトの場面の値 'mme' (MmeScene) の読み方
 describe('normalizeMmeScene', () => {
@@ -44,19 +44,32 @@ describe('normalizeMmeScene', () => {
     });
   });
 
-  it('ステージの割り当て (stage) は物の割り当てと同じく読み、壊れた項を捨てる。何も残らなければ項を作らない', () => {
+  it('ステージの割り当て (stage: { name, effects }) は物の割り当てと同じく読み、壊れた項を捨てる。何も残らなければ項を作らない', () => {
     const base = { settings: MME_DEFAULTS, folders: [], posts: [], controls: {} };
-    const stage = { Main: { object: { folder: 'f', path: 'sky.fx' } }, MaterialMap: { object: 'hide', materials: { 0: { folder: 'f', path: 'm.fx' } } } };
+    const effects = { Main: { object: { folder: 'f', path: 'sky.fx' } }, MaterialMap: { object: 'hide', materials: { 0: { folder: 'f', path: 'm.fx' } } } };
+    const stage = { name: 'Time of day.pmx', effects };
     expect(normalizeMmeScene({ ...base, stage: structuredClone(stage) })).toEqual({ ...base, stage });
-    expect(normalizeMmeScene({ ...base, stage: { Main: { object: { folder: 'f', path: 'sky.fx' }, materials: { x: 'hide' } }, '': { object: 'hide' } } }))
-      .toEqual({ ...base, stage: { Main: { object: { folder: 'f', path: 'sky.fx' } } } });
-    for (const bad of [null, 'x', [], {}, { Main: { object: { folder: '', path: 'a.fx' } } }]) {
+    expect(normalizeMmeScene({ ...base, stage: { name: '', effects: { Main: { object: { folder: 'f', path: 'sky.fx' }, materials: { x: 'hide' } }, '': { object: 'hide' } } } }))
+      .toEqual({ ...base, stage: { name: '', effects: { Main: { object: { folder: 'f', path: 'sky.fx' } } } } });
+    for (const bad of [null, 'x', [], {}, { name: 'a.pmx' }, { name: 'a.pmx', effects: {} }, { name: 'a.pmx', effects: { Main: { object: { folder: '', path: 'a.fx' } } } }, { name: 1, effects: {} }]) {
       const r = normalizeMmeScene({ ...base, stage: bad });
       expect(r).toEqual(base);
-      expect('stage' in r).toBe(false);
+      expect('stage' in r || 'legacyStage' in r).toBe(false);
     }
     // 第 2 の計画の形にはない
     expect('stage' in normalizeMmeScene({ engine: 'mme', stage })).toBe(false);
+  });
+  it('第 4 の計画の形のステージの割り当て (名前がない ObjectEffects) は legacyStage として読む (タブの名前が name・effects でも取り違えない)', () => {
+    const base = { settings: MME_DEFAULTS, folders: [], posts: [], controls: {} };
+    const legacy = { Main: { object: { folder: 'f', path: 'sky.fx' } }, MaterialMap: { object: 'hide' } };
+    expect(normalizeMmeScene({ ...base, stage: structuredClone(legacy) })).toEqual({ ...base, legacyStage: legacy });
+    const odd = { name: { object: 'hide' }, effects: { object: { folder: 'f', path: 'e.fx' } } };
+    expect(normalizeMmeScene({ ...base, stage: structuredClone(odd) })).toEqual({ ...base, legacyStage: odd });
+  });
+  it('sameStageName: .pmx のファイル名は大文字小文字を区別しない', () => {
+    expect(sameStageName('Time of day.pmx', 'time of DAY.PMX')).toBe(true);
+    expect(sameStageName('a.pmx', 'b.pmx')).toBe(false);
+    expect(sameStageName('', '')).toBe(true);
   });
   it('ステージのパラメータの値 (stageParams: チャンネルの名前 → 値) は数の項だけ読む。何も残らなければ項を作らない', () => {
     const base = { settings: MME_DEFAULTS, folders: [], posts: [], controls: {} };

@@ -12,13 +12,13 @@ import type { Obj } from '../types';
 import type { UiChannel } from '../UiChannel';
 import type { Selection } from '../world/Selection';
 import type { World } from '../world/World';
-import { Assignments, objectName, pmxName } from './Assignments';
+import { Assignments, objectName, pmxName, stageNameOf } from './Assignments';
 import type { Controllers } from './Controllers';
 import { EffectInstance, resourcePaths } from './EffectInstance';
 import { markUsed, type EffectStore, type LoadedEffect } from './EffectStore';
 import { CANVAS, Framebuffers, type DrawTarget } from './Framebuffers';
 import { defaultsOf, Offscreen, offscreenDecls } from './Offscreen';
-import { SHADOW_DISTANCE_MAX, type MmeSettings, type ObjectEffects } from '../../core/mme/settings.ts';
+import { SHADOW_DISTANCE_MAX, type MmeSettings, type MmeStage } from '../../core/mme/settings.ts';
 import { scriptOrder } from '../../core/mme/technique.ts';
 import { PostChain, type FrameState, type PostEffect } from './PostChain';
 import { ScenePass, toSrgb, type PassTable, type Slot, type SlotFor } from './ScenePass';
@@ -31,7 +31,7 @@ export interface MmeRendererDeps {
   viewport: Viewport; graph: SceneGraph; world: World; selection: Selection; clock: Clock; library: MaterialLibrary;
   store: EffectStore; settings: MmeSettings; stage: () => THREE.Object3D | null; ui: UiChannel;
   controllers: Controllers; // CONTROLOBJECT の値
-  stageEffects: () => ObjectEffects | null; // ステージの割り当て (場面の値)
+  stageEffects: () => MmeStage | null; // ステージの割り当て (場面の値。名前が違うステージには当てない)
   stageParams: () => Readonly<Record<string, number>>; // ステージに当てた .fx のパラメータの値 (場面の値)
 }
 
@@ -245,6 +245,7 @@ export class MmeRenderer {
   private reachable(posts: PostFilter): Set<LoadedEffect> {
     const found = new Set<LoadedEffect>(this.offscreen.effects());
     for (const e of this.referenced()) found.add(e);
+    for (const e of this.assignments.storedStage()) found.add(e); // (いまのステージに当たらなくても、保存するファイルにする)
     for (const p of this.posts(posts)) found.add(p.effect);
     const names = this.sceneNames();
     const queue = [...found];
@@ -428,7 +429,7 @@ export class MmeRenderer {
   // 隠したアクセサリのものを、描いているものに入れない)
   private referenced(): LoadedEffect[] {
     const objects = this.d.world.objects.filter(o => o.mmeObj?.kind !== 'accessory');
-    return [...objects.flatMap(o => this.assignments.referenced(o)), ...this.assignments.referencedStage()];
+    return [...objects.flatMap(o => this.assignments.referenced(o)), ...this.assignments.referencedStage(stageNameOf(this.d.stage()))];
   }
 
   // 全部の警告 (エフェクトの警告は「名前: 」を付ける。テスト用)

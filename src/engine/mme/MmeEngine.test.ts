@@ -5,6 +5,7 @@ import { Engine } from '../Engine';
 import { kindOf } from '../types';
 import { convertMmdMesh } from '../materials/fromMmd';
 import { parseDefaultEffect } from '../../core/mme/defaultEffect.ts';
+import { normalizeMmeScene } from '../../core/mme/settings.ts';
 import { EffectInstance } from './EffectInstance';
 import type { LoadedEffect } from './EffectStore';
 import { readEmbedded } from '../project/format';
@@ -627,11 +628,17 @@ describe('MmeEngine', () => {
     e.addLight('point'); // (ライトは載せない)
     const good = await e.mme.loadEffect([fileAt('Fx/good.fx', 'technique T { }'), fileAt('Fx/sub/ctl.fx', 'float m : CONTROLOBJECT < string name = "ray_controller.pmx"; string item = "Red"; >;\ntechnique T { }')], 'good.fx');
     expect(e.ui.state.mme.folders).toEqual([{ id: good.folder.id, name: 'Fx', fx: ['good.fx', 'sub/ctl.fx'] }]);
-    expect(e.ui.state.mme.rows.Main).toEqual([{ objId: obj.id, label: '立方体', material: null, assigned: null, fallback: 'default.fx', stopped: null }]);
+    expect(e.ui.state.mme.rows.Main).toEqual([{ objId: obj.id, label: '立方体', material: null, assigned: null, assignedRef: null, fallback: 'default.fx', stopped: null }]);
     e.mme.assign(obj, 'Main', null, { folder: good.folder.id, path: 'GOOD.FX' });
-    expect(e.ui.state.mme.rows.Main[0]).toMatchObject({ assigned: 'Fx/good.fx', fallback: 'default.fx' });
+    // (assignedRef は選択を照らす id: パスはフォルダの中の書き方)
+    expect(e.ui.state.mme.rows.Main[0]).toMatchObject({ assigned: 'Fx/good.fx', assignedRef: { folder: good.folder.id, path: 'good.fx' }, fallback: 'default.fx' });
     e.mme.assign(obj, 'Main', null, 'hide');
-    expect(e.ui.state.mme.rows.Main[0]).toMatchObject({ assigned: 'hide' });
+    expect(e.ui.state.mme.rows.Main[0]).toMatchObject({ assigned: 'hide', assignedRef: 'hide' });
+    // 行を作り直しても、フォルダの一覧が同じなら同じ配列 (画面は選択肢を作り直さない)
+    const folders = e.ui.state.mme.folders;
+    e.mme.assign(obj, 'Main', null, null);
+    expect(e.ui.state.mme.rows.Main[0].assigned).toBeNull();
+    expect(e.ui.state.mme.folders).toBe(folders);
     // 何も変わらなければ作り直さない
     const fallbackFor = vi.spyOn(e.mme.renderer.assignments, 'fallbackFor');
     e.mme.publish();
@@ -1169,18 +1176,106 @@ technique Post { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = comp
     expect(e.mme.renderer.drawnEffects()).toContain(fx);
     e.mme.assignStage('Main', 1, null);
     expect(stageRows()[2]).toEqual(['雲', 1, null, 'Fx/sky.fx']);
-    expect(e.mme.saveScene().stage).toEqual({ Main: { object: ref(fx) } });
+    expect(e.mme.saveScene().stage).toEqual({ name: 'Time of day.pmx', effects: { Main: { object: ref(fx) } } });
 
     // (割り当ては場面の値なので、ステージを外しても残る。手で作ったステージはファイルがなくて保存できないので外す)
     e.graph.scene.remove(stage);
     e.stage.model = null;
-    expect(e.mme.saveScene().stage).toEqual({ Main: { object: ref(fx) } });
+    expect(e.mme.saveScene().stage).toEqual({ name: 'Time of day.pmx', effects: { Main: { object: ref(fx) } } });
     const f = new Engine();
     await f.project.open(await e.project.save('embedded'));
-    expect(f.mme.saveScene().stage).toEqual({ Main: { object: ref(fx) } });
-    expect(f.mme.renderer.assignments.referencedStage().map(x => [x.entry, x.result.ok])).toEqual([['sky.fx', true]]);
+    expect(f.mme.saveScene().stage).toEqual({ name: 'Time of day.pmx', effects: { Main: { object: ref(fx) } } });
+    expect(f.mme.renderer.assignments.storedStage().map(x => [x.entry, x.result.ok])).toEqual([['sky.fx', true]]);
     f.resetAll();
     expect('stage' in f.mme.saveScene()).toBe(false);
+  });
+
+  // 名前 (.pmx のファイル名) を持つステージ。差し替えるのは e.stage.model を入れ替えること
+  const stageNamed = (e: Engine, name: string) => {
+    const mesh = new THREE.SkinnedMesh(new THREE.BoxGeometry(), [new THREE.MeshBasicMaterial({ name: '面' })]);
+    mesh.userData.sourceFile = new File([], name);
+    const stage = new THREE.Group();
+    stage.add(mesh);
+    if (e.stage.model) e.graph.scene.remove(e.stage.model);
+    e.stage.model = stage;
+    e.graph.scene.add(stage);
+    e.ui.set({ sceneVersion: e.ui.state.sceneVersion + 1 });
+    e.mme.publish();
+    return mesh;
+  };
+
+  it('ステージの割り当ては .pmx の名前に結ぶ: 名前が違うステージには当てず (行も空)、名前のまま残り、元の .pmx に戻すと当たる。割り当てを変えると置き換わる', async () => {
+    const e = new Engine();
+    const fx = await e.mme.loadEffect([fileAt('Fx/sky.fx', 'technique T { }'), fileAt('Fx/night.fx', 'technique T { }')], 'sky.fx');
+    const night = e.mme.store.effect(fx.folder, 'night.fx');
+    const day = stageNamed(e, 'Day.pmx');
+    e.mme.assignStage('Main', null, ref(fx));
+    const row = () => e.ui.state.mme.rows.Main.find(r => r.objId === -1)!;
+    const slotOf = (mesh: THREE.Mesh) => { const sl = e.mme.renderer.assignments.slotFor('Main', null, null)(null, mesh, 0); return sl.kind === 'hide' ? 'hide' : sl.effect; };
+    expect([row().label, row().assigned, row().assignedRef]).toEqual(['ステージ: Day.pmx', 'Fx/sky.fx', ref(fx)]);
+    expect(slotOf(day)).toBe(fx);
+
+    // 別の .pmx に差し替える: 当たらず、行は割り当てなし。保存はそのまま (名前 Day.pmx のもの)。パラメータ・ファイルの扱いも残る
+    const nightMesh = stageNamed(e, 'night.pmx');
+    expect(slotOf(nightMesh)).toBe(e.mme.store.defaultEffect);
+    expect([row().label, row().assigned, row().assignedRef]).toEqual(['ステージ: night.pmx', null, null]);
+    expect(e.mme.renderer.drawnEffects()).not.toContain(fx);
+    expect(e.mme.paramsOf('stage')).toEqual([]);
+    expect(e.mme.saveScene().stage).toEqual({ name: 'Day.pmx', effects: { Main: { object: ref(fx) } } });
+    expect(e.mme.renderer.assignments.storedStage()).toEqual([fx]);
+    expect(e.mme.activeStage()).toBeNull();
+    // (何も変えない操作は、残っている割り当てを捨てない)
+    e.mme.assignStage('Main', null, null);
+    expect(e.mme.saveScene().stage?.name).toBe('Day.pmx');
+
+    // 元の .pmx (大文字小文字は問わない) に戻すと当たる
+    const back = stageNamed(e, 'DAY.pmx');
+    expect(slotOf(back)).toBe(fx);
+    expect(row().assigned).toBe('Fx/sky.fx');
+
+    // 別の .pmx に差し替えてから割り当てると、その .pmx の割り当てに置き換わる (前の .pmx のものは捨てる)
+    e.mme.setParam('stage', fx.folder.id, 'sky.fx', 'Strength', [1]); // (パラメータのない .fx: 何も置かない)
+    const night2 = stageNamed(e, 'night.pmx');
+    e.mme.assignStage('Main', null, ref(night));
+    expect(e.mme.saveScene().stage).toEqual({ name: 'night.pmx', effects: { Main: { object: ref(night) } } });
+    expect(slotOf(night2)).toBe(night);
+    stageNamed(e, 'Day.pmx');
+    expect(e.mme.saveScene().stage?.effects).toEqual({ Main: { object: ref(night) } });
+    expect(row().assigned).toBeNull();
+  });
+
+  it('ステージのパラメータの値は、別の名前のステージには置かず、別のステージに割り当て直すと捨てる', async () => {
+    const e = new Engine();
+    const fx = await e.mme.loadEffect([fileAt('Fx/param.fx', paramFx())], 'param.fx');
+    stageNamed(e, 'Day.pmx');
+    e.mme.assignStage('Main', null, ref(fx));
+    e.mme.setParam('stage', fx.folder.id, 'param.fx', 'Strength', [3]);
+    const ch = `${fx.folder.id}/param.fx:Strength`;
+    expect(e.mme.saveScene().stageParams).toEqual({ [ch]: 3 });
+    stageNamed(e, 'Night.pmx');
+    e.mme.setParam('stage', fx.folder.id, 'param.fx', 'Strength', [1]); // (当たっていない .fx の値は置かない)
+    expect(e.mme.saveScene().stageParams).toEqual({ [ch]: 3 });
+    e.mme.assignStage('Main', null, ref(fx)); // (同じ .fx でも、Night.pmx に当て直すので前の値は引き継がない)
+    expect(e.mme.saveScene().stageParams).toBeUndefined();
+    expect(e.mme.paramsOf('stage')[0].params[0]).toMatchObject({ name: 'Strength', value: [1] });
+  });
+
+  it('loadScene: 第 4 の計画の形の stage (名前がない) は、いっしょに読み込んだステージのものとして読み、名前つきの stage はその名前のまま読む', async () => {
+    const e = new Engine();
+    const fx = await e.mme.loadEffect([fileAt('Fx/sky.fx', 'technique T { }')], 'sky.fx');
+    const mesh = stageNamed(e, 'Time of day.pmx');
+    const scene = normalizeMmeScene({ settings: MME_DEFAULTS, folders: [], stage: { Main: { object: ref(fx) } } });
+    e.mme.loadScene(scene);
+    expect(e.mme.saveScene().stage).toEqual({ name: 'Time of day.pmx', effects: { Main: { object: ref(fx) } } });
+    expect(e.mme.renderer.assignments.slotFor('Main', null, null)(null, mesh, 0)).toMatchObject({ kind: 'effect', effect: fx });
+    // (名前つきは、いまのステージと違っても名前のまま)
+    e.mme.loadScene(normalizeMmeScene({ settings: MME_DEFAULTS, folders: [], stage: { name: 'Other.pmx', effects: { Main: { object: 'hide' } } } }));
+    expect(e.mme.saveScene().stage).toEqual({ name: 'Other.pmx', effects: { Main: { object: 'hide' } } });
+    expect(e.mme.activeStage()).toBeNull();
+    // (ステージがなければ名前は '')
+    e.stage.model = null;
+    e.mme.loadScene(scene);
+    expect(e.mme.saveScene().stage?.name).toBe('');
   });
   // --- .fx のパラメータの値 (設計書「パラメータ」): 「.fx を当てた物」と「.fx」の組ごと。描くたびにその物の値で uniform を上書きする ---
   const paramFx = (decls = 'float Strength < float UIMin = 0; float UIMax = 4; > = 1;', ps = 'return float4(Strength, 0, 0, 1);') => `
@@ -1592,7 +1687,7 @@ describe('MmeEngine の .emm', () => {
     e.history.checkpoint();
     const result = e.mme.importEmm(sjis(['[Object]', 'Pmd1 = UserFile\\Stage\\stage.pmx', '[Effect]', 'Pmd1 = ray-mmd-1.5.2\\Main\\main.fx', 'Pmd1[1].show = false']));
     expect(result).toEqual({ applied: 2, warnings: [] });
-    const expected = { Main: { object: at('Main/main.fx'), materials: { 1: 'hide' } } };
+    const expected = { name: 'Stage.pmx', effects: { Main: { object: at('Main/main.fx'), materials: { 1: 'hide' } } } };
     expect(e.mme.saveScene().stage).toEqual(expected);
     e.history.checkpoint();
     await e.history.undo();
@@ -1635,6 +1730,7 @@ describe('MmeEngine の .emm', () => {
     ]));
     // (外してから読み直すと同じ)
     const saved = { miku: structuredClone(miku.mme), ray: structuredClone(ray.mme), stage: e.mme.saveScene().stage };
+    expect(saved.stage?.name).toBe('Stage.pmx');
     e.mme.clearEffects();
     expect(e.mme.importEmm(bytes)).toEqual({ applied: 6, warnings: [] });
     expect({ miku: miku.mme, ray: ray.mme, stage: e.mme.saveScene().stage }).toEqual(saved);

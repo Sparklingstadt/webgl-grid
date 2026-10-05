@@ -277,6 +277,98 @@ test('エフェクト割当: モデルの行を開くと材質の行が出て、
   expect(errors).toEqual([]);
 });
 
+// --- 割り当ての画面の後片付け: タブの ARIA と矢印キー・既定の欄と選択の結び・同じ名前の物・長い名前 ---
+test('エフェクト割当: タブは tablist / tab / tabpanel で、矢印キーで移り、選んだタブだけ Tab で止まる。既定の欄は選択に aria-describedby で結ぶ', async ({ page }, info) => {
+  const errors = await boxScene(page);
+  const dir = await folder(info.outputPath('Off'), { 'post.fx': showOffMap('*=green.fx;'), 'green.fx': GREEN_FX });
+  await page.getByLabel('ポストエフェクトのフォルダを選ぶ').setInputFiles(dir);
+  await page.getByRole('dialog', { name: '.fx を選ぶ' }).getByRole('button', { name: 'post.fx', exact: true }).click();
+  const tabs = assignTabs(page);
+  await expect(tabs).toHaveText(['Main', 'OffMap']);
+  // 各タブは自分のパネルを aria-controls で指し、パネルは aria-labelledby でそのタブを指す。選んでいないタブのパネルは隠す
+  expect(await tabs.evaluateAll(list => list.map(tab => {
+    const target = document.getElementById(tab.getAttribute('aria-controls')!);
+    return { role: target?.getAttribute('role'), labelledby: target?.getAttribute('aria-labelledby') === tab.id, hidden: target?.hidden };
+  }))).toEqual([{ role: 'tabpanel', labelledby: true, hidden: false }, { role: 'tabpanel', labelledby: true, hidden: true }]);
+  expect(await tabs.evaluateAll(list => list.map(tab => tab.tabIndex))).toEqual([0, -1]);
+  // 矢印キー: → で次へ (端は反対側へ)・← で前へ・End・Home。移ったタブが選ばれて、キーの操作も移る
+  await tabs.nth(0).focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(tabs.nth(1)).toBeFocused();
+  await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
+  await expect(panel(page)).toContainText('テスト用のマップ');
+  expect(await tabs.evaluateAll(list => list.map(tab => tab.tabIndex))).toEqual([-1, 0]);
+  await page.keyboard.press('ArrowRight');
+  await expect(tabs.nth(0)).toBeFocused();
+  await expect(tabs.nth(0)).toHaveAttribute('aria-selected', 'true');
+  await page.keyboard.press('ArrowLeft');
+  await expect(tabs.nth(1)).toBeFocused();
+  await page.keyboard.press('Home');
+  await expect(tabs.nth(0)).toBeFocused();
+  await page.keyboard.press('End');
+  await expect(tabs.nth(1)).toBeFocused();
+  // (矢印キーは場面のフレーム送りにしない。Tab で止まるのは選んだタブだけ = tabIndex が 0)
+  expect(await page.evaluate(() => (window as Win).engine.clock.frame)).toBe(0);
+  expect(await tabs.evaluateAll(list => list.map(tab => tab.tabIndex))).toEqual([-1, 0]);
+  // 既定の欄は選択の aria-describedby で結ぶ (オフスクリーンのタブ。割り当てると結びが消える)
+  const select = panel(page).getByRole('combobox', { name: BOX, exact: true });
+  const described = () => select.evaluate(el => { const id = el.getAttribute('aria-describedby'); return id ? document.getElementById(id)?.textContent ?? null : null; });
+  expect(await described()).toBe('Off/green.fx');
+  await choose(page, BOX, '非表示');
+  expect(await described()).toBeNull();
+  await expect(select).not.toHaveAttribute('aria-describedby', /.+/);
+  expect(errors).toEqual([]);
+});
+
+test('エフェクト割当: 同じ名前の物は、行の名前と選択の名前に番号を付けて分け、それぞれに割り当てられる', async ({ page }) => {
+  const errors = await boxScene(page);
+  await addPmx(page, { flags: 0, at: [3, 0] }); // (同じ名前 'テスト人形' の 2 体目)
+  const one = 'テスト人形 (1) の .fx', two = 'テスト人形 (2) の .fx';
+  await expect(panel(page).getByRole('combobox', { name: one, exact: true })).toBeVisible();
+  await expect(panel(page).locator('.mme-rows .mme-name')).toHaveText(['テスト人形 (1)', 'テスト人形 (2)']);
+  await expect(panel(page).getByRole('combobox', { name: BOX, exact: true })).toHaveCount(0);
+  await choose(page, two, '非表示');
+  expect(await page.evaluate(() => (window as Win).engine.world.objects.map((o: Win) => o.mme ?? null))).toEqual([null, { Main: { object: 'hide' } }]);
+  // 材質の行を開く印と、材質の選択の名前も分かれる
+  await panel(page).getByRole('button', { name: 'テスト人形 (2) の材質を開く' }).click();
+  await expect(panel(page).getByRole('combobox', { name: 'テスト人形 (2) の材質 0 の .fx', exact: true })).toBeVisible();
+  await expect(panel(page).getByRole('combobox', { name: 'テスト人形 (1) の材質 0 の .fx', exact: true })).toHaveCount(0);
+  // 1 体にすると番号は付かない
+  await page.evaluate(() => { const { engine } = window as Win; engine.world.remove(engine.world.objects[1]); });
+  await expect(panel(page).getByRole('combobox', { name: BOX, exact: true })).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('エフェクト割当: 長い名前 (60 文字の .fx のパス・タブ名・物の名前) でもサイドバーの横にはみ出さない', async ({ page }, info) => {
+  const errors = await boxScene(page);
+  const longTab = `Off${'M'.repeat(57)}`; // (60 文字。HLSL の名前)
+  const longFx = `${'a'.repeat(56)}.fx`; // (60 文字)
+  const dir = await folder(info.outputPath('Long'), { 'post.fx': showOffMap(`*=${longFx};`).replaceAll('OffMap', longTab), [longFx]: GREEN_FX, [`sub/${longFx}`]: GREEN_FX });
+  await page.getByLabel('ポストエフェクトのフォルダを選ぶ').setInputFiles(dir);
+  await page.getByRole('dialog', { name: '.fx を選ぶ' }).getByRole('button', { name: 'post.fx', exact: true }).click();
+  await expect(assignTabs(page)).toHaveText(['Main', longTab]);
+  const nothingOverflows = async () => {
+    expect(await noOverflow(page)).toBe(true);
+    // (パネルの中の物が、パネルの右の端を越えない)
+    expect(await panel(page).evaluate(el => {
+      const right = el.getBoundingClientRect().right + 1;
+      return [...el.querySelectorAll('.mme-tabs, .mme-tabs *, .mme-rows, .mme-row, .mme-row > *, .mme-desc')].filter(x => x.getBoundingClientRect().right > right).map(x => x.className);
+    })).toEqual([]);
+  };
+  await nothingOverflows();
+  await assignTabs(page).nth(1).click();
+  await expect(fallback(page, BOX)).toContainText(longFx); // (既定の欄に長いパス)
+  await nothingOverflows();
+  await choose(page, BOX, `sub/${longFx}`); // (長いパスの選択肢。選ぶと選択の欄にもその長さが入る)
+  await nothingOverflows();
+  // 物の名前も長く (60 文字)
+  const long = 'N'.repeat(60);
+  await addPmx(page, { name: long, flags: 0, at: [3, 0] });
+  await expect(panel(page).getByRole('combobox', { name: `${long} の .fx`, exact: true })).toBeVisible();
+  await nothingOverflows();
+  expect(errors).toEqual([]);
+});
+
 // --- 仮のコントローラーの欄 (「置く」と物を選ぶリンク) と、サイドバーの「MME」のページ (選んでいる物の MME の値) ---
 const mmeTab = (page: Page) => page.getByRole('tab', { name: 'MME', exact: true });
 const tree = (page: Page) => page.getByRole('tree', { name: 'シーンの物' });

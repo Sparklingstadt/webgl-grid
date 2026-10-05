@@ -7,9 +7,10 @@ import { Popover } from './Popover';
 export interface SelectOption<T> { value: T; label: string; disabled?: boolean }
 export interface SelectGroup<T> { group: string; options: SelectOption<T>[] }
 
-export function BSelect<T extends string | number>({ value, options, onChange, label, id, className, placeholder = '' }: {
+export function BSelect<T extends string | number>({ value, options, onChange, label, id, className, placeholder = '', describedBy }: {
   value: T | null; options: (SelectOption<T> | SelectGroup<T>)[]; onChange: (v: T) => void;
   label: string; id?: string; className?: string; placeholder?: string;
+  describedBy?: string; // 補足の文の要素の id (aria-describedby。空白で区切って複数)
 }) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
@@ -67,7 +68,7 @@ export function BSelect<T extends string | number>({ value, options, onChange, l
   };
   return (
     <>
-      <button type="button" ref={setBtn} id={id} className={`bselect ${className ?? ''}`} role="combobox" aria-label={label} title={label}
+      <button type="button" ref={setBtn} id={id} className={`bselect ${className ?? ''}`} role="combobox" aria-label={label} title={label} aria-describedby={describedBy}
               aria-haspopup="listbox" aria-expanded={open} aria-controls={open ? listId : undefined}
               aria-activedescendant={open && active >= 0 ? `${listId}-${active}` : undefined}
               onClick={() => (open ? setOpen(false) : show())} onKeyDown={onKey}>

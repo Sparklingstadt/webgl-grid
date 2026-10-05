@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { describe, expect, it, vi } from 'vitest';
 import { parseDefaultEffect } from '../../core/mme/defaultEffect.ts';
-import { normalizeObjectEffects, type ObjectEffects } from '../../core/mme/settings.ts';
+import { normalizeObjectEffects, type MmeStage, type ObjectEffects } from '../../core/mme/settings.ts';
 import { MODEL_KIND } from '../../core/shapes';
 import type { Obj } from '../types';
 import type { UiChannel } from '../UiChannel';
@@ -164,12 +164,13 @@ describe('Assignments', () => {
     const folder = await s.addFolder([fileAt('Ray/sky.fx', 'technique T { }'), fileAt('Ray/m.fx', 'technique T { }'), fileAt('Ray/env.fx', 'technique T { }')]);
     const sky = s.effect(folder, 'sky.fx'), m = s.effect(folder, 'm.fx'), env = s.effect(folder, 'env.fx');
     const stageMesh = Object.assign(new THREE.Mesh(), { userData: { sourceFile: new File([], 'Time of day.pmx') } });
-    let stage: ObjectEffects | null = null;
+    let stage: MmeStage | null = null;
+    const NAME = 'Time of day.pmx';
     const as = new Assignments(s, vi.fn(), () => stage);
     const main = as.slotFor('Main', null, null);
     expect(effectOf(main(null, stageMesh, 0))).toBe(s.defaultEffect);
     // 割り当ては呼ぶたびに読む。材質の割り当てが先
-    stage = { Main: { object: { folder: folder.id, path: 'sky.fx' }, materials: { 1: 'hide' } } };
+    stage = { name: NAME, effects: { Main: { object: { folder: folder.id, path: 'sky.fx' }, materials: { 1: 'hide' } } } };
     expect([0, 1].map(i => effectOf(main(null, stageMesh, i)))).toEqual([sky, 'hide']);
     // 置いた物には効かない
     expect(effectOf(main(shape(1), mesh, 0))).toBe(s.defaultEffect);
@@ -179,12 +180,28 @@ describe('Assignments', () => {
     expect(effectOf(as.slotFor('Env', defaults, null)(null, stageMesh, 0))).toBe(m);
     expect(effectOf(as.slotFor('Env', defaults, STAGE)(null, stageMesh, 0))).toBe('hide'); // (持ち主はステージ: self)
     expect(effectOf(as.slotFor('Env', defaults, STAGE)(shape(2, undefined, 'mysky.pmx'), mesh, 0))).toBe(env); // (置いた物は self ではない)
-    stage = { Env: { object: { folder: folder.id, path: 'env.fx' } } };
+    stage = { name: NAME, effects: { Env: { object: { folder: folder.id, path: 'env.fx' } } } };
     expect(effectOf(as.slotFor('Env', defaults, STAGE)(null, stageMesh, 0))).toBe(env);
     // 既定の欄 (ステージの行) と、ステージに割り当てた .fx
     expect(effectOf(as.stageFallbackFor('Env', defaults, 'Time of day.pmx', null, false))).toBe(m);
     expect(effectOf(as.stageFallbackFor('Env', defaults, 'Time of day.pmx', 0, false))).toBe(env);
     expect(effectOf(as.stageFallbackFor('Env', defaults, 'Time of day.pmx', null, true))).toBe('hide');
-    expect(as.referencedStage()).toEqual([env]);
+    expect(as.referencedStage(NAME)).toEqual([env]);
+    expect(as.stageEffectsFor('TIME OF DAY.PMX')).toBe(stage.effects); // (大文字小文字は区別しない)
+
+    // 名前が違うステージ (差し替えたあと) には当てない。見ていないステージの割り当ては、保存するファイルのために storedStage が数える
+    const other = Object.assign(new THREE.Mesh(), { userData: { sourceFile: new File([], 'Night.pmx') } });
+    expect(effectOf(as.slotFor('Env', defaults, STAGE)(null, other, 0))).toBe('hide'); // (規則の * = hide)
+    expect(effectOf(as.slotFor('Main', null, null)(null, other, 0))).toBe(s.defaultEffect);
+    expect(effectOf(as.stageFallbackFor('Env', defaults, 'Night.pmx', 0, false))).toBe('hide');
+    expect(as.stageEffectsFor('Night.pmx')).toBeNull();
+    expect(as.referencedStage('Night.pmx')).toEqual([]);
+    expect(as.referencedStage(null)).toEqual([]);
+    expect(as.storedStage()).toEqual([env]);
+    // ファイル名が分からないステージは、名前が '' のものとして照らす
+    const unnamed = new THREE.Mesh();
+    stage = { name: '', effects: { Main: { object: { folder: folder.id, path: 'sky.fx' } } } };
+    expect(effectOf(as.slotFor('Main', null, null)(null, unnamed, 0))).toBe(sky);
+    expect(effectOf(as.slotFor('Main', null, null)(null, stageMesh, 0))).toBe(s.defaultEffect);
   });
 });

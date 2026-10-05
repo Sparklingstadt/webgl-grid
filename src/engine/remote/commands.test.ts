@@ -182,7 +182,7 @@ describe('MME の命令', () => {
     e.ui.set({ sceneVersion: e.ui.state.sceneVersion + 1 });
     await run(e, 'mme_assign', { object: 'stage', tab: 'Main', fx: { folder, path: 'a.fx' } });
     await run(e, 'mme_assign', { object: 'stage', tab: 'Main', material: 0, fx: 'hide' });
-    expect(e.mme.saveScene().stage).toEqual({ Main: { object: { folder, path: 'a.fx' }, materials: { 0: 'hide' } } });
+    expect(e.mme.saveScene().stage).toEqual({ name: 'sky.pmx', effects: { Main: { object: { folder, path: 'a.fx' }, materials: { 0: 'hide' } } } });
     expect((await run(e, 'mme_state')).assignments).toEqual([
       { object: 'stage', tab: 'Main', material: null, fx: { folder, folderName: 'Fx', path: 'a.fx' } },
       { object: 'stage', tab: 'Main', material: 0, fx: 'hide' },

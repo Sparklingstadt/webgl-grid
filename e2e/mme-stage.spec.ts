@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { strFromU8, unzipSync } from 'fflate';
+import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import { makePmx } from './fixtures/pmx';
 import { expect, test, type Page } from './fixtures/test';
 import { choose, uiState, type Win } from './helpers';
@@ -55,7 +55,7 @@ test('ステージの行: Main で .fx を割り当てるとその .fx で描き
   await expect(fallback(page, STAGE_ROW)).toHaveText('default.fx');
   await choose(page, STAGE_ROW, 'red.fx');
   await expect.poll(() => rgb(page)).toEqual([255, 0, 0]);
-  expect(await page.evaluate(() => (window as Win).engine.mme.saveScene().stage)).toEqual({ Main: { object: { folder: red.folder, path: 'red.fx' } } });
+  expect(await page.evaluate(() => (window as Win).engine.mme.saveScene().stage)).toEqual({ name: 'テストステージ.pmx', effects: { Main: { object: { folder: red.folder, path: 'red.fx' } } } });
   await choose(page, STAGE_ROW, '既定に戻す');
   await expect.poll(() => rgb(page)).toEqual(before);
 
@@ -69,7 +69,7 @@ test('ステージの行: Main で .fx を割り当てるとその .fx で描き
   await expect(fallback(page, STAGE_ROW)).toHaveText('post/green.fx');
   await choose(page, STAGE_ROW, '非表示');
   await expect.poll(() => rgb(page)).toEqual([0, 0, 255]);
-  expect(await page.evaluate(() => (window as Win).engine.mme.saveScene().stage)).toEqual({ OffMap: { object: 'hide' } });
+  expect(await page.evaluate(() => (window as Win).engine.mme.saveScene().stage)).toEqual({ name: 'テストステージ.pmx', effects: { OffMap: { object: 'hide' } } });
   expect(await page.evaluate(() => (window as Win).engine.mme.renderer.allWarnings())).toEqual([]);
   expect(errors).toEqual([]);
 });
@@ -85,7 +85,7 @@ test('ステージの割り当てをプロジェクトに保存し (.wgp)、最�
   const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('menuitem', { name: 'プロジェクトを保存' }).click()]);
   const bytes = await readFile((await download.path())!);
   const data = JSON.parse(strFromU8(unzipSync(new Uint8Array(bytes))['project.json']));
-  expect(data.mme.stage).toEqual({ Main: { object: { folder: red.folder, path: 'red.fx' } } });
+  expect(data.mme.stage).toEqual({ name: 'テストステージ.pmx', effects: { Main: { object: { folder: red.folder, path: 'red.fx' } } } });
 
   await page.evaluate(() => (window as Win).engine.resetAll());
   expect(await page.evaluate(() => (window as Win).engine.mme.saveScene().stage ?? null)).toBeNull();
@@ -94,5 +94,55 @@ test('ステージの割り当てをプロジェクトに保存し (.wgp)、最�
   await expect.poll(() => page.evaluate(() => (window as Win).engine.stage.model !== null)).toBe(true);
   await expect.poll(() => rgb(page)).toEqual([255, 0, 0]);
   expect(await page.evaluate(() => (window as Win).engine.mme.renderer.allWarnings())).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+// ステージの .pmx を (ファイルの入力から) 読み込む
+const loadStage = (page: Page, name: string) => page.locator('input[type=file][multiple]').setInputFiles({
+  name: `${name}.pmx`, mimeType: 'application/octet-stream', buffer: Buffer.from(makePmx(name, { outward: true, flags: 0 })),
+});
+
+test('ステージを別の .pmx に差し替えると割り当ては当たらず (行も空)、名前のまま残り、元の .pmx に戻すと当たる', async ({ page }) => {
+  const errors = await stageScene(page);
+  const before = await rgb(page); // (default.fx)
+  const red = await loadFolder(page, 'fx', { 'red.fx': RED_FX }, 'red.fx');
+  await choose(page, STAGE_ROW, 'red.fx');
+  await expect.poll(() => rgb(page)).toEqual([255, 0, 0]);
+  // 別の名前のステージに差し替える: 当たらない。行は差し替えたステージのもので、割り当てなし
+  await loadStage(page, 'べつのステージ');
+  await expect(panel(page).getByRole('combobox', { name: 'ステージ: べつのステージ.pmx の .fx', exact: true })).toContainText('既定');
+  await expect(fallback(page, 'ステージ: べつのステージ.pmx の .fx')).toHaveText('default.fx');
+  await expect.poll(() => rgb(page)).toEqual(before);
+  // (割り当ては、もとの名前のまま場面の値に残る)
+  expect(await page.evaluate(() => (window as Win).engine.mme.saveScene().stage)).toEqual({ name: 'テストステージ.pmx', effects: { Main: { object: { folder: red.folder, path: 'red.fx' } } } });
+  // 元の .pmx に戻すと当たる
+  await loadStage(page, 'テストステージ');
+  await expect(panel(page).getByRole('combobox', { name: STAGE_ROW, exact: true })).toContainText('red.fx');
+  await expect.poll(() => rgb(page)).toEqual([255, 0, 0]);
+  expect(await page.evaluate(() => (window as Win).engine.mme.renderer.allWarnings())).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test('第 4 の計画の形のステージの割り当て (名前がない) を開くと、いっしょに読み込んだステージのものとして当たり、保存し直すと名前がつく', async ({ page }) => {
+  test.setTimeout(90_000);
+  const errors = await stageScene(page);
+  const red = await loadFolder(page, 'fx', { 'red.fx': RED_FX }, 'red.fx');
+  await page.evaluate(r => (window as Win).engine.mme.assignStage('Main', null, { folder: r.folder, path: r.path }), red);
+  await page.getByRole('button', { name: 'ファイル' }).click();
+  const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('menuitem', { name: 'プロジェクトを保存' }).click()]);
+  // (名前を外して、第 4 の計画の形 (ObjectEffects だけ) にする)
+  const files = unzipSync(new Uint8Array(await readFile((await download.path())!)));
+  const data = JSON.parse(strFromU8(files['project.json']));
+  data.mme.stage = data.mme.stage.effects;
+  expect(data.mme.stage).toEqual({ Main: { object: { folder: red.folder, path: 'red.fx' } } });
+  files['project.json'] = strToU8(JSON.stringify(data));
+  const old = Buffer.from(zipSync(files));
+
+  await page.evaluate(() => (window as Win).engine.resetAll());
+  await page.locator('input[type=file][accept=".wgp,.wgpj"]').setInputFiles({ name: 'old.wgp', mimeType: 'application/zip', buffer: old });
+  await expect.poll(async () => (await uiState(page)).toast, { timeout: 30_000 }).toBe('old.wgp を開きました');
+  await expect.poll(() => page.evaluate(() => (window as Win).engine.stage.model !== null)).toBe(true);
+  await expect.poll(() => rgb(page)).toEqual([255, 0, 0]);
+  expect(await page.evaluate(() => (window as Win).engine.mme.saveScene().stage)).toEqual({ name: 'テストステージ.pmx', effects: { Main: { object: { folder: red.folder, path: 'red.fx' } } } });
   expect(errors).toEqual([]);
 });

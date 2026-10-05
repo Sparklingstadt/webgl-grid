@@ -155,7 +155,7 @@ function mmeAssignments(e: Engine) {
       for (const [m, slot] of Object.entries(effects.materials ?? {})) out.push({ object, tab, material: Number(m), fx: slotJson(e, slot) });
     }
   };
-  add('stage', e.mme.saveScene().stage);
+  add('stage', e.mme.activeStage()); // (名前が違うステージの割り当ては、いまのステージには当たらないので数えない)
   for (const o of e.world.objects) add(o.id, o.mme);
   return out;
 }

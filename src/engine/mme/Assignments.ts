@@ -1,7 +1,8 @@
+import type * as THREE from 'three';
 import { joinPath } from '../../core/fx/source.ts';
 import { t } from '../../core/i18n';
 import { resolveDefault, type DefaultRule } from '../../core/mme/defaultEffect.ts';
-import type { EffectRef, ObjectEffects, SavedSlot } from '../../core/mme/settings.ts';
+import { sameStageName, type EffectRef, type MmeStage, type ObjectEffects, type SavedSlot } from '../../core/mme/settings.ts';
 import { isModel, type Obj } from '../types';
 import { nameOf } from '../world/Selection';
 import { findFile, type EffectFolder, type EffectStore, type LoadedEffect } from './EffectStore';
@@ -26,6 +27,20 @@ export function pmxName(mesh: { geometry: object; userData: Record<string, unkno
   return src instanceof File ? src.name : null;
 }
 
+// ステージの名前 (.pmx のファイル名。ステージの割り当てを当てるかの照らし合わせに使う): 最初の SkinnedMesh (なければ最初の Mesh) のもの。
+// ファイル名が分からなければ ''。ステージがない (メッシュがない) なら null
+export function stageNameOf(root: { traverse: (f: (o: THREE.Object3D) => void) => void } | null): string | null {
+  let skinned: THREE.Mesh | null = null, first: THREE.Mesh | null = null;
+  root?.traverse(o => {
+    const mesh = o as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    first ??= mesh;
+    if (!skinned && (mesh as THREE.SkinnedMesh).isSkinnedMesh) skinned = mesh;
+  });
+  const mesh: THREE.Mesh | null = skinned ?? first;
+  return mesh && (pmxName(mesh) ?? '');
+}
+
 // DefaultEffect・CONTROLOBJECT と照らす物の名前: MMD モデルは .pmx のファイル名、MME の物はその名前 (ray_controller.pmx・ray.x など)、
 // ほかは付けた名前か種類の名前
 export function objectName(obj: Obj): string {
@@ -36,8 +51,14 @@ export function objectName(obj: Obj): string {
 export class Assignments {
   private warned = new Set<string>(); // 警告を出した、見つからない・コンパイルできない割り当て
 
-  // stage: ステージの割り当て (場面の値。なければ null)
-  constructor(private store: EffectStore, private warn: (message: string) => void, private stage: () => ObjectEffects | null = () => null) {}
+  // stage: ステージの割り当て (場面の値。なければ null)。名前 (.pmx のファイル名) が違うステージには当てない
+  constructor(private store: EffectStore, private warn: (message: string) => void, private stage: () => MmeStage | null = () => null) {}
+
+  // ステージ (.pmx のファイル名が name。null はステージがない) に当てる割り当て: 名前が合わなければ null (名前が違うステージには当てない)
+  stageEffectsFor(name: string | null): ObjectEffects | null {
+    const stage = this.stage();
+    return stage && name !== null && sameStageName(stage.name, name) ? stage.effects : null;
+  }
 
   // そのタブで物の材質を描くもの: 材質の割り当て → 物の割り当て → DefaultEffect があればその規則 (どれにも合わなければ hide。
   // none は default.fx) → なければ (Main) default.fx。割り当ては呼ぶたびに Obj.mme (ステージは stage()) から読む。
@@ -48,9 +69,10 @@ export class Assignments {
   // 物 (ステージ) のそのタブの割り当てで決まった .fx は assigned (描くときに、その物のパラメータの値を使う。DefaultEffect・default.fx は初期値)
   slotFor(tab: string, defaults: DefaultsOf | null, owner: Owner): SlotFor {
     return (obj, mesh, materialIndex) => {
-      const effects = obj ? obj.mme?.[tab] : this.stage()?.[tab];
       // (ステージは置いた物ではないので、.pmx のファイル名で照らす)
-      const name = () => (obj ? objectName(obj) : pmxName(mesh) ?? '');
+      const stageName = obj ? null : pmxName(mesh) ?? '';
+      const effects = obj ? obj.mme?.[tab] : this.stageEffectsFor(stageName)?.[tab];
+      const name = () => (obj ? objectName(obj) : stageName ?? '');
       return this.resolve(tab, defaults, [effects?.materials?.[materialIndex], effects?.object], name, (obj ?? STAGE) === owner, false);
     };
   }
@@ -64,7 +86,7 @@ export class Assignments {
 
   // ステージの行の fallbackFor (name はステージの .pmx のファイル名)
   stageFallbackFor(tab: string, defaults: DefaultsOf | null, name: string, materialIndex: number | null, isOwner: boolean): Slot {
-    const own = materialIndex === null ? [] : [this.stage()?.[tab]?.object];
+    const own = materialIndex === null ? [] : [this.stageEffectsFor(name)?.[tab]?.object];
     return this.resolve(tab, defaults, own, () => name, isOwner, true);
   }
 
@@ -73,9 +95,14 @@ export class Assignments {
     return this.referencedIn(obj.mme);
   }
 
-  // ステージの全部のタブで割り当てていて、見つかる .fx (referenced と同じ)
-  referencedStage(): LoadedEffect[] {
-    return this.referencedIn(this.stage() ?? undefined);
+  // ステージ (.pmx のファイル名が name) の全部のタブで割り当てていて、見つかる .fx (referenced と同じ。名前が違えば空)
+  referencedStage(name: string | null): LoadedEffect[] {
+    return this.referencedIn(this.stageEffectsFor(name) ?? undefined);
+  }
+
+  // 保存してある (いまのステージに当たらないものも) ステージの割り当ての、見つかる .fx。当たらなくても保存するファイルに入れる
+  storedStage(): LoadedEffect[] {
+    return this.referencedIn(this.stage()?.effects);
   }
 
   private referencedIn(all: ObjectEffects | undefined): LoadedEffect[] {

@@ -1310,6 +1310,7 @@ const dict: Dictionary = {
   "{name} の材質 {n} の .fx": ".fx for material {n} of {name}",
   "{name} の .fx": ".fx for {name}",
   "{name} の材質を開く": "Show materials of {name}",
+  "{name} ({n})": "{name} ({n})",
   "コントローラー": "Controllers",
   "{name} は GPU で使えないので止めました": "Stopped {name} because it can't be used on the GPU",
   "MME: {name}": "MME: {name}",
