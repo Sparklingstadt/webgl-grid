@@ -1173,5 +1173,6 @@ const dict: Dictionary = {
   "頂点シェーダーかピクセルシェーダーの片方だけの pass には対応していません": "不支援只有頂點著色器或只有像素著色器的 pass",
   "コンパイラの内部の誤りです: {message}": "編譯器內部錯誤: {message}",
   "{name} をコンパイルできませんでした: {error}": "無法編譯 {name}: {error}",
+  "MME 互換で描けなかったので、標準のエンジンで描きました: {error}": "無法以 MME 相容方式繪製，已改用標準引擎繪製: {error}",
 };
 export default dict;

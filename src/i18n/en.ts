@@ -1173,5 +1173,6 @@ const dict: Dictionary = {
   "頂点シェーダーかピクセルシェーダーの片方だけの pass には対応していません": "Passes with only a vertex shader or only a pixel shader are not supported",
   "コンパイラの内部の誤りです: {message}": "Internal compiler error: {message}",
   "{name} をコンパイルできませんでした: {error}": "Couldn't compile {name}: {error}",
+  "MME 互換で描けなかったので、標準のエンジンで描きました: {error}": "Couldn't draw with the MME-compatible engine, so the standard engine was used: {error}",
 };
 export default dict;

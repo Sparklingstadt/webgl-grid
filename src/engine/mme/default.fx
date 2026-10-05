@@ -102,13 +102,13 @@ float4 Object_PS(ObjectOut IN, uniform bool useTexture, uniform bool useSphereMa
     // トゥーン: 光の当たる側はテクスチャの上 (明るい側)、裏は下 (TOONCOLOR の側)
     float3 toon = float3(1.0, 1.0, 1.0);
     if (useToon) toon = tex2D(MatToonSampler, float2(0.0, 0.5 - dot(n, -LightDirection) * 0.5)).rgb;
-    if (selfShadow) {
-        if (SelfShadowLit(IN.LightPos) < 0.5) toon = MatToonColor;
-    }
+    float lit = 1.0;
+    if (selfShadow) lit = SelfShadowLit(IN.LightPos);
+    if (lit < 0.5) toon = MatToonColor;
     color.rgb *= toon;
-    // 反射 (半ベクトルと法線)。pow の底が 0 にならないよう少しだけ持ち上げる
+    // 反射 (半ベクトルと法線)。pow の底が 0 にならないよう少しだけ持ち上げる。セルフシャドウの影の中には足さない (MMD と同じ)
     float3 h = normalize(normalize(IN.ToEye) - LightDirection);
-    color.rgb += pow(max(0.00001, dot(h, n)), MatPower) * SpecularColor;
+    color.rgb += pow(max(0.00001, dot(h, n)), MatPower) * SpecularColor * lit;
     return color;
 }
 

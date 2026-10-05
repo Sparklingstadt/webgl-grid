@@ -9,7 +9,7 @@ export class SceneGraph {
   readonly scene = new THREE.Scene();
   readonly camera = new THREE.PerspectiveCamera(DEFAULT_FOV, 1, 0.05, 1000);
   private readonly light = new THREE.Vector3(0.6, 1.0, 0.35).normalize(); // 太陽の来る向き
-  private readonly sun = new THREE.DirectionalLight(0xffffff, 0.82 * Math.PI);
+  readonly sun = new THREE.DirectionalLight(0xffffff, 0.82 * Math.PI); // (MME 互換のライトもこの色・明るさ・影の範囲を使う)
   readonly grid = makeGrid();
   // 地面に落ちる影 (グリッドの上に重ねる)
   readonly shadowPlane = new THREE.Mesh(
@@ -40,6 +40,9 @@ export class SceneGraph {
     Object.assign(sun.shadow.camera, { left: -span, right: span, top: span, bottom: -span, near: 1, far: 100 });
     sun.shadow.camera.updateProjectionMatrix();
   }
+
+  // 太陽の来る向き (単位ベクトルの写し)
+  sunDirection() { return this.light.clone(); }
 
   // 太陽: 来る向き (単位ベクトル)・明るさ・色・影を落とすか
   setSun(dir: [number, number, number], intensity: number, color: THREE.ColorRepresentation, shadows: boolean) {
