@@ -387,6 +387,7 @@ MCP クライアント ⇄ (stdio) ⇄ MCP サーバー (mcp/server.ts) ⇄ (Web
 | ファイル | `load_files`（手元のパスの .pmx・.vmd・.vpd・曲。.pmx を渡すと同じフォルダのテクスチャも送る） |
 | アニメーション | `timeline`（フレーム・範囲・再生）、`insert_keyframe`、`delete_keyframe`、`list_bones`、`set_bone`、`reset_pose`、`list_morphs`、`set_morph`、`set_hair_hang` |
 | 見た目 | `set_camera`、`list_materials`、`set_material`（プリンシプル BSDF の値・設定・輪郭線・名前）、`set_effect`、`set_scene`（空・床・太陽）、`add_light`・`set_light`（ライト） |
+| MME 互換 | `mme_state`（設定・フォルダ・割り当て・アクセサリ・コントローラー・パラメータ・警告）、`mme_set`（標準 / MME のエンジン・影）、`mme_list_fx`・`mme_load_folder`（`fx/` のフォルダの一覧と読み込み）、`mme_assign`（物・ステージ・材質のタブごとの .fx。`hide`・外す）、`mme_add_accessory`・`mme_add_controller`、`mme_set_values`（コントローラーの項目・アクセサリの X〜Tr・.fx のパラメータ）、`mme_import_emm`・`mme_export_emm`（.emm）。MME の値のキーは `insert_keyframe` の `channels` |
 | アドオン | `list_addons`、`set_addon`（有効にする・切る）、`list_commands`・`run_command`（アドオンが足した命令） |
 | 書き出し | `set_output`、`render_image`（画像を返し、パスに PNG を保存）、`render_animation`（動画をパスに保存）、`save_project`（.wgp か、参照だけの .wgpj）、`open_project`（.wgpj は参照しているファイルを手元から探して送る） |
 

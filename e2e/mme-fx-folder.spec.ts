@@ -133,6 +133,28 @@ test('ポストエフェクトの「足す…」にも「fx/ から選ぶ」が�
   expect(errors.filter(e => !e.includes('404'))).toEqual([]);
 });
 
+test('MCP の命令 mme_list_fx・mme_load_folder は、サーバーの fx/ の一覧から選んだフォルダを読み込む (読み込むだけ。.fx のパスで割り当てられる)', async ({ page }) => {
+  const errors = await openMme(page);
+  const run = (name: string, params: unknown = {}) => page.evaluate(async ({ name, params }) => {
+    const { engine } = window as Win;
+    try { return { ok: await engine.addons.commands.get(name).run(engine, params) }; } catch (err) { return { error: (err as Error).message }; }
+  }, { name, params });
+  const listed = (await run('mme_list_fx')).ok;
+  expect(listed.folders.map((f: { name: string; fx: string[]; loaded: boolean }) => [f.name, f.fx, f.loaded])).toEqual([
+    ['fx', ['単体.fx'], false], ['Multi', ['a.fx', 'b.fx'], false], ['自作', ['solid.fx'], false],
+  ]);
+  expect((await run('mme_load_folder', { folder: '無関係' })).error).toContain('fx/ にフォルダ 無関係 はありません');
+  const loaded = (await run('mme_load_folder', { folder: '自作' })).ok;
+  expect(loaded).toMatchObject({ folder: { name: '自作' }, fx: ['solid.fx'] });
+  // (#include のファイルも渡っているので、コンパイルできる)
+  const acc = (await run('mme_add_accessory', { name: 'solid.x', fx: { folder: '自作', path: 'solid.fx' } })).ok;
+  const state = (await run('mme_state')).ok;
+  expect(state.folders).toEqual([{ id: loaded.folder.id, name: '自作', fx: ['solid.fx'] }]);
+  expect(state.accessories).toEqual([expect.objectContaining({ id: acc.id, ok: true, fx: { folder: loaded.folder.id, folderName: '自作', path: 'solid.fx' } })]);
+  expect((await run('mme_list_fx')).ok.folders.find((f: { name: string }) => f.name === '自作').loaded).toBe(true);
+  expect(errors).toEqual([]);
+});
+
 test('サーバーが一覧を答えないとき (静的に配っている・fx/ にエフェクトがない) は、「fx/ から選ぶ」を出さない', async ({ page }) => {
   // 一覧がない: 404 と、ページを返すだけのサーバー (SPA の入口)
   for (const fulfill of [{ status: 404 }, { status: 200, contentType: 'text/html', body: '<!doctype html><title>x</title>' }]) {

@@ -181,7 +181,10 @@ tool('load_files', 'MMD のファイルを読み込む: .pmx (同じフォルダ
 forward('timeline', 'タイムライン: いまのフレームへ飛ぶ・範囲 (開始・終了) を変える・再生/停止', {
   frame, start: frame, end: frame, playing: z.boolean().optional(),
 });
-forward('insert_keyframe', 'いまの値をキーフレームにする: モデルはポーズと表情、形・ライトは位置・回転・大きさ (frame を渡すとそこへ飛んでから)', { id, frame });
+forward('insert_keyframe', 'いまの値をキーフレームにする: モデルはポーズと表情、形・ライトは位置・回転・大きさ、MME の物 (アクセサリ・コントローラー) は MME の値の全部 (frame を渡すとそこへ飛んでから)。'
+  + 'channels を渡すと、その MME のチャンネルだけにキーを打つ (名前は mme_state・mme_set_values と同じ。コントローラーの項目 "SSAO+"・アクセサリの X Y Z Rx Ry Rz Si Tr・パラメータ "<フォルダの id>/<.fx のパス>:<名前>" (ベクトルは :x :y :z :w)。値がなければ、いまの値 (既定) を入れてから打つ)', {
+  id, frame, channels: z.array(z.string()).min(1).optional().describe('キーを打つ MME のチャンネルの名前'),
+});
 forward('delete_keyframe', '物のキーフレームを消す (frame を渡すとそこへ飛んでから)', { id, frame });
 
 // ポーズ・表情
@@ -212,6 +215,50 @@ forward('set_material', 'マテリアル (プリンシプル BSDF) の値を変�
   settings: z.object({ blend: z.enum(['opaque', 'blend', 'clip']).optional(), backfaceCulling: z.boolean().optional() }).optional(),
   outline: z.object({ enabled: z.boolean().optional(), color: z.array(z.number()).length(3).optional(), size: z.number().min(0).optional() }).optional(),
   name: z.string().optional().describe('名前を変える'),
+});
+
+// MME 互換 (標準 / MME のレンダーエンジン、エフェクト割当、仮のコントローラー・アクセサリ、.fx のパラメータ、.emm)
+forward('mme_state', 'MME 互換の状態: 設定 (settings)・読み込んだフォルダと .fx (folders)・エフェクト割当のタブ (tabs)・全部の割り当て (assignments: object は id か "stage"、material は null で物全体)・'
+  + 'アクセサリ (accessories: X〜Tr の値と当てた .fx)・コントローラー (controllers: 描いているエフェクトが読む名前と項目の値。id が null なら場面にない)・.fx のパラメータ (params: 値のチャンネルの名前と範囲)・警告 (warnings)', {});
+forward('mme_set', 'MME 互換の設定を、渡したところだけ変える。engine で標準 (standard) か MME 互換 (mme) のレンダーエンジンを選ぶ', {
+  settings: z.object({
+    engine: z.enum(['standard', 'mme']).optional().describe('レンダーエンジン'),
+    selfShadow: z.boolean().optional().describe('セルフシャドウ'), groundShadow: z.boolean().optional().describe('地面の影'),
+    shadowDistance: z.number().min(0).max(9999).optional().describe('セルフシャドウの範囲 (MMD の影の距離。大きいほど狭くくっきり。8875 で標準のエンジンの太陽の影と同じ)'),
+  }),
+});
+forward('mme_list_fx', 'fx/ (MME のエフェクト置き場。環境変数 WEBGL_GRID_FX_DIR で場所を変えられる) の直下のフォルダと、その中の .fx の一覧。アプリを配るサーバー (npm run dev・このサーバーの open_app) が答えないときはエラー', {});
+forward('mme_load_folder', 'fx/ の中のフォルダ (mme_list_fx の name) を読み込む (画面の「fx/ から選ぶ」と同じ)。読み込むだけで、割り当てはしない。大きいフォルダは時間がかかる', {
+  folder: z.string().describe('fx/ の直下のフォルダの名前'),
+}, 300_000);
+forward('mme_assign', 'エフェクト (.fx) を、物かステージのタブの割り当てにする。material を省くと物全体、渡すと材質 (MMD モデル・ステージの材質の番号)。fx は読み込んだフォルダの .fx ({ folder, path })・"hide" (描かない)・null (外して既定に戻す)', {
+  object: z.union([z.number().int(), z.literal('stage')]).optional().describe('物の id (get_state の objects[].id)・"stage" (ステージ)。省くと選んでいる物'),
+  tab: z.string().optional().describe('"Main" (既定) か、使っているエフェクトが宣言するオフスクリーンのタブ (mme_state の tabs)'),
+  material: z.number().int().min(0).nullable().optional().describe('材質の番号 (省く・null で物全体)'),
+  fx: z.union([z.object({ folder: z.string().describe('読み込んだフォルダの名前か id (mme_state の folders)'), path: z.string().describe('フォルダの中の .fx のパス (大文字小文字は問わない)') }), z.literal('hide'), z.null()]),
+});
+forward('mme_add_accessory', '仮のアクセサリ (MMD の .x の代わりの物。X Y Z Rx Ry Rz Si Tr の値を持つ) を置いて選ぶ。ポストエフェクトの .fx は、アクセサリに当てると使われる (描く順はアウトライナーでの並び。隠すとオフ)。fx を渡すと Main の物全体に当てる', {
+  name: z.string().describe('名前 (.x のファイル名。例 ray.x。.emm はこの名前で物を照らす)'),
+  fx: z.object({ folder: z.string(), path: z.string() }).optional().describe('当てる .fx ({ folder, path }。mme_assign と同じ)'),
+});
+forward('mme_add_controller', '仮のコントローラー (MMD の .pmx のコントローラーの代わりの物) を置いて選ぶ。描いているエフェクトが CONTROLOBJECT で同じ名前で読む。場面にない名前は mme_state の controllers に id: null で出る', {
+  name: z.string().describe('名前 (例 ray_controller.pmx)'),
+});
+forward('mme_set_values', 'MME の値を書く: コントローラーの項目 (0〜1。名前は項目名 "SSAO+")・アクセサリの X Y Z Rx Ry Rz (度) Si Tr・.fx のパラメータ (名前は mme_state の params の channels。ベクトルは成分ごと ":y" か、まとめて数の配列で)。範囲に収める。壊れたものが 1 つでもあれば何も変えない。キーを打つのは insert_keyframe の channels', {
+  object: z.union([z.number().int(), z.literal('stage')]).optional().describe('物の id・"stage" (ステージのパラメータ。場面の値でキーフレームなし)。省くと選んでいる物'),
+  values: z.record(z.string(), z.union([z.number(), z.array(z.number())])).describe('チャンネルの名前 → 値'),
+});
+tool('mme_import_emm', '.emm (MME のエフェクト割当ファイル) を読んで、割り当てを戻す。物は名前で照らす (場面にない .x はアクセサリを置く)。.fx は読み込んだフォルダのパスの後ろがいちばん長く合うもの。1 回の取り消しで戻る。合わない物・.fx は warnings に返る', {
+  path: z.string().describe('.emm のパス'),
+}, async a => {
+  const bytes = await readFile(path.resolve(CWD, a.path));
+  return { content: [text(await call('mme_import_emm', { data: bytes.toString('base64') }))] };
+});
+tool('mme_export_emm', 'いまの割り当てを .emm にする。path があれば保存する (省くと内容を base64 の data で返す)', {
+  path: z.string().optional().describe('保存するパス (.emm)'),
+}, async a => {
+  const r = await call('mme_export_emm');
+  return { content: [text(a.path ? await writeBase64(a.path.replace(/(\.emm)?$/i, '.emm'), CWD, String(r.data)) : r)] };
 });
 
 // 効果・出力・レンダリング
