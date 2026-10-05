@@ -30,7 +30,7 @@ describe('compileEffect', () => {
     const r = ok(compileFixture('basic.fx'));
     expect(r.effect.params).toContainEqual(expect.objectContaining({ name: 'WorldViewProjMatrix', semantic: 'WORLDVIEWPROJECTION', type: 'float4x4', storage: 'uniform', init: null }));
     expect(r.effect.params.map(p => p.name)).toEqual(expect.arrayContaining(['DiffuseColor', 'LightDirection']));
-    expect(r.effect.textures).toEqual([{ name: 'ObjectTexture', type: 'texture', semantic: 'MATERIALTEXTURE', annotations: [] }]);
+    expect(r.effect.textures).toEqual([{ name: 'ObjectTexture', type: 'texture', semantic: 'MATERIALTEXTURE', annotations: [], shared: false }]);
     expect(r.effect.samplers).toEqual([expect.objectContaining({ name: 'ObjTexSampler', dim: '2D', texture: 'ObjectTexture' })]);
     expect(r.effect.samplers[0].states.map(s => s.name)).not.toContain('Texture');
     expect(r.effect.samplers[0].states).toContainEqual({ name: 'MinFilter', value: 'LINEAR' });
@@ -127,7 +127,13 @@ describe('compileEffect', () => {
       { name: 'S', glslName: 'S', dim: '2D', texture: null, states: [], register: null },
       { name: 'SC', glslName: 'SC', dim: 'CUBE', texture: 'TC', states: [{ name: 'AddressU', value: 'CLAMP' }], register: null },
     ]);
-    expect(r.effect.textures).toEqual([{ name: 'TC', type: 'textureCUBE', semantic: null, annotations: [] }]);
+    expect(r.effect.textures).toEqual([{ name: 'TC', type: 'textureCUBE', semantic: null, annotations: [], shared: false }]);
+  });
+
+  it('shared 修飾子: texture と param の shared に出る', () => {
+    const r = ok(compileEffect('a.fx', readerOf({ 'a.fx': `shared texture A : RENDERCOLORTARGET; texture B : RENDERCOLORTARGET; shared float x; float y;${MINIMAL_TECHNIQUE}` })));
+    expect(r.effect.textures.map(t => [t.name, t.shared])).toEqual([['A', true], ['B', false]]);
+    expect(r.effect.params.map(p => [p.name, p.shared])).toEqual([['x', true], ['y', false]]);
   });
 
   it('警告だけなら ok: true で warnings に入る', () => {

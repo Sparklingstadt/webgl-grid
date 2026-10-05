@@ -80,14 +80,14 @@ function assemble(checked: CheckedEffect, diags: Diagnostics): EffectDesc {
     if (g.type.k === 'texture') {
       textures.push({
         name, type: typeName(g.type), semantic: g.decl.semantic === null ? null : g.decl.semantic.toUpperCase(),
-        annotations: annotationsOf(g.decl.annotations, checked),
+        annotations: annotationsOf(g.decl.annotations, checked), shared: g.decl.storage.includes('shared'),
       });
     } else if (g.type.k === 'sampler') {
       samplers.push(samplerOf(name, g, checked, diags));
     } else {
       params.push({
         name, glslName: glslName(name), type: typeName(g.type), semantic: g.decl.semantic === null ? null : g.decl.semantic.toUpperCase(),
-        storage: g.storage, annotations: annotationsOf(g.decl.annotations, checked), init: initOf(g),
+        storage: g.storage, annotations: annotationsOf(g.decl.annotations, checked), init: initOf(g), shared: g.decl.storage.includes('shared'),
       });
     }
   }

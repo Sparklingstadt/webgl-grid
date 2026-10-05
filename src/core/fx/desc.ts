@@ -12,8 +12,9 @@ export interface Program { vertex: string; fragment: string; uniforms: UniformRe
 export interface Param {
   name: string; glslName: string; type: string; semantic: string | null; storage: 'uniform' | 'static' | 'const';
   annotations: Annotation[]; init: number[] | string | null;
+  shared: boolean; // HLSL の shared 修飾子 (エフェクトをまたいで共有する)
 }
-export interface TextureDecl { name: string; type: string; semantic: string | null; annotations: Annotation[] }
+export interface TextureDecl { name: string; type: string; semantic: string | null; annotations: Annotation[]; shared: boolean }
 export interface SamplerDecl { name: string; glslName: string; dim: Dim; texture: string | null; states: RenderState[]; register: string | null }
 export interface Pass { name: string; annotations: Annotation[]; script: ScriptCommand[]; states: RenderState[]; program: Program | null }
 export interface Technique { name: string; annotations: Annotation[]; script: ScriptCommand[]; passes: Pass[] }
