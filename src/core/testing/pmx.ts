@@ -24,6 +24,9 @@ class Writer {
 // sdef: 上の 4 頂点を SDEF (骨は センター・右腕) にする
 // parts: 材質を分ける (材質ごとの面の頂点番号 3 つずつと、輪郭線の太さ。なければ全部の面で 1 つ)
 // edgeRatios: 頂点ごとの輪郭線の太さの倍率 (なければ 1)
+// uvs: 頂点ごとの UV (下の 4 つ、上の 4 つの順。なければ全部 (0, 0))
+// diffuse: 材質の拡散色と不透明度 (なければ (0.9, 0.7, 0.5, 1))。edgeSize: parts がないときの輪郭線の太さ (なければ 1)
+// outward: parts がないときの面を、MMD の決まりどおり外向き (外から見て時計回り) にする
 export interface PmxOptions {
   physics?: boolean;
   texture?: string;
@@ -31,8 +34,12 @@ export interface PmxOptions {
   sdef?: boolean;
   parts?: { faces: number[]; edgeSize?: number }[];
   edgeRatios?: number[];
+  uvs?: [number, number][];
+  diffuse?: [number, number, number, number];
+  edgeSize?: number;
+  outward?: boolean;
 }
-export function makePmx(name = 'テスト人形', { physics = false, texture, flags = 0x01 | 0x10, sdef = false, parts, edgeRatios }: PmxOptions = {}): Uint8Array {
+export function makePmx(name = 'テスト人形', { physics = false, texture, flags = 0x01 | 0x10, sdef = false, parts, edgeRatios, uvs, diffuse = [0.9, 0.7, 0.5, 1], edgeSize = 1, outward = false }: PmxOptions = {}): Uint8Array {
   const w = new Writer();
   // ヘッダー: 文字コード UTF-16、追加 UV なし、インデックスはすべて 4 バイト
   for (const c of 'PMX ') w.u8(c.charCodeAt(0));
@@ -48,7 +55,7 @@ export function makePmx(name = 'テスト人形', { physics = false, texture, fl
     for (let i = 0; i < 4; i++) {
       w.f32(xs[i], y, zs[i]);            // 位置
       w.f32(xs[i] / 2, 0, zs[i] / 2);    // 法線 (だいたい外向き)
-      w.f32(0, 0);                       // UV
+      w.f32(...(uvs?.[i + (y ? 4 : 0)] ?? [0, 0])); // UV
       if (sdef && y) {
         // SDEF: 骨 2 つ・重み・C (右腕の関節)・R0・R1 (C の近く)
         w.u8(3); w.i32(0); w.i32(1); w.f32(0.5);
@@ -60,9 +67,11 @@ export function makePmx(name = 'テスト人形', { physics = false, texture, fl
       w.f32(edgeRatios?.[i + (y ? 4 : 0)] ?? 1); // 輪郭線の太さ (倍率)
     }
   }
-  // 面: 側面 4 枚 + 上下 (両面表示にするので向きは気にしない)
-  const allFaces = [0, 1, 5, 0, 5, 4, 1, 2, 6, 1, 6, 5, 2, 3, 7, 2, 7, 6, 3, 0, 4, 3, 4, 7, 4, 5, 6, 4, 6, 7, 0, 2, 1, 0, 3, 2];
-  const materials = parts ?? [{ faces: allFaces, edgeSize: 1 }];
+  // 面: 側面 4 枚 + 上下 (両面表示にするので向きは気にしない。どれも外から見て反時計回り = MMD では内向き)。
+  // outward なら三角形の向きを逆にして、MMD (D3D) の決まりどおり外から見て時計回りを表にする (輪郭線は裏の面で描くので、内向きだと全体が輪郭線の色になる)
+  const inward = [0, 1, 5, 0, 5, 4, 1, 2, 6, 1, 6, 5, 2, 3, 7, 2, 7, 6, 3, 0, 4, 3, 4, 7, 4, 5, 6, 4, 6, 7, 0, 2, 1, 0, 3, 2];
+  const allFaces = outward ? inward.map((_, i) => inward[i % 3 === 0 ? i : i % 3 === 1 ? i + 1 : i - 1]) : inward;
+  const materials = parts ?? [{ faces: allFaces, edgeSize }];
   const faces = materials.flatMap(m => m.faces);
   w.i32(faces.length);
   for (const f of faces) w.i32(f);
@@ -72,7 +81,7 @@ export function makePmx(name = 'テスト人形', { physics = false, texture, fl
   w.i32(materials.length);
   for (const m of materials) {
     w.text('体'); w.text('body');
-    w.f32(0.9, 0.7, 0.5, 1);   // 拡散色
+    w.f32(...diffuse);         // 拡散色
     w.f32(0, 0, 0); w.f32(5);  // 反射色・強さ
     w.f32(0.4, 0.3, 0.2);      // 環境色
     w.u8(flags);               // 既定は両面表示・輪郭線あり
