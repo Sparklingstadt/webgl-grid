@@ -76,6 +76,28 @@ export async function assignFx(page: Page, i: number, source: string, name = 'te
   }, { i, source, name });
 }
 
+// ポストエフェクトの .fx の文字列を読んで (フォルダ post の中の name)、一覧の最後 (いちばん外側) に足す。コンパイルできたかを返す
+export async function addPost(page: Page, source: string, name = 'post.fx') {
+  return page.evaluate(async ({ source, name }) => {
+    const { engine } = window as Win;
+    const file = new File([source], name);
+    Object.defineProperty(file, 'webkitRelativePath', { value: `post/${name}` });
+    const e = await engine.mme.loadEffect([file], name);
+    engine.mme.store.addPost(e);
+    return e.result.ok as boolean;
+  }, { source, name });
+}
+
+// 位置だけ変換して、決まった色を出す物の .fx (MMDPass = object だけ。ほかの pass は default.fx)
+export const objectFx = (ps: string, decls = '') => `
+float4x4 WVP : WORLDVIEWPROJECTION;
+${decls}
+struct VO { float4 Pos : POSITION; float2 Uv : TEXCOORD0; };
+VO VS(float4 Pos : POSITION, float2 Uv : TEXCOORD0) { VO o; o.Pos = mul(Pos, WVP); o.Uv = Uv; return o; }
+float4 PS(float2 Uv : TEXCOORD0) : COLOR0 { ${ps} }
+technique T < string MMDPass = "object"; > { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = compile ps_3_0 PS(); } }
+`;
+
 // 描いた絵と、そのときのカメラで世界の点を写した画素の位置の色。png: 書き出し (engine.output.renderPng)、viewport: ビューポートの canvas。
 // image: 絵の全部の画素 (RGBA の並び) も返す
 export async function shoot(page: Page, where: 'png' | 'viewport', points: Vec3[] = [], image = false) {

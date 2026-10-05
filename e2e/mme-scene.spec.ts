@@ -1,5 +1,5 @@
 import { expect, test } from './fixtures/test';
-import { addPmx, addShape, assignFx, diff, openMme, redBluePng, setCamera, setSun, shoot } from './mme-helpers';
+import { addPmx, addShape, assignFx, diff, objectFx, openMme, redBluePng, setCamera, setSun, shoot } from './mme-helpers';
 import type { Win } from './helpers';
 
 // MME 互換のレンダーエンジンで場面を描く (物の .fx・default.fx・編集用の表示)。
@@ -8,16 +8,6 @@ import type { Win } from './helpers';
 const BG = [0x3d, 0x3d, 0x3d]; // 書き出しの背景 (ビューポートの灰色)
 const ALL_FLAGS = 0x1f; // 両面・地面の影・セルフシャドウ (落とす・受ける)・輪郭線
 const LIGHT = 0.82; // 太陽の明るさの既定 (色は白)
-
-// 位置だけ変換して、決まった色を出す物の .fx (MMDPass = object だけ。ほかの pass は default.fx)
-const objectFx = (ps: string, decls = '') => `
-float4x4 WVP : WORLDVIEWPROJECTION;
-${decls}
-struct VO { float4 Pos : POSITION; float2 Uv : TEXCOORD0; };
-VO VS(float4 Pos : POSITION, float2 Uv : TEXCOORD0) { VO o; o.Pos = mul(Pos, WVP); o.Uv = Uv; return o; }
-float4 PS(float2 Uv : TEXCOORD0) : COLOR0 { ${ps} }
-technique T < string MMDPass = "object"; > { pass P { VertexShader = compile vs_3_0 VS(); PixelShader = compile ps_3_0 PS(); } }
-`;
 
 test('default.fx: 材質の色・輪郭線・地面の影', async ({ page }) => {
   const errors = await openMme(page);
